@@ -1,0 +1,95 @@
+import axios from 'axios'
+
+// Token is stored in an httpOnly cookie (set by the backend) — not accessible via JS.
+// setStoredToken stores the user's ID (not the token) as a cross-tab sentinel so tabs
+// can detect when a different user logs in and clear their stale session state.
+const SENTINEL_KEY = 'tradio_session'
+export const getStoredToken = () => localStorage.getItem(SENTINEL_KEY)
+export const setStoredToken = (userId) => userId
+  ? localStorage.setItem(SENTINEL_KEY, userId)
+  : localStorage.removeItem(SENTINEL_KEY)
+
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || '/api',
+  timeout: 30000,
+  withCredentials: true, // sends the httpOnly cookie automatically
+})
+
+api.interceptors.response.use(
+  r => r.data,
+  err => {
+    const url = err.config?.url || ''
+    if (err.response?.status === 401 && !url.includes('/auth/')) {
+      const hadSession = getStoredToken() !== null
+      setStoredToken(null)
+      // Only reload if we had an active session — avoids reload loops on first page load
+      if (hadSession) window.location.reload()
+    }
+    return Promise.reject(err.response?.data?.error || 'Request failed')
+  }
+)
+
+export const authApi = {
+  login: (email, password) => api.post('/auth/login', { email, password }),
+  me: () => api.get('/auth/me'),
+  logout: () => api.post('/auth/logout'),
+  changePassword: (currentPassword, newPassword) => api.post('/auth/change-password', { currentPassword, newPassword }),
+}
+
+export const ordersApi = {
+  list: () => api.get('/orders'),
+  get: id => api.get(`/orders/${id}`),
+  create: data => api.post('/orders', data),
+  update: (id, data) => api.patch(`/orders/${id}`, data),
+  delete: id => api.delete(`/orders/${id}`),
+  updateAssignment: (orderId, mfrId, status, note) =>
+    api.patch(`/orders/${orderId}/assignments/${mfrId}`, { status, note }),
+  updateStage: (orderId, mfrId, stageIndex, data) =>
+    api.patch(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}`, data),
+  updateStageEta: (orderId, mfrId, stageIndex, eta) =>
+    api.patch(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}/eta`, { eta }),
+  escalate: (id, reason) =>
+    api.post(`/orders/${id}/escalate`, { reason }),
+}
+
+export const documentsApi = {
+  list: () => api.get('/documents'),
+  getData: id => api.get(`/documents/${id}/data`),
+  upload: data => api.post('/documents', data),
+  checkCertExpiry: () => api.post('/documents/cert-expiry-check'),
+}
+
+export const usersApi = {
+  list: () => api.get('/users'),
+  create: data => api.post('/users', data),
+  update: (id, data) => api.patch(`/users/${id}`, data),
+  toggle: id => api.patch(`/users/${id}/toggle`),
+  resetPassword: id => api.patch(`/users/${id}/reset-password`),
+}
+
+export const notificationsApi = {
+  list: () => api.get('/notifications'),
+  create: data => api.post('/notifications', data),
+  markAllRead: () => api.patch('/notifications/mark-all-read'),
+  markOneRead: id => api.patch(`/notifications/${id}/read`),
+}
+
+export const auditApi = {
+  list: () => api.get('/audit'),
+  add: (action, detail) => api.post('/audit', { action, detail }),
+}
+
+export const ribbonsApi = {
+  list: () => api.get('/ribbons'),
+  listAll: () => api.get('/ribbons/all'),
+  create: data => api.post('/ribbons', data),
+  update: (id, data) => api.patch(`/ribbons/${id}`, data),
+  remove: id => api.delete(`/ribbons/${id}`),
+}
+
+export const masterOrdersApi = {
+  list: () => api.get('/master-orders'),
+  create: data => api.post('/master-orders', data),
+}
+
+export default api

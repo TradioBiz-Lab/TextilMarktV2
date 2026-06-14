@@ -1,0 +1,510 @@
+import mongoose from 'mongoose'
+import { Router } from 'express'
+import rateLimit from 'express-rate-limit'
+import { Order } from '../db/index.js'
+import { User }         from '../models/User.js'
+import { Notification } from '../models/Notification.js'
+import { AuditLog }     from '../models/AuditLog.js'
+import { MasterOrder }  from '../models/MasterOrder.js'
+import { DEFAULT_STAGE_NAMES, ORDER_STATUS_VALUES }  from '../models/Order.js'
+
+// Categories are now free-text — no validation needed
+const VALID_SEASONS    = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
+import { requireAuth, requireAdmin } from '../middleware/auth.js'
+// Email triggers for orders are intentionally suppressed — order activity is portal-notifications only
+
+// 60 order creations per admin per hour — prevents runaway scripting
+const createOrderLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, max: 60,
+  keyGenerator: req => req.user?.id || req.ip,
+  message: { error: 'Too many order creation requests. Please wait.' },
+  standardHeaders: true, legacyHeaders: false, validate: false,
+})
+
+// 120 stage/status patches per user per hour
+const updateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, max: 120,
+  keyGenerator: req => req.user?.id || req.ip,
+  message: { error: 'Too many update requests. Please wait.' },
+  standardHeaders: true, legacyHeaders: false, validate: false,
+})
+
+// Max 3 escalations per buyer per 60 min (prevents email spam to master admins)
+const escalationLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  keyGenerator: req => `${req.user?.id}-escalate`,
+  message: { error: 'Too many escalations. Please wait before escalating again.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false,
+})
+
+const router = Router()
+const MFR_FIELDS = 'name company code'
+const BUYER_FIELDS = 'name company code'
+
+const enrichOrder = (o, viewerMfrId = null) => {
+  const buyer = o.buyerId && typeof o.buyerId === 'object' && o.buyerId.company ? o.buyerId : null
+  // Manufacturers only see their own assignment — not competitors' qty/status/notes
+  const allAssignments = o.assignments || []
+  const visibleAssignments = viewerMfrId
+    ? allAssignments.filter(a => (a.mfrId?._id?.toString() ?? a.mfrId?.toString()) === viewerMfrId)
+    : allAssignments
+  return {
+  id: o._id, masterOrderId: o.masterOrderId || null,
+  buyerId: buyer ? buyer._id.toString() : (o.buyerId?.toString?.() ?? o.buyerId),
+  buyerCompany: buyer?.company ?? null, buyerName: buyer?.name ?? null, buyerCode: buyer?.code ?? null,
+  product: o.product, category: o.category,
+  season: o.season, totalQty: o.totalQty, delivery: o.delivery, createdAt: o.createdAt,
+  assignments: visibleAssignments.map(a => {
+    const mfr = a.mfrId && typeof a.mfrId === 'object' && a.mfrId.company ? a.mfrId : null
+    return {
+      id:         a._id,
+      mid:        mfr ? mfr._id.toString() : (a.mfrId?.toString?.() ?? a.mfrId),
+      mfrCompany: mfr?.company  ?? null,
+      mfrCode:    mfr?.code     ?? null,
+      mfrName:    mfr?.name     ?? null,
+      qty:        a.qty,
+      status:     a.status,
+      sub:        a.sub,
+      note:       a.note,
+      updatedAt:  a.updatedAt,
+      stages:     (a.stages || []).map(s => ({
+        name: s.name, unitsDone: s.unitsDone,
+        totalUnits: s.totalUnits, eta: s.eta, stageDate: s.stageDate || null, note: s.note,
+      })),
+    }
+  }),
+}
+}
+
+// GET /api/orders
+router.get('/', requireAuth, async (req, res) => {
+  try {
+    let query
+    if (req.user.role === 'admin')        query = Order.find()
+    else if (req.user.role === 'buyer')   query = Order.find({ buyerId: req.user.id })
+    else                                  query = Order.find({ 'assignments.mfrId': req.user.id })
+
+    const orders = await query.populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).sort({ createdAt: -1 }).lean()
+    const viewerMfrId = req.user.role === 'manufacturer' ? req.user.id : null
+    res.json(orders.map(o => enrichOrder(o, viewerMfrId)))
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// GET /api/orders/:id
+router.get('/:id', requireAuth, async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).lean()
+    if (!order) return res.status(404).json({ error: 'Order not found' })
+
+    const buyerIdStr = order.buyerId?._id?.toString() ?? order.buyerId?.toString()
+    if (req.user.role === 'buyer' && buyerIdStr !== req.user.id)
+      return res.status(403).json({ error: 'Forbidden' })
+
+    if (req.user.role === 'manufacturer') {
+      const assigned = (order.assignments || []).some(a => {
+        const id = a.mfrId?._id?.toString() ?? a.mfrId?.toString()
+        return id === req.user.id
+      })
+      if (!assigned) return res.status(403).json({ error: 'Forbidden' })
+    }
+
+    const viewerMfrId = req.user.role === 'manufacturer' ? req.user.id : null
+    res.json(enrichOrder(order, viewerMfrId))
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/orders
+router.post('/', requireAuth, requireAdmin, createOrderLimiter, async (req, res) => {
+  try {
+    const { id, buyerId, product, category, season, totalQty, delivery, createdAt, masterOrderId, assignments: asgns, stageEtas, stageNames: customStages } = req.body
+    if (!id || !buyerId || !product || !totalQty || !delivery)
+      return res.status(400).json({ error: 'Missing required fields' })
+    if (typeof id !== 'string' || typeof product !== 'string')
+      return res.status(400).json({ error: 'Invalid input types' })
+    if (id.length > 100 || product.length > 300)
+      return res.status(400).json({ error: 'Input too long' })
+    if (!/^[A-Z0-9\-]+$/i.test(id))
+      return res.status(400).json({ error: 'Order ID may only contain letters, numbers, and hyphens' })
+    if (category && typeof category === 'string' && category.length > 50)
+      return res.status(400).json({ error: 'Category too long' })
+    if (season && !VALID_SEASONS.includes(season))
+      return res.status(400).json({ error: `Invalid season. Must be one of: ${VALID_SEASONS.join(', ')}` })
+    const deliveryDate = new Date(delivery)
+    if (isNaN(deliveryDate.getTime()))
+      return res.status(400).json({ error: 'Invalid delivery date' })
+    if (!asgns || !Array.isArray(asgns) || asgns.length === 0)
+      return res.status(400).json({ error: 'At least one assignment required' })
+    if (!mongoose.Types.ObjectId.isValid(buyerId)) return res.status(400).json({ error: 'Invalid buyer ID' })
+    const buyerCheck = await User.findById(buyerId, 'role isActive').lean()
+    if (!buyerCheck || buyerCheck.role !== 'buyer') return res.status(400).json({ error: 'Buyer not found' })
+    if (!buyerCheck.isActive) return res.status(400).json({ error: 'Buyer account is inactive' })
+
+    // Validate masterOrderId if provided: must exist and belong to the same buyer
+    if (masterOrderId) {
+      const mo = await MasterOrder.findById(masterOrderId, 'buyerId').lean()
+      if (!mo) return res.status(400).json({ error: `Master order "${masterOrderId}" not found` })
+      if (mo.buyerId.toString() !== buyerId) return res.status(400).json({ error: 'Master order does not belong to the selected buyer' })
+    }
+
+    // Validate each assignment has valid mid and qty
+    for (const a of asgns) {
+      if (!a.mid) return res.status(400).json({ error: 'Each assignment must have a manufacturer' })
+      const aqty = parseInt(a.qty, 10)
+      if (isNaN(aqty) || aqty < 1) return res.status(400).json({ error: 'Each assignment quantity must be a positive number' })
+      if (!mongoose.Types.ObjectId.isValid(a.mid)) return res.status(400).json({ error: `Invalid manufacturer ID: ${a.mid}` })
+    }
+
+    // Batch-fetch all manufacturer users in one query instead of N individual lookups
+    const mfrIds = asgns.map(a => a.mid)
+    const mfrUsers = await User.find({ _id: { $in: mfrIds } }, 'role isActive').lean()
+    const mfrMap = Object.fromEntries(mfrUsers.map(u => [u._id.toString(), u]))
+    for (const a of asgns) {
+      const mfrUser = mfrMap[a.mid]
+      if (!mfrUser || mfrUser.role !== 'manufacturer') return res.status(400).json({ error: `User ${a.mid} is not a manufacturer` })
+      if (!mfrUser.isActive) return res.status(400).json({ error: `Manufacturer ${a.mid} is inactive` })
+    }
+
+    // Validate sum of assignment quantities equals totalQty
+    const assignedTotal = asgns.reduce((sum, a) => sum + parseInt(a.qty, 10), 0)
+    if (assignedTotal !== parseInt(totalQty, 10)) {
+      return res.status(400).json({ error: `Assignment quantities (${assignedTotal}) must sum to total quantity (${totalQty})` })
+    }
+
+    // Dynamic stages: admin can define custom stage names, or fall back to defaults
+    const stages = (Array.isArray(customStages) && customStages.length > 0)
+      ? customStages.filter(s => typeof s === 'string' && s.trim()).map(s => s.trim().slice(0, 100))
+      : DEFAULT_STAGE_NAMES
+    if (stages.length === 0)
+      return res.status(400).json({ error: 'At least one production stage is required' })
+    if (stages.length > 50)
+      return res.status(400).json({ error: 'Too many stages (max 50)' })
+
+    const etas = stageEtas || stages.map(() => null)
+
+    const created = await Order.create({
+      _id: id, buyerId, product, category, season, totalQty, masterOrderId: masterOrderId || null,
+      delivery: new Date(delivery),
+      createdAt: createdAt ? new Date(createdAt) : undefined,
+      assignments: asgns.map((a, i) => ({
+        mfrId: a.mid, qty: a.qty, status: 'Processing',
+        sub: a.sub || `M${i + 1}`, note: '',
+        stages: stages.map((name, si) => ({ name, unitsDone: 0, totalUnits: a.qty, eta: etas[si] || null, note: '' })),
+      })),
+    })
+
+    const order = await Order.findById(created._id).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).lean()
+
+    res.status(201).json(enrichOrder(order))
+  } catch (err) {
+    if (err.code === 11000) return res.status(409).json({ error: 'Order ID already exists' })
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// PATCH /api/orders/:orderId/assignments/:mfrId  — update order-level status + note
+router.patch('/:orderId/assignments/:mfrId', requireAuth, updateLimiter, async (req, res) => {
+  try {
+    const { orderId, mfrId } = req.params
+    const { status, note } = req.body
+
+    if (!mongoose.Types.ObjectId.isValid(mfrId))
+      return res.status(400).json({ error: 'Invalid manufacturer ID' })
+    // BRD §3: Buyers cannot update production stages or status
+    if (req.user.role === 'buyer')
+      return res.status(403).json({ error: 'Buyers cannot update order status' })
+    if (req.user.role === 'manufacturer' && String(req.user.id) !== String(mfrId))
+      return res.status(403).json({ error: 'Forbidden' })
+    if (!status || !ORDER_STATUS_VALUES.includes(status))
+      return res.status(400).json({ error: `Invalid status. Must be one of: ${ORDER_STATUS_VALUES.join(', ')}` })
+    if (note !== undefined && note !== null && typeof note === 'string' && note.length > 1000)
+      return res.status(400).json({ error: 'Note too long (max 1000 characters)' })
+
+    const order = await Order.findOneAndUpdate(
+      { _id: orderId, 'assignments.mfrId': mfrId },
+      { $set: {
+        'assignments.$.status':    status,
+        'assignments.$.note':      note ?? '',
+        'assignments.$.updatedAt': new Date(),
+      }},
+      { new: true }
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).lean()
+
+    if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
+
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Status Updated',
+      detail: `${orderId}: assignment status → ${status}${note ? ' | ' + note.slice(0, 200) : ''}`,
+    })
+
+    res.json(enrichOrder(order))
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// PATCH /api/orders/:orderId/assignments/:mfrId/stages/:stageIndex — update one stage
+router.patch('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, updateLimiter, async (req, res) => {
+  try {
+    const { orderId, mfrId } = req.params
+    if (!mongoose.Types.ObjectId.isValid(mfrId))
+      return res.status(400).json({ error: 'Invalid manufacturer ID' })
+    const mfrObjectId = new mongoose.Types.ObjectId(mfrId)
+    const stageIndex = parseInt(req.params.stageIndex, 10)
+    const { unitsDone, note, eta, stageDate } = req.body
+
+    // BRD §3: Buyers cannot update production stages
+    if (req.user.role === 'buyer')
+      return res.status(403).json({ error: 'Buyers cannot update production stages' })
+    if (req.user.role === 'manufacturer' && String(req.user.id) !== String(mfrId))
+      return res.status(403).json({ error: 'Forbidden' })
+    // Validate unitsDone is a non-negative number
+    const parsedUnits = parseInt(unitsDone, 10)
+    if (isNaN(parsedUnits) || parsedUnits < 0)
+      return res.status(400).json({ error: 'unitsDone must be a non-negative number' })
+    if (note !== undefined && note !== null && typeof note === 'string' && note.length > 1000)
+      return res.status(400).json({ error: 'Note too long (max 1000 characters)' })
+
+    // Validate unitsDone does not exceed totalUnits for this assignment's stage
+    const existingOrder = await Order.findById(orderId).lean()
+    if (!existingOrder) return res.status(404).json({ error: 'Order not found' })
+    const existingAsgn = (existingOrder.assignments || []).find(a => a.mfrId?.toString() === mfrId)
+    if (!existingAsgn) return res.status(404).json({ error: 'Assignment not found' })
+
+    const stageCount = existingAsgn.stages?.length || 0
+    if (isNaN(stageIndex) || stageIndex < 0 || stageIndex >= stageCount)
+      return res.status(400).json({ error: `Invalid stage index (0–${stageCount - 1})` })
+
+    const totalUnits = existingAsgn.stages?.[stageIndex]?.totalUnits ?? 0
+    if (parsedUnits > totalUnits)
+      return res.status(400).json({ error: `unitsDone (${parsedUnits}) cannot exceed totalUnits (${totalUnits})` })
+
+    // Build the $set — always update the target stage
+    const setFields = {
+      [`assignments.$[asgn].stages.${stageIndex}.unitsDone`]:  parsedUnits,
+      [`assignments.$[asgn].stages.${stageIndex}.note`]:       note ?? '',
+      [`assignments.$[asgn].stages.${stageIndex}.eta`]:        eta  ?? null,
+      [`assignments.$[asgn].stages.${stageIndex}.stageDate`]:  stageDate ?? null,
+      'assignments.$[asgn].updatedAt': new Date(),
+    }
+
+    // Always reset all subsequent stages to 0 when updating a stage.
+    // Production is sequential — if you're working on stage N, stages N+1… cannot be ahead.
+    for (let i = stageIndex + 1; i < stageCount; i++) {
+      setFields[`assignments.$[asgn].stages.${i}.unitsDone`] = 0
+      setFields[`assignments.$[asgn].stages.${i}.note`] = ''
+    }
+
+    // NOTE: arrayFilters do NOT auto-cast strings → ObjectId, so we must pass the ObjectId
+    const order = await Order.findOneAndUpdate(
+      { _id: orderId, 'assignments.mfrId': mfrObjectId },
+      { $set: setFields },
+      { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }], new: true }
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).lean()
+
+    if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
+
+    const updatedAsgn = (order.assignments || []).find(a => {
+      const id = a.mfrId?._id?.toString() ?? a.mfrId?.toString()
+      return id === mfrId
+    })
+    const stageName = updatedAsgn?.stages?.[stageIndex]?.name || `Stage ${stageIndex + 1}`
+
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Stage Updated',
+      detail: `${orderId}: ${stageName} — ${parsedUnits}/${totalUnits} units by ${req.user.name}`,
+    })
+
+    res.json(enrichOrder(order))
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// PATCH /api/orders/:orderId/assignments/:mfrId/stages/:stageIndex/eta — update only the ETA for a stage
+router.patch('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
+  try {
+    const { orderId, mfrId } = req.params
+    if (!mongoose.Types.ObjectId.isValid(mfrId))
+      return res.status(400).json({ error: 'Invalid manufacturer ID' })
+    const mfrObjectId = new mongoose.Types.ObjectId(mfrId)
+    const stageIndex = parseInt(req.params.stageIndex, 10)
+    const { eta } = req.body
+
+    // Validate stageIndex against actual stage count
+    const existingOrder = await Order.findById(orderId).lean()
+    if (!existingOrder) return res.status(404).json({ error: 'Order not found' })
+    const existingAsgn = (existingOrder.assignments || []).find(a => a.mfrId?.toString() === mfrId)
+    if (!existingAsgn) return res.status(404).json({ error: 'Assignment not found' })
+    const stageCount = existingAsgn.stages?.length || 0
+    if (isNaN(stageIndex) || stageIndex < 0 || stageIndex >= stageCount)
+      return res.status(400).json({ error: `Invalid stage index (0–${stageCount - 1})` })
+
+    // Validate eta: must be null, 'NA', or a valid ISO date string
+    if (eta !== null && eta !== undefined && eta !== 'NA') {
+      const parsedEta = new Date(eta)
+      if (isNaN(parsedEta.getTime())) return res.status(400).json({ error: 'Invalid ETA — must be a date, "NA", or null' })
+    }
+
+    const setFields = {
+      [`assignments.$[asgn].stages.${stageIndex}.eta`]: eta ?? null,
+      'assignments.$[asgn].updatedAt': new Date(),
+    }
+
+    const order = await Order.findOneAndUpdate(
+      { _id: orderId, 'assignments.mfrId': mfrObjectId },
+      { $set: setFields },
+      { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }], new: true }
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).lean()
+
+    if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
+
+    const stageName = existingAsgn.stages?.[stageIndex]?.name || `Stage ${stageIndex + 1}`
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'ETA Adjusted',
+      detail: `${orderId}: Stage ${stageIndex + 1} (${stageName}) ETA → ${eta || 'none'}`,
+    })
+
+    res.json(enrichOrder(order))
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// PATCH /api/orders/:id — edit order top-level fields (admin only)
+router.patch('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
+  try {
+    const { product, category, season, totalQty, delivery } = req.body
+    const orderId = req.params.id
+
+    const existing = await Order.findById(orderId).lean()
+    if (!existing) return res.status(404).json({ error: 'Order not found' })
+
+    const updates = {}
+
+    if (product !== undefined) {
+      if (typeof product !== 'string' || !product.trim()) return res.status(400).json({ error: 'Product name is required' })
+      if (product.length > 300) return res.status(400).json({ error: 'Product name too long' })
+      updates.product = product.trim()
+    }
+
+    if (category !== undefined) {
+      if (typeof category === 'string' && category.length > 50) return res.status(400).json({ error: 'Category too long' })
+      updates.category = category
+    }
+
+    if (season !== undefined) {
+      if (!VALID_SEASONS.includes(season)) return res.status(400).json({ error: `Invalid season. Must be one of: ${VALID_SEASONS.join(', ')}` })
+      updates.season = season
+    }
+
+    if (totalQty !== undefined) {
+      const qty = parseInt(totalQty, 10)
+      if (isNaN(qty) || qty < 1) return res.status(400).json({ error: 'Total quantity must be a positive number' })
+      updates.totalQty = qty
+    }
+
+    if (delivery !== undefined) {
+      const d = new Date(delivery)
+      if (isNaN(d.getTime())) return res.status(400).json({ error: 'Invalid delivery date' })
+      updates.delivery = d
+    }
+
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No fields to update' })
+
+    const order = await Order.findByIdAndUpdate(
+      orderId,
+      { $set: updates },
+      { new: true }
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).lean()
+
+    if (!order) return res.status(404).json({ error: 'Order not found' })
+
+    const changedFields = Object.keys(updates).join(', ')
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Order Edited',
+      detail: `${orderId}: updated ${changedFields} by ${req.user.name}`,
+    })
+
+    res.json(enrichOrder(order))
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// DELETE /api/orders/:id — delete order (admin only)
+router.delete('/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const orderId = req.params.id
+    const order = await Order.findById(orderId).lean()
+    if (!order) return res.status(404).json({ error: 'Order not found' })
+
+    await Order.findByIdAndDelete(orderId)
+
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Order Deleted',
+      detail: `${orderId} (${order.product}) deleted by ${req.user.name}`,
+    })
+
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/orders/:id/escalate — buyer escalates an order to master admins
+router.post('/:id/escalate', requireAuth, escalationLimiter, async (req, res) => {
+  try {
+    if (req.user.role !== 'buyer')
+      return res.status(403).json({ error: 'Only buyers can escalate orders' })
+
+    const order = await Order.findById(req.params.id).lean()
+    if (!order) return res.status(404).json({ error: 'Order not found' })
+    if (String(order.buyerId) !== req.user.id)
+      return res.status(403).json({ error: 'Forbidden' })
+
+    const { reason } = req.body
+    if (!reason?.trim()) return res.status(400).json({ error: 'Escalation reason is required' })
+    if (reason.length > 1000) return res.status(400).json({ error: 'Escalation reason too long (max 1000 characters)' })
+
+    const masters = await User.find({ role: 'admin', adminType: 'master', isActive: true }, '_id email name')
+    if (masters.length === 0) return res.status(500).json({ error: 'No master admins available' })
+
+    const msg = `Escalation from ${req.user.name} (${req.user.company}): Order ${req.params.id} — ${reason.trim()}`
+
+    await Notification.insertMany(
+      masters.map(m => ({ toUser: m._id, type: 'alert', msg, orderId: req.params.id, isRead: false }))
+    )
+
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Order Escalated',
+      detail: `${req.user.name} escalated order ${req.params.id}: ${reason.trim()}`,
+    })
+
+    res.json({ ok: true, notified: masters.length })
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+export default router
