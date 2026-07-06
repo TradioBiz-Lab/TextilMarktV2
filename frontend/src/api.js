@@ -13,6 +13,11 @@ const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
   timeout: 30000,
   withCredentials: true, // sends the httpOnly cookie automatically
+  // Sent as text/plain (a CORS-simple content type) so browsers skip the OPTIONS
+  // preflight — Catalyst AppSail's edge doesn't add CORS headers to preflight
+  // responses, which blocks the real request. Body is still JSON underneath.
+  headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+  transformRequest: [data => JSON.stringify(data)],
 })
 
 api.interceptors.response.use(

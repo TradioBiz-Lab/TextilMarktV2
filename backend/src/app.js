@@ -96,7 +96,10 @@ app.use(rateLimit({
 }))
 
 // 14 MB ceiling: 10 MB file → ~13.4 MB base64 + headers
-app.use(express.json({ limit: '14mb' }))
+// Also parses text/plain — the frontend sends that content type to make requests
+// CORS-simple (skips the OPTIONS preflight, which Catalyst AppSail's edge doesn't
+// forward correctly) while the body itself is still JSON.
+app.use(express.json({ limit: '14mb', type: ['application/json', 'text/plain'] }))
 app.use(express.urlencoded({ extended: true, limit: '14mb' }))
 app.use(sanitizeBody)
 
