@@ -103,6 +103,31 @@ Remaining work is cleanup (credential rotation, old-stack decommission) — see 
   preset — no manual rewrite config needed (unlike Vercel's `vercel.json`).
 - ☑ Live at `textilmarktv2-yaybylkx.onslate.in`; login confirmed working end-to-end
   by the user (multiple accounts — master, buyer, manufacturer).
+- ☑ **Known limitation (unresolved, documented) — Slate always serves `index.html`
+  with `Cache-Control: public, max-age=31536000` (1 year), and this is NOT
+  controlled by the Console's Web Caching toggle.** Verified directly: disabling
+  Web Caching (Console → deployment → Configuration → General Settings → Cache
+  → Disable) and forcing a fresh redeploy did not change this header at all
+  (confirmed via `curl -I` before/after — `Last-Modified` updated, confirming
+  the new build was live, but `Cache-Control` stayed identical). That toggle
+  appears to only govern Zoho's own CDN edge-caching layer, not the
+  `Cache-Control` header the origin sends to browsers. No per-file or
+  per-file-type header override exists anywhere documented (no `_headers`-style
+  config, nothing in `slate-config.toml`, nothing via the CLI, nothing in the
+  Console beyond that toggle).
+  **Practical impact:** since `index.html` is the mutable entry point (it
+  references each deploy's hashed asset filenames), a returning visitor's
+  browser can keep serving a year-old cached `index.html` — and therefore an old
+  build — after any deploy, until that cache entry is evicted or the user hard-
+  refreshes. This is what made a PDF-viewer fix appear "not deployed" when it
+  had actually shipped.
+  **Decision: documented, not engineered around.** An in-app "new version
+  available, please refresh" check (polling a version marker with
+  `cache: 'no-store'`) would work but was explicitly declined as more scope than
+  warranted for this app's usage pattern — stale views are expected to be rare
+  and a manual hard-refresh is an acceptable workaround if hit. Revisit only if
+  this becomes a recurring real problem, or if Catalyst adds per-file cache
+  control.
 - ☐ Custom domain mapping (currently on the auto-generated `.onslate.in` subdomain).
 
 ---
