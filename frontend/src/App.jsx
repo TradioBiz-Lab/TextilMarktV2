@@ -111,7 +111,7 @@ function Inner() {
       if (view === 'certs') return <MfrCerts />
     }
     if (user.role === 'admin') {
-      if (view === 'dashboard') return <AdminDashboard onNavigate={navTo} />
+      if (view === 'dashboard') return <AdminDashboard onNavigate={navTo} onOpen={openOrder} />
       if (view === 'orders') return <AdminOrders onOpen={openOrder} initialStatus={ordersStatus} />
       if (view === 'order_detail' && selOid) return <AdminOrderDetail orderId={selOid} initialMid={selMid} onBack={() => navTo('orders')} />
       if (view === 'documents') return <AdminDocuments />

@@ -95,24 +95,34 @@ export const T = {
   sidebar: '#003B73', sidebarBorder: 'rgba(255,255,255,0.1)',
 }
 
-export const getToday = () => {
-  const d = new Date()
-  const yyyy = d.getFullYear()
-  const mm   = String(d.getMonth() + 1).padStart(2, '0')
-  const dd   = String(d.getDate()).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd}`
+// India Standard Time is a fixed UTC+5:30 offset (no DST) — the app's day
+// boundary (today/overdue/expiry) always ticks over at IST midnight, regardless
+// of the server's or browser's own local timezone.
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000
+
+// Whole-day index (safe for subtraction) for a plain 'YYYY-MM-DD' string or a
+// full ISO datetime string — reads the calendar-date component directly via
+// Date.UTC rather than round-tripping through the runtime's local timezone
+// (new Date(dateOnlyString) parses as UTC midnight; calling .setHours() on it
+// resets to LOCAL midnight, which silently shifts the date by a day in any
+// timezone behind UTC — this avoids that entirely).
+export const dayNumber = dateStr => {
+  if (!dateStr) return null
+  const [y, m, d] = dateStr.slice(0, 10).split('-').map(Number)
+  if (!y || !m || !d) return null
+  return Date.UTC(y, m - 1, d) / 86400000
 }
+
+// Today's date, anchored to India Standard Time.
+export const getToday = () => new Date(Date.now() + IST_OFFSET_MS).toISOString().slice(0, 10)
+
 export const isExpiringSoon = d => {
   if (!d) return false
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-  const exp = new Date(d); exp.setHours(0, 0, 0, 0)
-  const days = (exp - today) / 86400000
+  const days = dayNumber(d) - dayNumber(getToday())
   return days >= 0 && days <= 30
 }
 export const isExpired = d => {
   if (!d) return false
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-  const exp = new Date(d); exp.setHours(0, 0, 0, 0)
-  return exp < today
+  return dayNumber(d) - dayNumber(getToday()) < 0
 }
 export const fmtN = n => n?.toLocaleString?.() ?? n
