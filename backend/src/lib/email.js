@@ -237,7 +237,8 @@ export function emailCertExpiry({ to, certName, expiryDate, daysLeft, status }) 
 }
 
 export function emailSignupInquiry({ name, email, company, phone, role, message }) {
-  const TRADIO_EMAIL = process.env.TRADIO_CONTACT_EMAIL || 'Tradio.sourcing@tradiobiz.com'
+  const TRADIO_EMAIL = (process.env.TRADIO_CONTACT_EMAIL || 'Tradio.sourcing@tradiobiz.com')
+    .split(',').map(e => e.trim()).filter(Boolean)
   // The signup endpoint is public — every field here is attacker-controlled.
   const safeEmail = typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
     ? email.trim()
@@ -261,7 +262,8 @@ export function emailSignupInquiry({ name, email, company, phone, role, message 
 }
 
 export function emailBuyerDocumentReceived({ docName, docType, buyerName, buyerCompany, buyerEmail, orderId }) {
-  const TRADIO_EMAIL = process.env.TRADIO_CONTACT_EMAIL || 'Tradio.sourcing@tradiobiz.com'
+  const TRADIO_EMAIL = (process.env.TRADIO_CONTACT_EMAIL || 'Tradio.sourcing@tradiobiz.com')
+    .split(',').map(e => e.trim()).filter(Boolean)
   const safeBuyerEmail = typeof buyerEmail === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail.trim())
     ? buyerEmail.trim()
     : ''
