@@ -1,5 +1,9 @@
 import { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react'
 import { T, ST, DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired } from '../constants.js'
+import * as pdfjsLib from 'pdfjs-dist'
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
 // ── Convert a base64 data URL to an object URL ──
 // Desktop Chrome blocks navigation to top-level data: URLs (phishing mitigation)
@@ -11,14 +15,16 @@ const VIEWER_ALLOWED_MIME = new Set([
   'application/pdf', 'image/jpeg', 'image/jpg', 'image/png',
 ])
 
-export function dataUrlToBlobUrl(dataUrl) {
+// Shared parsing: data URL -> raw bytes + mimeType. Used both for the Blob/object-URL
+// path (images, downloads) and for feeding raw bytes directly to pdf.js.
+function dataUrlToBytes(dataUrl) {
   if (!dataUrl || typeof dataUrl !== 'string') return null
   const match = /^data:([^;,]+)(;base64)?,(.*)$/s.exec(dataUrl)
   if (!match) return null
   const mimeType = (match[1] || '').toLowerCase()
   // Reject anything that isn't an allowed mime — defense in depth against
   // a malicious data:text/html or data:image/svg+xml payload that would
-  // otherwise execute JS inside the viewer iframe.
+  // otherwise execute JS inside the viewer.
   if (!VIEWER_ALLOWED_MIME.has(mimeType)) return null
   const isBase64 = !!match[2]
   const payload = match[3]
@@ -31,12 +37,72 @@ export function dataUrlToBlobUrl(dataUrl) {
     } else {
       bytes = new TextEncoder().encode(decodeURIComponent(payload))
     }
-    const blob = new Blob([bytes], { type: mimeType })
-    const url = URL.createObjectURL(blob)
-    return { url, mimeType, revoke: () => URL.revokeObjectURL(url) }
+    return { bytes, mimeType }
   } catch {
     return null
   }
+}
+
+export function dataUrlToBlobUrl(dataUrl) {
+  const parsed = dataUrlToBytes(dataUrl)
+  if (!parsed) return null
+  const blob = new Blob([parsed.bytes], { type: parsed.mimeType })
+  const url = URL.createObjectURL(blob)
+  return { url, mimeType: parsed.mimeType, bytes: parsed.bytes, revoke: () => URL.revokeObjectURL(url) }
+}
+
+// Renders PDF bytes onto a <canvas> client-side via pdf.js — no iframe/sandbox
+// involved, so it sidesteps Chrome's native PDF viewer refusing to load inside a
+// sandboxed iframe (and the resulting blocked fallback-download behavior).
+function PdfPageViewer({ bytes, onReady }) {
+  const canvasRef = useRef(null)
+  const [pdf, setPdf] = useState(null)
+  const [pageNum, setPageNum] = useState(1)
+  const [numPages, setNumPages] = useState(0)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    // pdf.js's worker transfers (zero-copies) this buffer, detaching it — pass a
+    // fresh copy so a React StrictMode dev-mode remount doesn't reuse a detached one.
+    pdfjsLib.getDocument({ data: bytes.slice() }).promise
+      .then(doc => { if (!cancelled) { setPdf(doc); setNumPages(doc.numPages) } })
+      .catch(err => { if (!cancelled) { setError(err?.message || 'Failed to load PDF'); onReady?.() } })
+    return () => { cancelled = true }
+  }, [bytes])
+
+  useEffect(() => {
+    if (!pdf) return
+    let cancelled = false
+    pdf.getPage(pageNum).then(page => {
+      if (cancelled) return
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const viewport = page.getViewport({ scale: 1.4 })
+      canvas.width = viewport.width
+      canvas.height = viewport.height
+      const ctx = canvas.getContext('2d')
+      page.render({ canvasContext: ctx, viewport }).promise.then(() => { if (!cancelled) onReady?.() })
+    })
+    return () => { cancelled = true }
+  }, [pdf, pageNum])
+
+  if (error) return <div style={{ color: '#fca5a5', padding: 24, fontSize: 13 }}>⚠ {error}</div>
+
+  return (
+    <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 16, gap: 12 }}>
+      <canvas ref={canvasRef} style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.4)', maxWidth: '100%' }} />
+      {numPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#1e293b', padding: '6px 14px', borderRadius: 8, flexShrink: 0 }}>
+          <button onClick={() => setPageNum(p => Math.max(1, p - 1))} disabled={pageNum <= 1}
+            style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: pageNum <= 1 ? 'not-allowed' : 'pointer', opacity: pageNum <= 1 ? 0.4 : 1, fontSize: 13, fontFamily: 'inherit' }}>‹ Prev</button>
+          <span style={{ color: '#94a3b8', fontSize: 12 }}>Page {pageNum} of {numPages}</span>
+          <button onClick={() => setPageNum(p => Math.min(numPages, p + 1))} disabled={pageNum >= numPages}
+            style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: pageNum >= numPages ? 'not-allowed' : 'pointer', opacity: pageNum >= numPages ? 0.4 : 1, fontSize: 13, fontFamily: 'inherit' }}>Next ›</button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ── Toast system ─────────────────────────────────────────────────────────────
@@ -493,13 +559,9 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
               style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 4 }} />
           </div>
         ) : (
-          // Sandboxed: allow-scripts (browser's PDF viewer needs it) WITHOUT allow-same-origin,
-          // so a malicious payload cannot reach our parent-origin cookies/storage.
-          <iframe src={viewerBlob.url} title={doc.name}
-            sandbox="allow-scripts allow-popups"
-            referrerPolicy="no-referrer"
-            onLoad={() => setViewerLoading(false)}
-            style={{ flex: 1, border: 'none', width: '100%', minHeight: 0, display: viewerLoading ? 'none' : 'block' }} />
+          <div style={{ flex: 1, overflow: 'hidden', display: viewerLoading ? 'none' : 'flex', minHeight: 0 }}>
+            <PdfPageViewer bytes={viewerBlob.bytes} onReady={() => setViewerLoading(false)} />
+          </div>
         )
       )}
     </div>
@@ -661,11 +723,17 @@ export function MfrProfileLink({ mfrId, mfrName, docs, onGetData }) {
             </div>
           )}
           {viewerBlob && (
-            <iframe src={viewerBlob.url} title={`${mfrName} profile`}
-              sandbox="allow-scripts allow-popups"
-              referrerPolicy="no-referrer"
-              onLoad={() => setViewerLoading(false)}
-              style={{ flex: 1, border: 'none', width: '100%', minHeight: 0, display: viewerLoading ? 'none' : 'block' }} />
+            viewerBlob.mimeType.startsWith('image/') ? (
+              <div style={{ flex: 1, overflow: 'auto', display: viewerLoading ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                <img src={viewerBlob.url} alt={`${mfrName} profile`}
+                  onLoad={() => setViewerLoading(false)}
+                  style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 4 }} />
+              </div>
+            ) : (
+              <div style={{ flex: 1, overflow: 'hidden', display: viewerLoading ? 'none' : 'flex', minHeight: 0 }}>
+                <PdfPageViewer bytes={viewerBlob.bytes} onReady={() => setViewerLoading(false)} />
+              </div>
+            )
           )}
         </div>
       )}

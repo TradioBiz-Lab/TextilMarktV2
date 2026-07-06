@@ -6,152 +6,132 @@ MongoDB Atlas stays, but must be on the **Mumbai (ap-south-1)** region.
 
 **Status legend:** ☐ not started · ◐ in progress · ☑ done
 
+**Overall status: core migration complete.** Backend (AppSail) and frontend (Slate,
+GitHub-connected) are both live, wired together, and login/auth works end-to-end.
+Remaining work is cleanup (credential rotation, old-stack decommission) — see Phase 6.
+
 ---
 
-## Phase 0 — Prerequisites (human steps, before any code changes)
-
-These need a person in a browser — I can't drive OAuth/account flows.
+## Phase 0 — Prerequisites
 
 - ☑ **Zoho Catalyst account on the India DC** — logged in as `rajeev@tradiobiz.com`,
-  org "rajeev" (60049849796), project **TradioApp** confirmed on India DC
-  (`timezone: Asia/Kolkata` in `.catalystrc`).
-- ☑ **Confirm MongoDB Atlas cluster region.**
-  Confirmed: Mumbai (`ap-south-1`). No cluster migration needed.
-- ☑ **Create the "tradio" GitHub repo** — [TradioBiz-Lab/TextilMarktV2](https://github.com/TradioBiz-Lab/TextilMarktV2),
-  code pushed (see Phase 1).
-- ☑ **GitHub push access** — working via AnkitB-Tradio collaborator account.
-- ☑ **Install & authenticate the Catalyst CLI** — `zcatalyst-cli` v1.26.2 installed,
-  logged in as `rajeev@tradiobiz.com`. (Note: `catalyst login` and `catalyst init`
-  both use interactive arrow-key/list prompts that require a real terminal — Claude
-  cannot drive these directly; the human runs them, Claude verifies via
-  `catalyst whoami` / checking generated files afterward.)
-- ☐ **Connect Catalyst ↔ GitHub** (Catalyst console → GitHub integration → authorize
-  against the tradio GitHub account, scoped to `TradioBiz-Lab/TextilMarktV2`).
+  org "rajeev" (60049849796), project **TradioApp**, confirmed on India DC
+  (`timezone: Asia/Kolkata`).
+- ☑ **MongoDB Atlas cluster region** — confirmed Mumbai (`ap-south-1`).
+- ☑ **GitHub repo** — [TradioBiz-Lab/TextilMarktV2](https://github.com/TradioBiz-Lab/TextilMarktV2).
+- ☑ **Catalyst CLI** installed & authenticated (`zcatalyst-cli` v1.26.2).
+  Note: `catalyst login` / `catalyst init` / `catalyst deploy appsail` (interactive
+  name prompt) all use raw-mode terminal prompts that can't be driven by an agent —
+  a human runs these directly; Claude verifies via `catalyst whoami`, generated
+  files, or `--name`/other flags that bypass the prompt where possible.
+- ☑ **Catalyst ↔ GitHub connection** — done via the Slate "Deploy App" flow (console
+  already had `TradioBiz-Lab` org repos listed, no separate OAuth step needed).
 
 ---
 
-## Phase 1 — Get the code onto GitHub (tradio account)
+## Phase 1 — Code onto GitHub
 
-- ☐ `git init` in repo root
-- ☐ `.gitignore` review (already exists — verify `node_modules`, `.env`, build output
-  (`frontend/dist`) are excluded)
-- ☐ Initial commit
-- ☐ `git remote add origin https://github.com/<tradio-org>/<repo>.git`
-- ☐ Push (`git push -u origin main`) using the tradio PAT
+- ☑ `git init`, initial commit, pushed to `TradioBiz-Lab/TextilMarktV2` via the
+  `AnkitB-Tradio` collaborator account.
 
 ---
 
 ## Phase 2 — Scaffold Catalyst project structure
 
-- ☑ `catalyst init appsail --force` → created AppSail resource **"Textilmarkt"**
-  (scaffolded initially into a placeholder `appsail-nodejs/` folder with a hello-world
-  Express app).
-- ☑ Reconciled scaffold with existing backend — rather than keeping a separate
-  placeholder folder:
-  - `catalyst.json`'s `appsail[0].source` repointed from `appsail-nodejs` → `backend`
-  - Added `backend/app-config.json` (AppSail's required config: start command
-    `node src/app.js`, stack `node20`, memory 256MB — **stack version to be confirmed
-    against Catalyst console's supported list before deploy**)
-  - Patched `backend/src/app.js` PORT resolution to read
-    `X_ZOHO_CATALYST_LISTEN_PORT` (what AppSail actually injects) before falling back
-    to `PORT`/3001
-  - Deleted the placeholder `appsail-nodejs/` folder and `catalyst-debug.log`
-  - Added `.catalystrc` and `catalyst-debug.log` to `.gitignore` (machine-local CLI
-    state, not shared project config — same rationale as gitignoring `.vercel/`)
-- ☑ `catalyst init slate --force` → created Slate app **"textilmarkt"** (React + Vite
-  preset, auto-detected). **Gotcha hit twice**: `catalyst init` operates on the current
-  working directory — running it from `~` (home) or forgetting `cd` into the repo
-  scaffolds into the wrong place entirely. Always `pwd`-check before running
-  `catalyst init`/`project:use`.
-- ☑ Reconciled Slate scaffold with existing `frontend/` (same pattern as AppSail):
-  - `catalyst.json`'s `slate[0].source` repointed to `frontend`
-  - Copied the two files Slate needs into `frontend/`: `cli-config.json` (dev command)
-    and `.catalyst/slate-config.toml` (framework `react-vite`, install `npm install`,
-    build `npm run build`, build path `dist`, deployment `default`) — all match our
-    existing Vite config already, no changes needed there
-  - Deleted the placeholder `textilmarkt/` scaffold folder + `catalyst-debug.log`
-- ☑ Commit `catalyst.json`, `backend/app-config.json`, `frontend/cli-config.json`,
-  `frontend/.catalyst/slate-config.toml` to the repo
+- ☑ AppSail resource **"Textilmarkt"** created, repointed from the placeholder
+  `appsail-nodejs/` scaffold to the real `backend/` folder (`catalyst.json` →
+  `appsail[0].source: "backend"`).
+- ☑ `backend/app-config.json` added — start command `node src/app.js`, stack `node20`.
+- ☑ `backend/src/app.js` PORT resolution patched to read
+  `X_ZOHO_CATALYST_LISTEN_PORT` before falling back to `PORT`/3001.
+- ☑ Slate app scaffolded and repointed to `frontend/` the same way
+  (`frontend/cli-config.json`, `frontend/.catalyst/slate-config.toml`).
+- ☑ **Gotcha (hit twice):** `catalyst init`/`deploy` operate on the *current working
+  directory* — running from `~` instead of the repo root silently scaffolds into the
+  wrong place. Always `pwd`-check first.
 
 ---
 
 ## Phase 3 — Backend → AppSail
 
-- ☐ Confirm AppSail Node runtime version matches `backend/package.json` engines
-  (currently no `engines` pin — add one to match local Node version)
-- ☐ Add AppSail-required config (start command `node src/app.js`, port binding —
-  AppSail injects `PORT`, which `app.js` already reads via `process.env.PORT`)
-- ☐ Environment variables — move from `.env` (local only) into Catalyst's env var config:
-  - `JWT_SECRET`
-  - `JWT_EXPIRES_IN`
-  - `MONGO_DB_URI` (→ Mumbai Atlas connection string)
-  - `FRONTEND_URL` (→ new Slate domain, for CORS allow-list in `app.js`)
-  - `RESEND_API_KEY`
-  - `NODE_ENV=production`
-- ☐ Verify `trust proxy` setting (`app.js:86`) works correctly behind Catalyst's
-  reverse proxy — required for `express-rate-limit` keying by real client IP
-- ☐ **Rate limiting**: AppSail is a persistent process (unlike serverless Functions), so
-  `express-rate-limit`'s default in-memory store continues to work as-is — **no rework
-  needed** as long as AppSail doesn't horizontally scale to multiple instances. If AppSail
-  autoscaling is enabled, revisit (shared store needed).
-- ☐ Smoke-test `/api/health` against the deployed AppSail URL
-- ☐ Re-run through each route group manually (auth, orders, documents, users,
-  notifications, audit, ribbons, masterOrders, signup) against the new backend URL
+- ☑ Env vars set in Catalyst console: `MONGO_DB_URI`, `JWT_SECRET`, `JWT_EXPIRES_IN`,
+  `NODE_ENV=production`, `RESEND_API_KEY`, `FRONTEND_URL`, `EMAIL_FROM`.
+- ☑ `/api/health` returns `200 {"ok":true,"db":"connected"}`.
+- ☑ **Major gotcha — Atlas Network Access.** Atlas's IP allowlist only had two fixed
+  IPs whitelisted (from the original Render setup). Catalyst AppSail has no fixed
+  outbound IP, so every DB connection attempt hung/failed silently. **Fix:** added
+  `0.0.0.0/0` to Atlas's IP Access List. This is the standard approach for PaaS/
+  serverless backends without a static-IP add-on (same as Vercel/Render) — security
+  then relies on the DB user's password strength, not network-level restriction.
+- ☑ **Major gotcha — CORS preflight silently broken at the platform level.**
+  Catalyst AppSail's edge answers `OPTIONS` preflight requests itself with a bare
+  `200` and **no CORS headers**, before the request ever reaches our Express app's
+  own (correctly-configured) `cors` middleware. Real browsers require valid preflight
+  headers to proceed with the actual request; `curl` doesn't check CORS at all, which
+  made this very hard to isolate (every curl test "worked", every real-browser POST
+  failed with a generic `503`). Ruled out along the way: stale cookies, rate limiting,
+  API Gateway (confirmed via docs + console — only applies to Functions/Web Client,
+  not AppSail), HTTP/2 vs 1.1.
+  **Fix implemented:** [frontend/src/api.js](../frontend/src/api.js) sends all request
+  bodies as `Content-Type: text/plain` (a CORS-"simple" content type, so browsers skip
+  the preflight entirely) while still JSON-encoding the body; `backend/src/app.js`'s
+  `express.json()` now also parses `text/plain` bodies to match. This sidesteps the
+  platform bug entirely rather than depending on Catalyst to fix it.
+- ☑ Database was empty on first connect (fresh Atlas cluster never seeded) — inserted
+  the 6 demo users from `backend/src/db/seed.js` directly (users only, no sample
+  orders/documents, per explicit request) rather than running the full seed script.
+- ☑ Resend email — the hardcoded fallback `from` address (`noreply@textilmarkt.com`)
+  used an unverified domain, causing a 403 from Resend's API. Fixed via
+  `EMAIL_FROM=TextilMarkt <noreply@tradiobiz.com>` (an already-verified domain) — no
+  code change needed since `email.js` already reads this env var with a fallback.
+- ◐ `express-rate-limit`'s in-memory store works as-is (AppSail is a single persistent
+  process) — **revisit if AppSail autoscaling is ever enabled** (shared store needed).
 
 ---
 
-## Phase 4 — Frontend → Slate (or Web Client Hosting)
+## Phase 4 — Frontend → Slate
 
-- ☐ Update `frontend/src/api.js` `baseURL` — `VITE_API_URL` env var → new AppSail URL
-  (or relative `/api` if same-origin via Catalyst routing — **TBD, investigate during
-  setup whether Catalyst can route `/api/*` to AppSail under the same Slate domain**)
-- ☐ Build: `npm run build` → `frontend/dist`
-- ☐ Configure SPA fallback (all routes → `index.html`) — equivalent of
-  `frontend/vercel.json` rewrites, in Slate's config
-- ☐ Set up custom domain mapping (if a custom domain is in use) + SSL
-- ☐ Remove `frontend/vercel.json` once Slate config replaces it
-
----
-
-## Phase 5 — Cross-cutting: CORS & cookies
-
-- ☐ Update `ALLOWED_ORIGINS` / `FRONTEND_URL` in `backend/src/app.js` to the new Slate
-  domain
-- ☐ Re-verify cookie settings (`sameSite`, `secure`) in `routes/auth.js` —
-  if frontend and backend end up **same-origin** under Catalyst, `sameSite=lax` may be
-  usable instead of `none` (simplification, not required)
-- ☐ Test full login → session-restore → logout flow end-to-end on new domains
+- ☑ Deployed via CLI initially, then **migrated to a GitHub-connected Slate app**
+  (`textilmarktv2`, source `frontend/` in `TradioBiz-Lab/TextilMarktV2`, branch
+  `main`, Auto Deploy on) so future frontend changes deploy automatically on push.
+  The original CLI-deployed app and an unrelated legacy `textilmarktv1` (connected to
+  the old `TextilMarktV1` repo) were both deleted.
+- ☑ `VITE_API_URL` set to the AppSail URL (`.../api`) as a Slate app variable — Vite
+  bakes this in at build time, so it's set at deploy-config level, not in a committed
+  `.env`.
+- ☑ SPA fallback / build path (`dist`) auto-detected correctly by Slate's React+Vite
+  preset — no manual rewrite config needed (unlike Vercel's `vercel.json`).
+- ☑ Live at `textilmarktv2-yaybylkx.onslate.in`; login confirmed working end-to-end
+  by the user (multiple accounts — master, buyer, manufacturer).
+- ☐ Custom domain mapping (currently on the auto-generated `.onslate.in` subdomain).
 
 ---
 
-## Phase 6 — Cutover
+## Phase 5 — CORS & cookies
 
-- ☐ Run both old (Vercel/Render) and new (Catalyst) stacks in parallel briefly
-- ☐ Update DNS / public URLs to point at Catalyst
-- ☐ Monitor logs (Catalyst console) for the first 24–48h — watch for CORS errors,
-  rate-limit false positives, Mongo connection issues from new region
-- ☐ Decommission Render service
-- ☐ Decommission Vercel project
-
----
-
-## Open questions / decisions to confirm during setup
-
-1. **Slate vs. Web Client Hosting** — Slate is the richer option (custom domains, preview
-   deploys); Web Client Hosting docs explicitly say "suitable for basic apps." Default to
-   Slate unless CLI/console steers otherwise.
-2. **Same-origin routing** — can Catalyst serve the Slate frontend and AppSail backend
-   under one domain (`/api/*` → AppSail), simplifying CORS/cookies to same-site? Check
-   in Catalyst console once project is scaffolded.
-3. **AppSail autoscaling** — if enabled, rate-limiter stores need to move to a shared
-   backend (Catalyst Cache or similar). Default assumption: single instance, no change.
-4. **Atlas Mumbai migration** — if the current cluster isn't already in `ap-south-1`,
-   this becomes its own sub-plan (live migration, connection string rotation, downtime
-   window).
+- ☑ `FRONTEND_URL` in AppSail's env vars kept in sync with the live Slate URL (updated
+  when the GitHub-connected app replaced the CLI one).
+- ☑ CORS resolved via the `text/plain` preflight-avoidance trick (see Phase 3).
+- ☑ Full login → session flow verified working cross-origin (Slate domain ↔ AppSail
+  domain, different subdomains, cookies working via `withCredentials`).
 
 ---
 
-## Non-goals (explicitly out of scope for this migration)
+## Phase 6 — Cutover (remaining work)
+
+- ☐ **Rotate exposed credentials** — the Atlas DB user password and the Resend API
+  key were both visible in screenshots taken during debugging this session. Treat as
+  compromised: reset the Atlas password and regenerate the Resend key, then update
+  `MONGO_DB_URI`/`RESEND_API_KEY` in both `backend/.env` and the Catalyst console.
+  (`JWT_SECRET` was also exposed twice but has already been regenerated fresh.)
+- ☐ Custom domain mapping for the Slate app (optional).
+- ☐ Monitor Catalyst logs for a few days under real usage.
+- ☐ Decommission the Render service.
+- ☐ Decommission the Vercel project.
+
+---
+
+## Non-goals (unchanged)
 
 - No rewrite of MongoDB models/queries — Mongoose + Atlas unchanged structurally.
 - No change to auth scheme (custom JWT/bcrypt) — Catalyst Authentication not adopted.
