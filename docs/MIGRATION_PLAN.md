@@ -12,19 +12,21 @@ MongoDB Atlas stays, but must be on the **Mumbai (ap-south-1)** region.
 
 These need a person in a browser — I can't drive OAuth/account flows.
 
-- ☐ **Confirm/create the Zoho Catalyst account on the India DC.**
-  The DC is chosen at signup and is **irreversible**. If an existing Zoho account is on
-  US/EU, a fresh `.in` account is needed.
-- ☐ **Confirm MongoDB Atlas cluster region.**
-  Must be Mumbai (`ap-south-1`). If it's not, plan a live migration to a Mumbai cluster
-  (separate sub-task — Atlas supports cross-region live migration with minimal downtime).
-- ☐ **Create the "tradio" GitHub repo** (empty, no README) under the tradio account/org.
-- ☐ **Generate a GitHub Personal Access Token** for the tradio account (classic or
-  fine-grained, `repo` scope) — used once to push, then stored in macOS keychain.
-- ☐ **Install & authenticate the Catalyst CLI**: `npm install -g zcatalyst-cli`, then
-  `catalyst login` (browser auth against the IN-DC account).
+- ☑ **Zoho Catalyst account on the India DC** — logged in as `rajeev@tradiobiz.com`,
+  org "rajeev" (60049849796), project **TradioApp** confirmed on India DC
+  (`timezone: Asia/Kolkata` in `.catalystrc`).
+- ☑ **Confirm MongoDB Atlas cluster region.**
+  Confirmed: Mumbai (`ap-south-1`). No cluster migration needed.
+- ☑ **Create the "tradio" GitHub repo** — [TradioBiz-Lab/TextilMarktV2](https://github.com/TradioBiz-Lab/TextilMarktV2),
+  code pushed (see Phase 1).
+- ☑ **GitHub push access** — working via AnkitB-Tradio collaborator account.
+- ☑ **Install & authenticate the Catalyst CLI** — `zcatalyst-cli` v1.26.2 installed,
+  logged in as `rajeev@tradiobiz.com`. (Note: `catalyst login` and `catalyst init`
+  both use interactive arrow-key/list prompts that require a real terminal — Claude
+  cannot drive these directly; the human runs them, Claude verifies via
+  `catalyst whoami` / checking generated files afterward.)
 - ☐ **Connect Catalyst ↔ GitHub** (Catalyst console → GitHub integration → authorize
-  against the tradio GitHub account, scoped to the new repo).
+  against the tradio GitHub account, scoped to `TradioBiz-Lab/TextilMarktV2`).
 
 ---
 
@@ -41,12 +43,35 @@ These need a person in a browser — I can't drive OAuth/account flows.
 
 ## Phase 2 — Scaffold Catalyst project structure
 
-- ☐ `catalyst init` in repo root → choose:
-  - **AppSail** resource for the backend
-  - **Slate** (or Web Client Hosting, TBD after CLI confirms Slate availability on IN DC)
-    for the frontend
-- ☐ Review generated `catalyst.json` / project config; reconcile with existing
-  `backend/` and `frontend/` folder layout (avoid restructuring more than necessary)
+- ☑ `catalyst init appsail --force` → created AppSail resource **"Textilmarkt"**
+  (scaffolded initially into a placeholder `appsail-nodejs/` folder with a hello-world
+  Express app).
+- ☑ Reconciled scaffold with existing backend — rather than keeping a separate
+  placeholder folder:
+  - `catalyst.json`'s `appsail[0].source` repointed from `appsail-nodejs` → `backend`
+  - Added `backend/app-config.json` (AppSail's required config: start command
+    `node src/app.js`, stack `node20`, memory 256MB — **stack version to be confirmed
+    against Catalyst console's supported list before deploy**)
+  - Patched `backend/src/app.js` PORT resolution to read
+    `X_ZOHO_CATALYST_LISTEN_PORT` (what AppSail actually injects) before falling back
+    to `PORT`/3001
+  - Deleted the placeholder `appsail-nodejs/` folder and `catalyst-debug.log`
+  - Added `.catalystrc` and `catalyst-debug.log` to `.gitignore` (machine-local CLI
+    state, not shared project config — same rationale as gitignoring `.vercel/`)
+- ☑ `catalyst init slate --force` → created Slate app **"textilmarkt"** (React + Vite
+  preset, auto-detected). **Gotcha hit twice**: `catalyst init` operates on the current
+  working directory — running it from `~` (home) or forgetting `cd` into the repo
+  scaffolds into the wrong place entirely. Always `pwd`-check before running
+  `catalyst init`/`project:use`.
+- ☑ Reconciled Slate scaffold with existing `frontend/` (same pattern as AppSail):
+  - `catalyst.json`'s `slate[0].source` repointed to `frontend`
+  - Copied the two files Slate needs into `frontend/`: `cli-config.json` (dev command)
+    and `.catalyst/slate-config.toml` (framework `react-vite`, install `npm install`,
+    build `npm run build`, build path `dist`, deployment `default`) — all match our
+    existing Vite config already, no changes needed there
+  - Deleted the placeholder `textilmarkt/` scaffold folder + `catalyst-debug.log`
+- ☑ Commit `catalyst.json`, `backend/app-config.json`, `frontend/cli-config.json`,
+  `frontend/.catalyst/slate-config.toml` to the repo
 
 ---
 

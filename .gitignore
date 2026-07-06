@@ -58,6 +58,10 @@ Thumbs.db
 # ── Claude Code ───────────────────────────────────────────
 .claude/
 
+# ── Zoho Catalyst (local CLI state — machine-specific project binding) ──
+.catalystrc
+catalyst-debug.log
+
 # ── Misc ──────────────────────────────────────────────────
 *.local
 docs/Final BRD-V1.pdf

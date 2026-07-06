@@ -1,0 +1,14 @@
+{
+  "appsail": [
+    {
+      "source": "backend",
+      "name": "Textilmarkt"
+    }
+  ],
+  "slate": [
+    {
+      "name": "textilmarkt",
+      "source": "frontend"
+    }
+  ]
+}

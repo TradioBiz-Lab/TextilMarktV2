@@ -194,7 +194,8 @@ process.on('uncaughtException', (err) => {
 })
 
 // ── Start ────────────────────────────────────────────────────────────────────
-const PORT = parseInt(process.env.PORT, 10) || 3001
+// Catalyst AppSail injects the port via X_ZOHO_CATALYST_LISTEN_PORT rather than PORT
+const PORT = parseInt(process.env.X_ZOHO_CATALYST_LISTEN_PORT || process.env.PORT, 10) || 3001
 
 connectDB()
   .then(() => {
