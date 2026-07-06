@@ -1,9 +1,12 @@
 import { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react'
 import { T, ST, DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired } from '../constants.js'
 import * as pdfjsLib from 'pdfjs-dist'
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+// Imported as a Vite worker (not `?url`) so the build emits a plain .js chunk —
+// Zoho Catalyst Slate serves .mjs assets as application/octet-stream with
+// nosniff, which makes Chrome refuse to execute it as a module worker.
+import PdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker'
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+pdfjsLib.GlobalWorkerOptions.workerPort = new PdfWorker()
 
 // ── Convert a base64 data URL to an object URL ──
 // Desktop Chrome blocks navigation to top-level data: URLs (phishing mitigation)
