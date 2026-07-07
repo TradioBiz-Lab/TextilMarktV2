@@ -93,13 +93,20 @@ export async function sendEmail({ to, subject, html }) {
     }
     return null
   }
-  try {
-    const result = await resend.emails.send({ from: FROM, to: Array.isArray(to) ? to : [to], subject, html })
-    return result
-  } catch (err) {
-    console.error(`[Email failed] To: ${to}, Subject: ${subject}`, err.message)
-    return null
+  // Send one Resend API call per recipient rather than one call with multiple
+  // "to" addresses — a single multi-recipient send was failing outright, and
+  // sending individually also means one bad address can't block the others.
+  const recipients = Array.isArray(to) ? to : [to]
+  const results = []
+  for (const recipient of recipients) {
+    try {
+      results.push(await resend.emails.send({ from: FROM, to: [recipient], subject, html }))
+    } catch (err) {
+      console.error(`[Email failed] To: ${recipient}, Subject: ${subject}`, err.message)
+      results.push(null)
+    }
   }
+  return recipients.length === 1 ? results[0] : results
 }
 
 // ── Email templates ─────────────────────────────────────────────────────────
