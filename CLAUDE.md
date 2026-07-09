@@ -41,8 +41,9 @@ Backend requires a `.env` in `backend/` with at minimum `JWT_SECRET` and `MONGO_
 - **Auth**: custom JWT (httpOnly cookie `tradio_token`) + bcrypt. No third-party auth provider.
 - **Email**: Resend (optional — silently skipped if `RESEND_API_KEY` unset).
 - **Hosting**: migrated from Vercel/Render to **Zoho Catalyst** (India DC) — frontend on
-  **Slate** (GitHub-connected, auto-deploy on push to `main`), backend on **AppSail**. See
-  `docs/MIGRATION_PLAN.md` for full history/status of this migration.
+  **Slate** (GitHub-connected, auto-deploy on push to `main`), backend on **AppSail**
+  (manual deploy only — see Architecture notes below). See `docs/MIGRATION_PLAN.md`
+  (closed/historical) for the full migration write-up.
 
 ## Repo layout
 ```
@@ -93,6 +94,17 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   runs a single process today. If AppSail autoscaling is ever enabled, both need a shared/
   DB-backed store — track this as one combined item, not two, since the fix is the same shape
   for both.
+- **AppSail does not auto-deploy on git push, unlike Slate.** Every backend change needs a
+  manual `catalyst deploy --only appsail` from a machine with the CLI authenticated (check
+  with `catalyst whoami`) — pushing to `main` alone does nothing for the backend. GitHub
+  auto-deploy for AppSail is possible only via a separate **Catalyst Pipelines** setup (its
+  own YAML config + console pipeline + git connection), which isn't set up today.
+- **There is no separate "Production" Catalyst environment for this project** — only
+  "Development" exists, and it's the one actually serving live traffic (confirmed via
+  `.catalystrc`: `"project_type": "Live"` on the Development env). The console's
+  "Deploy to Production" button does not mean "push the current build live" — it starts
+  first-time setup of a brand-new environment, a real one-way infrastructure/billing change.
+  Don't click it expecting a routine promote.
 
 ## Domain model essentials
 - **Order** (`backend/src/models/Order.js`) uses a custom string `_id`
@@ -112,8 +124,11 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
 - JWT invalidated on password change via `passwordChangedAt` check
 - Request logging redacts password/Authorization fields
 - 14 MB JSON body limit (10 MB file → ~13.4 MB base64)
-- Document viewer iframes use `sandbox="allow-scripts allow-popups"` deliberately without
-  `allow-same-origin`, so a malicious uploaded payload can't reach parent-origin cookies/storage.
+- PDF documents render client-side via `pdf.js` onto a `<canvas>` (`frontend/src/components/ui.jsx`)
+  rather than an iframe — Chrome's native PDF viewer refuses to load inside a sandboxed iframe
+  lacking `allow-same-origin`, and adding that permission back would reintroduce a real
+  `allow-scripts` + `allow-same-origin` sandbox-escape risk for uploaded files. Images (JPG/PNG)
+  still render via a plain `<img>`.
 
 ## Conventions / gotchas for future work
 - `category` on Order is free-text (not enum) — don't add enum validation back.

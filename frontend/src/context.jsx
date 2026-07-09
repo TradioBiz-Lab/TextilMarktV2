@@ -404,6 +404,35 @@ export function AppProvider({ children }) {
     setOrders(o)
   }, [])
 
+  const bulkCreateOrders = useCallback(async (masterOrderId, rows) => {
+    const result = await ordersApi.bulkCreate(masterOrderId, rows)
+
+    // The bulk response only returns lightweight per-row results (not full
+    // enriched order docs) — refetch so newly-created orders show up in state.
+    if (result.created > 0) {
+      await refreshOrders()
+    }
+
+    const mo = masterOrders.find(m => m.id === masterOrderId)
+    if (result.created > 0 && mo) {
+      await pushNotif(mo.buyerId, 'order', `${result.created} new order${result.created !== 1 ? 's' : ''} created under Master Order ${masterOrderId}`)
+
+      // One summary notification per distinct manufacturer across successfully-created rows
+      const successRows = new Set(result.results.filter(r => r.success).map(r => r.row))
+      const mfrIds = new Set()
+      rows.forEach((row, i) => {
+        if (!successRows.has(i)) return
+        ;(row.assignments || []).forEach(a => mfrIds.add(a.mid))
+      })
+      for (const mid of mfrIds) {
+        await pushNotif(mid, 'order', `You were assigned to new orders under Master Order ${masterOrderId}`)
+      }
+    }
+
+    await addAudit('Bulk Order Upload', `${result.created} created, ${result.failed} failed under ${masterOrderId}`)
+    return result
+  }, [masterOrders, pushNotif, addAudit, refreshOrders])
+
   const getDocData = useCallback(async (id) => {
     if (docDataCache.current[id]) return docDataCache.current[id]
     const data = await documentsApi.getData(id)
@@ -443,7 +472,7 @@ export function AppProvider({ children }) {
     <AppContext.Provider value={{
       currentUser, users, orders, docs, notifs, audit, loading, loadError, unread, ribbons, masterOrders,
       login, logout,
-      updateStage, updateAssignment, uploadDoc, createOrder, createMasterOrder,
+      updateStage, updateAssignment, uploadDoc, createOrder, bulkCreateOrders, createMasterOrder,
       editOrder, deleteOrder,
       createUser, updateUser, toggleUser, resetUserPw,
       markAllRead, markOneRead, getDocData, addAudit, pushNotif,

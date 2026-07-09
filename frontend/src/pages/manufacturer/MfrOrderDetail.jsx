@@ -185,7 +185,10 @@ export function MfrOrderDetail({ orderId, onBack }) {
                 <div style={{ width: `${modalPct()}%`, height: '100%', background: modalPct() >= 100 ? T.success : T.primary, borderRadius: 6, transition: 'width 0.2s' }} />
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-                {stages[stageIdx]?.eta && <span style={{ fontSize: 11, color: T.info }}>ETA: {fmtDate(stages[stageIdx].eta)}</span>}
+                <FlexRow gap={10}>
+                  {stages[stageIdx]?.startDate && stages[stageIdx].startDate !== 'NA' && <span style={{ fontSize: 11, color: T.info }}>Start: {fmtDate(stages[stageIdx].startDate)}</span>}
+                  {stages[stageIdx]?.eta && <span style={{ fontSize: 11, color: T.info }}>ETA: {fmtDate(stages[stageIdx].eta)}</span>}
+                </FlexRow>
                 <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{modalPct()}%</span>
               </div>
             </div>
@@ -397,7 +400,12 @@ export function MfrOrderDetail({ orderId, onBack }) {
                         <div style={{ background: '#f1f5f9', borderRadius: 4, height: 6, overflow: 'hidden' }}>
                           <div style={{ width: `${pct}%`, height: '100%', background: done ? T.success : T.primary, borderRadius: 4, transition: 'width 0.3s' }} />
                         </div>
-                        {s.eta && <div style={{ fontSize: 10, color: isLate ? T.danger : T.textLight, marginTop: 3 }}>ETA: {fmtDate(s.eta)}</div>}
+                        {(s.startDate || s.eta) && (
+                          <div style={{ fontSize: 10, color: isLate ? T.danger : T.textLight, marginTop: 3 }}>
+                            {s.startDate && s.startDate !== 'NA' && <>Start: {fmtDate(s.startDate)}  </>}
+                            {s.eta && <>ETA: {fmtDate(s.eta)}</>}
+                          </div>
+                        )}
                       </div>
 
                       {/* Stage date */}

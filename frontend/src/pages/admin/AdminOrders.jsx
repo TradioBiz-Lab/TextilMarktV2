@@ -4,6 +4,7 @@ import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input,
 import { useApp } from '../../context.jsx'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
+import { BulkUploadCsvPanel } from './BulkUploadCsvPanel.jsx'
 
 function fmtDate(d) {
   if (!d) return '—'
@@ -28,9 +29,10 @@ export function AdminOrders({ onOpen, initialStatus }) {
 
   // ── Create Order state ──
   const [showC, setShowC] = useState(false)
+  const [mode, setMode] = useState('single') // 'single' | 'bulk' — bulk only available once a master order is selected
   const [f, setF] = useState({ masterOrderId: '', buyerId: '', product: '', category: '', customCategory: '', season: 'SS26', totalQty: '', delivery: '' })
   const [mfrs, setMfrs] = useState([{ _key: 1, mid: '', qty: '' }])
-  const [stages, setStages] = useState(DEFAULT_STAGE_NAMES.map((name, i) => ({ _key: i + 1, name, eta: '' })))
+  const [stages, setStages] = useState(DEFAULT_STAGE_NAMES.map((name, i) => ({ _key: i + 1, name, startDate: '', eta: '' })))
   const [poFile, setPoFile] = useState(null)
   const [poErr, setPoErr] = useState('')
   const [tpFile, setTpFile] = useState(null)
@@ -96,12 +98,13 @@ export function AdminOrders({ onOpen, initialStatus }) {
   const resetForm = () => {
     setF({ masterOrderId: '', buyerId: '', product: '', category: '', customCategory: '', season: 'SS26', totalQty: '', delivery: '' })
     setMfrs([{ mid: '', qty: '' }])
-    setStages(DEFAULT_STAGE_NAMES.map(name => ({ name, eta: '' })))
+    setStages(DEFAULT_STAGE_NAMES.map(name => ({ name, startDate: '', eta: '' })))
     setPoFile(null)
     setPoErr('')
     setTpFile(null)
     setTpErr('')
     setCreateErr('')
+    setMode('single')
   }
 
   const resetMoForm = () => {
@@ -136,6 +139,23 @@ export function AdminOrders({ onOpen, initialStatus }) {
       setCreateErr('At least one production stage is required')
       return
     }
+    const missingStartDate = validStages.find(s => !s.startDate || !s.startDate.trim())
+    if (missingStartDate) {
+      setCreateErr(`Stage "${missingStartDate.name}" is missing a start date — enter a date or type "NA"`)
+      return
+    }
+    const missingEta = validStages.find(s => !s.eta || !s.eta.trim())
+    if (missingEta) {
+      setCreateErr(`Stage "${missingEta.name}" is missing an end date — enter a date or type "NA"`)
+      return
+    }
+    const badOrder = validStages.find(s =>
+      s.startDate !== 'NA' && s.eta !== 'NA' && new Date(s.startDate) > new Date(s.eta)
+    )
+    if (badOrder) {
+      setCreateErr(`Stage "${badOrder.name}" — start date must be on or before its end date`)
+      return
+    }
 
     setSaving(true)
     try {
@@ -147,6 +167,7 @@ export function AdminOrders({ onOpen, initialStatus }) {
         createdAt: new Date().toISOString().slice(0, 10),
         assignments: validMfrs.map((a, i) => ({ mid: a.mid, qty: Math.floor(Number(a.qty)), sub: `M${i + 1}` })),
         stageNames: validStages.map(s => s.name.trim()),
+        stageStartDates: validStages.map(s => s.startDate === 'NA' ? 'NA' : s.startDate || null),
         stageEtas: validStages.map(s => s.eta === 'NA' ? 'NA' : s.eta || null),
       }
       await createOrder(orderData)
@@ -264,6 +285,28 @@ export function AdminOrders({ onOpen, initialStatus }) {
                 ) : null
               })()}
 
+              {/* Single Order / Bulk Upload CSV mode toggle — only once a master order is selected */}
+              {f.masterOrderId && (
+                <div role="tablist" style={{ display: 'flex', gap: 2, background: '#f1f5f9', padding: 3, borderRadius: 9, width: 'fit-content' }}>
+                  <button type="button" role="tab" aria-selected={mode === 'single'} onClick={() => setMode('single')}
+                    style={{ background: mode === 'single' ? '#fff' : 'transparent', border: 'none', cursor: 'pointer', padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, color: mode === 'single' ? T.text : T.textMuted, fontFamily: 'inherit', boxShadow: mode === 'single' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none' }}>
+                    Single Order
+                  </button>
+                  <button type="button" role="tab" aria-selected={mode === 'bulk'} onClick={() => setMode('bulk')}
+                    style={{ background: mode === 'bulk' ? '#fff' : 'transparent', border: 'none', cursor: 'pointer', padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, color: mode === 'bulk' ? T.text : T.textMuted, fontFamily: 'inherit', boxShadow: mode === 'bulk' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none' }}>
+                    📄 Bulk Upload CSV
+                  </button>
+                </div>
+              )}
+
+              {mode === 'bulk' && f.masterOrderId ? (
+                <BulkUploadCsvPanel
+                  masterOrder={masterOrders.find(m => m.id === f.masterOrderId)}
+                  onDone={() => { setShowC(false); resetForm() }}
+                />
+              ) : (
+              <>
+
               {/* Product fields */}
               <div className="form-grid-2">
                 <Input label="Product Name *" value={f.product} onChange={e => setF({ ...f, product: e.target.value })} placeholder="e.g. Classic T-Shirt" />
@@ -338,13 +381,13 @@ export function AdminOrders({ onOpen, initialStatus }) {
                 <FlexRow justify="space-between" style={{ marginBottom: 8 }}>
                   <label style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Production Stages *</label>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => setStages(DEFAULT_STAGE_NAMES.map(name => ({ name, eta: '' })))} style={{ fontSize: 11, color: T.textMuted, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit', textDecoration: 'underline' }}>Load Defaults</button>
-                    <button onClick={() => setStages([...stages, { name: '', eta: '' }])} style={{ fontSize: 12, color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}>+ Add Stage</button>
+                    <button onClick={() => setStages(DEFAULT_STAGE_NAMES.map(name => ({ name, startDate: '', eta: '' })))} style={{ fontSize: 11, color: T.textMuted, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit', textDecoration: 'underline' }}>Load Defaults</button>
+                    <button onClick={() => setStages([...stages, { name: '', startDate: '', eta: '' }])} style={{ fontSize: 12, color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}>+ Add Stage</button>
                   </div>
                 </FlexRow>
                 <div style={{ background: '#f8fafc', borderRadius: 10, border: `1px solid ${T.border}`, padding: '12px 14px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                    <span style={{ fontSize: 11, color: T.textLight }}>Define the production stages for this order. ETA is optional — type "NA" if not relevant.</span>
+                    <span style={{ fontSize: 11, color: T.textLight }}>Define the production stages for this order. Every stage needs a start and end date — type "NA" only if it genuinely doesn't apply.</span>
                     <span style={{ fontSize: 11, fontWeight: 700, color: stages.filter(s => s.name.trim()).length > 0 ? T.success : T.danger }}>{stages.filter(s => s.name.trim()).length} stage{stages.filter(s => s.name.trim()).length !== 1 ? 's' : ''}</span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -358,11 +401,18 @@ export function AdminOrders({ onOpen, initialStatus }) {
                           style={{ flex: 1, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', color: T.text, fontWeight: 600 }}
                         />
                         <input
+                          type={s.startDate === 'NA' ? 'text' : 'date'}
+                          value={s.startDate}
+                          onChange={e => setStages(stages.map((x, j) => j === i ? { ...x, startDate: e.target.value } : x))}
+                          placeholder="Start date"
+                          style={{ width: 130, border: `1px solid ${s.name.trim() && !s.startDate.trim() ? T.danger : T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit', color: s.startDate === 'NA' ? T.textLight : T.text }}
+                        />
+                        <input
                           type={s.eta === 'NA' ? 'text' : 'date'}
                           value={s.eta}
                           onChange={e => setStages(stages.map((x, j) => j === i ? { ...x, eta: e.target.value } : x))}
-                          placeholder="ETA"
-                          style={{ width: 130, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit', color: s.eta === 'NA' ? T.textLight : T.text }}
+                          placeholder="End date"
+                          style={{ width: 130, border: `1px solid ${s.name.trim() && !s.eta.trim() ? T.danger : T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit', color: s.eta === 'NA' ? T.textLight : T.text }}
                         />
                         {i > 0 && (
                           <button onClick={() => { const n = [...stages]; [n[i-1], n[i]] = [n[i], n[i-1]]; setStages(n) }}
@@ -405,8 +455,10 @@ export function AdminOrders({ onOpen, initialStatus }) {
               {createErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}>⚠ {createErr}</div>}
               <FlexRow justify="flex-end" gap={8} style={{ marginTop: 4 }}>
                 <Btn variant="secondary" onClick={() => setShowC(false)}>Cancel</Btn>
-                <Btn disabled={!f.masterOrderId || !f.buyerId || !f.product || !f.totalQty || !f.delivery || !mfrs[0].mid || !mfrs[0].qty || saving} onClick={create}>{saving ? 'Creating…' : 'Create Order'}</Btn>
+                <Btn disabled={!f.masterOrderId || !f.buyerId || !f.product || !f.totalQty || !f.delivery || !mfrs[0].mid || !mfrs[0].qty || stages.filter(s => s.name.trim()).some(s => !s.startDate.trim() || !s.eta.trim()) || saving} onClick={create}>{saving ? 'Creating…' : 'Create Order'}</Btn>
               </FlexRow>
+              </>
+              )}
             </div>
           </div>
         </div>

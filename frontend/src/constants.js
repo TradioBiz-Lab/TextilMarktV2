@@ -7,6 +7,7 @@ export const ALL_ST = [...STATUS_FLOW, 'On Hold', 'Delayed']
 
 // Default production stages — admin can define custom stages per order
 export const DEFAULT_STAGE_NAMES = [
+  'Lab Dip Approval', 'PP Sample',
   'Material Sourcing', 'Knitting', 'Dyeing', 'Processing',
   'Cutting', 'Stitching', 'Finishing', 'Packing', 'QC', 'Dispatch',
 ]

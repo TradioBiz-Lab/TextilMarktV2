@@ -51,10 +51,12 @@ export const ordersApi = {
     api.patch(`/orders/${orderId}/assignments/${mfrId}`, { status, note }),
   updateStage: (orderId, mfrId, stageIndex, data) =>
     api.patch(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}`, data),
-  updateStageEta: (orderId, mfrId, stageIndex, eta) =>
-    api.patch(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}/eta`, { eta }),
+  updateStageDates: (orderId, mfrId, stageIndex, dates) =>
+    api.patch(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}/eta`, dates),
   escalate: (id, reason) =>
     api.post(`/orders/${id}/escalate`, { reason }),
+  bulkCreate: (masterOrderId, rows) =>
+    api.post('/orders/bulk', { masterOrderId, rows }),
 }
 
 export const documentsApi = {

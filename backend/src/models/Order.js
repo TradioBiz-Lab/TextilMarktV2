@@ -2,6 +2,7 @@ import mongoose from 'mongoose'
 
 // Default production stages — admin can override per order at creation time
 export const DEFAULT_STAGE_NAMES = [
+  'Lab Dip Approval', 'PP Sample',
   'Material Sourcing', 'Knitting', 'Dyeing', 'Processing',
   'Cutting', 'Stitching', 'Finishing', 'Packing', 'QC', 'Dispatch',
 ]
@@ -18,7 +19,8 @@ const stageSchema = new mongoose.Schema({
   name:       { type: String, required: true },
   unitsDone:  { type: Number, default: 0, min: 0 },
   totalUnits: { type: Number, required: true, min: 0 },
-  eta:        { type: String, default: null }, // ISO date string, 'NA', or null
+  startDate:  { type: String, default: null }, // ISO date string or 'NA' — required at creation (routes/orders.js), null only on legacy pre-existing data
+  eta:        { type: String, default: null }, // ISO date string or 'NA' — required at creation (routes/orders.js), null only on legacy pre-existing data. Planned end date.
   stageDate:  { type: String, default: null }, // date set by manufacturer for this stage
   note:       { type: String, default: '' },
 }, { _id: false })

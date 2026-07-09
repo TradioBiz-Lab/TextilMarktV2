@@ -107,10 +107,11 @@ Uses a human-readable custom string `_id` for traceability.
 ### Embedded: `stages` (per assignment)
 
 Dynamic array — count and names are set per-order at creation time (admin can define
-custom stage names, or fall back to the default 10):
+custom stage names, or fall back to the default 12):
 
 ```
 DEFAULT_STAGE_NAMES = [
+  "Lab Dip Approval", "PP Sample",
   "Material Sourcing", "Knitting", "Dyeing", "Processing",
   "Cutting", "Stitching", "Finishing", "Packing", "QC", "Dispatch",
 ]
@@ -121,11 +122,16 @@ DEFAULT_STAGE_NAMES = [
   name:       String   required — stage display name
   unitsDone:  Number   default: 0, min: 0 — cannot exceed totalUnits
   totalUnits: Number   required, min: 0 — typically equals the assignment's qty
-  eta:        String | null   ISO date string, "NA", or null
-  stageDate:  String | null   date set by manufacturer when working this stage
+  startDate:  String | null   ISO date string or "NA" — required at creation (planned start)
+  eta:        String | null   ISO date string or "NA" — required at creation (planned end)
+  stageDate:  String | null   date set by manufacturer when working this stage (actual, not planned)
   note:       String   default: "" — latest free-text note for this stage
 }
 ```
+
+**Required at creation:** both `startDate` and `eta` must be an explicit date or the literal
+`"NA"` — never blank/null — enforced in `validateAndCreateOrder` (`backend/src/routes/orders.js`).
+When both are real (non-`"NA"`) dates, `startDate` must be on or before `eta`.
 
 **Sequential progress rule:** when stage *N* is updated, all stages *N+1…* are reset to
 `unitsDone: 0, note: ""` — production is treated as strictly sequential, you cannot be

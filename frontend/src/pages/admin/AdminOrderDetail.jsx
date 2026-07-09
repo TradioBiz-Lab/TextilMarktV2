@@ -40,10 +40,11 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   const [sgUnits, setSgUnits] = useState('')
   const [sgNote, setSgNote] = useState('')
 
-  // ETA adjustment modal
+  // Stage dates (start/end) adjustment modal
   const [showEta, setShowEta] = useState(false)
   const [etaTarget, setEtaTarget] = useState(null) // mfrId
-  const [etaValues, setEtaValues] = useState([]) // array of 10 ETA strings
+  const [etaValues, setEtaValues] = useState([]) // array of end-date strings
+  const [startValues, setStartValues] = useState([]) // array of start-date strings
 
   // Doc upload modal
   const [showUp, setShowUp] = useState(false)
@@ -86,11 +87,14 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
 
   const resetUpload = () => { setUf({ type: 'PO', name: '', issuer: 'Tradio', issueDate: new Date().toISOString().slice(0, 10), expiryDate: '' }); setFileData(null); setFileErr('') }
 
-  // ── ETA Adjustment ──
+  // ── Stage Dates Adjustment ──
+  const dateToInput = d => d === 'NA' ? 'NA' : (d ? new Date(d).toISOString().slice(0, 10) : '')
+
   const openEtaAdjust = (mfrId) => {
     const asgn = order.assignments.find(a => String(a.mid) === String(mfrId))
     setEtaTarget(mfrId)
-    setEtaValues((asgn?.stages || []).map(s => s.eta === 'NA' ? 'NA' : (s.eta ? new Date(s.eta).toISOString().slice(0, 10) : '')))
+    setStartValues((asgn?.stages || []).map(s => dateToInput(s.startDate)))
+    setEtaValues((asgn?.stages || []).map(s => dateToInput(s.eta)))
     setShowEta(true)
   }
 
@@ -102,22 +106,27 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
       let changed = false
       for (let i = 0; i < stageCount; i++) {
         const stage = asgn?.stages?.[i]
-        const oldEta = stage?.eta === 'NA' ? 'NA' : (stage?.eta ? new Date(stage.eta).toISOString().slice(0, 10) : '')
-        if (etaValues[i] !== oldEta) {
-          const newEta = etaValues[i] === 'NA' ? 'NA' : etaValues[i] || null
-          await ordersApi.updateStageEta(order.id, etaTarget, i, newEta)
+        const oldStart = dateToInput(stage?.startDate)
+        const oldEta = dateToInput(stage?.eta)
+        const startChanged = startValues[i] !== oldStart
+        const etaChanged = etaValues[i] !== oldEta
+        if (startChanged || etaChanged) {
+          const dates = {}
+          if (startChanged) dates.startDate = startValues[i] === 'NA' ? 'NA' : startValues[i] || null
+          if (etaChanged) dates.eta = etaValues[i] === 'NA' ? 'NA' : etaValues[i] || null
+          await ordersApi.updateStageDates(order.id, etaTarget, i, dates)
           changed = true
         }
       }
       if (changed) {
         await refreshOrders()
-        toast('ETAs updated successfully', 'success')
+        toast('Stage dates updated successfully', 'success')
       } else {
-        toast('No ETA changes to save', 'info')
+        toast('No date changes to save', 'info')
       }
       setShowEta(false)
-    } catch {
-      toast('Failed to update ETAs', 'error')
+    } catch (err) {
+      toast(err?.message || 'Failed to update stage dates', 'error')
     } finally { setSaving(false) }
   }
 
@@ -373,6 +382,9 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                 <div style={{ height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden', marginBottom: 6 }}>
                   <div style={{ height: 6, background: T.primary, borderRadius: 3, width: `${currentStageData.totalUnits > 0 ? (currentStageData.unitsDone / currentStageData.totalUnits) * 100 : 0}%`, transition: 'width 0.3s' }} />
                 </div>
+                {currentStageData.startDate && currentStageData.startDate !== 'NA' && (
+                  <div style={{ fontSize: 11, color: T.textMuted }}>Start: {fmtDate(currentStageData.startDate)}</div>
+                )}
                 {currentStageData.eta && currentStageData.eta !== 'NA' && (
                   <div style={{ fontSize: 11, color: T.textMuted }}>ETA: {fmtDate(currentStageData.eta)}</div>
                 )}
@@ -414,21 +426,28 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
         </Modal>
       )}
 
-      {/* ── ETA Adjustment Modal ── */}
+      {/* ── Stage Dates Adjustment Modal ── */}
       {showEta && etaTarget && (
-        <Modal title="Adjust Stage ETAs" subtitle="Update estimated completion dates for each production stage" size="lg" onClose={() => setShowEta(false)}>
-          <Alert type="info" style={{ marginBottom: 14 }}>Adjust ETAs for delayed stages. Changes are logged in the audit trail.</Alert>
+        <Modal title="Adjust Stage Dates" subtitle="Update planned start and end dates for each production stage" size="lg" onClose={() => setShowEta(false)}>
+          <Alert type="info" style={{ marginBottom: 14 }}>Adjust dates for delayed stages. Changes are logged in the audit trail.</Alert>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ background: '#f8fafc', borderRadius: 10, border: `1px solid ${T.border}`, padding: '12px 14px' }}>
-              <div className="grid-responsive-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {(order.assignments.find(a => String(a.mid) === String(etaTarget))?.stages || []).map((s, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 12, fontWeight: 600, color: T.text, minWidth: 110 }}>{i + 1}. {s.name}</span>
                     <input
+                      type={startValues[i] === 'NA' ? 'text' : 'date'}
+                      value={startValues[i]}
+                      onChange={e => setStartValues(prev => prev.map((v, j) => j === i ? e.target.value : v))}
+                      placeholder="NA or start date"
+                      style={{ flex: 1, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: startValues[i] === 'NA' ? T.textLight : T.text }}
+                    />
+                    <input
                       type={etaValues[i] === 'NA' ? 'text' : 'date'}
                       value={etaValues[i]}
                       onChange={e => setEtaValues(prev => prev.map((v, j) => j === i ? e.target.value : v))}
-                      placeholder="NA or date"
+                      placeholder="NA or end date"
                       style={{ flex: 1, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: etaValues[i] === 'NA' ? T.textLight : T.text }}
                     />
                   </div>
@@ -437,7 +456,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
             </div>
             <FlexRow justify="flex-end" gap={8}>
               <Btn variant="secondary" onClick={() => setShowEta(false)}>Cancel</Btn>
-              <Btn disabled={saving} onClick={submitEtaAdjust}>{saving ? 'Saving…' : 'Update ETAs'}</Btn>
+              <Btn disabled={saving} onClick={submitEtaAdjust}>{saving ? 'Saving…' : 'Update Dates'}</Btn>
             </FlexRow>
           </div>
         </Modal>
@@ -630,6 +649,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                           const done = pct >= 100
                           const isLate = s.eta && s.eta !== 'NA' && new Date(s.eta) < new Date() && !done
                           const etaStr = s.eta === 'NA' ? 'N/A' : s.eta ? fmtDate(s.eta) : '—'
+                          const startStr = s.startDate === 'NA' ? 'N/A' : s.startDate ? fmtDate(s.startDate) : '—'
                           const stageDocs = STAGE_DOC_MAP[i] || [{ v: 'compliance_cert', l: 'Evidence Document' }]
                           const uploadedStageDocs = orderDocs.filter(d => d.stageIndex === i && String(d.mfrId || '') === String(a.mid))
                           return (
@@ -647,6 +667,9 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
                                 <span style={{ fontSize: 10, color: isLate ? T.danger : T.textMuted, fontWeight: isLate ? 700 : 400 }}>
                                   ETA: {etaStr}
+                                </span>
+                                <span style={{ fontSize: 10, color: T.textMuted }}>
+                                  Start: {startStr}
                                 </span>
                                 <span style={{ fontSize: 10, color: T.textMuted }}>
                                   {s.unitsDone}/{s.totalUnits} units

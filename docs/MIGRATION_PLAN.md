@@ -1,4 +1,4 @@
-# Migration Plan: Vercel + Render → Zoho Catalyst (India DC)
+# Migration Plan: Vercel + Render → Zoho Catalyst (India DC) — CLOSED
 
 **Goal:** Move the frontend off Vercel and the backend off Render onto Zoho Catalyst,
 running on Catalyst's **India (IN)** data center, for data-residency compliance.
@@ -6,9 +6,14 @@ MongoDB Atlas stays, but must be on the **Mumbai (ap-south-1)** region.
 
 **Status legend:** ☐ not started · ◐ in progress · ☑ done
 
-**Overall status: core migration complete.** Backend (AppSail) and frontend (Slate,
-GitHub-connected) are both live, wired together, and login/auth works end-to-end.
-Remaining work is cleanup (credential rotation, old-stack decommission) — see Phase 6.
+**Migration complete — this document is closed.** Backend (AppSail) and frontend
+(Slate, GitHub-connected) are both live on Catalyst's India DC, wired together, and
+verified working end-to-end (login/auth across all three roles, orders, documents,
+email). This file is kept as a historical record of the migration itself; ongoing
+Catalyst-specific quirks and gotchas now live in the root `CLAUDE.md` instead.
+Leftover follow-up items (credential rotation, custom domain, decommissioning the
+old stack) are tracked in Phase 6 below — none of them block calling the migration
+done.
 
 ---
 
@@ -86,6 +91,23 @@ Remaining work is cleanup (credential rotation, old-stack decommission) — see 
   code change needed since `email.js` already reads this env var with a fallback.
 - ◐ `express-rate-limit`'s in-memory store works as-is (AppSail is a single persistent
   process) — **revisit if AppSail autoscaling is ever enabled** (shared store needed).
+- ☑ **AppSail has no auto-deploy on git push, unlike Slate.** Confirmed via the
+  Serverless → AppSail console page — the `Textilmarkt` AppSail entry shows no
+  "Github" source tag (Slate's does), and pushing a backend commit to `main` never
+  updated it. Every backend change needs a manual `catalyst deploy --only appsail`
+  from a machine with the CLI authenticated (`catalyst whoami` → `rajeev@tradiobiz.com`
+  as of this writing). GitHub auto-deploy for AppSail is possible only via a separate
+  **Catalyst Pipelines** setup (its own YAML config + console pipeline + git
+  connection) — not enabled today, and not something to assume exists.
+- ☑ **This project has no separate "Production" Catalyst environment.** Only
+  "Development" exists for `TradioApp` (confirmed via `.catalystrc` —
+  `"project_type": "Live"` on the Development env — and via the console's own
+  "Deploy to Production" flow, which said Production "has not been enabled for
+  your project yet"). **Development is what's actually serving live traffic.**
+  Don't click "Deploy to Production" in the console expecting it to promote the
+  current build — it instead starts first-time setup of a brand-new environment,
+  a real one-way infrastructure change with its own config/billing implications,
+  not a routine push-live action.
 
 ---
 
@@ -142,7 +164,7 @@ Remaining work is cleanup (credential rotation, old-stack decommission) — see 
 
 ---
 
-## Phase 6 — Cutover (remaining work)
+## Phase 6 — Post-migration follow-ups (non-blocking)
 
 - ☐ **Rotate exposed credentials** — the Atlas DB user password and the Resend API
   key were both visible in screenshots taken during debugging this session. Treat as
