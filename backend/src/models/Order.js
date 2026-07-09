@@ -47,7 +47,7 @@ const orderSchema = new mongoose.Schema({
   season:   { type: String, enum: SEASONS },
   totalQty: { type: Number, required: true, min: 1 },
   delivery: { type: Date, required: true },
-  imageDataUrl: { type: String, default: null }, // base64 data URL — uploaded photo, capped small (see MAX_PRODUCT_PHOTO_SIZE)
+  imageDataUrl: { type: String, default: null }, // base64 data URL — uploaded photo, capped at 1MB (see MAX_PRODUCT_PHOTO_SIZE)
   imageUrl:     { type: String, default: null, trim: true }, // optional external link fallback, e.g. a pasted public URL
   assignments: [assignmentSchema],
 }, { timestamps: true })

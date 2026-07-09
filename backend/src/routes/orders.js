@@ -10,7 +10,7 @@ import { DEFAULT_STAGE_NAMES, ORDER_STATUS_VALUES }  from '../models/Order.js'
 
 // Categories are now free-text — no validation needed
 const VALID_SEASONS    = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
-const MAX_PRODUCT_PHOTO_SIZE = 300 * 1024 // 300KB raw — reference thumbnail, not full-res
+const MAX_PRODUCT_PHOTO_SIZE = 1024 * 1024 // 1MB raw — reference thumbnail, not full-res
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 // Email triggers for orders are intentionally suppressed — order activity is portal-notifications only
 
@@ -226,7 +226,7 @@ async function validateAndCreateOrder({ id, buyerId, product, category, season, 
   if (imageDataUrl) {
     const m = /^data:(image\/jpeg|image\/jpg|image\/png);base64,(.+)$/.exec(imageDataUrl)
     if (!m) return { ok: false, error: 'Photo must be a JPEG or PNG image' }
-    if (m[2].length * 0.75 > MAX_PRODUCT_PHOTO_SIZE) return { ok: false, error: 'Photo too large — keep it under 300KB' }
+    if (m[2].length * 0.75 > MAX_PRODUCT_PHOTO_SIZE) return { ok: false, error: 'Photo too large — keep it under 1MB' }
   }
   if (imageUrl) {
     if (imageUrl.trim().length > 2000) return { ok: false, error: 'Image URL too long' }
@@ -603,7 +603,7 @@ router.patch('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) 
       if (nextDataUrl) {
         const m = /^data:(image\/jpeg|image\/jpg|image\/png);base64,(.+)$/.exec(nextDataUrl)
         if (!m) return res.status(400).json({ error: 'Photo must be a JPEG or PNG image' })
-        if (m[2].length * 0.75 > MAX_PRODUCT_PHOTO_SIZE) return res.status(400).json({ error: 'Photo too large — keep it under 300KB' })
+        if (m[2].length * 0.75 > MAX_PRODUCT_PHOTO_SIZE) return res.status(400).json({ error: 'Photo too large — keep it under 1MB' })
       }
       if (nextUrl) {
         if (nextUrl.trim().length > 2000) return res.status(400).json({ error: 'Image URL too long' })
