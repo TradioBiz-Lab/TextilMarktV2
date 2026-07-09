@@ -57,7 +57,7 @@ router.post('/', requireAuth, createNotifLimiter, async (req, res) => {
 })
 
 // PATCH /api/notifications/:id/read — mark a single notification as read
-router.patch('/:id/read', requireAuth, async (req, res) => {
+router.post('/:id/read', requireAuth, async (req, res) => {
   try {
     const notif = await Notification.findOneAndUpdate(
       { _id: req.params.id, toUser: req.user.id },
@@ -73,7 +73,7 @@ router.patch('/:id/read', requireAuth, async (req, res) => {
 })
 
 // PATCH /api/notifications/mark-all-read
-router.patch('/mark-all-read', requireAuth, async (req, res) => {
+router.post('/mark-all-read', requireAuth, async (req, res) => {
   try {
     await Notification.updateMany({ toUser: req.user.id, isRead: false }, { $set: { isRead: true } })
     res.json({ ok: true })

@@ -89,7 +89,7 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
 })
 
 // PATCH /api/ribbons/:id — update a ribbon (admin only)
-router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
+router.post('/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { message, type, audience, isActive, expiresAt } = req.body
     const update = {}
@@ -126,7 +126,7 @@ router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
 })
 
 // DELETE /api/ribbons/:id — delete a ribbon (admin only)
-router.delete('/:id', requireAuth, requireAdmin, async (req, res) => {
+router.post('/:id/delete', requireAuth, requireAdmin, async (req, res) => {
   try {
     const ribbon = await Ribbon.findByIdAndDelete(req.params.id).lean()
     if (!ribbon) return res.status(404).json({ error: 'Ribbon not found' })

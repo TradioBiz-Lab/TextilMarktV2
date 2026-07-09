@@ -102,7 +102,7 @@ router.post('/', requireAuth, requireMaster, createUserLimiter, async (req, res)
 })
 
 // PATCH /api/users/:id (edit user details — master admin only)
-router.patch('/:id', requireAuth, requireMaster, async (req, res) => {
+router.post('/:id', requireAuth, requireMaster, async (req, res) => {
   try {
     const { name, email, phone } = req.body
     const user = await User.findById(req.params.id)
@@ -138,7 +138,7 @@ router.patch('/:id', requireAuth, requireMaster, async (req, res) => {
 })
 
 // PATCH /api/users/:id/toggle
-router.patch('/:id/toggle', requireAuth, requireMaster, async (req, res) => {
+router.post('/:id/toggle', requireAuth, requireMaster, async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
     if (!user) return res.status(404).json({ error: 'User not found' })
@@ -154,7 +154,7 @@ router.patch('/:id/toggle', requireAuth, requireMaster, async (req, res) => {
 })
 
 // PATCH /api/users/:id/reset-password
-router.patch('/:id/reset-password', requireAuth, requireMaster, async (req, res) => {
+router.post('/:id/reset-password', requireAuth, requireMaster, async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
     if (!user) return res.status(404).json({ error: 'User not found' })

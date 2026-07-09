@@ -45,14 +45,14 @@ export const ordersApi = {
   list: () => api.get('/orders'),
   get: id => api.get(`/orders/${id}`),
   create: data => api.post('/orders', data),
-  update: (id, data) => api.patch(`/orders/${id}`, data),
-  delete: id => api.delete(`/orders/${id}`),
+  update: (id, data) => api.post(`/orders/${id}`, data),
+  delete: id => api.post(`/orders/${id}/delete`),
   updateAssignment: (orderId, mfrId, status, note) =>
-    api.patch(`/orders/${orderId}/assignments/${mfrId}`, { status, note }),
+    api.post(`/orders/${orderId}/assignments/${mfrId}`, { status, note }),
   updateStage: (orderId, mfrId, stageIndex, data) =>
-    api.patch(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}`, data),
+    api.post(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}`, data),
   updateStageDates: (orderId, mfrId, stageIndex, dates) =>
-    api.patch(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}/eta`, dates),
+    api.post(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}/eta`, dates),
   escalate: (id, reason) =>
     api.post(`/orders/${id}/escalate`, { reason }),
   bulkCreate: (masterOrderId, rows) =>
@@ -69,16 +69,16 @@ export const documentsApi = {
 export const usersApi = {
   list: () => api.get('/users'),
   create: data => api.post('/users', data),
-  update: (id, data) => api.patch(`/users/${id}`, data),
-  toggle: id => api.patch(`/users/${id}/toggle`),
-  resetPassword: id => api.patch(`/users/${id}/reset-password`),
+  update: (id, data) => api.post(`/users/${id}`, data),
+  toggle: id => api.post(`/users/${id}/toggle`),
+  resetPassword: id => api.post(`/users/${id}/reset-password`),
 }
 
 export const notificationsApi = {
   list: () => api.get('/notifications'),
   create: data => api.post('/notifications', data),
-  markAllRead: () => api.patch('/notifications/mark-all-read'),
-  markOneRead: id => api.patch(`/notifications/${id}/read`),
+  markAllRead: () => api.post('/notifications/mark-all-read'),
+  markOneRead: id => api.post(`/notifications/${id}/read`),
 }
 
 export const auditApi = {
@@ -90,8 +90,8 @@ export const ribbonsApi = {
   list: () => api.get('/ribbons'),
   listAll: () => api.get('/ribbons/all'),
   create: data => api.post('/ribbons', data),
-  update: (id, data) => api.patch(`/ribbons/${id}`, data),
-  remove: id => api.delete(`/ribbons/${id}`),
+  update: (id, data) => api.post(`/ribbons/${id}`, data),
+  remove: id => api.post(`/ribbons/${id}/delete`),
 }
 
 export const masterOrdersApi = {

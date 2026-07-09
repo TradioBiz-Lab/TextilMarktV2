@@ -341,7 +341,7 @@ router.post('/bulk', requireAuth, requireAdmin, bulkOrderLimiter, async (req, re
 })
 
 // PATCH /api/orders/:orderId/assignments/:mfrId  — update order-level status + note
-router.patch('/:orderId/assignments/:mfrId', requireAuth, updateLimiter, async (req, res) => {
+router.post('/:orderId/assignments/:mfrId', requireAuth, updateLimiter, async (req, res) => {
   try {
     const { orderId, mfrId } = req.params
     const { status, note } = req.body
@@ -384,7 +384,7 @@ router.patch('/:orderId/assignments/:mfrId', requireAuth, updateLimiter, async (
 })
 
 // PATCH /api/orders/:orderId/assignments/:mfrId/stages/:stageIndex — update one stage
-router.patch('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, updateLimiter, async (req, res) => {
+router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, updateLimiter, async (req, res) => {
   try {
     const { orderId, mfrId } = req.params
     if (!mongoose.Types.ObjectId.isValid(mfrId))
@@ -475,7 +475,7 @@ router.patch('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upd
 // of `eta`/`startDate` in the body — only the fields actually present get updated, so a
 // partial update never silently nulls out the other date (both are required, never blank,
 // once an order is created).
-router.patch('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
+router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
   try {
     const { orderId, mfrId } = req.params
     if (!mongoose.Types.ObjectId.isValid(mfrId))
@@ -556,7 +556,7 @@ router.patch('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth,
 })
 
 // PATCH /api/orders/:id — edit order top-level fields (admin only)
-router.patch('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
+router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
   try {
     const { product, category, season, totalQty, delivery, imageDataUrl, imageUrl } = req.body
     const orderId = req.params.id
@@ -639,7 +639,7 @@ router.patch('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) 
 })
 
 // DELETE /api/orders/:id — delete order (admin only)
-router.delete('/:id', requireAuth, requireAdmin, async (req, res) => {
+router.post('/:id/delete', requireAuth, requireAdmin, async (req, res) => {
   try {
     const orderId = req.params.id
     const order = await Order.findById(orderId).lean()
