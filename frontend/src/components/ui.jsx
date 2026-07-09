@@ -436,6 +436,29 @@ export function FileUpload({ file, onFile, error, onError }) {
   )
 }
 
+// Small product-photo thumbnail with graceful fallback — used everywhere product
+// info is displayed (buyer/admin/manufacturer). size="sm" = list-row (32px),
+// size="lg" = detail-page header (96px). Missing url or broken image -> placeholder icon.
+export function ProductThumb({ order, size = 'sm', onClick }) {
+  const [broken, setBroken] = useState(false)
+  const url = order?.imageDataUrl || order?.imageUrl
+  const dim = size === 'lg' ? 112 : 48
+  const showImg = url && !broken
+  return (
+    <div
+      onClick={onClick}
+      title={onClick ? (showImg ? 'Change photo' : 'Add photo') : undefined}
+      style={{ width: dim, height: dim, borderRadius: size === 'lg' ? 12 : 6, overflow: 'hidden', flexShrink: 0, background: '#f1f5f9', border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: onClick ? 'pointer' : undefined }}
+    >
+      {showImg ? (
+        <img src={url} alt="" onError={() => setBroken(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      ) : (
+        <span style={{ fontSize: size === 'lg' ? 32 : 20, color: T.textLight }}>🖼</span>
+      )}
+    </div>
+  )
+}
+
 const fmtShort = d => {
   if (!d) return '—'
   const dt = new Date(d)

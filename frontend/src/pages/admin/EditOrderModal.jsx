@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { T, SEASONS, CATEGORIES } from '../../constants.js'
-import { Btn, FlexRow, Input, Select } from '../../components/ui.jsx'
+import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload, ProductThumb } from '../../components/ui.jsx'
 
 export function EditOrderModal({ order, onClose, onSave }) {
   const [f, setF] = useState({
@@ -10,6 +10,10 @@ export function EditOrderModal({ order, onClose, onSave }) {
     totalQty: order.totalQty != null ? String(order.totalQty) : '',
     delivery: order.delivery ? new Date(order.delivery).toISOString().slice(0, 10) : '',
   })
+  const hasExistingPhoto = !!(order.imageDataUrl || order.imageUrl)
+  const [photoFile, setPhotoFile] = useState(null)
+  const [photoErr, setPhotoErr] = useState('')
+  const [clearPhoto, setClearPhoto] = useState(false)
   const [err, setErr] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -28,6 +32,14 @@ export function EditOrderModal({ order, onClose, onSave }) {
       season: f.season || undefined,
       totalQty: qty,
       delivery: f.delivery,
+    }
+    if (clearPhoto) {
+      payload.imageDataUrl = null
+      payload.imageUrl = null
+    } else if (photoFile) {
+      const p = fileUploadPayload(photoFile)
+      payload.imageDataUrl = p.dataUrl || null
+      payload.imageUrl = p.externalUrl || null
     }
 
     setSaving(true)
@@ -62,6 +74,18 @@ export function EditOrderModal({ order, onClose, onSave }) {
             onChange={set('product')}
             placeholder="e.g. Classic T-Shirt"
           />
+
+          <div>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Product Photo (optional)</label>
+            {hasExistingPhoto && !photoFile && !clearPhoto ? (
+              <FlexRow gap={10}>
+                <ProductThumb order={order} size="sm" />
+                <Btn variant="secondary" size="sm" onClick={() => setClearPhoto(true)}>Remove photo</Btn>
+              </FlexRow>
+            ) : (
+              <FileUpload file={photoFile} onFile={f => { setPhotoFile(f); setPhotoErr(''); setClearPhoto(false) }} error={photoErr} onError={setPhotoErr} />
+            )}
+          </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>

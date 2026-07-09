@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { T, CATEGORIES, SEASONS, DEFAULT_STAGE_NAMES, ORDER_STATUSES } from '../../constants.js'
-import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, FileUpload, LoadingScreen, useToast, fileUploadPayload } from '../../components/ui.jsx'
+import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, FileUpload, LoadingScreen, useToast, fileUploadPayload, ProductThumb } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
@@ -22,6 +22,12 @@ export function AdminOrders({ onOpen, initialStatus }) {
   const [sfilt, setSfilt] = useState(initialStatus || 'All')
   const [sortCol, setSortCol] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
+  const [collapsedGroups, setCollapsedGroups] = useState(() => new Set())
+  const toggleGroup = moId => setCollapsedGroups(prev => {
+    const next = new Set(prev)
+    next.has(moId) ? next.delete(moId) : next.add(moId)
+    return next
+  })
 
   // ── Edit / Delete modal state ──
   const [editTarget, setEditTarget] = useState(null)
@@ -37,6 +43,8 @@ export function AdminOrders({ onOpen, initialStatus }) {
   const [poErr, setPoErr] = useState('')
   const [tpFile, setTpFile] = useState(null)
   const [tpErr, setTpErr] = useState('')
+  const [photoFile, setPhotoFile] = useState(null)
+  const [photoErr, setPhotoErr] = useState('')
   const [createErr, setCreateErr] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -79,6 +87,26 @@ export function AdminOrders({ onOpen, initialStatus }) {
     return 0
   })
 
+  // Cluster orders under their Master Order (📁 grouping) — same pattern as the buyer
+  // dashboard's order list. Orders with no masterOrderId fall into "Other Orders" last.
+  const groupedOrders = (() => {
+    const groups = new Map()
+    filtered.forEach(o => {
+      const moId = o.masterOrderId || '__none__'
+      if (!groups.has(moId)) groups.set(moId, [])
+      groups.get(moId).push(o)
+    })
+    const result = [...groups.entries()].map(([moId, ords]) => ({
+      moId, mo: moId !== '__none__' ? masterOrders.find(m => m.id === moId) : null, orders: ords,
+    }))
+    result.sort((a, b) => {
+      if (a.moId === '__none__') return 1
+      if (b.moId === '__none__') return -1
+      return new Date(b.mo?.createdAt || 0) - new Date(a.mo?.createdAt || 0)
+    })
+    return result
+  })()
+
   const genMoId = () => {
     const b = users.find(u => u.id === mo.buyerId)
     if (!b) return null
@@ -103,6 +131,8 @@ export function AdminOrders({ onOpen, initialStatus }) {
     setPoErr('')
     setTpFile(null)
     setTpErr('')
+    setPhotoFile(null)
+    setPhotoErr('')
     setCreateErr('')
     setMode('single')
   }
@@ -160,6 +190,7 @@ export function AdminOrders({ onOpen, initialStatus }) {
     setSaving(true)
     try {
       const resolvedCategory = f.category === '__custom__' ? f.customCategory.trim() : f.category
+      const photoPayload = fileUploadPayload(photoFile)
       const orderData = {
         id, buyerId: f.buyerId, product: f.product, category: resolvedCategory, season: f.season,
         masterOrderId: f.masterOrderId || null,
@@ -169,6 +200,8 @@ export function AdminOrders({ onOpen, initialStatus }) {
         stageNames: validStages.map(s => s.name.trim()),
         stageStartDates: validStages.map(s => s.startDate === 'NA' ? 'NA' : s.startDate || null),
         stageEtas: validStages.map(s => s.eta === 'NA' ? 'NA' : s.eta || null),
+        imageDataUrl: photoPayload.dataUrl || null,
+        imageUrl: photoPayload.externalUrl || null,
       }
       await createOrder(orderData)
 
@@ -432,6 +465,12 @@ export function AdminOrders({ onOpen, initialStatus }) {
                 </div>
               </div>
 
+              {/* Product Photo */}
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 8 }}>Product Photo (optional)</label>
+                <FileUpload file={photoFile} onFile={f => { setPhotoFile(f); setPhotoErr('') }} error={photoErr} onError={setPhotoErr} />
+              </div>
+
               {/* PO Attachment */}
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 8 }}>PO Attachment (optional)</label>
@@ -609,43 +648,62 @@ export function AdminOrders({ onOpen, initialStatus }) {
               </tr>
             </thead>
             <tbody>
-              {filtered.flatMap(o => {
-                const visibleAsgns = sfilt === 'All'
-                  ? (o.assignments.length > 0 ? o.assignments : [null])
-                  : o.assignments.filter(a => a.status === sfilt)
-                return visibleAsgns.map((a, ai) => (
-                  <tr key={`${o.id}-${ai}`}
-                    style={{ borderTop: `1px solid ${T.border}`, cursor: 'pointer' }}
-                    onClick={() => onOpen(o.id, a?.mid)}
-                    onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <td style={{ padding: '11px 16px' }}>
-                      <Mono style={{ fontSize: 11 }}>{o.id}{a ? `-${a.sub}` : ''}</Mono>
-                      {o.masterOrderId && <div style={{ fontSize: 9, color: T.textLight, marginTop: 2 }}>📁 {o.masterOrderId}</div>}
-                    </td>
-                    <td style={{ padding: '11px 16px', fontWeight: 600, color: T.text, fontSize: 13 }}>{o.product}</td>
-                    <td style={{ padding: '11px 16px', color: T.textMuted, fontSize: 13 }}>{o.buyerCompany || '—'}</td>
-                    <td style={{ padding: '11px 16px' }}>
-                      {a ? (
-                        <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{a.mfrCompany || '—'}</span>
-                      ) : <span style={{ color: T.textMuted }}>—</span>}
-                    </td>
-                    <td style={{ padding: '11px 16px', color: T.textMuted, fontSize: 13 }}>{a ? a.qty?.toLocaleString() : o.totalQty?.toLocaleString()}</td>
-                    <td style={{ padding: '11px 16px' }}>{a ? <Badge status={a.status} /> : '—'}</td>
-                    <td style={{ padding: '11px 16px', color: T.textMuted, fontSize: 13 }}>{fmtDate(o.delivery)}</td>
-                    <td style={{ padding: '11px 16px' }}>
-                      <FlexRow gap={6}>
-                        <Btn size="sm" onClick={(e) => { e.stopPropagation(); onOpen(o.id, a?.mid) }}>Manage →</Btn>
-                        <Btn size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); setEditTarget(o) }}>Edit</Btn>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setDeleteTarget(o) }}
-                          style={{ padding: '4px 10px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: `1px solid ${T.dangerBorder}`, background: T.dangerBg, color: T.danger, cursor: 'pointer', fontFamily: 'inherit' }}
-                        >Delete</button>
+              {groupedOrders.flatMap(g => {
+                const collapsed = collapsedGroups.has(g.moId)
+                const groupLabel = g.mo?.orderName || (g.moId === '__none__' ? 'Other Orders' : g.moId)
+                const headerRow = (
+                  <tr key={`h-${g.moId}`} onClick={() => toggleGroup(g.moId)} style={{ cursor: 'pointer', background: '#f1f5f9', borderTop: `1px solid ${T.border}` }}>
+                    <td colSpan={8} style={{ padding: '10px 16px' }}>
+                      <FlexRow gap={10}>
+                        <span style={{ fontSize: 11, color: T.textMuted, transition: 'transform 0.15s', transform: collapsed ? 'rotate(-90deg)' : 'none', display: 'inline-block' }}>▾</span>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: T.text }}>📁 {groupLabel}</span>
+                        {g.mo?.season && <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', background: '#dbeafe', padding: '2px 7px', borderRadius: 4 }}>{g.mo.season}</span>}
+                        <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{g.orders.length} order{g.orders.length !== 1 ? 's' : ''}</span>
                       </FlexRow>
                     </td>
                   </tr>
-                ))
+                )
+                if (collapsed) return [headerRow]
+                const rows = g.orders.flatMap(o => {
+                  const visibleAsgns = sfilt === 'All'
+                    ? (o.assignments.length > 0 ? o.assignments : [null])
+                    : o.assignments.filter(a => a.status === sfilt)
+                  return visibleAsgns.map((a, ai) => (
+                    <tr key={`${o.id}-${ai}`}
+                      style={{ borderTop: `1px solid ${T.border}`, cursor: 'pointer' }}
+                      onClick={() => onOpen(o.id, a?.mid)}
+                      onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <td style={{ padding: '11px 16px' }}>
+                        <Mono style={{ fontSize: 11 }}>{o.id}{a ? `-${a.sub}` : ''}</Mono>
+                      </td>
+                      <td style={{ padding: '11px 16px', fontWeight: 600, color: T.text, fontSize: 13 }}>
+                        <FlexRow gap={10}><ProductThumb order={o} size="sm" onClick={e => { e.stopPropagation(); setEditTarget(o) }} />{o.product}</FlexRow>
+                      </td>
+                      <td style={{ padding: '11px 16px', color: T.textMuted, fontSize: 13 }}>{o.buyerCompany || '—'}</td>
+                      <td style={{ padding: '11px 16px' }}>
+                        {a ? (
+                          <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{a.mfrCompany || '—'}</span>
+                        ) : <span style={{ color: T.textMuted }}>—</span>}
+                      </td>
+                      <td style={{ padding: '11px 16px', color: T.textMuted, fontSize: 13 }}>{a ? a.qty?.toLocaleString() : o.totalQty?.toLocaleString()}</td>
+                      <td style={{ padding: '11px 16px' }}>{a ? <Badge status={a.status} /> : '—'}</td>
+                      <td style={{ padding: '11px 16px', color: T.textMuted, fontSize: 13 }}>{fmtDate(o.delivery)}</td>
+                      <td style={{ padding: '11px 16px' }}>
+                        <FlexRow gap={6}>
+                          <Btn size="sm" onClick={(e) => { e.stopPropagation(); onOpen(o.id, a?.mid) }}>Manage →</Btn>
+                          <Btn size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); setEditTarget(o) }}>Edit</Btn>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setDeleteTarget(o) }}
+                            style={{ padding: '4px 10px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: `1px solid ${T.dangerBorder}`, background: T.dangerBg, color: T.danger, cursor: 'pointer', fontFamily: 'inherit' }}
+                          >Delete</button>
+                        </FlexRow>
+                      </td>
+                    </tr>
+                  ))
+                })
+                return [headerRow, ...rows]
               })}
               {filtered.length === 0 && <tr><td colSpan={8}><EmptyState icon="📦" title="No orders" desc="Create your first order above" /></td></tr>}
             </tbody>

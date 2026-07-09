@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { T, ORDER_STATUSES, STAGE_DOC_MAP, DOC_ICONS } from '../../constants.js'
-import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, useToast, dataUrlToBlobUrl, fileUploadPayload } from '../../components/ui.jsx'
+import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
@@ -255,6 +255,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
       <div>
         <FlexRow style={{ marginBottom: 20 }} gap={12}>
           <Btn variant="secondary" size="sm" onClick={onBack} icon="←">Back</Btn>
+          <ProductThumb order={order} size="lg" onClick={() => setShowEdit(true)} />
           <div style={{ flex: 1 }}>
             <FlexRow gap={10}>
               <Mono style={{ fontSize: 15 }}>{order.id}</Mono>
@@ -569,6 +570,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
       {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
         <Btn variant="secondary" size="sm" onClick={onBack} icon="←">Back</Btn>
+        <ProductThumb order={order} size="lg" onClick={() => setShowEdit(true)} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <FlexRow gap={10} style={{ flexWrap: 'wrap' }}>
             <Mono style={{ fontSize: 15 }}>{order.id}</Mono>

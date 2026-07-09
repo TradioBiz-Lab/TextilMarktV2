@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { T, STAGE_DOC_MAP, getToday, isExpiringSoon, isExpired } from '../../constants.js'
-import { Modal, Select, Textarea, Btn, Card, Badge, FlexRow, Mono, Tabs, Alert, EmptyState, FileUpload, Input, DocCard, LoadingScreen, StageTimeline, StageDocGroup, useToast, fileUploadPayload } from '../../components/ui.jsx'
+import { Modal, Select, Textarea, Btn, Card, Badge, FlexRow, Mono, Tabs, Alert, EmptyState, FileUpload, Input, DocCard, LoadingScreen, StageTimeline, StageDocGroup, useToast, fileUploadPayload, ProductThumb } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
 function fmtDate(d) {
@@ -263,6 +263,7 @@ export function MfrOrderDetail({ orderId, onBack }) {
       {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <Btn variant="secondary" size="sm" onClick={onBack}>← Back</Btn>
+        <ProductThumb order={order} size="lg" />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <Mono style={{ fontSize: 15, fontWeight: 800 }}>{order.id}-{mine.sub}</Mono>

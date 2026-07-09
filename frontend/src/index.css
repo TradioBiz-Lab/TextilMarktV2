@@ -107,6 +107,11 @@ table { border-collapse: collapse; width: 100%; }
   .shell-header { padding: 0 16px; }
   .hero-tiles { grid-template-columns: repeat(2, 1fr); }
   .detail-grid { grid-template-columns: 1fr; }
+
+  /* Order list: the fixed-min-width table clips/scrolls awkwardly at these
+     in-between widths — switch to cards early rather than a cramped table. */
+  .order-card-list { display: flex; }
+  .order-table-list { display: none; }
 }
 
 /* ── Mobile (≤768px) ── */

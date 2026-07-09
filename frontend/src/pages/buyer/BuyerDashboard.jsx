@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { T, ORDER_STATUSES, getToday, isExpiringSoon, isExpired } from '../../constants.js'
-import { Badge, Card, EmptyState, Mono, Btn, LoadingScreen, MfrProfileLink } from '../../components/ui.jsx'
+import { Badge, Card, EmptyState, Mono, Btn, LoadingScreen, MfrProfileLink, ProductThumb } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { ordersApi } from '../../api.js'
 
@@ -92,7 +92,8 @@ function EscalateModal({ order, onClose, onSuccess }) {
 }
 
 export function BuyerDashboard({ onOpen, onSubmitReq }) {
-  const { orders, docs, currentUser, loading, loadError, getDocData } = useApp()
+  const { orders, docs, masterOrders, currentUser, loading, loadError, getDocData } = useApp()
+  const [collapsedGroups, setCollapsedGroups] = useState(() => new Set())
   const [q,             setQ]             = useState('')
   const [sf,            setSf]            = useState('All')
   const [showSugg,      setShowSugg]      = useState(false)
@@ -156,6 +157,32 @@ export function BuyerDashboard({ onOpen, onSubmitReq }) {
     })
   }, [myTxns, q, sf])
 
+  // Cluster filtered orders under their Master Order (📁 grouping) — orders with no
+  // masterOrderId fall into an "Other Orders" bucket at the end.
+  const groupedFiltered = useMemo(() => {
+    const groups = new Map()
+    filtered.forEach(t => {
+      const moId = t.order.masterOrderId || '__none__'
+      if (!groups.has(moId)) groups.set(moId, [])
+      groups.get(moId).push(t)
+    })
+    const result = [...groups.entries()].map(([moId, txns]) => ({
+      moId, mo: moId !== '__none__' ? (masterOrders || []).find(m => m.id === moId) : null, txns,
+    }))
+    result.sort((a, b) => {
+      if (a.moId === '__none__') return 1
+      if (b.moId === '__none__') return -1
+      return new Date(b.mo?.createdAt || 0) - new Date(a.mo?.createdAt || 0)
+    })
+    return result
+  }, [filtered, masterOrders])
+
+  const toggleGroup = moId => setCollapsedGroups(prev => {
+    const next = new Set(prev)
+    next.has(moId) ? next.delete(moId) : next.add(moId)
+    return next
+  })
+
   if (loading) return <LoadingScreen />
 
   if (loadError) return (
@@ -183,7 +210,7 @@ export function BuyerDashboard({ onOpen, onSubmitReq }) {
       {/* ── Submit Requirement Banner ── */}
       <div
         onClick={onSubmitReq}
-        style={{ background: 'linear-gradient(135deg, #003B73 0%, #0a4f8a 100%)', borderRadius: 14, padding: '20px 26px', marginBottom: 24, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, transition: 'transform 0.15s, box-shadow 0.15s', position: 'relative', overflow: 'hidden' }}
+        style={{ background: T.heroGradient, borderRadius: 14, padding: '20px 26px', marginBottom: 24, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, transition: 'transform 0.15s, box-shadow 0.15s', position: 'relative', overflow: 'hidden' }}
         onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 8px 28px rgba(0,59,115,0.3)' }}
         onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none' }}
       >
@@ -200,24 +227,8 @@ export function BuyerDashboard({ onOpen, onSubmitReq }) {
         <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 8, padding: '7px 16px', fontSize: 13, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', zIndex: 1 }}>Get Started →</div>
       </div>
 
-      {/* ── Hero Stat Tiles ── */}
-      <div className="hero-tiles">
-        {[
-          { value: stats.delivered, label: 'Delivered', icon: '✅', color: T.success, bg: T.successBg, border: T.successBorder },
-          { value: stats.processing, label: 'In Production', icon: '🏭', color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe' },
-          { value: stats.delayed,   label: 'Delayed',   icon: '⚠️', color: T.danger,  bg: T.dangerBg, border: T.dangerBorder },
-          { value: stats.onHold,    label: 'On Hold',   icon: '⏸️', color: '#92400e', bg: '#fffbeb', border: '#fde68a' },
-        ].map(s => (
-          <div key={s.label} style={{ background: s.bg, border: `1px solid ${s.border}`, borderRadius: 14, padding: '18px 20px' }}>
-            <div style={{ fontSize: 22, marginBottom: 6 }}>{s.icon}</div>
-            <div style={{ fontSize: 32, fontWeight: 800, color: s.color, lineHeight: 1 }}>{s.value}</div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: s.color, marginTop: 4, opacity: 0.8 }}>{s.label}</div>
-          </div>
-        ))}
-      </div>
-
       {/* ── Delivery progress bar + Alerts ── */}
-      <div className="grid-responsive-2" style={{ gap: 16, marginBottom: 24 }}>
+      <div className="grid-responsive-2" style={{ gap: 16, marginBottom: 24, alignItems: 'start' }}>
         {/* Left: Order Health Summary */}
         <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: '22px 24px' }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 16 }}>Order Health</div>
@@ -365,96 +376,124 @@ export function BuyerDashboard({ onOpen, onSubmitReq }) {
           />
         </Card>
       ) : (
-        <>
-          {/* Desktop table */}
-          <div className="order-table-list" style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, overflow: 'hidden' }}>
-            <div className="table-scroll">
-              <div style={{ display: 'grid', gridTemplateColumns: '190px 1.4fr 1.1fr 80px 110px 120px 120px', gap: 0, padding: '12px 22px', background: '#f8fafc', borderBottom: `1px solid ${T.border}`, minWidth: 820 }}>
-                {['Order ID', 'Product', 'Manufacturer', 'Qty', 'Delivery', 'Status', ''].map(h => (
-                  <span key={h} style={{ fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
-                ))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {groupedFiltered.map(g => {
+            const collapsed = collapsedGroups.has(g.moId)
+            const groupLabel = g.mo?.orderName || (g.moId === '__none__' ? 'Other Orders' : g.moId)
+            const GroupHeader = (
+              <div onClick={() => toggleGroup(g.moId)}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 18px', background: '#f1f5f9', borderRadius: collapsed ? 10 : '10px 10px 0 0', cursor: 'pointer', userSelect: 'none' }}>
+                <span style={{ fontSize: 11, color: T.textMuted, transition: 'transform 0.15s', transform: collapsed ? 'rotate(-90deg)' : 'none' }}>▾</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: T.text }}>📁 {groupLabel}</span>
+                {g.mo?.season && <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', background: '#dbeafe', padding: '2px 7px', borderRadius: 4 }}>{g.mo.season}</span>}
+                <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{g.txns.length} order{g.txns.length !== 1 ? 's' : ''}</span>
               </div>
-              {filtered.map((t, i) => {
-                const o = t.order; const a = t.mfr; const rowStatus = t.status
-                const overdue = new Date(o.delivery) < new Date(getToday()) && rowStatus !== 'Delivered'
-                const rowBg = rowStatus === 'Delayed' ? '#fff8f8' : rowStatus === 'On Hold' ? '#fefdf5' : T.surface
-                return (
-                  <div key={`${o.id}-${a ? a.sub : 'm'}-${i}`} onClick={() => onOpen(o.id, a?.mid)}
-                    style={{ display: 'grid', gridTemplateColumns: '190px 1.4fr 1.1fr 80px 110px 120px 120px', gap: 0, minWidth: 820, padding: '14px 22px', alignItems: 'center', cursor: 'pointer', background: rowBg, borderBottom: `1px solid ${T.border}`, transition: 'background 0.12s' }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
-                    onMouseLeave={e => e.currentTarget.style.background = rowBg}>
-                    <Mono style={{ fontSize: 12, flexShrink: 0 }}>{o.id}{a ? `-${a.sub}` : ''}</Mono>
-                    <div style={{ minWidth: 0 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{o.product}</span>
-                      {o.category && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, color: T.textLight, background: '#f1f5f9', padding: '1px 5px', borderRadius: 4 }}>{o.category}</span>}
-                      {o.season && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 600, color: '#0369a1', background: '#dbeafe', padding: '1px 5px', borderRadius: 4 }}>{o.season}</span>}
+            )
+            if (collapsed) return <div key={g.moId}>{GroupHeader}</div>
+            return (
+              <div key={g.moId}>
+                {/* Desktop table */}
+                <div className="order-table-list" style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, overflow: 'hidden' }}>
+                  {GroupHeader}
+                  <div className="table-scroll">
+                    <div style={{ display: 'grid', gridTemplateColumns: '225px 56px 1fr 1.2fr 80px 110px 120px 120px', gap: 0, padding: '12px 22px', background: '#f8fafc', borderBottom: `1px solid ${T.border}`, minWidth: 876 }}>
+                      {['Order ID', '', 'Product', 'Manufacturer', 'Qty', 'Delivery', 'Status', ''].map((h, i) => (
+                        <span key={i} style={{ fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
+                      ))}
                     </div>
-                    <div style={{ minWidth: 0 }} onClick={e => e.stopPropagation()}>
-                      {a ? <MfrProfileLink mfrId={a.mid} mfrName={a.mfrCompany || 'Manufacturer'} docs={docs} onGetData={getDocData} />
-                        : <span style={{ fontSize: 12, color: T.textMuted }}>—</span>}
-                    </div>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{a ? a.qty?.toLocaleString() : o.totalQty?.toLocaleString()}</span>
-                    <span style={{ fontSize: 12, color: overdue ? T.danger : T.textMuted, fontWeight: overdue ? 700 : 400 }}>{fmtDate(o.delivery)}</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <Badge status={rowStatus} />
-                      {overdue && <span style={{ fontSize: 8, fontWeight: 800, color: T.danger, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 3, padding: '1px 4px', letterSpacing: '0.04em' }}>LATE</span>}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
-                      {escalatedIds.has(o.id) ? (
-                        <span style={{ fontSize: 11, fontWeight: 700, color: T.success, background: T.successBg, border: `1px solid ${T.successBorder}`, borderRadius: 6, padding: '3px 8px' }}>✓ Escalated</span>
-                      ) : rowStatus !== 'Delivered' && (
-                        <button onClick={e => { e.stopPropagation(); setEscalateOrder(o) }}
-                          style={{ background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, color: T.danger, borderRadius: 6, padding: '3px 9px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-                          🚨 Escalate
-                        </button>
-                      )}
-                      <span style={{ color: T.textLight, fontSize: 16 }}>›</span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Mobile cards */}
-          <div className="order-card-list" style={{ flexDirection: 'column', gap: 10 }}>
-            {filtered.map((t, i) => {
-              const o = t.order; const a = t.mfr; const rowStatus = t.status
-              const overdue = new Date(o.delivery) < new Date(getToday()) && rowStatus !== 'Delivered'
-              return (
-                <div key={`c-${o.id}-${i}`} onClick={() => onOpen(o.id, a?.mid)}
-                  style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: '14px 16px', cursor: 'pointer' }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
-                    <div style={{ minWidth: 0 }}>
-                      <Mono style={{ fontSize: 11 }}>{o.id}{a ? `-${a.sub}` : ''}</Mono>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginTop: 3 }}>{o.product}</div>
-                      <div style={{ fontSize: 12, color: T.textMuted, marginTop: 1 }} onClick={e => e.stopPropagation()}>
-                        {a ? <MfrProfileLink mfrId={a.mid} mfrName={a.mfrCompany || 'Manufacturer'} docs={docs} onGetData={getDocData} /> : '—'}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, flexShrink: 0 }}>
-                      <Badge status={rowStatus} />
-                      {overdue && <span style={{ fontSize: 9, fontWeight: 800, color: T.danger, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 3, padding: '1px 5px' }}>LATE</span>}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 12, color: T.textMuted }}><b style={{ color: T.text }}>{a ? a.qty?.toLocaleString() : o.totalQty?.toLocaleString()}</b> pcs</span>
-                    <span style={{ fontSize: 12, color: overdue ? T.danger : T.textMuted, fontWeight: overdue ? 700 : 400 }}>Due {fmtDate(o.delivery)}</span>
-                    {rowStatus !== 'Delivered' && !escalatedIds.has(o.id) && (
-                      <button onClick={e => { e.stopPropagation(); setEscalateOrder(o) }}
-                        style={{ background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, color: T.danger, borderRadius: 6, padding: '3px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                        🚨 Escalate
-                      </button>
-                    )}
-                    {escalatedIds.has(o.id) && (
-                      <span style={{ fontSize: 11, fontWeight: 700, color: T.success }}>✓ Escalated</span>
-                    )}
+                    {g.txns.map((t, i) => {
+                      const o = t.order; const a = t.mfr; const rowStatus = t.status
+                      const overdue = new Date(o.delivery) < new Date(getToday()) && rowStatus !== 'Delivered'
+                      const rowBg = rowStatus === 'Delayed' ? '#fff8f8' : rowStatus === 'On Hold' ? '#fefdf5' : T.surface
+                      return (
+                        <div key={`${o.id}-${a ? a.sub : 'm'}-${i}`} onClick={() => onOpen(o.id, a?.mid)}
+                          style={{ display: 'grid', gridTemplateColumns: '225px 56px 1fr 1.2fr 80px 110px 120px 120px', gap: 0, minWidth: 876, padding: '14px 22px', alignItems: 'start', cursor: 'pointer', background: rowBg, borderBottom: `1px solid ${T.border}`, transition: 'background 0.12s' }}
+                          onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                          onMouseLeave={e => e.currentTarget.style.background = rowBg}>
+                          <Mono style={{ fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.id}{a ? `-${a.sub}` : ''}</Mono>
+                          <ProductThumb order={o} size="sm" />
+                          <div style={{ minWidth: 0, paddingLeft: 8 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.product}</div>
+                            {(o.category || o.season) && (
+                              <div style={{ display: 'flex', gap: 4, marginTop: 3 }}>
+                                {o.category && <span style={{ fontSize: 10, fontWeight: 600, color: T.textLight, background: '#f1f5f9', padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>{o.category}</span>}
+                                {o.season && <span style={{ fontSize: 10, fontWeight: 600, color: '#0369a1', background: '#dbeafe', padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>{o.season}</span>}
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ minWidth: 0, fontSize: 13, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} onClick={e => e.stopPropagation()}>
+                            {a ? <MfrProfileLink mfrId={a.mid} mfrName={a.mfrCompany || 'Manufacturer'} docs={docs} onGetData={getDocData} />
+                              : <span style={{ fontSize: 12, color: T.textMuted }}>—</span>}
+                          </div>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{a ? a.qty?.toLocaleString() : o.totalQty?.toLocaleString()}</span>
+                          <span style={{ fontSize: 12, color: overdue ? T.danger : T.textMuted, fontWeight: overdue ? 700 : 400 }}>{fmtDate(o.delivery)}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <Badge status={rowStatus} />
+                            {overdue && <span style={{ fontSize: 8, fontWeight: 800, color: T.danger, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 3, padding: '1px 4px', letterSpacing: '0.04em' }}>LATE</span>}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
+                            {escalatedIds.has(o.id) ? (
+                              <span style={{ fontSize: 11, fontWeight: 700, color: T.success, background: T.successBg, border: `1px solid ${T.successBorder}`, borderRadius: 6, padding: '3px 8px' }}>✓ Escalated</span>
+                            ) : rowStatus !== 'Delivered' && (
+                              <button onClick={e => { e.stopPropagation(); setEscalateOrder(o) }}
+                                style={{ background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, color: T.danger, borderRadius: 6, padding: '3px 9px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                                🚨 Escalate
+                              </button>
+                            )}
+                            <span style={{ color: T.textLight, fontSize: 16 }}>›</span>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
-              )
-            })}
-          </div>
-        </>
+
+                {/* Mobile cards */}
+                <div className="order-card-list" style={{ flexDirection: 'column', gap: 10 }}>
+                  {GroupHeader}
+                  {g.txns.map((t, i) => {
+                    const o = t.order; const a = t.mfr; const rowStatus = t.status
+                    const overdue = new Date(o.delivery) < new Date(getToday()) && rowStatus !== 'Delivered'
+                    return (
+                      <div key={`c-${o.id}-${i}`} onClick={() => onOpen(o.id, a?.mid)}
+                        style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: '14px 16px', cursor: 'pointer' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+                          <div style={{ minWidth: 0, display: 'flex', gap: 10 }}>
+                            <ProductThumb order={o} size="sm" />
+                            <div style={{ minWidth: 0 }}>
+                              <Mono style={{ fontSize: 11 }}>{o.id}{a ? `-${a.sub}` : ''}</Mono>
+                              <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.product}</div>
+                              <div style={{ fontSize: 12, color: T.textMuted, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} onClick={e => e.stopPropagation()}>
+                                {a ? <MfrProfileLink mfrId={a.mid} mfrName={a.mfrCompany || 'Manufacturer'} docs={docs} onGetData={getDocData} /> : '—'}
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, flexShrink: 0 }}>
+                            <Badge status={rowStatus} />
+                            {overdue && <span style={{ fontSize: 9, fontWeight: 800, color: T.danger, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 3, padding: '1px 5px' }}>LATE</span>}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 12, color: T.textMuted }}><b style={{ color: T.text }}>{a ? a.qty?.toLocaleString() : o.totalQty?.toLocaleString()}</b> pcs</span>
+                          <span style={{ fontSize: 12, color: overdue ? T.danger : T.textMuted, fontWeight: overdue ? 700 : 400 }}>Due {fmtDate(o.delivery)}</span>
+                          {rowStatus !== 'Delivered' && !escalatedIds.has(o.id) && (
+                            <button onClick={e => { e.stopPropagation(); setEscalateOrder(o) }}
+                              style={{ background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, color: T.danger, borderRadius: 6, padding: '3px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                              🚨 Escalate
+                            </button>
+                          )}
+                          {escalatedIds.has(o.id) && (
+                            <span style={{ fontSize: 11, fontWeight: 700, color: T.success }}>✓ Escalated</span>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
       )}
 
       {/* ── Escalation modal ── */}

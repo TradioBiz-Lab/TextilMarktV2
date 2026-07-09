@@ -10,6 +10,7 @@ import { DEFAULT_STAGE_NAMES, ORDER_STATUS_VALUES }  from '../models/Order.js'
 
 // Categories are now free-text — no validation needed
 const VALID_SEASONS    = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
+const MAX_PRODUCT_PHOTO_SIZE = 300 * 1024 // 300KB raw — reference thumbnail, not full-res
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 // Email triggers for orders are intentionally suppressed — order activity is portal-notifications only
 
@@ -65,6 +66,7 @@ const enrichOrder = (o, viewerMfrId = null) => {
   buyerId: buyer ? buyer._id.toString() : (o.buyerId?.toString?.() ?? o.buyerId),
   buyerCompany: buyer?.company ?? null, buyerName: buyer?.name ?? null, buyerCode: buyer?.code ?? null,
   product: o.product, category: o.category,
+  imageDataUrl: o.imageDataUrl || null, imageUrl: o.imageUrl || null,
   season: o.season, totalQty: o.totalQty, delivery: o.delivery, createdAt: o.createdAt,
   assignments: visibleAssignments.map(a => {
     const mfr = a.mfrId && typeof a.mfrId === 'object' && a.mfrId.company ? a.mfrId : null
@@ -135,7 +137,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 // and creates it if valid. Centralizes rules (including the B1 required-end-date
 // check) so both call sites can't drift out of sync. Returns the raw created
 // Mongoose doc on success (not populated/enriched — that's caller-specific).
-async function validateAndCreateOrder({ id, buyerId, product, category, season, totalQty, delivery, createdAt, masterOrderId, assignments: asgns, stageEtas, stageStartDates, stageNames: customStages }) {
+async function validateAndCreateOrder({ id, buyerId, product, category, season, totalQty, delivery, createdAt, masterOrderId, assignments: asgns, stageEtas, stageStartDates, stageNames: customStages, imageDataUrl, imageUrl }) {
   if (!id || !buyerId || !product || !totalQty || !delivery)
     return { ok: false, error: 'Missing required fields' }
   if (typeof id !== 'string' || typeof product !== 'string')
@@ -218,9 +220,24 @@ async function validateAndCreateOrder({ id, buyerId, product, category, season, 
       return { ok: false, error: `Stage "${stages[i]}" start date must be on or before its end date` }
   }
 
+  // Optional cover photo — either an uploaded base64 image (capped small) or an
+  // external link fallback, never both.
+  if (imageDataUrl && imageUrl) return { ok: false, error: 'Provide either an uploaded photo or a link, not both' }
+  if (imageDataUrl) {
+    const m = /^data:(image\/jpeg|image\/jpg|image\/png);base64,(.+)$/.exec(imageDataUrl)
+    if (!m) return { ok: false, error: 'Photo must be a JPEG or PNG image' }
+    if (m[2].length * 0.75 > MAX_PRODUCT_PHOTO_SIZE) return { ok: false, error: 'Photo too large — keep it under 300KB' }
+  }
+  if (imageUrl) {
+    if (imageUrl.trim().length > 2000) return { ok: false, error: 'Image URL too long' }
+    try { const u = new URL(imageUrl.trim()); if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error() }
+    catch { return { ok: false, error: 'Invalid image URL — must be a valid http(s) link' } }
+  }
+
   try {
     const created = await Order.create({
       _id: id, buyerId, product, category, season, totalQty, masterOrderId: masterOrderId || null,
+      imageDataUrl: imageDataUrl || null, imageUrl: imageUrl ? imageUrl.trim() : null,
       delivery: new Date(delivery),
       createdAt: createdAt ? new Date(createdAt) : undefined,
       assignments: asgns.map((a, i) => ({
@@ -541,7 +558,7 @@ router.patch('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth,
 // PATCH /api/orders/:id — edit order top-level fields (admin only)
 router.patch('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
   try {
-    const { product, category, season, totalQty, delivery } = req.body
+    const { product, category, season, totalQty, delivery, imageDataUrl, imageUrl } = req.body
     const orderId = req.params.id
 
     const existing = await Order.findById(orderId).lean()
@@ -575,6 +592,26 @@ router.patch('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) 
       const d = new Date(delivery)
       if (isNaN(d.getTime())) return res.status(400).json({ error: 'Invalid delivery date' })
       updates.delivery = d
+    }
+
+    // Photo: null/'' clears it, a value validates same as at creation. Only one of
+    // imageDataUrl/imageUrl at a time.
+    if (imageDataUrl !== undefined || imageUrl !== undefined) {
+      const nextDataUrl = imageDataUrl !== undefined ? (imageDataUrl || null) : (existing.imageDataUrl || null)
+      const nextUrl     = imageUrl !== undefined ? (imageUrl || null) : (existing.imageUrl || null)
+      if (nextDataUrl && nextUrl) return res.status(400).json({ error: 'Provide either an uploaded photo or a link, not both' })
+      if (nextDataUrl) {
+        const m = /^data:(image\/jpeg|image\/jpg|image\/png);base64,(.+)$/.exec(nextDataUrl)
+        if (!m) return res.status(400).json({ error: 'Photo must be a JPEG or PNG image' })
+        if (m[2].length * 0.75 > MAX_PRODUCT_PHOTO_SIZE) return res.status(400).json({ error: 'Photo too large — keep it under 300KB' })
+      }
+      if (nextUrl) {
+        if (nextUrl.trim().length > 2000) return res.status(400).json({ error: 'Image URL too long' })
+        try { const u = new URL(nextUrl.trim()); if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error() }
+        catch { return res.status(400).json({ error: 'Invalid image URL — must be a valid http(s) link' } )}
+      }
+      if (imageDataUrl !== undefined) updates.imageDataUrl = imageDataUrl || null
+      if (imageUrl !== undefined) updates.imageUrl = imageUrl ? imageUrl.trim() : null
     }
 
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No fields to update' })

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { T, isExpiringSoon, isExpired } from '../../constants.js'
-import { Badge, Btn, Card, FlexRow, Mono, EmptyState, DocCard, Tabs, Alert, LoadingScreen, StageTimeline, MfrProfileLink, StageDocGroup, dataUrlToBlobUrl } from '../../components/ui.jsx'
+import { Badge, Btn, Card, FlexRow, Mono, EmptyState, DocCard, Tabs, Alert, LoadingScreen, StageTimeline, MfrProfileLink, StageDocGroup, dataUrlToBlobUrl, ProductThumb } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
 
@@ -164,6 +164,7 @@ export function BuyerOrderDetail({ orderId, onBack, initialMid }) {
       {/* ── Header ── */}
       <FlexRow style={{ marginBottom: 18 }} gap={12}>
         <Btn variant="secondary" size="sm" onClick={onBack}>← Back</Btn>
+        <ProductThumb order={order} size="lg" />
         <div style={{ flex: 1, minWidth: 0 }}>
           <Mono style={{ fontSize: 14, fontWeight: 800 }}>{order.id}</Mono>
           <div style={{ fontSize: 13, color: T.textMuted, marginTop: 3 }}>

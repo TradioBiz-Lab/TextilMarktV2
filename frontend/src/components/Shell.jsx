@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Home, ClipboardList, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check } from 'lucide-react'
 import { T } from '../constants.js'
 import { Btn, RibbonBanner } from './ui.jsx'
 import { NotifPanel } from './NotifPanel.jsx'
@@ -27,7 +28,7 @@ function NetworkBanner() {
 
   if (!online) return (
     <div style={{ background: '#1e293b', borderBottom: '1px solid #334155', padding: '9px 24px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, zIndex: 400 }}>
-      <span style={{ fontSize: 15 }}>📡</span>
+      <WifiOff size={16} color="#f8fafc" />
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: '#f8fafc' }}>No internet connection</div>
         <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>Some features may not work. Check your network and try again.</div>
@@ -38,7 +39,7 @@ function NetworkBanner() {
 
   return (
     <div style={{ background: '#f0fdf4', borderBottom: '1px solid #86efac', padding: '7px 24px', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, zIndex: 400 }}>
-      <span style={{ fontSize: 13, fontWeight: 800, color: '#15803d' }}>✓</span>
+      <Check size={15} color="#15803d" strokeWidth={3} />
       <span style={{ fontSize: 12, fontWeight: 600, color: '#15803d' }}>Connection restored</span>
     </div>
   )
@@ -68,20 +69,20 @@ export function Shell({ view, setView, children, onOpenOrder }) {
 
   const nav = {
     buyer: [
-      { id: 'dashboard', icon: '🏠', label: 'Dashboard' },
-      { id: 'submit_req', icon: '📋', label: 'Submit Requirement' },
-      { id: 'documents', icon: '📁', label: 'Documents' },
+      { id: 'dashboard', icon: Home, label: 'Dashboard' },
+      { id: 'submit_req', icon: ClipboardList, label: 'Submit Requirement' },
+      { id: 'documents', icon: Folder, label: 'Documents' },
     ],
     manufacturer: [
-      { id: 'dashboard', icon: '🏠', label: 'Dashboard' },
-      { id: 'certs', icon: '🛡', label: 'Certificates' },
+      { id: 'dashboard', icon: Home, label: 'Dashboard' },
+      { id: 'certs', icon: ShieldCheck, label: 'Certificates' },
     ],
     admin: [
-      { id: 'dashboard', icon: '🏠', label: 'Dashboard' },
-      { id: 'orders',    icon: '📦', label: 'Orders' },
-      { id: 'documents', icon: '📁', label: 'Documents' },
-      { id: 'audit',     icon: '🔍', label: 'Audit Log' },
-      ...(user?.adminType === 'master' ? [{ id: 'users', icon: '👥', label: 'User Setup' }] : []),
+      { id: 'dashboard', icon: Home, label: 'Dashboard' },
+      { id: 'orders',    icon: Package, label: 'Orders' },
+      { id: 'documents', icon: Folder, label: 'Documents' },
+      { id: 'audit',     icon: History, label: 'Audit Log' },
+      ...(user?.adminType === 'master' ? [{ id: 'users', icon: Users, label: 'User Setup' }] : []),
     ],
   }[user?.role] || []
 
@@ -91,7 +92,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
 
   const roleColor = user?.role === 'admin'
     ? (user?.adminType === 'master' ? T.master : T.primary)
-    : user?.role === 'buyer' ? '#0f766e' : '#c2410c'
+    : user?.role === 'buyer' ? '#7dd3fc' : '#c2410c'
 
   const handleNav = id => {
     setView(id)
@@ -108,7 +109,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
       />
 
       {/* ── Sidebar ── */}
-      <aside className={`shell-sidebar${sidebarOpen ? ' open' : ''}${sidebarCollapsed ? ' collapsed' : ''}`} style={{ background: T.sidebar, display: 'flex', flexDirection: 'column' }}>
+      <aside className={`shell-sidebar${sidebarOpen ? ' open' : ''}${sidebarCollapsed ? ' collapsed' : ''}`} style={{ background: T.sidebarGradient, display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: sidebarCollapsed ? '20px 8px 16px' : '20px 16px 16px', borderBottom: `1px solid ${T.sidebarBorder}` }}>
           {sidebarCollapsed
             ? <div style={{ display: 'flex', justifyContent: 'center' }}><span style={{ fontSize: 16, fontWeight: 800, color: roleColor, letterSpacing: '-0.02em' }}>⬡</span></div>
@@ -119,10 +120,11 @@ export function Shell({ view, setView, children, onOpenOrder }) {
         <nav style={{ flex: 1, padding: sidebarCollapsed ? '8px 4px' : '8px', display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto' }}>
           {nav.map(n => {
             const active = view === n.id
+            const Icon = n.icon
             return (
               <button key={n.id} onClick={() => handleNav(n.id)} title={sidebarCollapsed ? n.label : undefined}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', gap: 10, padding: sidebarCollapsed ? '9px 0' : '9px 12px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: active ? 700 : 500, textAlign: 'left', background: active ? 'rgba(255,255,255,0.12)' : 'transparent', color: active ? '#fff' : 'rgba(255,255,255,0.55)', transition: 'all 0.12s', fontFamily: 'inherit' }}>
-                <span style={{ fontSize: 16, lineHeight: 1 }}>{n.icon}</span>{!sidebarCollapsed && n.label}
+                <Icon size={17} strokeWidth={2} style={{ flexShrink: 0 }} />{!sidebarCollapsed && n.label}
               </button>
             )
           })}
@@ -131,7 +133,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
         {/* Collapse toggle */}
         <button className="sidebar-collapse-btn" onClick={() => setSidebarCollapsed(p => !p)}
           style={{ padding: '10px', background: 'none', border: 'none', borderTop: `1px solid ${T.sidebarBorder}`, cursor: 'pointer', color: 'rgba(255,255,255,0.45)', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'inherit', transition: 'color 0.15s' }}>
-          <span style={{ transform: sidebarCollapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.25s', display: 'inline-block' }}>«</span>
+          <ChevronsLeft size={15} style={{ transform: sidebarCollapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.25s' }} />
           {!sidebarCollapsed && <span style={{ fontSize: 11, fontWeight: 600 }}>Collapse</span>}
         </button>
 
@@ -161,14 +163,14 @@ export function Shell({ view, setView, children, onOpenOrder }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {/* Hamburger for mobile */}
             <button className="hamburger-btn" onClick={() => setSidebarOpen(true)}>
-              ☰
+              <Menu size={20} />
             </button>
             <Logo />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ position: 'relative' }}>
               <button onClick={() => setNotifOpen(p => !p)}
-                style={{ background: '#f8fafc', border: `1px solid ${T.border}`, borderRadius: 9, width: 36, height: 36, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17 }}>🔔</button>
+                style={{ background: '#f8fafc', border: `1px solid ${T.border}`, borderRadius: 9, width: 36, height: 36, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Bell size={18} color={T.textMuted} /></button>
               {unread > 0 && (
                 <span style={{ position: 'absolute', top: -4, right: -4, background: '#ef4444', color: '#fff', borderRadius: 10, fontSize: 9, fontWeight: 800, minWidth: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px', border: '2px solid #fff' }}>{unread}</span>
               )}

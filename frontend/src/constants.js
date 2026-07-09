@@ -94,6 +94,8 @@ export const T = {
   info: '#002B5B', infoBg: '#E6F0FF', infoBorder: '#93c5fd',
   master: '#7c3aed', masterBg: '#ede9fe',
   sidebar: '#003B73', sidebarBorder: 'rgba(255,255,255,0.1)',
+  sidebarGradient: 'linear-gradient(180deg, #0a4f8a 0%, #003B73 50%, #001c38 100%)',
+  heroGradient: 'linear-gradient(135deg, #0a4f8a 0%, #003B73 55%, #002347 100%)',
 }
 
 // India Standard Time is a fixed UTC+5:30 offset (no DST) — the app's day
