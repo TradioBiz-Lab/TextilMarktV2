@@ -17,6 +17,7 @@ import auditRouter         from './routes/audit.js'
 import ribbonsRouter       from './routes/ribbons.js'
 import masterOrdersRouter  from './routes/masterOrders.js'
 import signupRouter         from './routes/signup.js'
+import actionItemsRouter   from './routes/actionItems.js'
 
 // ── Validate required env vars at startup ──────────────────────────────────
 const isProd = process.env.NODE_ENV === 'production'
@@ -151,6 +152,7 @@ app.use('/api/users',         usersRouter)
 app.use('/api/notifications', notificationsRouter)
 app.use('/api/audit',         auditRouter)
 app.use('/api/ribbons',       ribbonsRouter)
+app.use('/api/action-items',  actionItemsRouter)
 app.use('/api/master-orders', masterOrdersRouter)
 app.use('/api/signup',        signupRouter)
 

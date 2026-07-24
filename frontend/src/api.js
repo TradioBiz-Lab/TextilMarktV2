@@ -57,6 +57,18 @@ export const ordersApi = {
     api.post(`/orders/${id}/escalate`, { reason }),
   bulkCreate: (masterOrderId, rows) =>
     api.post('/orders/bulk', { masterOrderId, rows }),
+  addStageUpdate: (orderId, mfrId, stageIndex, text) =>
+    api.post(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}/updates`, { text }),
+  addStageMaterial: (orderId, mfrId, stageIndex, data) =>
+    api.post(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}/materials`, data),
+  updateStageMaterial: (orderId, mfrId, stageIndex, lineIndex, data) =>
+    api.post(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}/materials/${lineIndex}`, data),
+  removeStageMaterial: (orderId, mfrId, stageIndex, lineIndex) =>
+    api.post(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}/materials/${lineIndex}/delete`),
+  removeStage: (orderId, mfrId, stageIndex) =>
+    api.post(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}/delete`),
+  materialsBulkUpload: (rows) =>
+    api.post('/orders/materials/bulk', { rows }),
 }
 
 export const documentsApi = {
@@ -94,9 +106,18 @@ export const ribbonsApi = {
   remove: id => api.post(`/ribbons/${id}/delete`),
 }
 
+export const actionItemsApi = {
+  list: () => api.get('/action-items'),
+  create: data => api.post('/action-items', data),
+  update: (id, data) => api.post(`/action-items/${id}`, data),
+  addUpdate: (id, text) => api.post(`/action-items/${id}/updates`, { text }),
+  remove: id => api.post(`/action-items/${id}/delete`),
+}
+
 export const masterOrdersApi = {
   list: () => api.get('/master-orders'),
   create: data => api.post('/master-orders', data),
+  delete: id => api.post(`/master-orders/${id}/delete`),
 }
 
 export default api

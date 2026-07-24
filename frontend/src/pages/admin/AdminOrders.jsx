@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { T, CATEGORIES, SEASONS, DEFAULT_STAGE_NAMES, ORDER_STATUSES } from '../../constants.js'
-import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, FileUpload, LoadingScreen, useToast, fileUploadPayload, ProductThumb } from '../../components/ui.jsx'
+import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, FileUpload, LoadingScreen, useToast, fileUploadPayload, ProductThumb, Modal } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
 import { BulkUploadCsvPanel } from './BulkUploadCsvPanel.jsx'
+import { MaterialsBulkUploadPanel } from './MaterialsBulkUploadPanel.jsx'
 
 function fmtDate(d) {
   if (!d) return '—'
@@ -22,8 +23,11 @@ export function AdminOrders({ onOpen, initialStatus }) {
   const [sfilt, setSfilt] = useState(initialStatus || 'All')
   const [sortCol, setSortCol] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
-  const [collapsedGroups, setCollapsedGroups] = useState(() => new Set())
-  const toggleGroup = moId => setCollapsedGroups(prev => {
+  // Groups start collapsed — an admin managing many master orders shouldn't have to
+  // scroll past every line item of every group just to find one. Tracks which groups
+  // have been explicitly expanded, rather than which are collapsed.
+  const [expandedGroups, setExpandedGroups] = useState(() => new Set())
+  const toggleGroup = moId => setExpandedGroups(prev => {
     const next = new Set(prev)
     next.has(moId) ? next.delete(moId) : next.add(moId)
     return next
@@ -32,6 +36,7 @@ export function AdminOrders({ onOpen, initialStatus }) {
   // ── Edit / Delete modal state ──
   const [editTarget, setEditTarget] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [showMatBulk, setShowMatBulk] = useState(false)
 
   // ── Create Order state ──
   const [showC, setShowC] = useState(false)
@@ -126,7 +131,7 @@ export function AdminOrders({ onOpen, initialStatus }) {
   const resetForm = () => {
     setF({ masterOrderId: '', buyerId: '', product: '', category: '', customCategory: '', season: 'SS26', totalQty: '', delivery: '' })
     setMfrs([{ mid: '', qty: '' }])
-    setStages(DEFAULT_STAGE_NAMES.map(name => ({ name, startDate: '', eta: '' })))
+    setStages(DEFAULT_STAGE_NAMES.map((name, i) => ({ _key: i + 1, name, startDate: '', eta: '' })))
     setPoFile(null)
     setPoErr('')
     setTpFile(null)
@@ -414,8 +419,8 @@ export function AdminOrders({ onOpen, initialStatus }) {
                 <FlexRow justify="space-between" style={{ marginBottom: 8 }}>
                   <label style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Production Stages *</label>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => setStages(DEFAULT_STAGE_NAMES.map(name => ({ name, startDate: '', eta: '' })))} style={{ fontSize: 11, color: T.textMuted, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit', textDecoration: 'underline' }}>Load Defaults</button>
-                    <button onClick={() => setStages([...stages, { name: '', startDate: '', eta: '' }])} style={{ fontSize: 12, color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}>+ Add Stage</button>
+                    <button onClick={() => setStages(DEFAULT_STAGE_NAMES.map((name, i) => ({ _key: i + 1, name, startDate: '', eta: '' })))} style={{ fontSize: 11, color: T.textMuted, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit', textDecoration: 'underline' }}>Load Defaults</button>
+                    <button onClick={() => setStages([...stages, { _key: Date.now(), name: '', startDate: '', eta: '' }])} style={{ fontSize: 12, color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}>+ Add Stage</button>
                   </div>
                 </FlexRow>
                 <div style={{ background: '#f8fafc', borderRadius: 10, border: `1px solid ${T.border}`, padding: '12px 14px' }}>
@@ -569,9 +574,17 @@ export function AdminOrders({ onOpen, initialStatus }) {
       <PageHeader title="Order Management" subtitle="Create orders, assign manufacturers, and manage the full order lifecycle" action={
         <FlexRow gap={8}>
           <Btn variant="secondary" onClick={() => setShowMO(true)} icon="📁">New Master Order</Btn>
+          <Btn variant="secondary" onClick={() => setShowMatBulk(true)} icon="📦">Bulk Upload Materials</Btn>
           <Btn onClick={() => setShowC(true)} icon="➕">Create Order</Btn>
         </FlexRow>
       } />
+
+      {/* ── Materials Bulk Upload Modal ── */}
+      {showMatBulk && (
+        <Modal title="Bulk Upload Materials" subtitle="Add materials/PO lines onto existing orders' stages, by order ID + manufacturer code + stage name" size="xl" onClose={() => setShowMatBulk(false)}>
+          <MaterialsBulkUploadPanel onDone={() => setShowMatBulk(false)} />
+        </Modal>
+      )}
 
       <Card pad={false}>
         <div style={{ padding: '14px 18px', borderBottom: `1px solid ${T.border}`, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -648,11 +661,14 @@ export function AdminOrders({ onOpen, initialStatus }) {
               </tr>
             </thead>
             <tbody>
-              {groupedOrders.flatMap(g => {
-                const collapsed = collapsedGroups.has(g.moId)
+              {groupedOrders.flatMap((g, gi) => {
+                const collapsed = !expandedGroups.has(g.moId)
                 const groupLabel = g.mo?.orderName || (g.moId === '__none__' ? 'Other Orders' : g.moId)
+                const spacerRow = gi > 0 ? (
+                  <tr key={`sp-${g.moId}`} aria-hidden="true"><td colSpan={8} style={{ padding: 0, height: 12, border: 'none', background: T.bg }} /></tr>
+                ) : null
                 const headerRow = (
-                  <tr key={`h-${g.moId}`} onClick={() => toggleGroup(g.moId)} style={{ cursor: 'pointer', background: '#f1f5f9', borderTop: `1px solid ${T.border}` }}>
+                  <tr key={`h-${g.moId}`} onClick={() => toggleGroup(g.moId)} style={{ cursor: 'pointer', background: '#f1f5f9' }}>
                     <td colSpan={8} style={{ padding: '10px 16px' }}>
                       <FlexRow gap={10}>
                         <span style={{ fontSize: 11, color: T.textMuted, transition: 'transform 0.15s', transform: collapsed ? 'rotate(-90deg)' : 'none', display: 'inline-block' }}>▾</span>
@@ -663,7 +679,7 @@ export function AdminOrders({ onOpen, initialStatus }) {
                     </td>
                   </tr>
                 )
-                if (collapsed) return [headerRow]
+                if (collapsed) return [spacerRow, headerRow].filter(Boolean)
                 const rows = g.orders.flatMap(o => {
                   const visibleAsgns = sfilt === 'All'
                     ? (o.assignments.length > 0 ? o.assignments : [null])
@@ -703,7 +719,7 @@ export function AdminOrders({ onOpen, initialStatus }) {
                     </tr>
                   ))
                 })
-                return [headerRow, ...rows]
+                return [spacerRow, headerRow, ...rows].filter(Boolean)
               })}
               {filtered.length === 0 && <tr><td colSpan={8}><EmptyState icon="📦" title="No orders" desc="Create your first order above" /></td></tr>}
             </tbody>

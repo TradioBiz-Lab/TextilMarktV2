@@ -248,7 +248,7 @@ export function Modal({ title, subtitle, onClose, children, size = 'md' }) {
     document.addEventListener('keydown', h)
     return () => document.removeEventListener('keydown', h)
   }, [onClose])
-  const w = { sm: 420, md: 500, lg: 680, xl: 820 }[size] || 500
+  const w = { sm: 420, md: 500, lg: 680, xl: 820, xxl: 1040 }[size] || 500
   return (
     <div className="modal-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }} onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal-inner" style={{ background: T.surface, border: `1px solid ${T.border}`, width: '100%', maxWidth: w, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>

@@ -12,7 +12,8 @@ function fmtDate(d) {
 }
 
 export function MfrOrderDetail({ orderId, onBack }) {
-  const { orders, docs, users, currentUser: user, loading, updateStage, uploadDoc, getDocData } = useApp()
+  const { orders, docs, users, currentUser: user, loading, updateStage, uploadDoc, getDocData,
+    addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial } = useApp()
   const toast = useToast()
 
   const [tab, setTab] = useState('stages')
@@ -35,6 +36,11 @@ export function MfrOrderDetail({ orderId, onBack }) {
   const [fileErr, setFileErr] = useState('')
 
   const [saving, setSaving] = useState(false)
+
+  // Stage updates thread + materials checklist (inside the Stage Update modal)
+  const [updateDraft, setUpdateDraft] = useState('')
+  const emptyMaterialDraft = { name: '', requiredQty: '', unit: '', supplier: '', poNumber: '', expectedDate: '' }
+  const [materialDraft, setMaterialDraft] = useState(emptyMaterialDraft)
 
   if (loading) return <LoadingScreen />
 
@@ -89,7 +95,50 @@ export function MfrOrderDetail({ orderId, onBack }) {
     setStageInitDate(initDate)
     setStageFiles([null])
     setStageFileErrs([''])
+    setUpdateDraft('')
+    setMaterialDraft(emptyMaterialDraft)
     setShowStage(true)
+  }
+
+  const submitStageUpdateNote = async () => {
+    const text = updateDraft.trim()
+    if (!text) return
+    try {
+      await addStageUpdate(orderId, user.id, stageIdx, text)
+      setUpdateDraft('')
+    } catch (err) {
+      toast(err?.message || 'Failed to add update', 'error')
+    }
+  }
+
+  const submitAddMaterial = async () => {
+    if (!materialDraft.name.trim() || !materialDraft.requiredQty) return
+    try {
+      await addStageMaterial(orderId, user.id, stageIdx, {
+        name: materialDraft.name.trim(), requiredQty: materialDraft.requiredQty, unit: materialDraft.unit,
+        supplier: materialDraft.supplier, poNumber: materialDraft.poNumber, expectedDate: materialDraft.expectedDate || null,
+      })
+      setMaterialDraft(emptyMaterialDraft)
+    } catch (err) {
+      toast(err?.message || 'Failed to add material', 'error')
+    }
+  }
+
+  const advanceMaterialStatus = async (lineIndex, currentStatus) => {
+    const next = currentStatus === 'pending' ? 'ordered' : currentStatus === 'ordered' ? 'received' : 'pending'
+    try {
+      await updateStageMaterial(orderId, user.id, stageIdx, lineIndex, { status: next })
+    } catch (err) {
+      toast(err?.message || 'Failed to update material', 'error')
+    }
+  }
+
+  const deleteMaterial = async (lineIndex) => {
+    try {
+      await removeStageMaterial(orderId, user.id, stageIdx, lineIndex)
+    } catch (err) {
+      toast(err?.message || 'Failed to delete material', 'error')
+    }
   }
 
   const submitStage = async () => {
@@ -222,6 +271,90 @@ export function MfrOrderDetail({ orderId, onBack }) {
                 style={{ alignSelf: 'flex-start', background: 'none', border: `1px dashed ${T.border}`, color: T.primary, borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
               >+ Add another file</button>
             </div>
+
+            {/* Responsible person (read-only — reassignment is admin-only) */}
+            {stages[stageIdx]?.responsibleName && (
+              <div style={{ fontSize: 11, color: T.textMuted }}>👤 Responsible: <strong>{stages[stageIdx].responsibleName}</strong></div>
+            )}
+
+            {/* Updates thread — any manufacturer on this assignment can post */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Updates</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                {(stages[stageIdx]?.updates || []).length === 0 && <div style={{ fontSize: 12, color: T.textLight }}>No updates yet.</div>}
+                {(stages[stageIdx]?.updates || []).map((u, ui) => (
+                  <div key={ui} style={{ background: '#f8fafc', borderRadius: 6, padding: '6px 10px', border: `1px solid ${T.border}` }}>
+                    <div style={{ fontSize: 12, color: T.text }}>{u.text}</div>
+                    <div style={{ fontSize: 10, color: T.textLight, marginTop: 2 }}>{u.byUserName || 'Someone'} · {fmtDate(u.at)}</div>
+                  </div>
+                ))}
+              </div>
+              <FlexRow gap={6}>
+                <input
+                  value={updateDraft}
+                  onChange={e => setUpdateDraft(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') submitStageUpdateNote() }}
+                  placeholder="Add a progress update…"
+                  style={{ flex: 1, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit' }}
+                />
+                <Btn size="sm" disabled={!updateDraft.trim()} onClick={submitStageUpdateNote}>Post</Btn>
+              </FlexRow>
+            </div>
+
+            {/* Materials/PO checklist — full manage controls only when this manufacturer is
+                the stage's own responsible person; otherwise read-only so they can still see
+                what's blocking their own production. */}
+            {(stages[stageIdx]?.materials || []).length > 0 || stages[stageIdx]?.responsibleId === user.id ? (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Materials / PO</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                  {(stages[stageIdx]?.materials || []).length === 0 && <div style={{ fontSize: 12, color: T.textLight }}>No materials tracked for this stage.</div>}
+                  {(stages[stageIdx]?.materials || []).map((m, mi) => {
+                    const canManage = stages[stageIdx]?.responsibleId === user.id
+                    const statusStyle = m.status === 'received' ? { bg: T.successBg, c: T.success, border: T.successBorder }
+                      : m.status === 'ordered' ? { bg: T.warningBg, c: T.warning, border: T.warningBorder }
+                      : { bg: '#f1f5f9', c: T.textMuted, border: T.border }
+                    return (
+                      <div key={mi} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#f8fafc', borderRadius: 6, padding: '6px 10px', border: `1px solid ${T.border}` }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: T.text }}>{m.name} — {m.requiredQty}{m.unit ? ` ${m.unit}` : ''}</div>
+                          <div style={{ fontSize: 10, color: T.textLight }}>{[m.supplier, m.poNumber, m.expectedDate].filter(Boolean).join(' · ') || '—'}</div>
+                        </div>
+                        {canManage ? (
+                          <>
+                            <button onClick={() => advanceMaterialStatus(mi, m.status)}
+                              style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: statusStyle.bg, color: statusStyle.c, border: `1px solid ${statusStyle.border}`, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                              {m.status}
+                            </button>
+                            <button onClick={() => deleteMaterial(mi)}
+                              style={{ background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 6, cursor: 'pointer', width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: T.danger, flexShrink: 0 }}>×</button>
+                          </>
+                        ) : (
+                          <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: statusStyle.bg, color: statusStyle.c, border: `1px solid ${statusStyle.border}`, whiteSpace: 'nowrap' }}>{m.status}</span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+                {stages[stageIdx]?.responsibleId === user.id && (
+                  <FlexRow gap={6} style={{ flexWrap: 'wrap' }}>
+                    <input value={materialDraft.name} placeholder="Material name" onChange={e => setMaterialDraft(d => ({ ...d, name: e.target.value }))}
+                      style={{ flex: 1, minWidth: 100, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit' }} />
+                    <input type="number" value={materialDraft.requiredQty} placeholder="Qty" onChange={e => setMaterialDraft(d => ({ ...d, requiredQty: e.target.value }))}
+                      style={{ width: 60, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit' }} />
+                    <input value={materialDraft.unit} placeholder="Unit" onChange={e => setMaterialDraft(d => ({ ...d, unit: e.target.value }))}
+                      style={{ width: 55, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit' }} />
+                    <input value={materialDraft.supplier} placeholder="Supplier" onChange={e => setMaterialDraft(d => ({ ...d, supplier: e.target.value }))}
+                      style={{ width: 90, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit' }} />
+                    <input value={materialDraft.poNumber} placeholder="PO #" onChange={e => setMaterialDraft(d => ({ ...d, poNumber: e.target.value }))}
+                      style={{ width: 75, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit' }} />
+                    <input type="date" value={materialDraft.expectedDate} onChange={e => setMaterialDraft(d => ({ ...d, expectedDate: e.target.value }))}
+                      style={{ width: 120, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit' }} />
+                    <Btn size="sm" disabled={!materialDraft.name.trim() || !materialDraft.requiredQty} onClick={submitAddMaterial}>+ Add</Btn>
+                  </FlexRow>
+                )}
+              </div>
+            ) : null}
 
             {/* Smart prompt: stage at 100% */}
             {modalPct() >= 100 && stageIdx < stages.length - 1 && (
@@ -405,6 +538,20 @@ export function MfrOrderDetail({ orderId, onBack }) {
                           <div style={{ fontSize: 10, color: isLate ? T.danger : T.textLight, marginTop: 3 }}>
                             {s.startDate && s.startDate !== 'NA' && <>Start: {fmtDate(s.startDate)}  </>}
                             {s.eta && <>ETA: {fmtDate(s.eta)}</>}
+                          </div>
+                        )}
+                        {(s.responsibleName || (s.materials || []).length > 0) && (
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 3, flexWrap: 'wrap' }}>
+                            {s.responsibleName && <span style={{ fontSize: 10, color: T.textLight }}>👤 {s.responsibleName}</span>}
+                            {(s.materials || []).length > 0 && (() => {
+                              const receivedCount = s.materials.filter(m => m.status === 'received').length
+                              const allReceived = receivedCount === s.materials.length
+                              return (
+                                <span style={{ fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 4, background: allReceived ? T.successBg : T.warningBg, color: allReceived ? T.success : T.warning }}>
+                                  📦 {receivedCount}/{s.materials.length} received
+                                </span>
+                              )
+                            })()}
                           </div>
                         )}
                       </div>

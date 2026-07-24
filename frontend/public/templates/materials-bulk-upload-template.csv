@@ -1,0 +1,4 @@
+order_id,mfr_code,stage_name,material_name,required_qty,unit,supplier,po_number,expected_date
+ZAR-TPR-TSHRT-SS26-001,TPR,Material Sourcing,Main fabric - Cotton Spandex,500,m,ABC Textiles,PO-1001,2026-08-15
+ZAR-TPR-TSHRT-SS26-001,TPR,Material Sourcing,Zipper - YKK #5,3000,pcs,Zip Supply Co,PO-1002,2026-08-10
+ZAR-TPR-TSHRT-SS26-001,TPR,Material Sourcing,Care label,3000,pcs,,,

@@ -15,6 +15,8 @@ import { AdminOrderDetail } from './pages/admin/AdminOrderDetail.jsx'
 import { AdminDocuments } from './pages/admin/AdminDocuments.jsx'
 import { AdminAuditLog } from './pages/admin/AdminAuditLog.jsx'
 import { UserSetup } from './pages/admin/UserSetup.jsx'
+import { ActionItemsCenter } from './pages/admin/ActionItemsCenter.jsx'
+import { ReportingPage } from './pages/shared/ReportingPage.jsx'
 import { authApi } from './api.js'
 import { T } from './constants.js'
 import { Input, Btn, ToastProvider } from './components/ui.jsx'
@@ -104,6 +106,7 @@ function Inner() {
       if (view === 'order_detail' && selOid) return <BuyerOrderDetail orderId={selOid} initialMid={selMid} onBack={() => navTo('dashboard')} />
       if (view === 'submit_req') return <BuyerSubmitReq />
       if (view === 'documents') return <BuyerDocuments />
+      if (view === 'reports') return <ReportingPage onOpen={openOrder} />
     }
     if (user.role === 'manufacturer') {
       if (view === 'dashboard') return <MfrDashboard onOpen={openOrder} />
@@ -113,8 +116,10 @@ function Inner() {
     if (user.role === 'admin') {
       if (view === 'dashboard') return <AdminDashboard onNavigate={navTo} onOpen={openOrder} />
       if (view === 'orders') return <AdminOrders onOpen={openOrder} initialStatus={ordersStatus} />
+      if (view === 'action_items') return <ActionItemsCenter onOpen={openOrder} onNavigate={navTo} />
       if (view === 'order_detail' && selOid) return <AdminOrderDetail orderId={selOid} initialMid={selMid} onBack={() => navTo('orders')} />
       if (view === 'documents') return <AdminDocuments />
+      if (view === 'reports') return <ReportingPage onOpen={openOrder} />
       if (view === 'audit') return <AdminAuditLog />
       if (view === 'users' && user.adminType === 'master') return <UserSetup />
     }

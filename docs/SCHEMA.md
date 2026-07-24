@@ -121,17 +121,63 @@ DEFAULT_STAGE_NAMES = [
 {
   name:       String   required — stage display name
   unitsDone:  Number   default: 0, min: 0 — cannot exceed totalUnits
-  totalUnits: Number   required, min: 0 — typically equals the assignment's qty
+  totalUnits: Number   required, min: 0 — target quantity for this stage; defaults to the
+                       assignment's qty but is independently editable (not every stage
+                       tracks the full order qty, e.g. "Lab Dip Approval" might target
+                       3 dips, not 600 pieces)
   startDate:  String | null   ISO date string or "NA" — required at creation (planned start)
   eta:        String | null   ISO date string or "NA" — required at creation (planned end)
   stageDate:  String | null   date set by manufacturer when working this stage (actual, not planned)
   note:       String   default: "" — latest free-text note for this stage
+  description: String  default: "", max 1000 chars — static description of what this
+                       stage involves, separate from `note` (the transient last-update note)
+  responsibleId: ObjectId | null → users   admin or manufacturer accountable for this stage
+  updates:    [StageUpdate]   embedded array — ticket-style progress log, see below
+  materials:  [StageMaterial] embedded array — procurement checklist, see below
 }
 ```
 
 **Required at creation:** both `startDate` and `eta` must be an explicit date or the literal
 `"NA"` — never blank/null — enforced in `validateAndCreateOrder` (`backend/src/routes/orders.js`).
 When both are real (non-`"NA"`) dates, `startDate` must be on or before `eta`.
+
+### Embedded: `stages[].updates`
+
+```
+{
+  text:   String    required, max 1000 chars
+  byUser: ObjectId → users   required
+  at:     Date      default: now
+}
+```
+
+### Embedded: `stages[].materials`
+
+Raw-material/trim procurement checklist for a stage — any stage may have zero or more
+lines (not tied to a specific stage name). **Gating rule:** if a stage has 1+ material
+lines, `unitsDone` cannot be advanced past its current value while any line's `status`
+isn't `"received"` — enforced in the general stage-update route
+(`backend/src/routes/orders.js`), applying uniformly to manufacturer updates and admin
+Stage Override alike. Stages with an empty `materials[]` are unaffected.
+
+```
+{
+  name:         String   required, max 200 chars — e.g. "Main fabric — Cotton Spandex"
+  requiredQty:  Number   required, min: 0
+  unit:         String   default: "" — e.g. "m", "pcs", "kg"
+  supplier:     String   default: "" — free text, no separate Supplier collection
+  poNumber:     String   default: ""
+  expectedDate: String | null   ISO date string or "NA"
+  status:       String   enum: ["pending","ordered","received"], default: "pending"
+  orderedQty:   Number   default: 0, min: 0
+  receivedQty:  Number   default: 0, min: 0
+  note:         String   default: ""
+}
+```
+
+**Who can manage `updates`/`materials`:** the order's admin (any), or — for `materials`
+specifically — the stage's own `responsibleId` (admin or manufacturer) in addition to any
+admin. Manufacturers may only act on stages within their own assignment.
 
 **Sequential progress rule:** when stage *N* is updated, all stages *N+1…* are reset to
 `unitsDone: 0, note: ""` — production is treated as strictly sequential, you cannot be
@@ -196,6 +242,9 @@ manufacturer, an order, or both — or is stage-evidence tied to a specific stag
 
   stageIndex  Number | null       min: 0 — index into the relevant assignment's stages[],
                                   null for non-stage documents
+  materialLineIndex Number | null min: 0 — index into stages[stageIndex].materials[],
+                                  set only for PO document attachments on a specific
+                                  materials/PO checklist line; requires stageIndex
   notes       String | null       free-text context, esp. for text-only stage evidence
 
   dataUrl     String | null       base64 data URL (inline file)
@@ -313,6 +362,49 @@ Admin-published banner alerts shown to buyers/manufacturers (or everyone).
 
 **Indexes:**
 - `{ isActive: 1, audience: 1 }`
+
+---
+
+## 8. `actionitems`
+
+Admin-only task tracker. An admin creates an item, assigns it to another admin,
+optionally links it to a customer (buyer) and/or a specific order/TNA stage, sets
+priority and an ETA, and logs timestamped free-text progress updates until closing it.
+Never shown to buyers or manufacturers.
+
+```
+{
+  _id         ObjectId            auto
+  title       String              required, max 200 chars
+  detail      String              default: ""
+  assigneeId  ObjectId → users    required — must be an active admin
+  createdBy   ObjectId → users    required
+  buyerId     ObjectId → users    nullable — customer this item relates to; null = "Internal"
+  orderId     String → orders    nullable — set when lifted from a TNA stage
+  stageName   String | null       which stage, when lifted from TNA
+  source      String              enum: ["custom", "tna"], default: "custom"
+  priority    String              enum: ["high", "medium", "low"], default: "medium"
+  eta         Date | null         due date
+  status      String              enum: ["open", "done"], default: "open"
+  updates     [Update]            chronological progress log (see below)
+  closedAt    Date | null         set when status becomes "done", cleared on reopen
+  createdAt   Date                auto
+  updatedAt   Date                auto
+}
+```
+
+**Embedded: `updates`**
+```
+{
+  text    String              required, max 1000 chars
+  byUser  ObjectId → users    required
+  at      Date                default: now
+}
+```
+
+**Indexes:**
+- `{ assigneeId: 1, status: 1 }` — "my open items"
+- `{ buyerId: 1, status: 1 }` — per-customer grouping
 
 ---
 

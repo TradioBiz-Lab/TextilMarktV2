@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import mongoose from 'mongoose'
 import { MasterOrder } from '../models/MasterOrder.js'
+import { Order }        from '../models/Order.js'
 import { User }        from '../models/User.js'
 import { AuditLog }    from '../models/AuditLog.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
@@ -85,6 +86,32 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
     if (err.code === 11000)
       return res.status(400).json({ error: 'Duplicate master order ID' })
     console.error('Master order create error:', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/master-orders/:id/delete — delete (admin only). Refuses if any order
+// still references this master order, to avoid orphaning real orders.
+router.post('/:id/delete', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const mo = await MasterOrder.findById(req.params.id).lean()
+    if (!mo) return res.status(404).json({ error: 'Master order not found' })
+
+    const childCount = await Order.countDocuments({ masterOrderId: mo._id })
+    if (childCount > 0)
+      return res.status(400).json({ error: `Cannot delete — ${childCount} order(s) still reference this master order. Delete those first.` })
+
+    await MasterOrder.findByIdAndDelete(mo._id)
+
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Master Order Deleted',
+      detail: `${mo._id} — ${mo.orderName} deleted by ${req.user.name}`,
+    })
+
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('Master order delete error:', err)
     res.status(500).json({ error: 'Server error' })
   }
 })

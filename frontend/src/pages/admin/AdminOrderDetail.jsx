@@ -15,7 +15,8 @@ function fmtDate(d) {
 }
 
 export function AdminOrderDetail({ orderId, initialMid, onBack }) {
-  const { orders, docs, users, loading, updateAssignment, updateStage, uploadDoc, getDocData, refreshOrders, editOrder, deleteOrder } = useApp()
+  const { currentUser, orders, docs, users, loading, updateAssignment, updateStage, uploadDoc, getDocData, refreshOrders, editOrder, deleteOrder,
+    addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial } = useApp()
   const toast = useToast()
 
   const [showEdit, setShowEdit] = useState(false)
@@ -33,18 +34,39 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   const [stStatus, setStStatus] = useState('')
   const [stNote, setStNote] = useState('')
 
-  // Stage override modal
+  // Stage override modal (master admin only — bypasses materials gating)
   const [showStage, setShowStage] = useState(false)
   const [sgTarget, setSgTarget] = useState(null) // mfrId
   const [sgIndex, setSgIndex] = useState(0)
   const [sgUnits, setSgUnits] = useState('')
   const [sgNote, setSgNote] = useState('')
 
+  // Update Stage modal (status + updates + materials) — opened by clicking a stage row
+  const [showUpdateStage, setShowUpdateStage] = useState(false)
+  const [usTarget, setUsTarget] = useState(null) // mfrId
+  const [usIndex, setUsIndex] = useState(0)
+  const [usUnits, setUsUnits] = useState('')
+  const [usDescription, setUsDescription] = useState('')
+
   // Stage dates (start/end) adjustment modal
   const [showEta, setShowEta] = useState(false)
   const [etaTarget, setEtaTarget] = useState(null) // mfrId
   const [etaValues, setEtaValues] = useState([]) // array of end-date strings
   const [startValues, setStartValues] = useState([]) // array of start-date strings
+  const [responsibleValues, setResponsibleValues] = useState([]) // array of responsibleId strings
+  const [totalUnitsValues, setTotalUnitsValues] = useState([]) // array of target-qty strings — not every stage tracks the full order qty
+  const [descriptionValues, setDescriptionValues] = useState([]) // array of stage description strings
+
+  // Prompt to copy this save's responsibility changes to matching-named stages on
+  // every other order under the same master order (offered only when there's a
+  // sibling order to apply to, and only for stages whose responsible person changed).
+  const [showApplyAll, setShowApplyAll] = useState(false)
+  const [pendingRespChanges, setPendingRespChanges] = useState([]) // [{stageName, responsibleId}]
+
+  // Per-stage updates thread + materials checklist (expand, in the stage grid)
+  const [expandedStage, setExpandedStage] = useState(null) // `${mfrId}:${stageIndex}` or null
+  const [updateDrafts, setUpdateDrafts] = useState({})
+  const [materialDrafts, setMaterialDrafts] = useState({}) // keyed by `${mfrId}:${stageIndex}` -> new-line form
 
   // Doc upload modal
   const [showUp, setShowUp] = useState(false)
@@ -59,6 +81,14 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   const [sdItems, setSdItems] = useState([{ type: '', name: '', file: null, notes: '', fileErr: '' }])
   const [sdErr, setSdErr] = useState('')
 
+  // Material PO attachment modal
+  const [showMaterialPo, setShowMaterialPo] = useState(false)
+  const [mpMfrId, setMpMfrId] = useState(null)
+  const [mpStageIdx, setMpStageIdx] = useState(0)
+  const [mpLineIdx, setMpLineIdx] = useState(0)
+  const [mpFile, setMpFile] = useState(null)
+  const [mpFileErr, setMpFileErr] = useState('')
+
   const [saving, setSaving] = useState(false)
   const [selectedMid, setSelectedMid] = useState(initialMid || null)
 
@@ -70,8 +100,16 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     return asgn?.stages?.[sgIndex] || null
   }, [order, sgTarget, sgIndex])
 
+  const usStageData = useMemo(() => {
+    if (!usTarget || !order) return null
+    const asgn = order.assignments.find(a => String(a.mid) === String(usTarget))
+    return asgn?.stages?.[usIndex] || null
+  }, [order, usTarget, usIndex])
+
   if (loading) return <LoadingScreen />
   if (!order) return null
+
+  const responsibleUsers = users.filter(u => (u.role === 'admin' || u.role === 'manufacturer') && u.isActive)
 
   const effectiveMid = selectedMid || (order.assignments?.length === 1 ? String(order.assignments[0]?.mid) : null)
   const selectedAsgn = order.assignments?.find(a => String(a.mid) === effectiveMid) || null
@@ -95,6 +133,9 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     setEtaTarget(mfrId)
     setStartValues((asgn?.stages || []).map(s => dateToInput(s.startDate)))
     setEtaValues((asgn?.stages || []).map(s => dateToInput(s.eta)))
+    setResponsibleValues((asgn?.stages || []).map(s => s.responsibleId || ''))
+    setTotalUnitsValues((asgn?.stages || []).map(s => s.totalUnits?.toString() || ''))
+    setDescriptionValues((asgn?.stages || []).map(s => s.description || ''))
     setShowEta(true)
   }
 
@@ -104,18 +145,29 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
       const asgn = order.assignments.find(a => String(a.mid) === String(etaTarget))
       const stageCount = asgn?.stages?.length || 0
       let changed = false
+      const respChanges = []
       for (let i = 0; i < stageCount; i++) {
         const stage = asgn?.stages?.[i]
         const oldStart = dateToInput(stage?.startDate)
         const oldEta = dateToInput(stage?.eta)
+        const oldResponsible = stage?.responsibleId || ''
+        const oldTotalUnits = stage?.totalUnits?.toString() || ''
+        const oldDescription = stage?.description || ''
         const startChanged = startValues[i] !== oldStart
         const etaChanged = etaValues[i] !== oldEta
-        if (startChanged || etaChanged) {
+        const responsibleChanged = (responsibleValues[i] || '') !== oldResponsible
+        const totalUnitsChanged = (totalUnitsValues[i] || '') !== oldTotalUnits && (totalUnitsValues[i] || '').trim() !== ''
+        const descriptionChanged = (descriptionValues[i] || '') !== oldDescription
+        if (startChanged || etaChanged || responsibleChanged || totalUnitsChanged || descriptionChanged) {
           const dates = {}
           if (startChanged) dates.startDate = startValues[i] === 'NA' ? 'NA' : startValues[i] || null
           if (etaChanged) dates.eta = etaValues[i] === 'NA' ? 'NA' : etaValues[i] || null
+          if (responsibleChanged) dates.responsibleId = responsibleValues[i] || null
+          if (totalUnitsChanged) dates.totalUnits = parseInt(totalUnitsValues[i], 10)
+          if (descriptionChanged) dates.description = descriptionValues[i] || ''
           await ordersApi.updateStageDates(order.id, etaTarget, i, dates)
           changed = true
+          if (responsibleChanged && stage?.name) respChanges.push({ stageName: stage.name, responsibleId: responsibleValues[i] || null })
         }
       }
       if (changed) {
@@ -125,8 +177,123 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
         toast('No date changes to save', 'info')
       }
       setShowEta(false)
+
+      // Offer to copy responsibility changes to matching-named stages on sibling
+      // orders under the same master order, if any exist.
+      if (respChanges.length > 0 && order.masterOrderId) {
+        const hasSiblings = orders.some(o => o.masterOrderId === order.masterOrderId && o.id !== order.id)
+        if (hasSiblings) {
+          setPendingRespChanges(respChanges)
+          setShowApplyAll(true)
+        }
+      }
     } catch (err) {
       toast(err?.message || 'Failed to update stage dates', 'error')
+    } finally { setSaving(false) }
+  }
+
+  // Copies pendingRespChanges (this order's just-saved responsibility assignments)
+  // onto every other order sharing the same master order, matched by stage name
+  // (stage sets can differ per order/style, so index-matching would be unsafe).
+  const applyResponsibilityToMasterOrder = async () => {
+    setSaving(true)
+    try {
+      const siblings = orders.filter(o => o.masterOrderId === order.masterOrderId && o.id !== order.id)
+      let updateCount = 0
+      for (const sib of siblings) {
+        for (const sAsgn of (sib.assignments || [])) {
+          for (let idx = 0; idx < (sAsgn.stages || []).length; idx++) {
+            const sStage = sAsgn.stages[idx]
+            const match = pendingRespChanges.find(c => c.stageName.trim().toLowerCase() === (sStage.name || '').trim().toLowerCase())
+            if (match && (sStage.responsibleId || null) !== (match.responsibleId || null)) {
+              await ordersApi.updateStageDates(sib.id, sAsgn.mid, idx, { responsibleId: match.responsibleId })
+              updateCount++
+            }
+          }
+        }
+      }
+      await refreshOrders()
+      toast(updateCount > 0 ? `Responsibility applied to ${updateCount} stage(s) across ${siblings.length} order(s)` : 'No matching stages found on other orders', 'success')
+    } catch (err) {
+      toast(err?.message || 'Failed to apply to other orders', 'error')
+    } finally {
+      setSaving(false)
+      setShowApplyAll(false)
+      setPendingRespChanges([])
+    }
+  }
+
+  // ── Stage updates thread + materials checklist (expand row) ──
+  const submitStageUpdateNote = async (mfrId, stageIndex) => {
+    const key = `${mfrId}:${stageIndex}`
+    const text = (updateDrafts[key] || '').trim()
+    if (!text) return
+    try {
+      await addStageUpdate(order.id, mfrId, stageIndex, text)
+      setUpdateDrafts(d => ({ ...d, [key]: '' }))
+    } catch (err) {
+      toast(err?.message || 'Failed to add update', 'error')
+    }
+  }
+
+  const emptyMaterialDraft = { name: '', requiredQty: '', unit: '', supplier: '', poNumber: '', expectedDate: '' }
+  const submitAddMaterial = async (mfrId, stageIndex) => {
+    const key = `${mfrId}:${stageIndex}`
+    const draft = materialDrafts[key] || emptyMaterialDraft
+    if (!draft.name.trim() || !draft.requiredQty) return
+    try {
+      await addStageMaterial(order.id, mfrId, stageIndex, {
+        name: draft.name.trim(), requiredQty: draft.requiredQty, unit: draft.unit,
+        supplier: draft.supplier, poNumber: draft.poNumber, expectedDate: draft.expectedDate || null,
+      })
+      setMaterialDrafts(d => ({ ...d, [key]: emptyMaterialDraft }))
+    } catch (err) {
+      toast(err?.message || 'Failed to add material', 'error')
+    }
+  }
+
+  const advanceMaterialStatus = async (mfrId, stageIndex, lineIndex, currentStatus) => {
+    const next = currentStatus === 'pending' ? 'ordered' : currentStatus === 'ordered' ? 'received' : 'pending'
+    try {
+      await updateStageMaterial(order.id, mfrId, stageIndex, lineIndex, { status: next })
+    } catch (err) {
+      toast(err?.message || 'Failed to update material', 'error')
+    }
+  }
+
+  const deleteMaterial = async (mfrId, stageIndex, lineIndex) => {
+    try {
+      await removeStageMaterial(order.id, mfrId, stageIndex, lineIndex)
+    } catch (err) {
+      toast(err?.message || 'Failed to delete material', 'error')
+    }
+  }
+
+  // ── Material PO attachment ──
+  const openMaterialPoUpload = (mfrId, stageIndex, lineIndex) => {
+    setMpMfrId(mfrId)
+    setMpStageIdx(stageIndex)
+    setMpLineIdx(lineIndex)
+    setMpFile(null)
+    setMpFileErr('')
+    setShowMaterialPo(true)
+  }
+
+  const submitMaterialPo = async () => {
+    if (!mpFile) { setMpFileErr('Please select a file.'); return }
+    setSaving(true)
+    try {
+      const asgn = order.assignments.find(a => String(a.mid) === String(mpMfrId))
+      const material = asgn?.stages?.[mpStageIdx]?.materials?.[mpLineIdx]
+      await uploadDoc({
+        type: 'material_po', name: material?.name ? `${material.name} — PO` : 'Material PO',
+        orderId: order.id, mfrId: mpMfrId, stageIndex: mpStageIdx, materialLineIndex: mpLineIdx,
+        ...fileUploadPayload(mpFile),
+      })
+      toast('PO document attached', 'success')
+      setShowMaterialPo(false)
+    } catch (err) {
+      toast(err?.message || 'Failed to attach PO document', 'error')
     } finally { setSaving(false) }
   }
 
@@ -151,11 +318,11 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   }
 
   // ── Stage Override ──
-  const openStageOverride = (mfrId) => {
+  const openStageOverride = (mfrId, stageIndex = 0) => {
     const asgn = order.assignments.find(a => String(a.mid) === String(mfrId))
     setSgTarget(mfrId)
-    setSgIndex(0)
-    setSgUnits(asgn?.stages?.[0]?.unitsDone?.toString() || '0')
+    setSgIndex(stageIndex)
+    setSgUnits(asgn?.stages?.[stageIndex]?.unitsDone?.toString() || '0')
     setSgNote('')
     setShowStage(true)
   }
@@ -168,11 +335,44 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
       await updateStage(order.id, sgTarget, sgIndex, {
         unitsDone: units,
         note: `[Admin Override] ${sgNote}`,
+        override: true,
       })
       toast('Stage progress updated', 'success')
       setShowStage(false)
-    } catch {
-      toast('Failed to update stage', 'error')
+    } catch (err) {
+      toast(err?.message || 'Failed to update stage', 'error')
+    } finally { setSaving(false) }
+  }
+
+  // ── Update Stage modal (status + updates + materials) ──
+  const openUpdateStage = (mfrId, stageIndex) => {
+    const asgn = order.assignments.find(a => String(a.mid) === String(mfrId))
+    setUsTarget(mfrId)
+    setUsIndex(stageIndex)
+    setUsUnits(asgn?.stages?.[stageIndex]?.unitsDone?.toString() || '0')
+    setUsDescription(asgn?.stages?.[stageIndex]?.description || '')
+    setShowUpdateStage(true)
+  }
+
+  const submitStatusChange = async () => {
+    setSaving(true)
+    try {
+      const units = parseInt(usUnits) || 0
+      await updateStage(order.id, usTarget, usIndex, { unitsDone: units })
+      toast('Stage progress updated', 'success')
+    } catch (err) {
+      toast(err?.message || 'Failed to update stage', 'error')
+    } finally { setSaving(false) }
+  }
+
+  const submitDescriptionChange = async () => {
+    setSaving(true)
+    try {
+      await ordersApi.updateStageDates(order.id, usTarget, usIndex, { description: usDescription || '' })
+      await refreshOrders()
+      toast('Stage description updated', 'success')
+    } catch (err) {
+      toast(err?.message || 'Failed to update description', 'error')
     } finally { setSaving(false) }
   }
 
@@ -360,8 +560,8 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
 
       {/* ── Stage Override Modal ── */}
       {showStage && sgTarget && (
-        <Modal title="Override Production Stage" subtitle="Admin can progress or regress any stage — logged as admin override" size="lg" onClose={() => setShowStage(false)}>
-          <Alert type="warning" style={{ marginBottom: 14 }}>Stage overrides are logged in the audit trail. A mandatory comment is required.</Alert>
+        <Modal title="Override Production Stage" subtitle="Master admin can force any stage as done, bypassing the materials-pending gate" size="lg" onClose={() => setShowStage(false)}>
+          <Alert type="warning" style={{ marginBottom: 14 }}>Master-admin-only. Use this when a stage is marked done but isn't actually complete — it bypasses the materials-pending check and is logged in the audit trail. A mandatory comment is required.</Alert>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <Select label="Stage" value={sgIndex} onChange={e => {
               const idx = parseInt(e.target.value)
@@ -427,39 +627,261 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
         </Modal>
       )}
 
+      {/* ── Update Stage Modal (description + status + evidence) ── */}
+      {showUpdateStage && usTarget && (() => {
+        const key = `${usTarget}:${usIndex}`
+        const draft = materialDrafts[key] || emptyMaterialDraft
+        const uploadedStageDocs = orderDocs.filter(d => d.stageIndex === usIndex && d.materialLineIndex == null && String(d.mfrId || '') === String(usTarget))
+        return (
+          <Modal title={usStageData?.name || 'Update Stage'} subtitle="Update progress, post updates, and manage materials/PO and evidence for this stage" size="lg" onClose={() => setShowUpdateStage(false)}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+              {/* Description */}
+              <div>
+                <SectionLabel>Description</SectionLabel>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <Textarea value={usDescription} onChange={e => setUsDescription(e.target.value)} placeholder="What does this stage involve? (optional)" />
+                  <FlexRow justify="flex-end">
+                    <Btn size="sm" variant="secondary" disabled={saving} onClick={submitDescriptionChange}>{saving ? 'Saving…' : 'Save Description'}</Btn>
+                  </FlexRow>
+                </div>
+              </div>
+
+              {/* Status */}
+              <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
+                <SectionLabel>Status</SectionLabel>
+                {usStageData && (
+                  <div style={{ background: '#f8fafc', borderRadius: 10, border: `1px solid ${T.border}`, padding: '12px 14px', marginBottom: 10 }}>
+                    <FlexRow justify="space-between" style={{ marginBottom: 6 }}>
+                      <span style={{ fontSize: 12, color: T.textMuted }}>Current: {usStageData.unitsDone} / {usStageData.totalUnits} units</span>
+                    </FlexRow>
+                    <div style={{ height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{ height: 6, background: T.primary, borderRadius: 3, width: `${usStageData.totalUnits > 0 ? (usStageData.unitsDone / usStageData.totalUnits) * 100 : 0}%`, transition: 'width 0.3s' }} />
+                    </div>
+                  </div>
+                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <Input label={`Units Done (max ${usStageData?.totalUnits || 0})`} type="number" value={usUnits} onChange={e => setUsUnits(e.target.value)} placeholder="0" />
+                  <FlexRow justify="flex-end">
+                    <Btn size="sm" disabled={saving} onClick={submitStatusChange}>{saving ? 'Saving…' : 'Save Progress'}</Btn>
+                  </FlexRow>
+                </div>
+              </div>
+
+              {/* Updates thread */}
+              <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
+                <SectionLabel>Updates</SectionLabel>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                  {(usStageData?.updates || []).length === 0 && <div style={{ fontSize: 11, color: T.textLight }}>No updates yet.</div>}
+                  {(usStageData?.updates || []).map((u, ui) => (
+                    <div key={ui} style={{ background: '#fff', borderRadius: 6, padding: '6px 10px', border: `1px solid ${T.border}` }}>
+                      <div style={{ fontSize: 11, color: T.text }}>{u.text}</div>
+                      <div style={{ fontSize: 9, color: T.textLight, marginTop: 2 }}>{u.byUserName || 'Someone'} · {fmtDate(u.at)}</div>
+                    </div>
+                  ))}
+                </div>
+                <FlexRow gap={6}>
+                  <input
+                    value={updateDrafts[key] || ''}
+                    onChange={e => setUpdateDrafts(d => ({ ...d, [key]: e.target.value }))}
+                    onKeyDown={e => { if (e.key === 'Enter') submitStageUpdateNote(usTarget, usIndex) }}
+                    placeholder="Add a progress update…"
+                    style={{ flex: 1, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit' }}
+                  />
+                  <Btn size="sm" disabled={!(updateDrafts[key] || '').trim()} onClick={() => submitStageUpdateNote(usTarget, usIndex)}>Post</Btn>
+                </FlexRow>
+              </div>
+
+              {/* Materials / PO checklist */}
+              <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
+                <SectionLabel>Materials / PO</SectionLabel>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                  {(usStageData?.materials || []).length === 0 && <div style={{ fontSize: 11, color: T.textLight }}>No materials tracked for this stage.</div>}
+                  {(usStageData?.materials || []).map((m, mi) => {
+                    const statusStyle = m.status === 'received' ? { bg: T.successBg, c: T.success, border: T.successBorder }
+                      : m.status === 'ordered' ? { bg: T.warningBg, c: T.warning, border: T.warningBorder }
+                      : { bg: '#f1f5f9', c: T.textMuted, border: T.border }
+                    const poRow = orderDocs.filter(d => d.stageIndex === usIndex && d.materialLineIndex === mi && String(d.mfrId || '') === String(usTarget))
+                    return (
+                      <div key={mi} style={{ background: '#fff', borderRadius: 6, padding: '6px 10px', border: `1px solid ${T.border}` }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: T.text }}>{m.name} — {m.requiredQty}{m.unit ? ` ${m.unit}` : ''}</div>
+                            <div style={{ fontSize: 10, color: T.textLight }}>{[m.supplier, m.poNumber, m.expectedDate].filter(Boolean).join(' · ') || '—'}</div>
+                          </div>
+                          <button onClick={() => advanceMaterialStatus(usTarget, usIndex, mi, m.status)}
+                            style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: statusStyle.bg, color: statusStyle.c, border: `1px solid ${statusStyle.border}`, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                            {m.status}
+                          </button>
+                          <button onClick={() => openMaterialPoUpload(usTarget, usIndex, mi)} title="Attach PO document"
+                            style={{ background: '#fff', border: `1px solid ${T.border}`, borderRadius: 6, cursor: 'pointer', width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, flexShrink: 0 }}>📎</button>
+                          <button onClick={() => deleteMaterial(usTarget, usIndex, mi)}
+                            style={{ background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 6, cursor: 'pointer', width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: T.danger, flexShrink: 0 }}>×</button>
+                        </div>
+                        {poRow.length > 0 && (
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                            {poRow.map(d => (
+                              <span key={d.id} onClick={async () => {
+                                try {
+                                  setViewerName(d.name)
+                                  setViewerLoading(true)
+                                  setViewerBlob(null)
+                                  const data = await getDocData(d.id)
+                                  if (!data?.dataUrl) { setViewerLoading(false); return }
+                                  const blob = dataUrlToBlobUrl(data.dataUrl)
+                                  if (!blob) { setViewerLoading(false); return }
+                                  setViewerBlob(blob)
+                                } catch { setViewerLoading(false) }
+                              }} style={{ fontSize: 10, background: T.primaryLight, color: T.primaryDark, padding: '2px 8px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${T.warningBorder}` }}>
+                                📎 {d.name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+                <FlexRow gap={6} style={{ flexWrap: 'wrap' }}>
+                  <input value={draft.name} placeholder="Material name" onChange={e => setMaterialDrafts(d => ({ ...d, [key]: { ...draft, name: e.target.value } }))}
+                    style={{ flex: 1, minWidth: 100, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit' }} />
+                  <input type="number" value={draft.requiredQty} placeholder="Qty" onChange={e => setMaterialDrafts(d => ({ ...d, [key]: { ...draft, requiredQty: e.target.value } }))}
+                    style={{ width: 60, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit' }} />
+                  <input value={draft.unit} placeholder="Unit" onChange={e => setMaterialDrafts(d => ({ ...d, [key]: { ...draft, unit: e.target.value } }))}
+                    style={{ width: 55, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit' }} />
+                  <input value={draft.supplier} placeholder="Supplier" onChange={e => setMaterialDrafts(d => ({ ...d, [key]: { ...draft, supplier: e.target.value } }))}
+                    style={{ width: 90, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit' }} />
+                  <input value={draft.poNumber} placeholder="PO #" onChange={e => setMaterialDrafts(d => ({ ...d, [key]: { ...draft, poNumber: e.target.value } }))}
+                    style={{ width: 75, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit' }} />
+                  <input type="date" value={draft.expectedDate} onChange={e => setMaterialDrafts(d => ({ ...d, [key]: { ...draft, expectedDate: e.target.value } }))}
+                    style={{ width: 120, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit' }} />
+                  <Btn size="sm" disabled={!draft.name.trim() || !draft.requiredQty} onClick={() => submitAddMaterial(usTarget, usIndex)}>+ Add</Btn>
+                </FlexRow>
+              </div>
+
+              {/* Evidence */}
+              <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
+                <SectionLabel>Evidence</SectionLabel>
+                {uploadedStageDocs.length === 0 && <div style={{ fontSize: 11, color: T.textLight, marginBottom: 8 }}>No evidence uploaded yet.</div>}
+                {uploadedStageDocs.length > 0 && (
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+                    {uploadedStageDocs.map(d => (
+                      <span key={d.id} onClick={async () => {
+                        try {
+                          setViewerName(d.name)
+                          setViewerLoading(true)
+                          setViewerBlob(null)
+                          const data = await getDocData(d.id)
+                          if (!data?.dataUrl) { setViewerLoading(false); return }
+                          const blob = dataUrlToBlobUrl(data.dataUrl)
+                          if (!blob) { setViewerLoading(false); return }
+                          setViewerBlob(blob)
+                        } catch { setViewerLoading(false) }
+                      }} style={{ fontSize: 10, background: T.primaryLight, color: T.primaryDark, padding: '2px 8px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${T.warningBorder}` }}>
+                        {DOC_ICONS[d.type] || '📄'} {d.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <Btn size="sm" variant="outline" onClick={() => openStageDocUpload(usTarget, usIndex)}>
+                  📎 Upload Evidence
+                </Btn>
+              </div>
+
+              <FlexRow justify="flex-end">
+                <Btn variant="secondary" onClick={() => setShowUpdateStage(false)}>Close</Btn>
+              </FlexRow>
+            </div>
+          </Modal>
+        )
+      })()}
+
       {/* ── Stage Dates Adjustment Modal ── */}
       {showEta && etaTarget && (
-        <Modal title="Adjust Stage Dates" subtitle="Update planned start and end dates for each production stage" size="lg" onClose={() => setShowEta(false)}>
-          <Alert type="info" style={{ marginBottom: 14 }}>Adjust dates for delayed stages. Changes are logged in the audit trail.</Alert>
+        <Modal title="Bulk Edit Stages" subtitle="Update dates, responsible person, target quantity, and description for every stage at once" size="xxl" onClose={() => setShowEta(false)}>
+          <Alert type="info" style={{ marginBottom: 20 }}>Changes are logged in the audit trail.</Alert>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ background: '#f8fafc', borderRadius: 10, border: `1px solid ${T.border}`, padding: '12px 14px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {(order.assignments.find(a => String(a.mid) === String(etaTarget))?.stages || []).map((s, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: T.text, minWidth: 110 }}>{i + 1}. {s.name}</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {(order.assignments.find(a => String(a.mid) === String(etaTarget))?.stages || []).map((s, i, arr) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 12, borderBottom: i < arr.length - 1 ? `1px solid ${T.border}` : 'none' }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: T.text, width: 190, flexShrink: 0, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>{i + 1}. {s.name}</span>
                     <input
                       type={startValues[i] === 'NA' ? 'text' : 'date'}
                       value={startValues[i]}
                       onChange={e => setStartValues(prev => prev.map((v, j) => j === i ? e.target.value : v))}
                       placeholder="NA or start date"
-                      style={{ flex: 1, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: startValues[i] === 'NA' ? T.textLight : T.text }}
+                      style={{ width: 135, flexShrink: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: startValues[i] === 'NA' ? T.textLight : T.text }}
                     />
                     <input
                       type={etaValues[i] === 'NA' ? 'text' : 'date'}
                       value={etaValues[i]}
                       onChange={e => setEtaValues(prev => prev.map((v, j) => j === i ? e.target.value : v))}
                       placeholder="NA or end date"
-                      style={{ flex: 1, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: etaValues[i] === 'NA' ? T.textLight : T.text }}
+                      style={{ width: 135, flexShrink: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: etaValues[i] === 'NA' ? T.textLight : T.text }}
                     />
+                    <select
+                      value={responsibleValues[i] || ''}
+                      onChange={e => setResponsibleValues(prev => prev.map((v, j) => j === i ? e.target.value : v))}
+                      style={{ width: 170, flexShrink: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: responsibleValues[i] ? T.text : T.textLight, cursor: 'pointer' }}
+                    >
+                      <option value="">Unassigned</option>
+                      {responsibleUsers.map(u => (
+                        <option key={u.id} value={u.id}>{u.role === 'admin' ? 'Admin' : 'Mfr'}: {u.role === 'admin' ? u.name : u.company}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      min={1}
+                      value={totalUnitsValues[i] || ''}
+                      onChange={e => setTotalUnitsValues(prev => prev.map((v, j) => j === i ? e.target.value : v))}
+                      placeholder="Target qty"
+                      title="Target quantity for this stage — not every stage tracks the full order qty (e.g. Lab Dip Approval might target 3 dips, not 600 pieces)"
+                      style={{ width: 90, flexShrink: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit' }}
+                    />
+                    <input
+                      value={descriptionValues[i] || ''}
+                      onChange={e => setDescriptionValues(prev => prev.map((v, j) => j === i ? e.target.value : v))}
+                      placeholder="Description (optional)"
+                      style={{ flex: 1, minWidth: 140, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit' }}
+                    />
+                    <button
+                      onClick={() => openStageDocUpload(etaTarget, i)}
+                      title="Upload evidence document for this stage"
+                      style={{ flexShrink: 0, background: '#fff', border: `1px solid ${T.border}`, borderRadius: 6, cursor: 'pointer', width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}
+                    >📎</button>
                   </div>
                 ))}
               </div>
             </div>
             <FlexRow justify="flex-end" gap={8}>
               <Btn variant="secondary" onClick={() => setShowEta(false)}>Cancel</Btn>
-              <Btn disabled={saving} onClick={submitEtaAdjust}>{saving ? 'Saving…' : 'Update Dates'}</Btn>
+              <Btn disabled={saving} onClick={submitEtaAdjust}>{saving ? 'Saving…' : 'Save Changes'}</Btn>
             </FlexRow>
           </div>
+        </Modal>
+      )}
+
+      {/* ── Apply Responsibility to Master Order prompt ── */}
+      {showApplyAll && (
+        <Modal
+          title="Apply to other orders too?"
+          subtitle="This order belongs to a master order with other line items — apply the same responsibility assignment(s) to their matching stages (by stage name)?"
+          onClose={() => { setShowApplyAll(false); setPendingRespChanges([]) }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
+            {pendingRespChanges.map((c, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, background: '#f8fafc', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px' }}>
+                <span style={{ color: T.text, fontWeight: 600 }}>{c.stageName}</span>
+                <span style={{ color: T.textMuted }}>
+                  {c.responsibleId ? (responsibleUsers.find(u => u.id === c.responsibleId)?.name || responsibleUsers.find(u => u.id === c.responsibleId)?.company || 'Unknown') : 'Unassigned'}
+                </span>
+              </div>
+            ))}
+          </div>
+          <FlexRow justify="flex-end" gap={8}>
+            <Btn variant="secondary" disabled={saving} onClick={() => { setShowApplyAll(false); setPendingRespChanges([]) }}>Just This Order</Btn>
+            <Btn disabled={saving} onClick={applyResponsibilityToMasterOrder}>{saving ? 'Applying…' : 'Apply to All Orders'}</Btn>
+          </FlexRow>
         </Modal>
       )}
 
@@ -501,12 +923,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                   <button onClick={() => removeSdItem(idx)} style={{ position: 'absolute', top: 10, right: 10, background: '#fee2e2', border: 'none', borderRadius: 6, cursor: 'pointer', width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: T.danger }}>×</button>
                 )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div className="form-grid-2">
-                    <Select label="Document Type" value={item.type} onChange={e => updateSdItem(idx, { type: e.target.value })}>
-                      {(STAGE_DOC_MAP[sdStageIdx] || []).map(t => <option key={t.v} value={t.v}>{t.l}</option>)}
-                    </Select>
-                    <Input label="Document Name *" value={item.name} onChange={e => updateSdItem(idx, { name: e.target.value, fileErr: '' })} placeholder={`e.g. ${(order.assignments.find(a => String(a.mid) === String(sdMfrId))?.stages?.[sdStageIdx]?.name) || `Stage ${sdStageIdx + 1}`} GRN - Batch ${idx + 1}`} />
-                  </div>
+                  <Input label="Document Name *" value={item.name} onChange={e => updateSdItem(idx, { name: e.target.value, fileErr: '' })} placeholder={`e.g. ${(order.assignments.find(a => String(a.mid) === String(sdMfrId))?.stages?.[sdStageIdx]?.name) || `Stage ${sdStageIdx + 1}`} GRN - Batch ${idx + 1}`} />
                   <FileUpload file={item.file} onFile={f => updateSdItem(idx, { file: f, fileErr: '' })} error={item.fileErr} onError={err => updateSdItem(idx, { fileErr: err })} />
                   <Textarea
                     label="Notes (optional — text evidence)"
@@ -529,6 +946,22 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
           </div>
         </Modal>
       )}
+
+      {/* ── Attach PO Document Modal ── */}
+      {showMaterialPo && mpMfrId && (() => {
+        const material = order.assignments.find(a => String(a.mid) === String(mpMfrId))?.stages?.[mpStageIdx]?.materials?.[mpLineIdx]
+        return (
+          <Modal title="Attach PO Document" subtitle={material?.name ? `${material.name} — attach the purchase order for this material line` : 'Attach a PO document for this material line'} onClose={() => setShowMaterialPo(false)}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <FileUpload file={mpFile} onFile={f => { setMpFile(f); setMpFileErr('') }} error={mpFileErr} onError={setMpFileErr} />
+              <FlexRow justify="flex-end" gap={8}>
+                <Btn variant="secondary" onClick={() => setShowMaterialPo(false)}>Cancel</Btn>
+                <Btn disabled={!mpFile || saving} onClick={submitMaterialPo}>{saving ? 'Uploading…' : 'Attach PO'}</Btn>
+              </FlexRow>
+            </div>
+          </Modal>
+        )
+      })()}
 
       {/* ── Inline document viewer ── */}
       {(viewerBlob || viewerLoading) && (
@@ -624,8 +1057,10 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                       <FlexRow gap={8}>
                         <Badge status={a.status} />
                         <Btn size="sm" variant="warning" onClick={() => openStatusOverride(a.mid, a.status)}>✏️ Status</Btn>
-                        <Btn size="sm" variant="outline" onClick={() => openStageOverride(a.mid)}>⚙️ Stage</Btn>
-                        <Btn size="sm" variant="secondary" onClick={() => openEtaAdjust(a.mid)}>📅 ETAs</Btn>
+                        {currentUser?.adminType === 'master' && (
+                          <Btn size="sm" variant="outline" onClick={() => openStageOverride(a.mid)}>⚠️ Override</Btn>
+                        )}
+                        <Btn size="sm" variant="secondary" onClick={() => openEtaAdjust(a.mid)}>📝 Bulk Edit</Btn>
                       </FlexRow>
                     </div>
 
@@ -652,10 +1087,11 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                           const isLate = s.eta && s.eta !== 'NA' && new Date(s.eta) < new Date() && !done
                           const etaStr = s.eta === 'NA' ? 'N/A' : s.eta ? fmtDate(s.eta) : '—'
                           const startStr = s.startDate === 'NA' ? 'N/A' : s.startDate ? fmtDate(s.startDate) : '—'
-                          const stageDocs = STAGE_DOC_MAP[i] || [{ v: 'compliance_cert', l: 'Evidence Document' }]
-                          const uploadedStageDocs = orderDocs.filter(d => d.stageIndex === i && String(d.mfrId || '') === String(a.mid))
+                          const rowKey = `${a.mid}:${i}`
+                          const rowExpanded = expandedStage === rowKey
                           return (
-                            <div key={i} style={{ background: done ? T.successBg : isLate ? T.dangerBg : '#f8fafc', borderRadius: 8, border: `1px solid ${done ? T.successBorder : isLate ? T.dangerBorder : T.border}`, padding: '8px 12px' }}>
+                            <div key={i} onClick={() => openUpdateStage(a.mid, i)}
+                              style={{ background: done ? T.successBg : isLate ? T.dangerBg : '#f8fafc', borderRadius: 8, border: `1px solid ${done ? T.successBorder : isLate ? T.dangerBorder : T.border}`, padding: '10px 12px', cursor: 'pointer' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <span style={{ fontSize: 11, fontWeight: 700, color: done ? T.success : isLate ? T.danger : T.text, minWidth: 110 }}>
                                   {i + 1}. {s.name}
@@ -665,8 +1101,12 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                                 </div>
                                 <span style={{ fontSize: 10, color: T.textMuted, minWidth: 32, textAlign: 'right' }}>{pct}%</span>
                                 {isLate && <span style={{ fontSize: 8, fontWeight: 800, color: T.danger, background: T.dangerBg, padding: '1px 4px', borderRadius: 3 }}>LATE</span>}
+                                <button onClick={e => { e.stopPropagation(); setExpandedStage(rowExpanded ? null : rowKey) }}
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                                  <span style={{ fontSize: 13, color: T.textMuted, transition: 'transform 0.2s', display: 'inline-block', transform: rowExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>›</span>
+                                </button>
                               </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
+                              <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4, flexWrap: 'wrap', cursor: 'default' }}>
                                 <span style={{ fontSize: 10, color: isLate ? T.danger : T.textMuted, fontWeight: isLate ? 700 : 400 }}>
                                   ETA: {etaStr}
                                 </span>
@@ -676,31 +1116,70 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                                 <span style={{ fontSize: 10, color: T.textMuted }}>
                                   {s.unitsDone}/{s.totalUnits} units
                                 </span>
-                                {stageDocs.length > 0 && (
-                                  <Btn size="sm" variant="outline" style={{ fontSize: 10, padding: '1px 6px', marginLeft: 'auto' }}
-                                    onClick={() => openStageDocUpload(a.mid, i)}>
-                                    📎 Upload Evidence
-                                  </Btn>
+                                {s.responsibleName && (
+                                  <span style={{ fontSize: 10, color: T.textMuted }}>👤 {s.responsibleName}</span>
+                                )}
+                                {(s.materials || []).length > 0 && (() => {
+                                  const receivedCount = s.materials.filter(m => m.status === 'received').length
+                                  const allReceived = receivedCount === s.materials.length
+                                  return (
+                                    <span style={{ fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 4, background: allReceived ? T.successBg : T.warningBg, color: allReceived ? T.success : T.warning }}>
+                                      📦 {receivedCount}/{s.materials.length} received
+                                    </span>
+                                  )
+                                })()}
+                                {(s.updates || []).length > 0 && (
+                                  <span style={{ fontSize: 10, color: T.textMuted }}>💬 {(s.updates || []).length}</span>
                                 )}
                               </div>
-                              {uploadedStageDocs.length > 0 && (
-                                <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-                                  {uploadedStageDocs.map(d => (
-                                    <span key={d.id} onClick={async () => {
-                                      try {
-                                        setViewerName(d.name)
-                                        setViewerLoading(true)
-                                        setViewerBlob(null)
-                                        const data = await getDocData(d.id)
-                                        if (!data?.dataUrl) { setViewerLoading(false); return }
-                                        const blob = dataUrlToBlobUrl(data.dataUrl)
-                                        if (!blob) { setViewerLoading(false); return }
-                                        setViewerBlob(blob)
-                                      } catch { setViewerLoading(false) }
-                                    }} style={{ fontSize: 10, background: T.primaryLight, color: T.primaryDark, padding: '2px 8px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${T.warningBorder}` }}>
-                                      {DOC_ICONS[d.type] || '📄'} {d.name}
-                                    </span>
-                                  ))}
+                              {s.description && (
+                                <div style={{ fontSize: 10, color: T.textLight, fontStyle: 'italic', marginTop: 4 }}>
+                                  {s.description}
+                                </div>
+                              )}
+                              {rowExpanded && (
+                                <div onClick={e => e.stopPropagation()} style={{ marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${T.border}`, cursor: 'default' }}>
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Updates</div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                                    {(s.updates || []).length === 0 && <div style={{ fontSize: 11, color: T.textLight }}>No updates yet.</div>}
+                                    {(s.updates || []).map((u, ui) => (
+                                      <div key={ui} style={{ background: '#fff', borderRadius: 6, padding: '6px 10px', border: `1px solid ${T.border}` }}>
+                                        <div style={{ fontSize: 11, color: T.text }}>{u.text}</div>
+                                        <div style={{ fontSize: 9, color: T.textLight, marginTop: 2 }}>{u.byUserName || 'Someone'} · {fmtDate(u.at)}</div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <FlexRow gap={6}>
+                                    <input
+                                      value={updateDrafts[rowKey] || ''}
+                                      onChange={e => setUpdateDrafts(d => ({ ...d, [rowKey]: e.target.value }))}
+                                      onKeyDown={e => { if (e.key === 'Enter') submitStageUpdateNote(a.mid, i) }}
+                                      placeholder="Add a progress update…"
+                                      style={{ flex: 1, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 11, fontFamily: 'inherit' }}
+                                    />
+                                    <Btn size="sm" disabled={!(updateDrafts[rowKey] || '').trim()} onClick={() => submitStageUpdateNote(a.mid, i)}>Post</Btn>
+                                  </FlexRow>
+
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', margin: '12px 0 6px' }}>Materials / PO</div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    {(s.materials || []).length === 0 && <div style={{ fontSize: 11, color: T.textLight }}>No materials tracked for this stage.</div>}
+                                    {(s.materials || []).map((m, mi) => {
+                                      const statusStyle = m.status === 'received' ? { bg: T.successBg, c: T.success, border: T.successBorder }
+                                        : m.status === 'ordered' ? { bg: T.warningBg, c: T.warning, border: T.warningBorder }
+                                        : { bg: '#f1f5f9', c: T.textMuted, border: T.border }
+                                      return (
+                                        <div key={mi} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fff', borderRadius: 6, padding: '6px 10px', border: `1px solid ${T.border}` }}>
+                                          <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontSize: 11, fontWeight: 600, color: T.text }}>{m.name} — {m.requiredQty}{m.unit ? ` ${m.unit}` : ''}</div>
+                                            <div style={{ fontSize: 10, color: T.textLight }}>{[m.supplier, m.poNumber, m.expectedDate].filter(Boolean).join(' · ') || '—'}</div>
+                                          </div>
+                                          <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: statusStyle.bg, color: statusStyle.c, border: `1px solid ${statusStyle.border}`, whiteSpace: 'nowrap' }}>
+                                            {m.status}
+                                          </span>
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
                                 </div>
                               )}
                             </div>

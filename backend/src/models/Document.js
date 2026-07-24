@@ -31,6 +31,10 @@ const documentSchema = new mongoose.Schema({
   // Production stage link (index into assignment.stages array, null for non-stage docs)
   stageIndex: { type: Number, default: null, min: 0 },
 
+  // Optional link to a specific materials/PO checklist line within that stage
+  // (index into stages[stageIndex].materials array) — used for PO document attachments.
+  materialLineIndex: { type: Number, default: null, min: 0 },
+
   // Free-text notes — used for stage evidence entries that capture context (SOP-driven),
   // including text-only stage evidence (no file/link).
   notes:      { type: String, default: null },

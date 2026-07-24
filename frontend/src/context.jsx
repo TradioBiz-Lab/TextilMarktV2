@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { authApi, ordersApi, documentsApi, usersApi, notificationsApi, auditApi, ribbonsApi, masterOrdersApi, setStoredToken } from './api.js'
+import { authApi, ordersApi, documentsApi, usersApi, notificationsApi, auditApi, ribbonsApi, masterOrdersApi, actionItemsApi, setStoredToken } from './api.js'
 import { isExpiringSoon, isExpired } from './constants.js'
 
 const AppContext = createContext(null)
@@ -14,6 +14,7 @@ export function AppProvider({ children }) {
   const [audit, setAudit]             = useState([])
   const [serverRibbons, setServerRibbons] = useState([])
   const [masterOrders, setMasterOrders] = useState([])
+  const [actionItems, setActionItems] = useState([])
   const [loading, setLoading]         = useState(false)
   const [loadError, setLoadError]     = useState(false)
 
@@ -34,7 +35,7 @@ export function AppProvider({ children }) {
         notificationsApi.list(),
         ribbonsApi.list(),
         isMfr ? Promise.resolve([]) : masterOrdersApi.list(), // manufacturers cannot access master orders
-        ...(isAdmin ? [usersApi.list(), auditApi.list()] : []),
+        ...(isAdmin ? [usersApi.list(), auditApi.list(), actionItemsApi.list()] : []),
       ]
       const results = await Promise.all(promises)
       setOrders(results[0])
@@ -47,6 +48,7 @@ export function AppProvider({ children }) {
         // audit endpoint now returns { total, limit, skip, items }
         const auditResult = results[6]
         setAudit(Array.isArray(auditResult) ? auditResult : (auditResult?.items ?? []))
+        setActionItems(results[7])
         // Cert expiry check — fire and forget, don't re-fetch notifications
         documentsApi.checkCertExpiry().catch(() => {})
       } else {
@@ -79,6 +81,7 @@ export function AppProvider({ children }) {
     setUsers([])
     setServerRibbons([])
     setMasterOrders([])
+    setActionItems([])
     docDataCache.current = {}
   }, [])
 
@@ -133,7 +136,7 @@ export function AppProvider({ children }) {
         // Another tab logged out — clear local state and go to login
         setCurrentUser(null)
         setOrders([]); setDocs([]); setNotifs([]); setAudit([])
-        setUsers([]); setServerRibbons([]); setMasterOrders([])
+        setUsers([]); setServerRibbons([]); setMasterOrders([]); setActionItems([])
         docDataCache.current = {}
         return
       }
@@ -147,7 +150,7 @@ export function AppProvider({ children }) {
         // Log this tab out to avoid the session mismatch silently serving wrong data.
         setCurrentUser(null)
         setOrders([]); setDocs([]); setNotifs([]); setAudit([])
-        setUsers([]); setServerRibbons([]); setMasterOrders([])
+        setUsers([]); setServerRibbons([]); setMasterOrders([]); setActionItems([])
         docDataCache.current = {}
       }
     }
@@ -330,6 +333,13 @@ export function AppProvider({ children }) {
     return mo
   }, [addAudit])
 
+  const deleteMasterOrder = useCallback(async (id) => {
+    const mo = masterOrders.find(m => m.id === id)
+    await masterOrdersApi.delete(id)
+    setMasterOrders(p => p.filter(m => m.id !== id))
+    await addAudit('Master Order Deleted', `${id}${mo ? ' — ' + mo.orderName : ''}`)
+  }, [masterOrders, addAudit])
+
   const createOrder = useCallback(async (data) => {
     const order = await ordersApi.create(data)
     setOrders(p => [order, ...p])
@@ -404,6 +414,42 @@ export function AppProvider({ children }) {
     setOrders(o)
   }, [])
 
+  const addStageUpdate = useCallback(async (orderId, mfrId, stageIndex, text) => {
+    const updated = await ordersApi.addStageUpdate(orderId, mfrId, stageIndex, text)
+    setOrders(p => p.map(o => o.id === orderId ? updated : o))
+    const stageName = (updated.assignments || []).find(a => String(a.mid) === String(mfrId))?.stages?.[stageIndex]?.name || `Stage ${stageIndex + 1}`
+    await addAudit('Stage Update Added', `${orderId}: ${stageName} — ${text.slice(0, 100)}`)
+    return updated
+  }, [addAudit])
+
+  const addStageMaterial = useCallback(async (orderId, mfrId, stageIndex, data) => {
+    const updated = await ordersApi.addStageMaterial(orderId, mfrId, stageIndex, data)
+    setOrders(p => p.map(o => o.id === orderId ? updated : o))
+    await addAudit('Stage Material Added', `${orderId}: added "${data.name}"`)
+    return updated
+  }, [addAudit])
+
+  const updateStageMaterial = useCallback(async (orderId, mfrId, stageIndex, lineIndex, data) => {
+    const updated = await ordersApi.updateStageMaterial(orderId, mfrId, stageIndex, lineIndex, data)
+    setOrders(p => p.map(o => o.id === orderId ? updated : o))
+    await addAudit('Stage Material Updated', `${orderId}: material line ${lineIndex + 1}${data.status ? ` → ${data.status}` : ''}`)
+    return updated
+  }, [addAudit])
+
+  const removeStageMaterial = useCallback(async (orderId, mfrId, stageIndex, lineIndex) => {
+    const updated = await ordersApi.removeStageMaterial(orderId, mfrId, stageIndex, lineIndex)
+    setOrders(p => p.map(o => o.id === orderId ? updated : o))
+    await addAudit('Stage Material Deleted', `${orderId}: removed material line ${lineIndex + 1}`)
+    return updated
+  }, [addAudit])
+
+  const bulkUploadMaterials = useCallback(async (rows) => {
+    const result = await ordersApi.materialsBulkUpload(rows)
+    await refreshOrders()
+    await addAudit('Bulk Materials Upload', `${result.created} created, ${result.failed} failed`)
+    return result
+  }, [addAudit, refreshOrders])
+
   const bulkCreateOrders = useCallback(async (masterOrderId, rows) => {
     const result = await ordersApi.bulkCreate(masterOrderId, rows)
 
@@ -466,17 +512,44 @@ export function AppProvider({ children }) {
     setServerRibbons(active)
   }, [])
 
+  // ── Action items (admin only) ──
+  const createActionItem = useCallback(async (data) => {
+    const item = await actionItemsApi.create(data)
+    setActionItems(await actionItemsApi.list())
+    return item
+  }, [])
+
+  const updateActionItem = useCallback(async (id, data) => {
+    const item = await actionItemsApi.update(id, data)
+    setActionItems(await actionItemsApi.list())
+    return item
+  }, [])
+
+  const addActionItemUpdate = useCallback(async (id, text) => {
+    const item = await actionItemsApi.addUpdate(id, text)
+    setActionItems(await actionItemsApi.list())
+    return item
+  }, [])
+
+  const removeActionItem = useCallback(async (id) => {
+    await actionItemsApi.remove(id)
+    setActionItems(await actionItemsApi.list())
+  }, [])
+
   const unread = notifs.filter(n => !n.read).length
 
   return (
     <AppContext.Provider value={{
       currentUser, users, orders, docs, notifs, audit, loading, loadError, unread, ribbons, masterOrders,
+      actionItems,
       login, logout,
-      updateStage, updateAssignment, uploadDoc, createOrder, bulkCreateOrders, createMasterOrder,
+      updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial, bulkUploadMaterials,
+      updateAssignment, uploadDoc, createOrder, bulkCreateOrders, createMasterOrder, deleteMasterOrder,
       editOrder, deleteOrder,
       createUser, updateUser, toggleUser, resetUserPw,
       markAllRead, markOneRead, getDocData, addAudit, pushNotif,
       refreshOrders, listAllRibbons, createRibbon, updateRibbon, removeRibbon,
+      createActionItem, updateActionItem, addActionItemUpdate, removeActionItem,
     }}>
       {children}
     </AppContext.Provider>

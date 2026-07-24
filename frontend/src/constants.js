@@ -29,7 +29,14 @@ export const ST = {
   'Delivered':  { bg: '#dcfce7', c: '#15803d' },
   'On Hold':    { bg: '#f1f5f9', c: '#475569' },
   'Delayed':    { bg: '#fee2e2', c: '#b91c1c' },
+  // Reporting page — schedule-derived status per line item (distinct from the 4-value overlay above)
+  'On Track':   { bg: '#dcfce7', c: '#15803d' },
+  'In Progress':{ bg: '#dbeafe', c: '#1d4ed8' },
+  'Complete':   { bg: '#dcfce7', c: '#15803d' },
 }
+
+// Reporting page — the 3 schedule-derived statuses, computed from the active stage's ETA
+export const REPORT_STATUSES = ['In Progress', 'On Track', 'Delayed']
 
 export const DOC_TYPES = [
   { v: 'PO', l: 'Purchase Order' },
@@ -87,7 +94,10 @@ export const SEASONS = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
 export const T = {
   bg: '#F8FAFC', surface: '#FFFFFF', border: '#e2e8f0', borderHover: '#CBD5E1',
   primary: '#F97316', primaryDark: '#EA580C', primaryLight: '#FFF7ED',
-  text: '#0f172a', textMuted: '#64748b', textLight: '#94a3b8',
+  // textMuted/textLight darkened from slate-500/slate-400 — the previous values read
+  // as too low-contrast on line items (order rows, bulk-edit grids): ~4.8:1 and ~2.6:1
+  // against a white surface, the latter failing WCAG AA outright. Now ~7.6:1 / ~4.8:1.
+  text: '#0f172a', textMuted: '#475569', textLight: '#64748b',
   success: '#10B981', successBg: '#ECFDF5', successBorder: '#6EE7B7',
   danger: '#EF4444', dangerBg: '#FEF2F2', dangerBorder: '#FCA5A5',
   warning: '#C2410C', warningBg: '#FFF7ED', warningBorder: '#FDBA74',

@@ -46,6 +46,7 @@ const mapDoc = (d, includeData = false) => {
     mfrId: d.mfrId ? d.mfrId.toString() : null,
     orderId: d.orderId ? d.orderId.toString() : null,
     stageIndex: d.stageIndex != null ? d.stageIndex : null,
+    materialLineIndex: d.materialLineIndex != null ? d.materialLineIndex : null,
     issueDate: d.issueDate, expiryDate: d.expiryDate,
     uploadedBy: uploaderObj ? uploaderObj._id.toString() : (d.uploadedBy ? d.uploadedBy.toString() : null),
     uploadedByName: uploaderObj ? uploaderObj.name : null,
@@ -272,7 +273,7 @@ router.get('/:id/data', requireAuth, async (req, res) => {
 // POST /api/documents
 router.post('/', requireAuth, uploadLimiter, async (req, res) => {
   try {
-    const { type, name, mfrId, orderId, stageIndex, issueDate, expiryDate, issuer, dataUrl, externalUrl, fileName, fileSize, mimeType, notes } = req.body
+    const { type, name, mfrId, orderId, stageIndex, materialLineIndex, issueDate, expiryDate, issuer, dataUrl, externalUrl, fileName, fileSize, mimeType, notes } = req.body
     if (!type || !name || !name.trim()) return res.status(400).json({ error: 'type and name required' })
     if (typeof type !== 'string' || typeof name !== 'string') return res.status(400).json({ error: 'Invalid input types' })
     if (name.length > 300 || type.length > 50) return res.status(400).json({ error: 'Input too long' })
@@ -280,6 +281,16 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Issuer name too long (max 200 chars)' })
     if (fileName && typeof fileName === 'string' && fileName.length > 500)
       return res.status(400).json({ error: 'File name too long (max 500 chars)' })
+
+    // A materials/PO attachment must reference a specific stage
+    const hasMaterialLineIndex = materialLineIndex != null && materialLineIndex !== ''
+    if (hasMaterialLineIndex) {
+      const parsedLineIndex = parseInt(materialLineIndex, 10)
+      if (isNaN(parsedLineIndex) || parsedLineIndex < 0)
+        return res.status(400).json({ error: 'Invalid material line index' })
+      if (stageIndex == null || stageIndex === '')
+        return res.status(400).json({ error: 'materialLineIndex requires a stageIndex' })
+    }
 
     // Free-text notes (used for stage-evidence SOP context, or text-only stage entries)
     let normalizedNotes = null
@@ -363,6 +374,7 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
       mfrId:      mfrId     || null,
       orderId:    orderId   || null,
       stageIndex: stageIndex != null && stageIndex !== '' ? stageIndex : null,
+      materialLineIndex: hasMaterialLineIndex ? parseInt(materialLineIndex, 10) : null,
       issueDate:  issueDate ? new Date(issueDate) : new Date(),
       expiryDate: expiryDate ? new Date(expiryDate) : null,
       uploadedBy: req.user.id,

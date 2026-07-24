@@ -6,6 +6,7 @@ import { User }         from '../models/User.js'
 import { Notification } from '../models/Notification.js'
 import { AuditLog }     from '../models/AuditLog.js'
 import { MasterOrder }  from '../models/MasterOrder.js'
+import { Document }     from '../models/Document.js'
 import { DEFAULT_STAGE_NAMES, ORDER_STATUS_VALUES }  from '../models/Order.js'
 
 // Categories are now free-text — no validation needed
@@ -28,6 +29,14 @@ const bulkOrderLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, max: 10,
   keyGenerator: req => req.user?.id || req.ip,
   message: { error: 'Too many bulk upload requests. Please wait.' },
+  standardHeaders: true, legacyHeaders: false, validate: false,
+})
+
+// 30 materials-bulk-upload requests per admin per hour
+const materialsBulkLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, max: 30,
+  keyGenerator: req => req.user?.id || req.ip,
+  message: { error: 'Too many bulk materials upload requests. Please wait.' },
   standardHeaders: true, legacyHeaders: false, validate: false,
 })
 
@@ -81,10 +90,29 @@ const enrichOrder = (o, viewerMfrId = null) => {
       sub:        a.sub,
       note:       a.note,
       updatedAt:  a.updatedAt,
-      stages:     (a.stages || []).map(s => ({
-        name: s.name, unitsDone: s.unitsDone,
-        totalUnits: s.totalUnits, startDate: s.startDate || null, eta: s.eta, stageDate: s.stageDate || null, note: s.note,
-      })),
+      stages:     (a.stages || []).map(s => {
+        const responsible = s.responsibleId && typeof s.responsibleId === 'object' && s.responsibleId.name ? s.responsibleId : null
+        return {
+          name: s.name, unitsDone: s.unitsDone,
+          totalUnits: s.totalUnits, startDate: s.startDate || null, eta: s.eta, stageDate: s.stageDate || null, note: s.note,
+          responsibleId: responsible ? responsible._id.toString() : (s.responsibleId?.toString?.() ?? s.responsibleId ?? null),
+          responsibleName: responsible?.name ?? null,
+          responsibleRole: responsible?.role ?? null,
+          responsibleCompany: responsible?.company ?? null,
+          description: s.description || '',
+          updates: (s.updates || []).map(u => ({
+            text: u.text,
+            byUser: u.byUser?._id?.toString() ?? u.byUser?.toString(),
+            byUserName: u.byUser?.name ?? null,
+            at: u.at,
+          })),
+          materials: (s.materials || []).map(m => ({
+            name: m.name, requiredQty: m.requiredQty, unit: m.unit, supplier: m.supplier,
+            poNumber: m.poNumber, expectedDate: m.expectedDate, status: m.status,
+            orderedQty: m.orderedQty, receivedQty: m.receivedQty, note: m.note,
+          })),
+        }
+      }),
     }
   }),
 }
@@ -98,7 +126,7 @@ router.get('/', requireAuth, async (req, res) => {
     else if (req.user.role === 'buyer')   query = Order.find({ buyerId: req.user.id })
     else                                  query = Order.find({ 'assignments.mfrId': req.user.id })
 
-    const orders = await query.populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).sort({ createdAt: -1 }).lean()
+    const orders = await query.populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').sort({ createdAt: -1 }).lean()
     const viewerMfrId = req.user.role === 'manufacturer' ? req.user.id : null
     res.json(orders.map(o => enrichOrder(o, viewerMfrId)))
   } catch (err) {
@@ -110,7 +138,7 @@ router.get('/', requireAuth, async (req, res) => {
 // GET /api/orders/:id
 router.get('/:id', requireAuth, async (req, res) => {
   try {
-    const order = await Order.findById(req.params.id).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).lean()
+    const order = await Order.findById(req.params.id).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
     if (!order) return res.status(404).json({ error: 'Order not found' })
 
     const buyerIdStr = order.buyerId?._id?.toString() ?? order.buyerId?.toString()
@@ -137,7 +165,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 // and creates it if valid. Centralizes rules (including the B1 required-end-date
 // check) so both call sites can't drift out of sync. Returns the raw created
 // Mongoose doc on success (not populated/enriched — that's caller-specific).
-async function validateAndCreateOrder({ id, buyerId, product, category, season, totalQty, delivery, createdAt, masterOrderId, assignments: asgns, stageEtas, stageStartDates, stageNames: customStages, imageDataUrl, imageUrl }) {
+async function validateAndCreateOrder({ id, buyerId, product, category, season, totalQty, delivery, createdAt, masterOrderId, assignments: asgns, stageEtas, stageStartDates, stageNames: customStages, stageResponsibleIds, stageDescriptions, stageTotalUnits, imageDataUrl, imageUrl }) {
   if (!id || !buyerId || !product || !totalQty || !delivery)
     return { ok: false, error: 'Missing required fields' }
   if (typeof id !== 'string' || typeof product !== 'string')
@@ -220,6 +248,56 @@ async function validateAndCreateOrder({ id, buyerId, product, category, season, 
       return { ok: false, error: `Stage "${stages[i]}" start date must be on or before its end date` }
   }
 
+  // Optional per-stage responsible person (admin or manufacturer), index-aligned with
+  // stages. Applied identically across every manufacturer split — one accountable
+  // person per stage, not per split.
+  const stageResponsibleIdsResolved = stages.map(() => null)
+  if (Array.isArray(stageResponsibleIds)) {
+    const ids = stageResponsibleIds.filter(Boolean)
+    if (ids.length > 0) {
+      if (!ids.every(rid => mongoose.Types.ObjectId.isValid(rid)))
+        return { ok: false, error: 'Invalid responsible person ID' }
+      const respUsers = await User.find({ _id: { $in: ids } }, 'role isActive').lean()
+      const respMap = Object.fromEntries(respUsers.map(u => [u._id.toString(), u]))
+      for (let i = 0; i < stages.length; i++) {
+        const rid = stageResponsibleIds[i]
+        if (!rid) continue
+        const u = respMap[rid]
+        if (!u || (u.role !== 'admin' && u.role !== 'manufacturer'))
+          return { ok: false, error: `Responsible person for stage "${stages[i]}" must be an admin or manufacturer` }
+        if (!u.isActive)
+          return { ok: false, error: `Responsible person for stage "${stages[i]}" is inactive` }
+        stageResponsibleIdsResolved[i] = rid
+      }
+    }
+  }
+
+  // Optional per-stage description, index-aligned with stages.
+  const stageDescriptionsResolved = stages.map(() => '')
+  if (Array.isArray(stageDescriptions)) {
+    for (let i = 0; i < stages.length; i++) {
+      const d = stageDescriptions[i]
+      if (typeof d === 'string' && d.trim()) {
+        if (d.trim().length > 1000) return { ok: false, error: `Description for stage "${stages[i]}" is too long (max 1000 characters)` }
+        stageDescriptionsResolved[i] = d.trim()
+      }
+    }
+  }
+
+  // Optional per-stage target quantity — not every stage tracks the full order qty
+  // (e.g. "Lab Dip Approval" might target 3 dips, not 600 pieces). Defaults to the
+  // assignment's qty when not provided.
+  const stageTotalUnitsResolved = stages.map(() => null)
+  if (Array.isArray(stageTotalUnits)) {
+    for (let i = 0; i < stages.length; i++) {
+      const t = stageTotalUnits[i]
+      if (t === undefined || t === null || t === '') continue
+      const parsed = parseInt(t, 10)
+      if (isNaN(parsed) || parsed < 1) return { ok: false, error: `Target quantity for stage "${stages[i]}" must be a positive number` }
+      stageTotalUnitsResolved[i] = parsed
+    }
+  }
+
   // Optional cover photo — either an uploaded base64 image (capped small) or an
   // external link fallback, never both.
   if (imageDataUrl && imageUrl) return { ok: false, error: 'Provide either an uploaded photo or a link, not both' }
@@ -243,7 +321,12 @@ async function validateAndCreateOrder({ id, buyerId, product, category, season, 
       assignments: asgns.map((a, i) => ({
         mfrId: a.mid, qty: a.qty, status: 'Processing',
         sub: a.sub || `M${i + 1}`, note: '',
-        stages: stages.map((name, si) => ({ name, unitsDone: 0, totalUnits: a.qty, startDate: startDates[si] || null, eta: etas[si] || null, note: '' })),
+        stages: stages.map((name, si) => ({
+          name, unitsDone: 0, totalUnits: stageTotalUnitsResolved[si] ?? a.qty,
+          startDate: startDates[si] || null, eta: etas[si] || null, note: '',
+          description: stageDescriptionsResolved[si] || '',
+          responsibleId: stageResponsibleIdsResolved[si] || null,
+        })),
       })),
     })
     return { ok: true, order: created }
@@ -262,7 +345,7 @@ router.post('/', requireAuth, requireAdmin, createOrderLimiter, async (req, res)
       return res.status(status).json({ error: result.error })
     }
 
-    const order = await Order.findById(result.order._id).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).lean()
+    const order = await Order.findById(result.order._id).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
 
     res.status(201).json(enrichOrder(order))
   } catch (err) {
@@ -312,6 +395,8 @@ router.post('/bulk', requireAuth, requireAdmin, bulkOrderLimiter, async (req, re
           season: row.season || mo.season, totalQty: row.totalQty, delivery: row.delivery,
           masterOrderId, assignments: row.assignments, stageNames: row.stageNames,
           stageStartDates: row.stageStartDates, stageEtas: row.stageEtas,
+          stageResponsibleIds: row.stageResponsibleIds, stageDescriptions: row.stageDescriptions,
+          stageTotalUnits: row.stageTotalUnits,
         })
 
         if (result.ok) {
@@ -366,7 +451,7 @@ router.post('/:orderId/assignments/:mfrId', requireAuth, updateLimiter, async (r
         'assignments.$.updatedAt': new Date(),
       }},
       { new: true }
-    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).lean()
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
 
     if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
 
@@ -391,15 +476,18 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
       return res.status(400).json({ error: 'Invalid manufacturer ID' })
     const mfrObjectId = new mongoose.Types.ObjectId(mfrId)
     const stageIndex = parseInt(req.params.stageIndex, 10)
-    const { unitsDone, note, eta, startDate, stageDate } = req.body
+    const { unitsDone, note, eta, startDate, stageDate, override } = req.body
     const hasEta = Object.prototype.hasOwnProperty.call(req.body, 'eta')
     const hasStartDate = Object.prototype.hasOwnProperty.call(req.body, 'startDate')
+    const isMasterOverride = override === true
 
     // BRD §3: Buyers cannot update production stages
     if (req.user.role === 'buyer')
       return res.status(403).json({ error: 'Buyers cannot update production stages' })
     if (req.user.role === 'manufacturer' && String(req.user.id) !== String(mfrId))
       return res.status(403).json({ error: 'Forbidden' })
+    if (isMasterOverride && !(req.user.role === 'admin' && req.user.adminType === 'master'))
+      return res.status(403).json({ error: 'Only master admin can override a stage' })
     // Validate unitsDone is a non-negative number
     const parsedUnits = parseInt(unitsDone, 10)
     if (isNaN(parsedUnits) || parsedUnits < 0)
@@ -420,6 +508,15 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
     const totalUnits = existingAsgn.stages?.[stageIndex]?.totalUnits ?? 0
     if (parsedUnits > totalUnits)
       return res.status(400).json({ error: `unitsDone (${parsedUnits}) cannot exceed totalUnits (${totalUnits})` })
+
+    // Materials gate: a stage with 1+ material lines cannot advance past its current
+    // unitsDone while any line isn't 'received' — applies uniformly to manufacturer
+    // updates and admin Stage Override alike (both share this route).
+    const stageMaterials = existingAsgn.stages?.[stageIndex]?.materials || []
+    const currentUnits = existingAsgn.stages?.[stageIndex]?.unitsDone || 0
+    const pendingMaterials = stageMaterials.filter(m => m.status !== 'received')
+    if (!isMasterOverride && pendingMaterials.length > 0 && parsedUnits > currentUnits)
+      return res.status(400).json({ error: `Cannot advance this stage — ${pendingMaterials.length} material(s) still pending/ordered` })
 
     // Build the $set — always update units/note/stageDate for the target stage.
     // eta/startDate are only touched when explicitly present in the body — this route is
@@ -447,7 +544,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
       { _id: orderId, 'assignments.mfrId': mfrObjectId },
       { $set: setFields },
       { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }], new: true }
-    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).lean()
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
 
     if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
 
@@ -459,8 +556,8 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
 
     await AuditLog.create({
       byUser: req.user.id,
-      action: 'Stage Updated',
-      detail: `${orderId}: ${stageName} — ${parsedUnits}/${totalUnits} units by ${req.user.name}`,
+      action: isMasterOverride ? 'Stage Override' : 'Stage Updated',
+      detail: `${orderId}: ${stageName} — ${parsedUnits}/${totalUnits} units by ${req.user.name}${isMasterOverride ? ' [MASTER OVERRIDE]' : ''}`,
     })
 
     res.json(enrichOrder(order))
@@ -484,10 +581,23 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
     const stageIndex = parseInt(req.params.stageIndex, 10)
     const hasEta = Object.prototype.hasOwnProperty.call(req.body, 'eta')
     const hasStartDate = Object.prototype.hasOwnProperty.call(req.body, 'startDate')
-    const { eta, startDate } = req.body
+    const hasResponsibleId = Object.prototype.hasOwnProperty.call(req.body, 'responsibleId')
+    const hasTotalUnits = Object.prototype.hasOwnProperty.call(req.body, 'totalUnits')
+    const hasDescription = Object.prototype.hasOwnProperty.call(req.body, 'description')
+    const { eta, startDate, responsibleId, totalUnits, description } = req.body
 
-    if (!hasEta && !hasStartDate)
-      return res.status(400).json({ error: 'Provide eta and/or startDate to update' })
+    if (!hasEta && !hasStartDate && !hasResponsibleId && !hasTotalUnits && !hasDescription)
+      return res.status(400).json({ error: 'Provide eta, startDate, responsibleId, totalUnits, and/or description to update' })
+
+    if (hasResponsibleId && responsibleId) {
+      if (!mongoose.Types.ObjectId.isValid(responsibleId))
+        return res.status(400).json({ error: 'Invalid responsible person ID' })
+      const responsibleUser = await User.findById(responsibleId, 'role isActive').lean()
+      if (!responsibleUser || (responsibleUser.role !== 'admin' && responsibleUser.role !== 'manufacturer'))
+        return res.status(400).json({ error: 'Responsible person must be an admin or manufacturer' })
+      if (!responsibleUser.isActive)
+        return res.status(400).json({ error: 'Responsible person is inactive' })
+    }
 
     // Validate stageIndex against actual stage count
     const existingOrder = await Order.findById(orderId).lean()
@@ -499,6 +609,28 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
       return res.status(400).json({ error: `Invalid stage index (0–${stageCount - 1})` })
 
     const currentStage = existingAsgn.stages[stageIndex]
+
+    // Target quantity for this stage — not every stage tracks progress against the full
+    // order qty (e.g. "Lab Dip Approval" might target 3 dips, not 600 pieces).
+    let parsedTotalUnits
+    if (hasTotalUnits) {
+      parsedTotalUnits = parseInt(totalUnits, 10)
+      if (isNaN(parsedTotalUnits) || parsedTotalUnits < 1)
+        return res.status(400).json({ error: 'Target quantity must be a positive number' })
+      if (parsedTotalUnits < (currentStage.unitsDone || 0))
+        return res.status(400).json({ error: `Target quantity cannot be less than units already completed (${currentStage.unitsDone})` })
+    }
+
+    // Static description of what this stage involves — separate from `note` (the
+    // transient last-progress-update note).
+    let trimmedDescription
+    if (hasDescription) {
+      if (description !== null && typeof description !== 'string')
+        return res.status(400).json({ error: 'Description must be text' })
+      trimmedDescription = (description || '').trim()
+      if (trimmedDescription.length > 1000)
+        return res.status(400).json({ error: 'Description too long (max 1000 characters)' })
+    }
 
     // A date field must be a real date or literal 'NA' — never blank (matches the
     // required-at-creation rule; a PATCH shouldn't be able to null one out).
@@ -529,12 +661,15 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
     const setFields = { 'assignments.$[asgn].updatedAt': new Date() }
     if (hasEta) setFields[`assignments.$[asgn].stages.${stageIndex}.eta`] = eta
     if (hasStartDate) setFields[`assignments.$[asgn].stages.${stageIndex}.startDate`] = startDate
+    if (hasResponsibleId) setFields[`assignments.$[asgn].stages.${stageIndex}.responsibleId`] = responsibleId || null
+    if (hasTotalUnits) setFields[`assignments.$[asgn].stages.${stageIndex}.totalUnits`] = parsedTotalUnits
+    if (hasDescription) setFields[`assignments.$[asgn].stages.${stageIndex}.description`] = trimmedDescription
 
     const order = await Order.findOneAndUpdate(
       { _id: orderId, 'assignments.mfrId': mfrObjectId },
       { $set: setFields },
       { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }], new: true }
-    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).lean()
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
 
     if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
 
@@ -542,6 +677,9 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
     const changes = []
     if (hasEta) changes.push(`end date → ${eta}`)
     if (hasStartDate) changes.push(`start date → ${startDate}`)
+    if (hasResponsibleId) changes.push(`responsible → ${responsibleId || 'unassigned'}`)
+    if (hasTotalUnits) changes.push(`target qty → ${parsedTotalUnits}`)
+    if (hasDescription) changes.push('description updated')
     await AuditLog.create({
       byUser: req.user.id,
       action: 'Stage Dates Adjusted',
@@ -551,6 +689,380 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
     res.json(enrichOrder(order))
   } catch (err) {
     console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/orders/:orderId/assignments/:mfrId/stages/:stageIndex/delete — remove one
+// stage from an assignment's stage list (admin only). Shifts subsequent stage indices
+// down by one, and re-points any evidence/PO documents that referenced a later stage.
+// Refuses if the target stage itself has linked documents, to avoid silently orphaning
+// evidence — remove those first.
+router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/delete', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
+  try {
+    const { orderId, mfrId } = req.params
+    if (!mongoose.Types.ObjectId.isValid(mfrId))
+      return res.status(400).json({ error: 'Invalid manufacturer ID' })
+    const mfrObjectId = new mongoose.Types.ObjectId(mfrId)
+    const stageIndex = parseInt(req.params.stageIndex, 10)
+
+    const existingOrder = await Order.findById(orderId).lean()
+    if (!existingOrder) return res.status(404).json({ error: 'Order not found' })
+    const existingAsgn = (existingOrder.assignments || []).find(a => a.mfrId?.toString() === mfrId)
+    if (!existingAsgn) return res.status(404).json({ error: 'Assignment not found' })
+    const stageCount = existingAsgn.stages?.length || 0
+    if (isNaN(stageIndex) || stageIndex < 0 || stageIndex >= stageCount)
+      return res.status(400).json({ error: `Invalid stage index (0–${stageCount - 1})` })
+    if (stageCount <= 1)
+      return res.status(400).json({ error: 'Cannot delete the only remaining stage' })
+
+    const removedStage = existingAsgn.stages[stageIndex]
+
+    const linkedDocs = await Document.countDocuments({ orderId, mfrId: mfrObjectId, stageIndex, isActive: true })
+    if (linkedDocs > 0)
+      return res.status(400).json({ error: `Cannot delete — ${linkedDocs} document(s) are linked to this stage. Remove those first.` })
+
+    const newStages = existingAsgn.stages.filter((_, i) => i !== stageIndex)
+
+    await Order.updateOne(
+      { _id: orderId, 'assignments.mfrId': mfrObjectId },
+      { $set: { 'assignments.$[asgn].stages': newStages, 'assignments.$[asgn].updatedAt': new Date() } },
+      { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }] }
+    )
+
+    // Documents linked to a later stage need their stageIndex shifted down to match.
+    await Document.updateMany(
+      { orderId, mfrId: mfrObjectId, isActive: true, stageIndex: { $gt: stageIndex } },
+      { $inc: { stageIndex: -1 } }
+    )
+
+    const order = await Order.findById(orderId)
+      .populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS)
+      .populate('assignments.stages.responsibleId', 'name company code role')
+      .populate('assignments.stages.updates.byUser', 'name').lean()
+
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Stage Deleted',
+      detail: `${orderId}: removed stage "${removedStage.name}" (was stage ${stageIndex + 1})`,
+    })
+
+    res.json(enrichOrder(order))
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/orders/:orderId/assignments/:mfrId/stages/:stageIndex/updates — post a
+// ticket-style progress note on a stage. Same permission boundary as the general
+// stage-update route: admin always, or the manufacturer of this exact assignment.
+router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/updates', requireAuth, updateLimiter, async (req, res) => {
+  try {
+    const { orderId, mfrId } = req.params
+    if (!mongoose.Types.ObjectId.isValid(mfrId))
+      return res.status(400).json({ error: 'Invalid manufacturer ID' })
+    const mfrObjectId = new mongoose.Types.ObjectId(mfrId)
+    const stageIndex = parseInt(req.params.stageIndex, 10)
+    const { text } = req.body
+
+    if (req.user.role === 'buyer')
+      return res.status(403).json({ error: 'Buyers cannot update production stages' })
+    if (req.user.role === 'manufacturer' && String(req.user.id) !== String(mfrId))
+      return res.status(403).json({ error: 'Forbidden' })
+    if (!text?.trim()) return res.status(400).json({ error: 'Update text is required' })
+    if (text.trim().length > 1000) return res.status(400).json({ error: 'Update too long (max 1000 characters)' })
+
+    const existingOrder = await Order.findById(orderId).lean()
+    if (!existingOrder) return res.status(404).json({ error: 'Order not found' })
+    const existingAsgn = (existingOrder.assignments || []).find(a => a.mfrId?.toString() === mfrId)
+    if (!existingAsgn) return res.status(404).json({ error: 'Assignment not found' })
+    const stageCount = existingAsgn.stages?.length || 0
+    if (isNaN(stageIndex) || stageIndex < 0 || stageIndex >= stageCount)
+      return res.status(400).json({ error: `Invalid stage index (0–${stageCount - 1})` })
+
+    const order = await Order.findOneAndUpdate(
+      { _id: orderId, 'assignments.mfrId': mfrObjectId },
+      { $push: { [`assignments.$[asgn].stages.${stageIndex}.updates`]: { text: text.trim(), byUser: req.user.id, at: new Date() } } },
+      { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }], new: true }
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+
+    if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
+
+    const stageName = existingAsgn.stages[stageIndex]?.name || `Stage ${stageIndex + 1}`
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Stage Update Added',
+      detail: `${orderId}: ${stageName} — ${text.trim().slice(0, 100)}`,
+    })
+
+    res.json(enrichOrder(order))
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/orders/:orderId/assignments/:mfrId/stages/:stageIndex/materials — add a
+// materials/PO checklist line. Managed by any admin, or the stage's own responsible person.
+router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials', requireAuth, updateLimiter, async (req, res) => {
+  try {
+    const { orderId, mfrId } = req.params
+    if (!mongoose.Types.ObjectId.isValid(mfrId))
+      return res.status(400).json({ error: 'Invalid manufacturer ID' })
+    const mfrObjectId = new mongoose.Types.ObjectId(mfrId)
+    const stageIndex = parseInt(req.params.stageIndex, 10)
+    const { name, requiredQty, unit, supplier, poNumber, expectedDate } = req.body
+
+    if (!name?.trim()) return res.status(400).json({ error: 'Material name is required' })
+    const reqQty = parseFloat(requiredQty)
+    if (isNaN(reqQty) || reqQty < 0) return res.status(400).json({ error: 'Required quantity must be a non-negative number' })
+
+    const existingOrder = await Order.findById(orderId).lean()
+    if (!existingOrder) return res.status(404).json({ error: 'Order not found' })
+    const existingAsgn = (existingOrder.assignments || []).find(a => a.mfrId?.toString() === mfrId)
+    if (!existingAsgn) return res.status(404).json({ error: 'Assignment not found' })
+    const stageCount = existingAsgn.stages?.length || 0
+    if (isNaN(stageIndex) || stageIndex < 0 || stageIndex >= stageCount)
+      return res.status(400).json({ error: `Invalid stage index (0–${stageCount - 1})` })
+
+    const stage = existingAsgn.stages[stageIndex]
+    const isResponsible = stage.responsibleId && String(stage.responsibleId) === String(req.user.id)
+    if (req.user.role !== 'admin' && !isResponsible)
+      return res.status(403).json({ error: "Only an admin or this stage's responsible person can manage materials" })
+
+    const line = {
+      name: name.trim().slice(0, 200), requiredQty: reqQty,
+      unit: unit || '', supplier: supplier || '', poNumber: poNumber || '',
+      expectedDate: expectedDate || null, status: 'pending', orderedQty: 0, receivedQty: 0, note: '',
+    }
+
+    const order = await Order.findOneAndUpdate(
+      { _id: orderId, 'assignments.mfrId': mfrObjectId },
+      { $push: { [`assignments.$[asgn].stages.${stageIndex}.materials`]: line } },
+      { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }], new: true }
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+
+    if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
+
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Stage Material Added',
+      detail: `${orderId}: ${stage.name || `Stage ${stageIndex + 1}`} — added "${line.name}" (${line.requiredQty} ${line.unit})`,
+    })
+
+    res.json(enrichOrder(order))
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/orders/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineIndex —
+// update one materials line (status transitions, ordered/received qty, corrections).
+router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineIndex', requireAuth, updateLimiter, async (req, res) => {
+  try {
+    const { orderId, mfrId } = req.params
+    if (!mongoose.Types.ObjectId.isValid(mfrId))
+      return res.status(400).json({ error: 'Invalid manufacturer ID' })
+    const mfrObjectId = new mongoose.Types.ObjectId(mfrId)
+    const stageIndex = parseInt(req.params.stageIndex, 10)
+    const lineIndex = parseInt(req.params.lineIndex, 10)
+    const { name, requiredQty, unit, supplier, poNumber, expectedDate, status, orderedQty, receivedQty, note } = req.body
+
+    const existingOrder = await Order.findById(orderId).lean()
+    if (!existingOrder) return res.status(404).json({ error: 'Order not found' })
+    const existingAsgn = (existingOrder.assignments || []).find(a => a.mfrId?.toString() === mfrId)
+    if (!existingAsgn) return res.status(404).json({ error: 'Assignment not found' })
+    const stageCount = existingAsgn.stages?.length || 0
+    if (isNaN(stageIndex) || stageIndex < 0 || stageIndex >= stageCount)
+      return res.status(400).json({ error: `Invalid stage index (0–${stageCount - 1})` })
+
+    const stage = existingAsgn.stages[stageIndex]
+    const isResponsible = stage.responsibleId && String(stage.responsibleId) === String(req.user.id)
+    if (req.user.role !== 'admin' && !isResponsible)
+      return res.status(403).json({ error: "Only an admin or this stage's responsible person can manage materials" })
+
+    const lineCount = stage.materials?.length || 0
+    if (isNaN(lineIndex) || lineIndex < 0 || lineIndex >= lineCount)
+      return res.status(400).json({ error: `Invalid material line index (0–${lineCount - 1})` })
+
+    if (status !== undefined && !['pending', 'ordered', 'received'].includes(status))
+      return res.status(400).json({ error: 'Invalid status' })
+
+    const prefix = `assignments.$[asgn].stages.${stageIndex}.materials.${lineIndex}`
+    const setFields = {}
+    if (name !== undefined) {
+      if (!name.trim()) return res.status(400).json({ error: 'Material name is required' })
+      setFields[`${prefix}.name`] = name.trim().slice(0, 200)
+    }
+    if (requiredQty !== undefined) {
+      const q = parseFloat(requiredQty)
+      if (isNaN(q) || q < 0) return res.status(400).json({ error: 'Required quantity must be a non-negative number' })
+      setFields[`${prefix}.requiredQty`] = q
+    }
+    if (unit !== undefined) setFields[`${prefix}.unit`] = unit
+    if (supplier !== undefined) setFields[`${prefix}.supplier`] = supplier
+    if (poNumber !== undefined) setFields[`${prefix}.poNumber`] = poNumber
+    if (expectedDate !== undefined) setFields[`${prefix}.expectedDate`] = expectedDate
+    if (status !== undefined) setFields[`${prefix}.status`] = status
+    if (orderedQty !== undefined) {
+      const q = parseFloat(orderedQty)
+      if (isNaN(q) || q < 0) return res.status(400).json({ error: 'Ordered quantity must be a non-negative number' })
+      setFields[`${prefix}.orderedQty`] = q
+    }
+    if (receivedQty !== undefined) {
+      const q = parseFloat(receivedQty)
+      if (isNaN(q) || q < 0) return res.status(400).json({ error: 'Received quantity must be a non-negative number' })
+      setFields[`${prefix}.receivedQty`] = q
+    }
+    if (note !== undefined) setFields[`${prefix}.note`] = note
+
+    if (Object.keys(setFields).length === 0) return res.status(400).json({ error: 'No fields to update' })
+
+    const order = await Order.findOneAndUpdate(
+      { _id: orderId, 'assignments.mfrId': mfrObjectId },
+      { $set: setFields },
+      { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }], new: true }
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+
+    if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
+
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Stage Material Updated',
+      detail: `${orderId}: ${stage.name || `Stage ${stageIndex + 1}`} — "${stage.materials[lineIndex].name}"${status ? ` → ${status}` : ''}`,
+    })
+
+    res.json(enrichOrder(order))
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/orders/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineIndex/delete
+router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineIndex/delete', requireAuth, updateLimiter, async (req, res) => {
+  try {
+    const { orderId, mfrId } = req.params
+    if (!mongoose.Types.ObjectId.isValid(mfrId))
+      return res.status(400).json({ error: 'Invalid manufacturer ID' })
+    const mfrObjectId = new mongoose.Types.ObjectId(mfrId)
+    const stageIndex = parseInt(req.params.stageIndex, 10)
+    const lineIndex = parseInt(req.params.lineIndex, 10)
+
+    const existingOrder = await Order.findById(orderId).lean()
+    if (!existingOrder) return res.status(404).json({ error: 'Order not found' })
+    const existingAsgn = (existingOrder.assignments || []).find(a => a.mfrId?.toString() === mfrId)
+    if (!existingAsgn) return res.status(404).json({ error: 'Assignment not found' })
+    const stageCount = existingAsgn.stages?.length || 0
+    if (isNaN(stageIndex) || stageIndex < 0 || stageIndex >= stageCount)
+      return res.status(400).json({ error: `Invalid stage index (0–${stageCount - 1})` })
+
+    const stage = existingAsgn.stages[stageIndex]
+    const isResponsible = stage.responsibleId && String(stage.responsibleId) === String(req.user.id)
+    if (req.user.role !== 'admin' && !isResponsible)
+      return res.status(403).json({ error: "Only an admin or this stage's responsible person can manage materials" })
+
+    const lineCount = stage.materials?.length || 0
+    if (isNaN(lineIndex) || lineIndex < 0 || lineIndex >= lineCount)
+      return res.status(400).json({ error: `Invalid material line index (0–${lineCount - 1})` })
+
+    const removedName = stage.materials[lineIndex].name
+
+    // Remove-by-index: $unset leaves a null hole in the array, then $pull removes it —
+    // the standard two-step Mongo pattern for deleting a specific array element by index.
+    const unsetField = `assignments.$[asgn].stages.${stageIndex}.materials.${lineIndex}`
+    await Order.updateOne(
+      { _id: orderId, 'assignments.mfrId': mfrObjectId },
+      { $unset: { [unsetField]: 1 } },
+      { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }] }
+    )
+    const pullField = `assignments.$[asgn].stages.${stageIndex}.materials`
+    const order = await Order.findOneAndUpdate(
+      { _id: orderId, 'assignments.mfrId': mfrObjectId },
+      { $pull: { [pullField]: null } },
+      { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }], new: true }
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+
+    if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
+
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Stage Material Deleted',
+      detail: `${orderId}: ${stage.name || `Stage ${stageIndex + 1}`} — removed "${removedName}"`,
+    })
+
+    res.json(enrichOrder(order))
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/orders/materials/bulk — CSV-driven bulk import of materials/PO lines onto
+// existing orders' stages, keyed by orderId + manufacturer code + stage name. Decoupled
+// from order creation — usable against any existing order at any time.
+router.post('/materials/bulk', requireAuth, requireAdmin, materialsBulkLimiter, async (req, res) => {
+  try {
+    const { rows } = req.body
+    if (!Array.isArray(rows) || rows.length === 0) return res.status(400).json({ error: 'At least one row is required' })
+    if (rows.length > 200) return res.status(400).json({ error: 'Too many rows (max 200 per bulk upload)' })
+
+    const results = []
+    let created = 0, failed = 0
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i]
+      try {
+        const { orderId, mfrCode, stageName, name, requiredQty, unit, supplier, poNumber, expectedDate } = row
+        if (!orderId || !mfrCode || !stageName || !name) {
+          failed++; results.push({ row: i, success: false, error: 'orderId, mfrCode, stageName, and name are required' }); continue
+        }
+        const reqQty = parseFloat(requiredQty)
+        if (isNaN(reqQty) || reqQty < 0) {
+          failed++; results.push({ row: i, success: false, error: 'Required quantity must be a non-negative number' }); continue
+        }
+
+        const order = await Order.findById(orderId).lean()
+        if (!order) { failed++; results.push({ row: i, success: false, error: `Order "${orderId}" not found` }); continue }
+
+        const mfrUser = await User.findOne({ code: mfrCode, role: 'manufacturer' }, '_id').lean()
+        if (!mfrUser) { failed++; results.push({ row: i, success: false, error: `Unknown manufacturer code "${mfrCode}"` }); continue }
+
+        const asgn = (order.assignments || []).find(a => a.mfrId?.toString() === mfrUser._id.toString())
+        if (!asgn) { failed++; results.push({ row: i, success: false, error: `Manufacturer "${mfrCode}" is not assigned to order "${orderId}"` }); continue }
+
+        const stageIndex = (asgn.stages || []).findIndex(s => s.name?.toLowerCase() === String(stageName).toLowerCase())
+        if (stageIndex === -1) { failed++; results.push({ row: i, success: false, error: `Stage "${stageName}" not found on this order/manufacturer` }); continue }
+
+        const line = {
+          name: String(name).trim().slice(0, 200), requiredQty: reqQty,
+          unit: unit || '', supplier: supplier || '', poNumber: poNumber || '',
+          expectedDate: expectedDate || null, status: 'pending', orderedQty: 0, receivedQty: 0, note: '',
+        }
+        await Order.updateOne(
+          { _id: orderId, 'assignments.mfrId': mfrUser._id },
+          { $push: { [`assignments.$[asgn].stages.${stageIndex}.materials`]: line } },
+          { arrayFilters: [{ 'asgn.mfrId': mfrUser._id }] }
+        )
+        created++
+        results.push({ row: i, success: true })
+      } catch (err) {
+        failed++
+        results.push({ row: i, success: false, error: 'Server error creating this row' })
+      }
+    }
+
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Bulk Materials Upload',
+      detail: `Bulk materials upload: ${created} created, ${failed} failed`,
+    })
+
+    res.status(200).json({ total: rows.length, created, failed, results })
+  } catch (err) {
+    console.error('[orders materials bulk]', err)
     res.status(500).json({ error: 'Server error' })
   }
 })
@@ -620,7 +1132,7 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
       orderId,
       { $set: updates },
       { new: true }
-    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).lean()
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
 
     if (!order) return res.status(404).json({ error: 'Order not found' })
 

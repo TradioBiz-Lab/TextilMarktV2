@@ -22,7 +22,10 @@ function csvRowToStructured(raw, rowIndex) {
     if (!name) continue
     const startDate = (raw[`stage${s}_start_date`] || '').trim()
     const endDate = (raw[`stage${s}_end_date`] || '').trim()
-    stages.push({ name, startDate, endDate })
+    const responsibleEmail = (raw[`stage${s}_responsible_email`] || '').trim()
+    const description = (raw[`stage${s}_description`] || '').trim()
+    const targetQty = (raw[`stage${s}_target_qty`] || '').trim()
+    stages.push({ name, startDate, endDate, responsibleEmail, description, targetQty })
   }
   return {
     rowIndex,
@@ -39,7 +42,7 @@ function csvRowToStructured(raw, rowIndex) {
 
 // Re-derived fresh on every render from the current row state — no separate
 // "validated" copy to keep in sync as the admin edits fields inline.
-function validateRow(row, mfrUsers) {
+function validateRow(row, mfrUsers, responsibleUsers) {
   const errors = []
   if (!row.product.trim()) errors.push('Product name is required')
   if (!row.totalQty || row.totalQty < 1) errors.push('Total quantity must be a positive number')
@@ -72,6 +75,17 @@ function validateRow(row, mfrUsers) {
         && new Date(s.startDate) > new Date(s.endDate)) {
       errors.push(`Stage "${s.name}" — start date must be on or before its end date`)
     }
+    s.resolvedResponsibleId = null
+    if (s.responsibleEmail?.trim()) {
+      const match = responsibleUsers.find(u => u.email?.toLowerCase() === s.responsibleEmail.trim().toLowerCase())
+      if (!match) errors.push(`Stage "${s.name}" — unknown responsible person email "${s.responsibleEmail}"`)
+      else s.resolvedResponsibleId = match.id
+    }
+    if (s.description?.length > 1000) errors.push(`Stage "${s.name}" — description is too long (max 1000 characters)`)
+    if (s.targetQty?.trim()) {
+      const q = parseInt(s.targetQty, 10)
+      if (isNaN(q) || q < 1) errors.push(`Stage "${s.name}" — target quantity must be a positive number`)
+    }
   })
   if (filledStages.length === 0) errors.push('At least one production stage with start/end dates is required')
 
@@ -81,6 +95,7 @@ function validateRow(row, mfrUsers) {
 export function BulkUploadCsvPanel({ masterOrder, onDone }) {
   const { users, bulkCreateOrders } = useApp()
   const mfrUsers = users.filter(u => u.role === 'manufacturer' && u.isActive)
+  const responsibleUsers = users.filter(u => (u.role === 'admin' || u.role === 'manufacturer') && u.isActive)
   const fileInputRef = useRef(null)
   const [rows, setRows] = useState([])
   const [fileName, setFileName] = useState('')
@@ -120,7 +135,7 @@ export function BulkUploadCsvPanel({ masterOrder, onDone }) {
     })
   }
 
-  const validated = rows.map(row => ({ row, v: validateRow(row, mfrUsers) }))
+  const validated = rows.map(row => ({ row, v: validateRow(row, mfrUsers, responsibleUsers) }))
   const validCount = validated.filter(x => x.v.status === 'valid').length
 
   const handleSubmit = async () => {
@@ -138,6 +153,9 @@ export function BulkUploadCsvPanel({ masterOrder, onDone }) {
         stageNames: v.filledStages.map(s => s.name),
         stageStartDates: v.filledStages.map(s => s.startDate),
         stageEtas: v.filledStages.map(s => s.endDate),
+        stageResponsibleIds: v.filledStages.map(s => s.resolvedResponsibleId || null),
+        stageDescriptions: v.filledStages.map(s => s.description || ''),
+        stageTotalUnits: v.filledStages.map(s => s.targetQty?.trim() ? parseInt(s.targetQty, 10) : null),
         orderId: row.orderId || undefined,
       }))
       const result = await bulkCreateOrders(masterOrder.id, payloadRows)
@@ -261,18 +279,32 @@ export function BulkUploadCsvPanel({ masterOrder, onDone }) {
                       </div>
 
                       <label style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>Stages</label>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
                         {row.stages.map((s, si) => (
-                          <div key={si} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                            <span style={{ fontSize: 11, color: T.textLight, minWidth: 18 }}>{si + 1}.</span>
-                            <input value={s.name} onChange={e => updateStage(row.rowIndex, si, { name: e.target.value })}
-                              style={{ flex: 1, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit' }} />
-                            <input type={s.startDate === 'NA' ? 'text' : 'date'} value={s.startDate} placeholder="Start date"
-                              onChange={e => updateStage(row.rowIndex, si, { startDate: e.target.value })}
-                              style={{ width: 130, border: `1px solid ${!s.startDate.trim() ? T.danger : T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit' }} />
-                            <input type={s.endDate === 'NA' ? 'text' : 'date'} value={s.endDate} placeholder="End date"
-                              onChange={e => updateStage(row.rowIndex, si, { endDate: e.target.value })}
-                              style={{ width: 130, border: `1px solid ${!s.endDate.trim() ? T.danger : T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit' }} />
+                          <div key={si} style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6, background: '#fff' }}>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: 11, color: T.textLight, minWidth: 18 }}>{si + 1}.</span>
+                              <input value={s.name} placeholder="Stage name" onChange={e => updateStage(row.rowIndex, si, { name: e.target.value })}
+                                style={{ flex: 1, minWidth: 110, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit' }} />
+                              <input type={s.startDate === 'NA' ? 'text' : 'date'} value={s.startDate} placeholder="Start date"
+                                onChange={e => updateStage(row.rowIndex, si, { startDate: e.target.value })}
+                                style={{ width: 130, border: `1px solid ${!s.startDate.trim() ? T.danger : T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit' }} />
+                              <input type={s.endDate === 'NA' ? 'text' : 'date'} value={s.endDate} placeholder="End date"
+                                onChange={e => updateStage(row.rowIndex, si, { endDate: e.target.value })}
+                                style={{ width: 130, border: `1px solid ${!s.endDate.trim() ? T.danger : T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit' }} />
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <input value={s.responsibleEmail} placeholder="Responsible email (optional)"
+                                onChange={e => updateStage(row.rowIndex, si, { responsibleEmail: e.target.value })}
+                                style={{ flex: 1, minWidth: 160, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit' }} />
+                              <input type="number" min={1} value={s.targetQty} placeholder="Target qty"
+                                title="Defaults to the manufacturer's assigned quantity if left blank"
+                                onChange={e => updateStage(row.rowIndex, si, { targetQty: e.target.value })}
+                                style={{ width: 110, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit' }} />
+                            </div>
+                            <input value={s.description} placeholder="Description (optional) — what this stage involves"
+                              onChange={e => updateStage(row.rowIndex, si, { description: e.target.value })}
+                              style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box' }} />
                           </div>
                         ))}
                       </div>

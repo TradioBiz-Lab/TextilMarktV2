@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { T, ORDER_STATUSES, getToday } from '../../constants.js'
+import { T, ORDER_STATUSES, getToday, dayNumber } from '../../constants.js'
 import { StatCard, Card, Badge, EmptyState, Mono, Grid, PageHeader, LoadingScreen } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
@@ -30,6 +30,32 @@ export function MfrDashboard({ onOpen }) {
       .filter(o => o.id.toLowerCase().includes(m) || o.product.toLowerCase().includes(m))
       .slice(0, 8)
   }, [myOrders, q])
+
+  // One row per order — its currently active stage only (the first not-yet-complete
+  // one), not every future stage still waiting its turn.
+  const myPendingStages = useMemo(() => {
+    const todayNum = dayNumber(getToday())
+    return myOrders.flatMap(o => {
+        const stages = o.mine.stages || []
+        const si = stages.findIndex(s => (s.unitsDone || 0) < (s.totalUnits || 0))
+        if (si === -1) return []
+        const s = stages[si]
+        return (s.responsibleId && String(s.responsibleId) === String(user.id)) ? [{ s, o, si }] : []
+      })
+      .map(({ s, o, si }) => ({
+        id: `${o.id}:${si}`,
+        title: `${s.name} — ${o.product}`,
+        orderId: o.id,
+        eta: s.eta && s.eta !== 'NA' ? s.eta : null,
+        overdue: !!(s.eta && s.eta !== 'NA' && dayNumber(s.eta) - todayNum < 0),
+      }))
+      .sort((a, b) => {
+        const aOver = a.overdue ? 0 : 1, bOver = b.overdue ? 0 : 1
+        if (aOver !== bOver) return aOver - bOver
+        const aEta = a.eta ? dayNumber(a.eta) : Infinity, bEta = b.eta ? dayNumber(b.eta) : Infinity
+        return aEta - bEta
+      })
+  }, [myOrders, user.id])
 
   const stats = useMemo(() => ({
     total:        myOrders.length,
@@ -68,6 +94,24 @@ export function MfrDashboard({ onOpen }) {
         <StatCard label="Delayed"         value={stats.delayed}      icon="⚠️" bg={T.dangerBg} />
         <StatCard label="Delivered"       value={stats.delivered}    icon="✅" bg={T.successBg} />
       </Grid>
+
+      {/* ── My Pending Steps ── */}
+      <Card style={{ marginBottom: 24 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 12 }}>👤 My Pending Steps</div>
+        {myPendingStages.length === 0 ? (
+          <EmptyState icon="✅" title="All caught up" desc="No production stages assigned to you are pending" />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {myPendingStages.map(item => (
+              <div key={item.id} onClick={() => onOpen(item.orderId)}
+                style={{ border: `1px solid ${item.overdue ? T.dangerBorder : T.border}`, borderRadius: 8, padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, background: item.overdue ? T.dangerBg : '#fafbfc' }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: T.text, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</span>
+                {item.eta && <span style={{ fontSize: 10, fontWeight: 700, color: item.overdue ? T.danger : T.textMuted, whiteSpace: 'nowrap' }}>{fmtDate(item.eta)}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
 
       {/* ── Filter bar ── */}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>

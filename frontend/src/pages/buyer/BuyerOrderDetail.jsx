@@ -297,10 +297,12 @@ export function BuyerOrderDetail({ orderId, onBack, initialMid }) {
                                 </div>
                               </div>
 
-                              {/* Date */}
+                              {/* Date — actual (stageDate) once recorded, else the planned ETA */}
                               {s.stageDate
                                 ? <span style={{ fontSize: 11, fontWeight: 600, color: done ? T.success : T.primary, background: done ? T.successBg : T.primaryLight, padding: '2px 8px', borderRadius: 6, flexShrink: 0 }}>{fmtDate(s.stageDate)}</span>
-                                : <span style={{ fontSize: 11, color: T.textLight, fontStyle: 'italic', flexShrink: 0 }}>No date</span>
+                                : (s.eta && s.eta !== 'NA')
+                                  ? <span style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, background: '#f1f5f9', padding: '2px 8px', borderRadius: 6, flexShrink: 0 }}>Due {fmtDate(s.eta)}</span>
+                                  : <span style={{ fontSize: 11, color: T.textLight, fontStyle: 'italic', flexShrink: 0 }}>No date</span>
                               }
 
                               {/* Pct */}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Home, ClipboardList, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check } from 'lucide-react'
+import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3 } from 'lucide-react'
 import { T } from '../constants.js'
 import { Btn, RibbonBanner } from './ui.jsx'
 import { NotifPanel } from './NotifPanel.jsx'
@@ -72,6 +72,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
       { id: 'dashboard', icon: Home, label: 'Dashboard' },
       { id: 'submit_req', icon: ClipboardList, label: 'Submit Requirement' },
       { id: 'documents', icon: Folder, label: 'Documents' },
+      { id: 'reports', icon: BarChart3, label: 'Reports' },
     ],
     manufacturer: [
       { id: 'dashboard', icon: Home, label: 'Dashboard' },
@@ -80,7 +81,9 @@ export function Shell({ view, setView, children, onOpenOrder }) {
     admin: [
       { id: 'dashboard', icon: Home, label: 'Dashboard' },
       { id: 'orders',    icon: Package, label: 'Orders' },
+      { id: 'action_items', icon: ListChecks, label: 'Action Items' },
       { id: 'documents', icon: Folder, label: 'Documents' },
+      { id: 'reports',   icon: BarChart3, label: 'Reports' },
       { id: 'audit',     icon: History, label: 'Audit Log' },
       ...(user?.adminType === 'master' ? [{ id: 'users', icon: Users, label: 'User Setup' }] : []),
     ],
