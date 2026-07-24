@@ -30,7 +30,10 @@ api.interceptors.response.use(
       // Only reload if we had an active session — avoids reload loops on first page load
       if (hadSession) window.location.reload()
     }
-    return Promise.reject(err.response?.data?.error || 'Request failed')
+    // An Error (not a bare string) so every `catch (err) { ... err?.message ... }`
+    // call site actually gets the backend's real reason instead of silently
+    // falling back to a generic message — a bare string has no .message.
+    return Promise.reject(new Error(err.response?.data?.error || 'Request failed'))
   }
 )
 

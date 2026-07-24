@@ -510,13 +510,18 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
       return res.status(400).json({ error: `unitsDone (${parsedUnits}) cannot exceed totalUnits (${totalUnits})` })
 
     // Materials gate: a stage with 1+ material lines cannot advance past its current
-    // unitsDone while any line isn't 'received' — applies uniformly to manufacturer
-    // updates and admin Stage Override alike (both share this route).
+    // unitsDone while any line isn't cleared — applies uniformly to manufacturer
+    // updates and admin Stage Override alike (both share this route). The "Trims
+    // Order" stage itself is about placing the order, not having it in hand, so
+    // 'ordered' already satisfies it there; every other stage still requires the
+    // material to actually be 'received'.
+    const gateStageName = (existingAsgn.stages?.[stageIndex]?.name || '').trim().toLowerCase()
+    const isTrimsOrderStage = gateStageName === 'trims order'
     const stageMaterials = existingAsgn.stages?.[stageIndex]?.materials || []
     const currentUnits = existingAsgn.stages?.[stageIndex]?.unitsDone || 0
-    const pendingMaterials = stageMaterials.filter(m => m.status !== 'received')
+    const pendingMaterials = stageMaterials.filter(m => isTrimsOrderStage ? m.status === 'pending' : m.status !== 'received')
     if (!isMasterOverride && pendingMaterials.length > 0 && parsedUnits > currentUnits)
-      return res.status(400).json({ error: `Cannot advance this stage — ${pendingMaterials.length} material(s) still pending/ordered` })
+      return res.status(400).json({ error: `Cannot advance this stage — ${pendingMaterials.length} material(s) still pending${isTrimsOrderStage ? '' : '/ordered'}` })
 
     // Build the $set — always update units/note/stageDate for the target stage.
     // eta/startDate are only touched when explicitly present in the body — this route is
