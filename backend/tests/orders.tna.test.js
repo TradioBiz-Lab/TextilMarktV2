@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 
 import { startTestDb, stopTestDb, clearDb } from './helpers/db.js'
 import { startServer, stopServer, as } from './helpers/client.js'
-import { makeAdmin, makeBuyer, makeMfr, orderPayload } from './helpers/factories.js'
+import { makeAdmin, makeMaster, makeBuyer, makeMfr, orderPayload } from './helpers/factories.js'
 import { Document } from '../src/db/index.js'
 
 before(async () => {
@@ -305,6 +305,69 @@ describe('delivery baseline', () => {
     await api.post(`/api/orders/${ORDER_ID}`, { delivery: '2026-10-20' })
     const o = await readOrder()
     assert.equal(o.deliveryVarianceDays, -42)
+  })
+})
+
+// Short-term data-entry escape hatch: the master admin can directly set a
+// stage's planned (baselineEta) and actual completion (actualEnd) dates,
+// bypassing the normal system-managed capture/auto-stamp — for getting real
+// historical dates into the system. Master-only; a regular admin is refused.
+describe('master-only planned/actual date override', () => {
+  test('a regular admin cannot set baselineEta or actualEnd directly', async () => {
+    const { api, base } = await arrange({ stageNames: ['A'], stageKinds: ['milestone'] })
+    const r1 = await api.post(`${base}/stages/0/eta`, { baselineEta: '2026-07-01' })
+    assert.equal(r1.status, 403)
+    const r2 = await api.post(`${base}/stages/0/eta`, { actualEnd: '2026-07-01' })
+    assert.equal(r2.status, 403)
+  })
+
+  test('master admin can set the planned date directly', async () => {
+    const { base, readStages } = await arrange({ stageNames: ['A'], stageKinds: ['milestone'] })
+    const master = await makeMaster()
+    const { status } = await as(master).post(`${base}/stages/0/eta`, { baselineEta: '2026-07-01' })
+    assert.equal(status, 200)
+    assert.equal((await readStages())[0].baselineEta, '2026-07-01')
+  })
+
+  test('master admin can set the actual end date directly, which also marks the stage done', async () => {
+    const { base, readStages } = await arrange({ stageNames: ['A'], stageKinds: ['milestone'], totalQty: 500 })
+    const master = await makeMaster()
+    const { status } = await as(master).post(`${base}/stages/0/eta`, { actualEnd: '2026-07-03' })
+    assert.equal(status, 200)
+    const s = (await readStages())[0]
+    assert.equal(s.actualEnd, '2026-07-03')
+    assert.equal(s.status, 'done')
+    assert.equal(s.unitsDone, s.totalUnits, 'units mirror the done status')
+  })
+
+  test('actualEnd cannot be backdated into the future, even for master admin', async () => {
+    const { base } = await arrange({ stageNames: ['A'], stageKinds: ['milestone'] })
+    const master = await makeMaster()
+    const farFuture = new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10)
+    const { status, body } = await as(master).post(`${base}/stages/0/eta`, { actualEnd: farFuture })
+    assert.equal(status, 400)
+    assert.match(body.error, /cannot be in the future/)
+  })
+
+  test('the checklist gate still applies to a direct actualEnd override', async () => {
+    const { base, readStages } = await arrange({ stageNames: ['A'], stageKinds: ['checklist'] })
+    const master = await makeMaster()
+    await as(master).post(`${base}/stages/0/items`, { name: 'Red dip' })
+    await as(master).post(`${base}/stages/0/items`, { name: 'Navy dip' })
+
+    const { status, body } = await as(master).post(`${base}/stages/0/eta`, { actualEnd: '2026-07-03' })
+    assert.equal(status, 400)
+    assert.match(body.error, /checklist item\(s\) still pending/)
+    assert.equal((await readStages())[0].status, 'not_started', 'nothing was written')
+  })
+
+  test('an explicit baselineEta wins over the auto-capture-on-first-revision in the same request', async () => {
+    const { base, readStages } = await arrange({ stageNames: ['A'] })
+    const master = await makeMaster()
+    // Revising eta AND explicitly setting baselineEta in the same request —
+    // the explicit value should win over what auto-capture would have used.
+    await as(master).post(`${base}/stages/0/eta`, { eta: '2026-08-01', baselineEta: '2026-06-01' })
+    assert.equal((await readStages())[0].baselineEta, '2026-06-01')
   })
 })
 

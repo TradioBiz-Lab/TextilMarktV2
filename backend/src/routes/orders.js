@@ -1090,10 +1090,20 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
     const hasTotalUnits = Object.prototype.hasOwnProperty.call(req.body, 'totalUnits')
     const hasDescription = Object.prototype.hasOwnProperty.call(req.body, 'description')
     const hasKind = Object.prototype.hasOwnProperty.call(req.body, 'kind')
-    const { eta, startDate, responsibleId, totalUnits, description, kind } = req.body
+    // Direct override of the normally system-managed baseline/actual dates —
+    // master admin only (see the gate below). A short-term data-entry escape
+    // hatch for getting real historical dates into the system; everywhere
+    // else, baselineEta is captured automatically on first eta revision and
+    // actualEnd is auto-stamped/cleared alongside status.
+    const hasBaselineEta = Object.prototype.hasOwnProperty.call(req.body, 'baselineEta')
+    const hasActualEnd = Object.prototype.hasOwnProperty.call(req.body, 'actualEnd')
+    const { eta, startDate, responsibleId, totalUnits, description, kind, baselineEta, actualEnd } = req.body
 
-    if (!hasEta && !hasStartDate && !hasResponsibleId && !hasTotalUnits && !hasDescription && !hasKind)
-      return res.status(400).json({ error: 'Provide eta, startDate, responsibleId, totalUnits, description, and/or kind to update' })
+    if (!hasEta && !hasStartDate && !hasResponsibleId && !hasTotalUnits && !hasDescription && !hasKind && !hasBaselineEta && !hasActualEnd)
+      return res.status(400).json({ error: 'Provide eta, startDate, responsibleId, totalUnits, description, kind, baselineEta, and/or actualEnd to update' })
+
+    if ((hasBaselineEta || hasActualEnd) && !(req.user.role === 'admin' && req.user.adminType === 'master'))
+      return res.status(403).json({ error: 'Only the master admin can set the planned or actual date directly' })
 
     if (hasKind && !STAGE_KINDS.includes(kind))
       return res.status(400).json({ error: `Invalid kind — must be one of: ${STAGE_KINDS.join(', ')}` })
@@ -1158,6 +1168,18 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
       const err = invalidDateMsg('start date', startDate)
       if (err) return res.status(400).json({ error: err })
     }
+    if (hasBaselineEta) {
+      const err = invalidDateMsg('planned date', baselineEta)
+      if (err) return res.status(400).json({ error: err })
+    }
+    // actualEnd is stricter than the other date fields: a real completion date
+    // (or nothing), never 'NA', never in the future.
+    if (hasActualEnd) {
+      if (typeof actualEnd !== 'string' || isNaN(new Date(actualEnd).getTime()))
+        return res.status(400).json({ error: 'Invalid actual completion date' })
+      if (dayNumber(actualEnd) > dayNumber(getToday()))
+        return res.status(400).json({ error: 'Actual completion date cannot be in the future' })
+    }
 
     // Ordering check against whichever side isn't being changed in this request
     const effectiveStart = hasStartDate ? startDate : currentStage.startDate
@@ -1182,6 +1204,30 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
     // original baseline is genuinely gone and is not invented here.
     if (hasEta && eta !== currentStage.eta && !currentStage.baselineEta)
       setFields[`assignments.$[asgn].stages.${stageIndex}.baselineEta`] = currentStage.eta ?? eta
+
+    // Master-only direct overrides (gated above). An explicit baselineEta wins
+    // over the auto-capture just above, since it's a deliberate correction.
+    if (hasBaselineEta) setFields[`assignments.$[asgn].stages.${stageIndex}.baselineEta`] = baselineEta
+
+    // Setting actualEnd directly means "this is done" — mirror status/units the
+    // same way every other actualEnd-setting path in this app does, so a stage
+    // never ends up with a completion date while still reading not_started.
+    // The checklist gate still applies (a stage can't contradict its own
+    // items); the materials gate does not — this route is specifically for
+    // entering real historical data the master admin already knows is true.
+    if (hasActualEnd) {
+      const kind = stageKindOf(currentStage)
+      if (kind === 'checklist') {
+        const items = currentStage.items || []
+        const pendingItems = items.filter(it => it.status !== 'done')
+        if (pendingItems.length > 0)
+          return res.status(400).json({ error: `Cannot mark done — ${pendingItems.length} of ${items.length} checklist item(s) still pending` })
+      }
+      const effectiveTotal = hasTotalUnits ? parsedTotalUnits : (currentStage.totalUnits ?? 0)
+      setFields[`assignments.$[asgn].stages.${stageIndex}.status`] = 'done'
+      setFields[`assignments.$[asgn].stages.${stageIndex}.unitsDone`] = mirroredUnits('done', effectiveTotal)
+      setFields[`assignments.$[asgn].stages.${stageIndex}.actualEnd`] = actualEnd
+    }
 
     // Changing kind re-derives status and re-mirrors units, or a stage could end
     // up 40% complete and simultaneously 'not_started'.
@@ -1217,6 +1263,8 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
     if (hasTotalUnits) changes.push(`target qty → ${parsedTotalUnits}`)
     if (hasDescription) changes.push('description updated')
     if (hasKind) changes.push(`kind → ${kind}`)
+    if (hasBaselineEta) changes.push(`planned date → ${baselineEta} [MASTER OVERRIDE]`)
+    if (hasActualEnd) changes.push(`actual end → ${actualEnd} [MASTER OVERRIDE]`)
     await AuditLog.create({
       byUser: req.user.id,
       action: 'Stage Dates Adjusted',

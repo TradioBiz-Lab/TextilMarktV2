@@ -55,15 +55,22 @@ function fmtDateTime(d) {
 // Detail modal — progress, updates, materials — not description or evidence
 // upload, which stay full-order-detail-only ("Open full order" reaches them).
 function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrder }) {
-  const { orders, updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial, refreshOrders } = useApp()
+  const { currentUser, orders, updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial, refreshOrders } = useApp()
   const toast = useToast()
   const order = (orders || []).find(o => o.id === orderId)
   const asgn = order?.assignments.find(a => String(a.mid) === String(mfrId))
   const stage = asgn?.stages?.[stageIndex]
+  const isMaster = currentUser?.adminType === 'master'
 
   const [units, setUnits] = useState(String(stage?.unitsDone ?? 0))
   const [status, setStatus] = useState(stage ? stageStatusOf(stage) : 'not_started')
   const [etaDraft, setEtaDraft] = useState(dateToInput(stage?.eta))
+  // Planned/Actual are normally system-managed (frozen baseline, auto-stamped
+  // completion) — these two drafts exist only so the master admin can
+  // directly correct them, a short-term escape hatch for getting real
+  // historical dates into the system. See saveEta().
+  const [baselineEtaDraft, setBaselineEtaDraft] = useState(dateToInput(stage?.baselineEta))
+  const [actualEndDraft, setActualEndDraft] = useState(dateToInput(stage?.actualEnd))
   const [updateText, setUpdateText] = useState('')
   const [matDraft, setMatDraft] = useState({ name: '', requiredQty: '' })
   const [saving, setSaving] = useState(false)
@@ -75,7 +82,9 @@ function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrder }) {
     setUnits(String(stage.unitsDone ?? 0))
     setStatus(stageStatusOf(stage))
     setEtaDraft(dateToInput(stage.eta))
-  }, [stage?.unitsDone, stage?.status, stage?.eta])
+    setBaselineEtaDraft(dateToInput(stage.baselineEta))
+    setActualEndDraft(dateToInput(stage.actualEnd))
+  }, [stage?.unitsDone, stage?.status, stage?.eta, stage?.baselineEta, stage?.actualEnd])
 
   if (!order || !asgn || !stage) return null
   const kind = stageKindOf(stage)
@@ -97,10 +106,20 @@ function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrder }) {
   // uses — one write path, so a date changed here is the same stage object
   // Order Detail renders, never a second copy that can drift out of sync.
   const saveEta = async () => {
-    if (etaDraft === dateToInput(stage.eta)) return
+    const dates = {}
+    if (etaDraft !== dateToInput(stage.eta)) dates.eta = etaDraft === 'NA' ? 'NA' : (etaDraft || null)
+    // Master-only overrides — the backend rejects these from anyone else, but
+    // don't even offer to send them from a non-master session.
+    if (isMaster && baselineEtaDraft !== dateToInput(stage.baselineEta)) {
+      dates.baselineEta = baselineEtaDraft === 'NA' ? 'NA' : (baselineEtaDraft || null)
+    }
+    if (isMaster && actualEndDraft && actualEndDraft !== dateToInput(stage.actualEnd)) {
+      dates.actualEnd = actualEndDraft
+    }
+    if (Object.keys(dates).length === 0) return
     setSavingEta(true)
     try {
-      await ordersApi.updateStageDates(orderId, mfrId, stageIndex, { eta: etaDraft === 'NA' ? 'NA' : (etaDraft || null) })
+      await ordersApi.updateStageDates(orderId, mfrId, stageIndex, dates)
       await refreshOrders()
       toast('Date updated', 'success')
     } catch (err) {
@@ -163,7 +182,16 @@ function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrder }) {
           <FlexRow gap={10} style={{ alignItems: 'flex-end' }}>
             <div>
               <div style={{ fontSize: 10, color: T.textLight, marginBottom: 4 }}>Planned</div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{fmtStageDate(stage.baselineEta)}</div>
+              {isMaster ? (
+                <input
+                  type={baselineEtaDraft === 'NA' ? 'text' : 'date'}
+                  value={baselineEtaDraft}
+                  onChange={e => setBaselineEtaDraft(e.target.value)}
+                  style={{ width: 120, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: baselineEtaDraft === 'NA' ? T.textLight : T.text, boxSizing: 'border-box' }}
+                />
+              ) : (
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{fmtStageDate(stage.baselineEta)}</div>
+              )}
             </div>
             <div style={{ flex: 1, minWidth: 110 }}>
               <div style={{ fontSize: 10, color: T.textLight, marginBottom: 4 }}>New</div>
@@ -177,7 +205,16 @@ function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrder }) {
             <div>
               <div style={{ fontSize: 10, color: T.textLight, marginBottom: 4 }}>Actual</div>
               <FlexRow gap={4}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{fmtStageDate(stage.actualEnd)}</div>
+                {isMaster ? (
+                  <input
+                    type="date"
+                    value={actualEndDraft}
+                    onChange={e => setActualEndDraft(e.target.value)}
+                    style={{ width: 120, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: T.text, boxSizing: 'border-box' }}
+                  />
+                ) : (
+                  <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{fmtStageDate(stage.actualEnd)}</div>
+                )}
                 {(() => {
                   const av = stageActualVariance(stage)
                   return av != null && av !== 0 ? (
@@ -188,8 +225,21 @@ function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrder }) {
                 })()}
               </FlexRow>
             </div>
-            <Btn size="sm" disabled={savingEta || etaDraft === dateToInput(stage.eta)} onClick={saveEta}>{savingEta ? 'Saving…' : 'Save Date'}</Btn>
+            <Btn
+              size="sm"
+              disabled={savingEta || (
+                etaDraft === dateToInput(stage.eta)
+                && (!isMaster || baselineEtaDraft === dateToInput(stage.baselineEta))
+                && (!isMaster || !actualEndDraft || actualEndDraft === dateToInput(stage.actualEnd))
+              )}
+              onClick={saveEta}
+            >{savingEta ? 'Saving…' : 'Save Date'}</Btn>
           </FlexRow>
+          {isMaster && (
+            <div style={{ fontSize: 10, color: T.textLight, marginTop: 4 }}>
+              Planned/Actual are directly editable for the master admin — a short-term fix for entering real historical dates.
+            </div>
+          )}
           {(() => {
             const v = stageVariance(stage)
             return v != null && v !== 0 ? (
