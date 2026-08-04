@@ -1248,7 +1248,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                           const isLate = stageIsOverdue(s)
                           const kind = stageKindOf(s)
                           const variance = stageVariance(s)
-                          const etaStr = s.eta === 'NA' ? 'N/A' : s.eta ? fmtDate(s.eta) : '—'
+                          const etaStr = s.eta === 'NA' ? 'N/A' : (s.eta && s.eta === s.baselineEta) ? 'N/A' : s.eta ? fmtDate(s.eta) : '—'
                           const baseStr = s.baselineEta === 'NA' ? 'N/A' : s.baselineEta ? fmtDate(s.baselineEta) : '—'
                           const startStr = s.startDate === 'NA' ? 'N/A' : s.startDate ? fmtDate(s.startDate) : '—'
                           const rowKey = `${a.mid}:${i}`

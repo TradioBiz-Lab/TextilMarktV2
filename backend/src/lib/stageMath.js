@@ -29,14 +29,15 @@ export const getToday = () => new Date(Date.now() + IST_OFFSET_MS).toISOString()
 
 /**
  * Days late (positive) or early (negative) that a stage ACTUALLY finished vs
- * its target `eta` — null until it's actually done. Distinct from
- * stageEtaVarianceDays() (Order.js), which measures whether the PLAN moved
- * (eta vs baseline); this measures whether the real outcome hit that plan.
+ * its original `baselineEta` — null until it's actually done, and null if no
+ * baseline was ever captured. Always measured against the frozen plan, never
+ * the current/revised `eta` — a stage that's had its target eta pushed still
+ * reports how far the real outcome landed from what was originally promised.
  */
 export const stageActualVariance = stage => {
-  const target = stage?.eta, actual = stage?.actualEnd
-  if (!target || !actual || target === 'NA') return null
-  const a = dayNumber(target), b = dayNumber(actual)
+  const planned = stage?.baselineEta, actual = stage?.actualEnd
+  if (!planned || !actual || planned === 'NA') return null
+  const a = dayNumber(planned), b = dayNumber(actual)
   return a == null || b == null ? null : b - a
 }
 

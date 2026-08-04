@@ -47,24 +47,31 @@ describe('getToday', () => {
 
 describe('stageActualVariance', () => {
   test('null when the stage has no actualEnd yet', () => {
-    assert.equal(stageActualVariance({ eta: '2026-08-15', actualEnd: null }), null)
+    assert.equal(stageActualVariance({ baselineEta: '2026-08-15', actualEnd: null }), null)
   })
 
-  test('null when eta is missing or "NA"', () => {
-    assert.equal(stageActualVariance({ eta: null, actualEnd: '2026-08-15' }), null)
-    assert.equal(stageActualVariance({ eta: 'NA', actualEnd: '2026-08-15' }), null)
+  test('null when baselineEta is missing or "NA"', () => {
+    assert.equal(stageActualVariance({ baselineEta: null, actualEnd: '2026-08-15' }), null)
+    assert.equal(stageActualVariance({ baselineEta: 'NA', actualEnd: '2026-08-15' }), null)
   })
 
-  test('positive when it finished later than target', () => {
-    assert.equal(stageActualVariance({ eta: '2026-08-15', actualEnd: '2026-08-18' }), 3)
+  test('positive when it finished later than the original plan', () => {
+    assert.equal(stageActualVariance({ baselineEta: '2026-08-15', actualEnd: '2026-08-18' }), 3)
   })
 
-  test('negative when it finished earlier than target', () => {
-    assert.equal(stageActualVariance({ eta: '2026-08-15', actualEnd: '2026-08-12' }), -3)
+  test('negative when it finished earlier than the original plan', () => {
+    assert.equal(stageActualVariance({ baselineEta: '2026-08-15', actualEnd: '2026-08-12' }), -3)
   })
 
-  test('zero when it finished exactly on target', () => {
-    assert.equal(stageActualVariance({ eta: '2026-08-15', actualEnd: '2026-08-15' }), 0)
+  test('zero when it finished exactly on the original plan', () => {
+    assert.equal(stageActualVariance({ baselineEta: '2026-08-15', actualEnd: '2026-08-15' }), 0)
+  })
+
+  test('measures against baselineEta even when eta has since been revised', () => {
+    // The plan moved to 08-20 after the fact, but the stage actually finished
+    // 3 days later than what was ORIGINALLY promised (08-15) — that's the
+    // number that matters, not how it compares to the since-revised target.
+    assert.equal(stageActualVariance({ baselineEta: '2026-08-15', eta: '2026-08-20', actualEnd: '2026-08-18' }), 3)
   })
 })
 

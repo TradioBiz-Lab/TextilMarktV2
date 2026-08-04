@@ -1170,7 +1170,15 @@ export function AdminOrders({ onOpen, initialStatus }) {
             {groupedOrders.length === 0 && <EmptyState icon="📦" title="No orders" desc="Create your first order above" />}
 
             {groupedOrders.map(g => {
+              // Earliest delivery first — the style due soonest is the one that
+              // most needs eyes, so it belongs leftmost, not wherever it happened
+              // to land in creation order.
               const entries = g.orders.flatMap(o => (o.assignments || []).map(a => ({ order: o, asgn: a })))
+                .sort((x, y) => {
+                  const dx = x.order.delivery ? new Date(x.order.delivery).getTime() : Infinity
+                  const dy = y.order.delivery ? new Date(y.order.delivery).getTime() : Infinity
+                  return dx - dy
+                })
               if (entries.length === 0) return null
               const spine = buildMatrixSpine(entries)
               const groupLabel = groupDisplayLabel(g)
@@ -1239,8 +1247,8 @@ export function AdminOrders({ onOpen, initialStatus }) {
                                   const tipLines = stage ? [
                                     `${step} — ${st.label}`,
                                     `Start: ${fmtStageDate(stage.startDate)}`,
-                                    `Planned: ${fmtStageDate(stage.baselineEta)}  →  Revised: ${fmtStageDate(stage.eta)}${planVariance != null && planVariance !== 0 ? `  (${planVariance > 0 ? '+' : ''}${planVariance}d)` : ''}`,
-                                    `Actual: ${fmtStageDate(stage.actualEnd)}${actualVariance != null && actualVariance !== 0 ? `  (${actualVariance > 0 ? '+' : ''}${actualVariance}d vs target)` : ''}`,
+                                    `Planned: ${fmtStageDate(stage.baselineEta)}  →  Revised: ${stage.eta && stage.eta === stage.baselineEta ? 'NA' : fmtStageDate(stage.eta)}${planVariance != null && planVariance !== 0 ? `  (${planVariance > 0 ? '+' : ''}${planVariance}d)` : ''}`,
+                                    `Actual: ${fmtStageDate(stage.actualEnd)}${actualVariance != null && actualVariance !== 0 ? `  (${actualVariance > 0 ? '+' : ''}${actualVariance}d vs plan)` : ''}`,
                                     `Progress: ${stageProgressLabel(stage)}`,
                                     stage.blockedReason ? `Blocked: ${stage.blockedReason}` : null,
                                   ].filter(Boolean) : null

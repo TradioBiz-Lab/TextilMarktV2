@@ -1097,10 +1097,20 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
     // actualEnd is auto-stamped/cleared alongside status.
     const hasBaselineEta = Object.prototype.hasOwnProperty.call(req.body, 'baselineEta')
     const hasActualEnd = Object.prototype.hasOwnProperty.call(req.body, 'actualEnd')
-    const { eta, startDate, responsibleId, totalUnits, description, kind, baselineEta, actualEnd } = req.body
+    const hasName = Object.prototype.hasOwnProperty.call(req.body, 'name')
+    const { eta, startDate, responsibleId, totalUnits, description, kind, baselineEta, actualEnd, name } = req.body
 
-    if (!hasEta && !hasStartDate && !hasResponsibleId && !hasTotalUnits && !hasDescription && !hasKind && !hasBaselineEta && !hasActualEnd)
-      return res.status(400).json({ error: 'Provide eta, startDate, responsibleId, totalUnits, description, kind, baselineEta, and/or actualEnd to update' })
+    if (!hasEta && !hasStartDate && !hasResponsibleId && !hasTotalUnits && !hasDescription && !hasKind && !hasBaselineEta && !hasActualEnd && !hasName)
+      return res.status(400).json({ error: 'Provide eta, startDate, responsibleId, totalUnits, description, kind, name, baselineEta, and/or actualEnd to update' })
+
+    let trimmedName
+    if (hasName) {
+      if (typeof name !== 'string' || !name.trim())
+        return res.status(400).json({ error: 'Stage name cannot be blank' })
+      trimmedName = name.trim()
+      if (trimmedName.length > 200)
+        return res.status(400).json({ error: 'Stage name too long (max 200 characters)' })
+    }
 
     if ((hasBaselineEta || hasActualEnd) && !(req.user.role === 'admin' && req.user.adminType === 'master'))
       return res.status(403).json({ error: 'Only the master admin can set the planned or actual date directly' })
@@ -1190,6 +1200,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
     }
 
     const setFields = { 'assignments.$[asgn].updatedAt': new Date() }
+    if (hasName) setFields[`assignments.$[asgn].stages.${stageIndex}.name`] = trimmedName
     if (hasEta) setFields[`assignments.$[asgn].stages.${stageIndex}.eta`] = eta
     if (hasStartDate) setFields[`assignments.$[asgn].stages.${stageIndex}.startDate`] = startDate
     if (hasResponsibleId) setFields[`assignments.$[asgn].stages.${stageIndex}.responsibleId`] = responsibleId || null
@@ -1257,6 +1268,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
 
     const stageName = currentStage.name || `Stage ${stageIndex + 1}`
     const changes = []
+    if (hasName) changes.push(`name → "${trimmedName}"`)
     if (hasEta) changes.push(`end date → ${eta}`)
     if (hasStartDate) changes.push(`start date → ${startDate}`)
     if (hasResponsibleId) changes.push(`responsible → ${responsibleId || 'unassigned'}`)
