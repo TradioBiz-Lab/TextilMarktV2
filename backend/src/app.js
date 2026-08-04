@@ -18,10 +18,14 @@ import ribbonsRouter       from './routes/ribbons.js'
 import masterOrdersRouter  from './routes/masterOrders.js'
 import signupRouter         from './routes/signup.js'
 import actionItemsRouter   from './routes/actionItems.js'
+import assistantRouter     from './routes/assistant.js'
 
 // ── Validate required env vars at startup ──────────────────────────────────
 const isProd = process.env.NODE_ENV === 'production'
-const REQUIRED_ENV = ['JWT_SECRET', 'MONGO_DB_URI']
+// Test runs own their DB lifecycle (an ephemeral in-memory mongod), so they
+// supply no MONGO_DB_URI and this module must not bootstrap anything.
+const isTest = process.env.NODE_ENV === 'test'
+const REQUIRED_ENV = isTest ? ['JWT_SECRET'] : ['JWT_SECRET', 'MONGO_DB_URI']
 if (isProd) REQUIRED_ENV.push('FRONTEND_URL')
 for (const key of REQUIRED_ENV) {
   if (!process.env[key]) {
@@ -36,8 +40,11 @@ if (process.env.JWT_SECRET === 'change_this_to_a_long_random_secret_key') {
   }
   console.warn('[WARN] JWT_SECRET is set to the default placeholder — change before deploying to production')
 }
-if (!process.env.RESEND_API_KEY) {
+if (!process.env.RESEND_API_KEY && !isTest) {
   console.warn('[WARN] RESEND_API_KEY not set — all emails will be silently skipped')
+}
+if (!process.env.ANTHROPIC_API_KEY && !isTest) {
+  console.warn('[WARN] ANTHROPIC_API_KEY not set — AI assistant endpoint will be unavailable')
 }
 
 const app = express()
@@ -92,7 +99,10 @@ app.use(rateLimit({
   max: isProd ? 500 : 2000,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: req => req.path === '/api/health',
+  // Skipped under test: the per-route limiters (updateLimiter is 120/hr/user)
+  // would otherwise make a suite's Nth stage write fail for reasons unrelated
+  // to what it asserts.
+  skip: req => isTest || req.path === '/api/health',
   validate: false,
 }))
 
@@ -122,7 +132,7 @@ app.use((req, res, next) => {
     const ms = Date.now() - start
     const slow = ms > 3000
     const isError = res.statusCode >= 400
-    if (!isProd || slow || isError) {
+    if (!isTest && (!isProd || slow || isError)) {
       const entry = {
         id:     req.id,
         ts:     new Date().toISOString(),
@@ -153,6 +163,7 @@ app.use('/api/notifications', notificationsRouter)
 app.use('/api/audit',         auditRouter)
 app.use('/api/ribbons',       ribbonsRouter)
 app.use('/api/action-items',  actionItemsRouter)
+app.use('/api/assistant',     assistantRouter)
 app.use('/api/master-orders', masterOrdersRouter)
 app.use('/api/signup',        signupRouter)
 
@@ -195,38 +206,46 @@ process.on('unhandledRejection', (reason) => {
 })
 process.on('uncaughtException', (err) => {
   console.error(JSON.stringify({ ts: new Date().toISOString(), event: 'uncaughtException', error: err.message }))
-  process.exit(1)
+  // Under test, let the runner report the failure instead of killing the process
+  if (!isTest) process.exit(1)
 })
 
 // ── Start ────────────────────────────────────────────────────────────────────
 // Catalyst AppSail injects the port via X_ZOHO_CATALYST_LISTEN_PORT rather than PORT
 const PORT = parseInt(process.env.X_ZOHO_CATALYST_LISTEN_PORT || process.env.PORT, 10) || 3001
 
-connectDB()
-  .then(() => {
-    const server = app.listen(PORT, () => {
-      console.log(JSON.stringify({ ts: new Date().toISOString(), event: 'server_start', port: PORT, env: isProd ? 'production' : 'development' }))
-    })
-
-    const shutdown = (signal) => {
-      console.log(JSON.stringify({ ts: new Date().toISOString(), event: 'shutdown', signal }))
-      server.close(async () => {
-        await mongoose.disconnect().catch(() => {})
-        console.log(JSON.stringify({ ts: new Date().toISOString(), event: 'shutdown_complete' }))
-        process.exit(0)
+// Under NODE_ENV=test the suite owns the lifecycle: it connects to its own
+// in-memory mongod and binds an ephemeral port itself. Importing this module
+// must not connect to (or listen on behalf of) the real deployment — dev and
+// production share one Atlas cluster, so an accidental connect here is a
+// connect to live data.
+if (!isTest) {
+  connectDB()
+    .then(() => {
+      const server = app.listen(PORT, () => {
+        console.log(JSON.stringify({ ts: new Date().toISOString(), event: 'server_start', port: PORT, env: isProd ? 'production' : 'development' }))
       })
-      // Force kill after 10 s if graceful close stalls
-      setTimeout(() => {
-        console.error(JSON.stringify({ ts: new Date().toISOString(), event: 'forced_shutdown' }))
-        process.exit(1)
-      }, 10000).unref()
-    }
-    process.on('SIGTERM', () => shutdown('SIGTERM'))
-    process.on('SIGINT',  () => shutdown('SIGINT'))
-  })
-  .catch(err => {
-    console.error(JSON.stringify({ ts: new Date().toISOString(), event: 'db_connect_failed', error: err.message }))
-    process.exit(1)
-  })
+
+      const shutdown = (signal) => {
+        console.log(JSON.stringify({ ts: new Date().toISOString(), event: 'shutdown', signal }))
+        server.close(async () => {
+          await mongoose.disconnect().catch(() => {})
+          console.log(JSON.stringify({ ts: new Date().toISOString(), event: 'shutdown_complete' }))
+          process.exit(0)
+        })
+        // Force kill after 10 s if graceful close stalls
+        setTimeout(() => {
+          console.error(JSON.stringify({ ts: new Date().toISOString(), event: 'forced_shutdown' }))
+          process.exit(1)
+        }, 10000).unref()
+      }
+      process.on('SIGTERM', () => shutdown('SIGTERM'))
+      process.on('SIGINT',  () => shutdown('SIGINT'))
+    })
+    .catch(err => {
+      console.error(JSON.stringify({ ts: new Date().toISOString(), event: 'db_connect_failed', error: err.message }))
+      process.exit(1)
+    })
+}
 
 export default app

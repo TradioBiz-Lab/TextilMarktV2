@@ -139,3 +139,137 @@ export const isExpired = d => {
   return dayNumber(d) - dayNumber(getToday()) < 0
 }
 export const fmtN = n => n?.toLocaleString?.() ?? n
+
+// ── Stage derivation ────────────────────────────────────────────────────────
+// Mirrors backend/src/models/Order.js. The server already normalizes these in
+// enrichOrder, so `kind`/`status` arrive resolved; the fallbacks here exist only
+// so a stale cached order (or a frontend deployed ahead of the backend — Slate
+// auto-deploys on push, AppSail does not) still renders sensibly.
+
+export const STAGE_KINDS = ['milestone', 'checklist', 'quantity']
+
+export const STAGE_STATUS_LABELS = {
+  not_started: 'Not started',
+  in_progress: 'In progress',
+  done: 'Done',
+}
+
+export const stageKindOf = s => s?.kind ?? 'quantity'
+
+export const stageStatusOf = s => {
+  if (s?.status) return s.status
+  const done = s?.unitsDone || 0
+  const total = s?.totalUnits || 0
+  if (total > 0 && done >= total) return 'done'
+  return done > 0 ? 'in_progress' : 'not_started'
+}
+
+export const isStageDone = s => stageStatusOf(s) === 'done'
+
+/** Percent complete, by kind. Checklists count items, not units. */
+export const stagePct = s => {
+  if (stageKindOf(s) === 'checklist' && (s?.itemsTotal || 0) > 0)
+    return Math.round(((s.itemsDone || 0) / s.itemsTotal) * 100)
+  if (isStageDone(s)) return 100
+  const total = s?.totalUnits || 0
+  return total > 0 ? Math.round(((s.unitsDone || 0) / total) * 100) : 0
+}
+
+/** Short progress label for a stage row — "2 of 3", "6,200 / 10,800", or the status. */
+export const stageProgressLabel = s => {
+  const kind = stageKindOf(s)
+  if (kind === 'checklist' && (s?.itemsTotal || 0) > 0) return `${s.itemsDone || 0} of ${s.itemsTotal}`
+  if (kind === 'quantity') return `${fmtN(s?.unitsDone || 0)} / ${fmtN(s?.totalUnits || 0)}`
+  return STAGE_STATUS_LABELS[stageStatusOf(s)]
+}
+
+export const stageIsOverdue = s => {
+  if (isStageDone(s)) return false
+  if (!s?.eta || s.eta === 'NA') return false
+  const d = dayNumber(s.eta)
+  return d != null && d - dayNumber(getToday()) < 0
+}
+
+/** Days late (positive) or early (negative) vs the frozen baseline; null if not measurable. */
+export const stageVariance = s => {
+  if (typeof s?.etaVarianceDays === 'number') return s.etaVarianceDays
+  const base = s?.baselineEta, now = s?.eta
+  if (!base || !now || base === 'NA' || now === 'NA') return null
+  const a = dayNumber(base), b = dayNumber(now)
+  return a == null || b == null ? null : b - a
+}
+
+/**
+ * Days late (positive) or early (negative) that a stage ACTUALLY finished vs
+ * its target `eta` — null until it's actually done. Distinct from
+ * stageVariance(), which measures whether the PLAN moved (eta vs baseline);
+ * this measures whether the real outcome hit that plan.
+ */
+export const stageActualVariance = s => {
+  const target = s?.eta, actual = s?.actualEnd
+  if (!target || !actual || target === 'NA') return null
+  const a = dayNumber(target), b = dayNumber(actual)
+  return a == null || b == null ? null : b - a
+}
+
+/**
+ * Every stage currently in play — NOT just the first incomplete one.
+ *
+ * Replaces the "active stage = first incomplete" assumption that five surfaces
+ * each reimplemented. That assumption breaks the moment steps overlap, which
+ * real TNA plans do (FPT/PP/GPT samples run concurrently).
+ *
+ * The window is bounded in BOTH directions. An earlier version only bounded it
+ * forward, so any step whose start date had ever passed stayed on the list
+ * forever — which turned the daily list into every open step on the book. A
+ * step qualifies when it is unfinished AND any of: it is blocked, it is being
+ * worked on, its planned window touches the ±windowDays band around today, or
+ * (when includeOverdue) its deadline has passed and it was never closed.
+ */
+export const inFlightStages = (assignment, { windowDays = 3, includeOverdue = true } = {}) => {
+  const today = dayNumber(getToday())
+  const within = d => d != null && Math.abs(d - today) <= windowDays
+  return (assignment?.stages || [])
+    .map((s, i) => ({ stage: s, index: i }))
+    .filter(({ stage: s }) => {
+      if (isStageDone(s)) return false
+      if (s.blocked) return true
+      if (stageStatusOf(s) === 'in_progress') return true
+      if (includeOverdue && stageIsOverdue(s)) return true
+      const start = s.startDate && s.startDate !== 'NA' ? dayNumber(s.startDate) : null
+      const eta = s.eta && s.eta !== 'NA' ? dayNumber(s.eta) : null
+      if (within(start) || within(eta)) return true
+      // A long step whose window straddles today, with both ends outside the band.
+      return start != null && eta != null && start <= today && eta >= today
+    })
+}
+
+/**
+ * Days by which the plan overruns the promised delivery date, or null when it
+ * doesn't. Nothing used to compare the two, so an order could promise 25-Aug
+ * while its own last step ran to 16-Sep and no screen said a word.
+ */
+export const deliveryOverrunDays = (order, assignment) => {
+  if (!order?.delivery) return null
+  const deliveryDay = dayNumber(new Date(order.delivery).toISOString())
+  if (deliveryDay == null) return null
+  const sources = assignment ? [assignment] : (order.assignments || [])
+  const etas = sources
+    .flatMap(a => a.stages || [])
+    .map(s => (s.eta && s.eta !== 'NA' ? dayNumber(s.eta) : null))
+    .filter(d => d != null)
+  if (etas.length === 0) return null
+  const last = Math.max(...etas)
+  return last > deliveryDay ? last - deliveryDay : null
+}
+
+/** The single stage to show when only one fits — earliest ETA among those in flight. */
+export const primaryStage = assignment => {
+  const live = inFlightStages(assignment)
+  if (live.length === 0) return null
+  return live.slice().sort((a, b) => {
+    const ea = a.stage.eta && a.stage.eta !== 'NA' ? dayNumber(a.stage.eta) : Infinity
+    const eb = b.stage.eta && b.stage.eta !== 'NA' ? dayNumber(b.stage.eta) : Infinity
+    return ea - eb || a.index - b.index
+  })[0]
+}

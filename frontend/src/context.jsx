@@ -282,16 +282,54 @@ export function AppProvider({ children }) {
     const oldStage = oldOrder?.assignments?.find(a => String(a.mid) === String(mfrId))?.stages?.[stageIndex]
     const oldUnits = oldStage?.unitsDone ?? 0
 
-    const updated = await ordersApi.updateStage(orderId, mfrId, stageIndex, data)
+    // The route returns { ...order, warnings } — keep warnings out of the store.
+    const { warnings, ...updated } = await ordersApi.updateStage(orderId, mfrId, stageIndex, data)
     setOrders(p => p.map(o => o.id === orderId ? updated : o))
 
-    const stageName = (updated.assignments || []).find(a => String(a.mid) === String(mfrId))?.stages?.[stageIndex]?.name || `Stage ${stageIndex + 1}`
+    const newStage = (updated.assignments || []).find(a => String(a.mid) === String(mfrId))?.stages?.[stageIndex]
+    const stageName = newStage?.name || `Stage ${stageIndex + 1}`
     if (updated.buyerId) {
       await pushNotif(updated.buyerId, 'status', `Production update on ${orderId}: ${stageName} progress updated`, orderId)
     }
-    await addAudit('Stage Update', `${orderId}: ${stageName} — units ${oldUnits} → ${data.unitsDone}${data.note ? ' | Note: ' + data.note : ''}`)
-    return updated
+    // Read the change off the response, not off `data` — a status-only write
+    // (milestones, the daily grid) carries no unitsDone and used to log
+    // "units 0 → undefined".
+    const change = newStage?.kind === 'quantity'
+      ? `units ${oldUnits} → ${newStage?.unitsDone ?? oldUnits}`
+      : `status → ${newStage?.status ?? 'updated'}`
+    await addAudit('Stage Update', `${orderId}: ${stageName} — ${change}${data.note ? ' | Note: ' + data.note : ''}`)
+    return { ...updated, warnings: warnings || [] }
   }, [orders, pushNotif, addAudit])
+
+  // One request for N stages. Used by the daily-update grid and Bulk Edit, which
+  // previously fired one call per changed stage and could exhaust the 120/hr
+  // update limiter on a single 27-stage order.
+  const bulkUpdateStages = useCallback(async (orderId, mfrId, stages) => {
+    const { updated: count, ...updated } = await ordersApi.bulkUpdateStages(orderId, mfrId, stages)
+    setOrders(p => p.map(o => o.id === orderId ? updated : o))
+    await addAudit('Stages Bulk Update', `${orderId}: ${count} stage(s) updated`)
+    return updated
+  }, [addAudit])
+
+  const addStageItem = useCallback(async (orderId, mfrId, stageIndex, data) => {
+    const updated = await ordersApi.addStageItem(orderId, mfrId, stageIndex, data)
+    setOrders(p => p.map(o => o.id === orderId ? updated : o))
+    await addAudit('Stage Item Added', `${orderId}: stage ${stageIndex + 1}`)
+    return updated
+  }, [addAudit])
+
+  const updateStageItem = useCallback(async (orderId, mfrId, stageIndex, lineIndex, data) => {
+    const updated = await ordersApi.updateStageItem(orderId, mfrId, stageIndex, lineIndex, data)
+    setOrders(p => p.map(o => o.id === orderId ? updated : o))
+    return updated
+  }, [])
+
+  const removeStageItem = useCallback(async (orderId, mfrId, stageIndex, lineIndex) => {
+    const updated = await ordersApi.removeStageItem(orderId, mfrId, stageIndex, lineIndex)
+    setOrders(p => p.map(o => o.id === orderId ? updated : o))
+    await addAudit('Stage Item Removed', `${orderId}: stage ${stageIndex + 1}`)
+    return updated
+  }, [addAudit])
 
   const updateAssignment = useCallback(async (orderId, mfrId, status, note) => {
     const updated = await ordersApi.updateAssignment(orderId, mfrId, status, note)
@@ -412,6 +450,14 @@ export function AppProvider({ children }) {
   const refreshOrders = useCallback(async () => {
     const o = await ordersApi.list()
     setOrders(o)
+  }, [])
+
+  // actionItems is otherwise only fetched once at bootstrap (line ~38) — every
+  // existing mutation below refetches inline, but nothing external (like the
+  // AI assistant, which can also change ActionItem records) had a way to ask
+  // for a refresh until now.
+  const refreshActionItems = useCallback(async () => {
+    setActionItems(await actionItemsApi.list())
   }, [])
 
   const addStageUpdate = useCallback(async (orderId, mfrId, stageIndex, text) => {
@@ -544,12 +590,13 @@ export function AppProvider({ children }) {
       actionItems,
       login, logout,
       updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial, bulkUploadMaterials,
+      bulkUpdateStages, addStageItem, updateStageItem, removeStageItem,
       updateAssignment, uploadDoc, createOrder, bulkCreateOrders, createMasterOrder, deleteMasterOrder,
       editOrder, deleteOrder,
       createUser, updateUser, toggleUser, resetUserPw,
       markAllRead, markOneRead, getDocData, addAudit, pushNotif,
       refreshOrders, listAllRibbons, createRibbon, updateRibbon, removeRibbon,
-      createActionItem, updateActionItem, addActionItemUpdate, removeActionItem,
+      createActionItem, updateActionItem, addActionItemUpdate, removeActionItem, refreshActionItems,
     }}>
       {children}
     </AppContext.Provider>

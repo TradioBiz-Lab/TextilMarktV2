@@ -9,6 +9,8 @@ export function EditOrderModal({ order, onClose, onSave }) {
     season: order.season || '',
     totalQty: order.totalQty != null ? String(order.totalQty) : '',
     delivery: order.delivery ? new Date(order.delivery).toISOString().slice(0, 10) : '',
+    colourways: (order.colourways || []).map(c => c.name).join(', '),
+    callout: order.callout || '',
   })
   const hasExistingPhoto = !!(order.imageDataUrl || order.imageUrl)
   const [photoFile, setPhotoFile] = useState(null)
@@ -32,6 +34,8 @@ export function EditOrderModal({ order, onClose, onSave }) {
       season: f.season || undefined,
       totalQty: qty,
       delivery: f.delivery,
+      colourways: f.colourways.split(',').map(c => c.trim()).filter(Boolean),
+      callout: f.callout.trim(),
     }
     if (clearPhoto) {
       payload.imageDataUrl = null
@@ -120,6 +124,21 @@ export function EditOrderModal({ order, onClose, onSave }) {
               onChange={set('delivery')}
             />
           </div>
+
+          <Input
+            label="Colourways"
+            value={f.colourways}
+            onChange={set('colourways')}
+            placeholder="e.g. Peacot, Brown, Olivine"
+            hint="Comma-separated. Checklist steps generate one line per colour from this."
+          />
+          <Input
+            label="Callout"
+            value={f.callout}
+            onChange={set('callout')}
+            placeholder="e.g. delayed a week — lab dip submission slipped"
+            hint="Order-level risk note. Shows on the Order Status report."
+          />
 
           <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#92400e' }}>
             Note: editing the total quantity does not automatically update manufacturer assignment quantities. Update those from the order detail view if needed.

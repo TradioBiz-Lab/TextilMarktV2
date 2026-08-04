@@ -75,6 +75,13 @@ Uses a human-readable custom string `_id` for traceability.
   season        String            enum: ["SS26","FW26","SS27","FW27","SS28"]
   totalQty      Number            required, min: 1
   delivery      Date              required — target delivery date
+  colourways    [{name, code}]    max 40 — the colours this style is made in. Held at order
+                                  level so per-colour stages (dyeing, lab dips, FPT/GPT)
+                                  generate their checklist items from one list instead of the
+                                  names being retyped per step. Names only — a qty-per-colour-
+                                  per-size grid is deliberately out of scope.
+  callout       String            default: "", max 500 chars — order-level risk/escalation
+                                  note, e.g. "delayed a week — lab dip submission slipped"
   assignments   [Assignment]      embedded array, one entry per manufacturer split
   createdAt     Date              auto
   updatedAt     Date              auto
@@ -126,20 +133,78 @@ DEFAULT_STAGE_NAMES = [
                        tracks the full order qty, e.g. "Lab Dip Approval" might target
                        3 dips, not 600 pieces)
   startDate:  String | null   ISO date string or "NA" — required at creation (planned start)
-  eta:        String | null   ISO date string or "NA" — required at creation (planned end)
+  eta:        String | null   ISO date string or "NA" — required at creation. The CURRENT
+                       (revised) end date — this is the one that moves.
+  baselineEta: String | null  the originally planned end date, frozen. See below.
+  actualEnd:  String | null   when the stage actually finished. Auto-stamped/cleared
+                       alongside `status` (never hand-edited) — see below.
   stageDate:  String | null   date set by manufacturer when working this stage (actual, not planned)
   note:       String   default: "" — latest free-text note for this stage
   description: String  default: "", max 1000 chars — static description of what this
                        stage involves, separate from `note` (the transient last-update note)
-  responsibleId: ObjectId | null → users   admin or manufacturer accountable for this stage
+  responsibleId: ObjectId | null → users   admin, manufacturer, OR buyer accountable for this stage
+  kind:       String | null   enum: ["milestone","checklist","quantity"]. null on documents
+                       predating the field — read via stageKindOf(), which resolves null to
+                       "quantity" (exactly the old behaviour).
+  status:     String | null   enum: ["not_started","in_progress","done"]. null on legacy
+                       documents — read via deriveStageStatus(), never raw.
+  blocked:       Boolean  default: false — orthogonal to status; a stage can be in_progress
+                       AND blocked (two colourways dyeing, the third awaiting a sample)
+  blockedReason: String   default: "", max 300 chars
   updates:    [StageUpdate]   embedded array — ticket-style progress log, see below
   materials:  [StageMaterial] embedded array — procurement checklist, see below
+  items:      [StageItem]     embedded array — the stage's own deliverables, see below
 }
 ```
 
 **Required at creation:** both `startDate` and `eta` must be an explicit date or the literal
 `"NA"` — never blank/null — enforced in `validateAndCreateOrder` (`backend/src/routes/orders.js`).
-When both are real (non-`"NA"`) dates, `startDate` must be on or before `eta`.
+When both are real (non-`"NA"`) dates, `startDate` must be on or before `eta`. There is
+deliberately **no cross-stage date rule** — overlapping windows are legal and expected.
+
+**Stage kinds.** Most real TNA steps are milestones: of the 16 steps in a Cocoblu plan only
+Production counts garments. `kind` selects how a stage measures done:
+
+| kind | progress is | `totalUnits` default at creation |
+|---|---|---|
+| `milestone` | `status` alone | 1 |
+| `checklist` | `items[]` — N discrete deliverables | 1 |
+| `quantity` | `unitsDone / totalUnits` | the assignment's qty |
+
+**The units mirror.** `status` and `unitsDone` are always written together and can never
+disagree. For `quantity` stages units are authoritative and status is derived; for the other
+two, status is authoritative and `unitsDone` is set to `totalUnits` when done, else 0. This is
+load-bearing: five frontend surfaces find the active stage with `unitsDone < totalUnits`, and
+the mirror lets them keep working unchanged across a frontend/backend version skew (Slate
+auto-deploys on push, AppSail does not). `totalUnits` must never be 0 on a non-quantity stage —
+`0 < 0` is false, which would read as permanently complete.
+
+**Baseline vs revised end date.** `eta` is the live date; `baselineEta` is what was originally
+planned, so slippage (`etaVarianceDays`, computed in `enrichOrder`, never stored) is
+measurable. Set at creation. For stages predating the field it is captured **lazily**: the
+`/eta` and bulk routes write the *pre-update* `eta` into `baselineEta` the first time the date
+changes. A read-time `baselineEta ?? eta` fallback alone would be wrong — it moves with `eta`
+and pins variance at zero forever. Those stages honestly report 0 days of slippage until their
+first revision; the original baseline is genuinely gone and is not invented.
+
+**Actual end date.** `actualEnd` is set the moment a stage's derived `status` reaches `"done"`
+(`deriveActualEnd()` in `Order.js`) and cleared back to `null` on reopen — the same
+auto-stamp/clear shape already used for `items[].doneDate`. It answers the Excel sheet's
+"Actual End Date" column: when a step *really* finished, as distinct from `eta` (when it's due).
+Written at the same three call sites as `status`/`unitsDone`: the general stage-update route,
+the bulk route, and the `/eta` route's kind-flip branch. Legacy stages read `null` — honest,
+since there's no way to know when a pre-existing "done" stage actually closed.
+
+**Checklist full-close gate.** A `checklist`-kind stage cannot have its `status` set to `"done"`
+while any of its own `items[]` is still `"pending"` — rejected with a 400 naming how many are
+left. No override (unlike the materials gate): this is the stage agreeing with its own
+checklist, not an external PO dependency. `milestone` and `quantity` kinds are unaffected.
+
+**Legacy documents are normalized on read, not migrated.** Every order read is `.lean()`, so
+Mongoose never applies schema defaults to documents written before a field existed — they come
+back `undefined`. `enrichOrder()` is the single serialization point and resolves them there.
+Consequence: **a new stage field that isn't added to `enrichOrder` is invisible to the
+frontend.**
 
 ### Embedded: `stages[].updates`
 
@@ -175,13 +240,49 @@ Stage Override alike. Stages with an empty `materials[]` are unaffected.
 }
 ```
 
-**Who can manage `updates`/`materials`:** the order's admin (any), or — for `materials`
-specifically — the stage's own `responsibleId` (admin or manufacturer) in addition to any
-admin. Manufacturers may only act on stages within their own assignment.
+### Embedded: `stages[].items`
 
-**Sequential progress rule:** when stage *N* is updated, all stages *N+1…* are reset to
-`unitsDone: 0, note: ""` — production is treated as strictly sequential, you cannot be
-"ahead" on a later stage.
+The deliverables a `checklist` stage produces — a step is often several things finishing on
+different days ("three lab dips, not submitted together"; "Dyeing started: Peacot, Brown,
+Olivine to follow"). Distinct from `materials`, which are procurement and **gate** the stage;
+items **are** the stage's own work and gate nothing.
+
+```
+{
+  name:      String   required, max 200 chars — e.g. "Lab Dip — Peacot"
+  colourway: String   default: "" — matches an order.colourways[].name when per-colour
+  status:    String   enum: ["pending","done"], default: "pending"
+  plannedDate: String | null   the originally planned due date, frozen. Same
+                       lazy-backfill pattern as stage.baselineEta vs stage.eta — captured
+                       on the items-update route the first time `dueDate` is revised.
+  dueDate:   String | null   ISO date string or "NA" — the CURRENT (revised) due date
+  doneDate:  String | null   stamped automatically when status flips to "done" — this
+                       item's "actual" date
+  note:      String   default: ""
+}
+```
+
+Max 60 items per stage. `POST …/items` with `{ fromColourways: true }` fans out one line per
+`order.colourways`, so the same colour names aren't retyped on every per-colour step.
+`enrichOrder` additionally emits `itemsDone` / `itemsTotal`.
+
+**Who can manage `updates` / `materials` / `items`:** any admin, or the stage's own
+`responsibleId`. Manufacturers may only act within their own assignment. **Buyers are denied
+outright on all three** — an explicit check, not a side effect of their never being
+`responsibleId`, which is no longer true (see the carve-out below).
+
+**Buyer carve-out (narrow, deliberate).** BRD §3 says buyers never write stage fields. One
+exception: a buyer who is a stage's `responsibleId` may set that stage's `status`, `blocked`
+and `blockedReason` — nothing else. Real TNA plans assign the approval steps (lab dip, FPT/PP/
+GPT, final inspection) to the buyer, roughly a third of the plan. Dates, units, notes,
+responsibility, materials, items and order status all remain forbidden, on every route.
+
+**Stages are independent.** There is no sequential reset. The previous rule zeroed `unitsDone`
+*and* `note` on every later stage on every write — including note-only saves and master
+overrides — destroying typed work to maintain a property nothing read, and it is wrong for the
+domain: real TNA steps overlap (FPT/PP/GPT samples run concurrently; PP approval starts before
+FPT approval closes). Completing a stage while an earlier one is still open now returns a
+**non-blocking `warnings[]`** on the response instead.
 
 **Indexes:**
 - `{ buyerId: 1, createdAt: -1 }` — buyer order list

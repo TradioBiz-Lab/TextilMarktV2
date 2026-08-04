@@ -7,6 +7,10 @@ import { requireAuth } from '../middleware/auth.js'
 
 const router = Router()
 
+// Bypassed only under NODE_ENV=test — a suite logging in as several roles
+// would otherwise exhaust the 5-attempt window mid-run.
+const skipInTest = () => process.env.NODE_ENV === 'test'
+
 // Server-side brute-force protection: 5 attempts per email per 15 min window
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -16,6 +20,7 @@ const loginLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   validate: false,
+  skip: skipInTest,
 })
 
 const changePasswordLimiter = rateLimit({
@@ -26,6 +31,7 @@ const changePasswordLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   validate: false,
+  skip: skipInTest,
 })
 
 router.post('/login', loginLimiter, async (req, res) => {

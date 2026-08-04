@@ -56,6 +56,17 @@ export const ordersApi = {
     api.post(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}`, data),
   updateStageDates: (orderId, mfrId, stageIndex, dates) =>
     api.post(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}/eta`, dates),
+  // One atomic write for many stages — replaces looping updateStageDates per row.
+  // `stages` is [{index, status?, eta?, startDate?, responsibleId?, totalUnits?,
+  // description?, kind?, blocked?, blockedReason?}].
+  bulkUpdateStages: (orderId, mfrId, stages) =>
+    api.post(`/orders/${orderId}/assignments/${mfrId}/stages/bulk`, { stages }),
+  addStageItem: (orderId, mfrId, stageIndex, data) =>
+    api.post(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}/items`, data),
+  updateStageItem: (orderId, mfrId, stageIndex, lineIndex, data) =>
+    api.post(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}/items/${lineIndex}`, data),
+  removeStageItem: (orderId, mfrId, stageIndex, lineIndex) =>
+    api.post(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}/items/${lineIndex}/delete`),
   escalate: (id, reason) =>
     api.post(`/orders/${id}/escalate`, { reason }),
   bulkCreate: (masterOrderId, rows) =>
@@ -70,6 +81,11 @@ export const ordersApi = {
     api.post(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}/materials/${lineIndex}/delete`),
   removeStage: (orderId, mfrId, stageIndex) =>
     api.post(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}/delete`),
+  // Inserts a new stage into an already-created order's plan (admin only).
+  // `data` is {index?, name, kind?, totalUnits?, startDate, eta, description?,
+  // responsibleId?, status?, actualEnd?} — index omitted appends to the end.
+  insertStage: (orderId, mfrId, data) =>
+    api.post(`/orders/${orderId}/assignments/${mfrId}/stages/insert`, data),
   materialsBulkUpload: (rows) =>
     api.post('/orders/materials/bulk', { rows }),
 }
@@ -115,6 +131,15 @@ export const actionItemsApi = {
   update: (id, data) => api.post(`/action-items/${id}`, data),
   addUpdate: (id, text) => api.post(`/action-items/${id}/updates`, { text }),
   remove: id => api.post(`/action-items/${id}/delete`),
+}
+
+export const assistantApi = {
+  // A broad question can fan out into several tool calls, each its own
+  // Anthropic round-trip (up to MAX_TOOL_LOOP_ITERATIONS server-side) — this
+  // routinely takes longer than the client's default 30s timeout, so it gets
+  // its own generous override rather than raising the default for every
+  // other (much faster) endpoint.
+  chat: (messages) => api.post('/assistant/chat', { messages }, { timeout: 120000 }),
 }
 
 export const masterOrdersApi = {

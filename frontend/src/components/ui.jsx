@@ -894,8 +894,12 @@ export function Grid({ cols, gap = 14, children, style: s }) {
   return <div className={cls} style={{ display: 'grid', gridTemplateColumns: `repeat(${cols},1fr)`, gap, ...s }}>{children}</div>
 }
 
-export function FlexRow({ children, gap = 10, align = 'center', justify = 'flex-start', style: s }) {
-  return <div style={{ display: 'flex', alignItems: align, justifyContent: justify, gap, ...s }}>{children}</div>
+export function FlexRow({ children, gap = 10, align = 'center', justify = 'flex-start', style: s, onClick }) {
+  return (
+    <div onClick={onClick} style={{ display: 'flex', alignItems: align, justifyContent: justify, gap, cursor: onClick ? 'pointer' : undefined, ...s }}>
+      {children}
+    </div>
+  )
 }
 
 export function Divider({ mt = 12, mb = 12 }) {

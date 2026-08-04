@@ -17,8 +17,8 @@ from their own directories.
 npm install
 npm run dev     # node --watch src/app.js — auto-restarts on file change
 npm start       # node src/app.js — no watch, used in production (Procfile/AppSail)
-npm test        # runs tests/e2e.test.js — NOTE: this file does not currently exist in the repo;
-                 # `npm test` will fail until it's added
+npm test        # node --test over tests/**/*.test.js (node's built-in runner, no test framework)
+npm run test:watch
 
 # Frontend (React + Vite), from frontend/
 npm install
@@ -115,7 +115,22 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   (`ORDER_STATUS_VALUES` in `Order.js`). `STATUS_FLOW` in `frontend/src/constants.js`
   (the 8-step `Order Confirmed → ... → Delivered` flow) is **legacy/unused** — don't
   validate against it.
-- Updating stage N resets stages N+1.. to 0 (production is sequential).
+- **Stages are tracked independently — there is no sequential reset.** Real TNA plans run
+  steps in parallel (FPT/PP/GPT samples overlap; PP approval starts before FPT approval
+  closes). Completing a stage while an earlier one is open returns a non-blocking
+  `warnings[]` on the response rather than silently zeroing anything.
+- Each stage has a `kind` (`milestone` | `checklist` | `quantity`) and an explicit `status`.
+  `status` and `unitsDone` are mirrored server-side and can never disagree — see
+  `docs/SCHEMA.md`, and note that the mirror is what keeps the frontend's
+  `unitsDone < totalUnits` "active stage" derivations working across a deploy skew.
+- `eta` is the current end date; `baselineEta` is the frozen original, so slippage is
+  measurable. Legacy stages capture their baseline lazily on first revision. `actualEnd` is
+  when the stage actually finished — auto-stamped/cleared alongside `status`, same shape as
+  `items[].doneDate`; never hand-edited. A `checklist`-kind stage cannot be marked `done`
+  while any of its own `items[]` is still pending (no override) — see `docs/SCHEMA.md`.
+- Legacy stage documents are normalized in `enrichOrder` (reads are `.lean()`, so schema
+  defaults never apply to them) — **a new stage field not added there is invisible to the
+  frontend**.
 - Categories are free-text; `season` is enum-restricted (`SS26, FW26, SS27, FW27, SS28`).
 
 ## Security posture (preserve all of this during any change)
@@ -133,6 +148,17 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
 ## Conventions / gotchas for future work
 - `category` on Order is free-text (not enum) — don't add enum validation back.
 - `Order._id` is a custom string, not ObjectId — don't assume `mongoose.Types.ObjectId`.
-- Buyers can never write order status/stage fields — enforced server-side (BRD §3).
-- `npm test` in `backend/` currently points at a non-existent file — don't assume test coverage
-  exists; verify before relying on it.
+- Buyers can never write order status/stage fields — enforced server-side (BRD §3) — **with
+  one narrow, deliberate exception**: a buyer who is a stage's `responsibleId` may set that
+  stage's `status`/`blocked`/`blockedReason` and nothing else, because real TNA plans assign
+  the approval steps to the buyer. Materials and items routes carry an *explicit* buyer deny;
+  do not remove it, as those checks previously excluded buyers only as a side effect of
+  buyers never being assignable as `responsibleId`.
+- **Tests run against an ephemeral in-memory mongod, never Atlas.** `backend/tests/helpers/db.js`
+  overwrites `MONGO_DB_URI` with a `mongodb-memory-server` instance and refuses to start if the
+  resulting connection host isn't local — `clearDb()` wipes every collection, and dev and prod
+  share one cluster, so that guard is load-bearing. `NODE_ENV=test` also stops `src/app.js` from
+  connecting/listening on import and bypasses the rate limiters (a suite would otherwise trip
+  `updateLimiter`'s 120/hr). Never point a test at a real URI.
+- Tests use node's built-in runner and mint JWTs directly (`tests/helpers/client.js`) rather than
+  logging in, to keep bcrypt out of the hot path. The app is bound on port 0 per suite.

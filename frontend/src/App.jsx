@@ -15,8 +15,10 @@ import { AdminOrderDetail } from './pages/admin/AdminOrderDetail.jsx'
 import { AdminDocuments } from './pages/admin/AdminDocuments.jsx'
 import { AdminAuditLog } from './pages/admin/AdminAuditLog.jsx'
 import { UserSetup } from './pages/admin/UserSetup.jsx'
-import { ActionItemsCenter } from './pages/admin/ActionItemsCenter.jsx'
+import { KriyaaPage } from './pages/admin/KriyaaPage.jsx'
+import { KriyaaChatProvider } from './kriyaaChatContext.jsx'
 import { ReportingPage } from './pages/shared/ReportingPage.jsx'
+import { ActionItemsPage } from './pages/shared/ActionItemsPage.jsx'
 import { authApi } from './api.js'
 import { T } from './constants.js'
 import { Input, Btn, ToastProvider } from './components/ui.jsx'
@@ -101,6 +103,11 @@ function Inner() {
   const openOrder = (id, mid) => { setSelOid(id); setSelMid(mid ? String(mid) : null); setView('order_detail') }
 
   const renderView = () => {
+    // Action Items and the daily update are one page now — the same job, split
+    // across two screens. Shared by all three roles; it scopes rows to what the
+    // viewer may act on, and the server enforces the same boundary.
+    if (view === 'action_items' || view === 'daily') return <ActionItemsPage onOpen={openOrder} onNavigate={navTo} />
+
     if (user.role === 'buyer') {
       if (view === 'dashboard') return <BuyerDashboard onOpen={openOrder} onSubmitReq={() => navTo('submit_req')} />
       if (view === 'order_detail' && selOid) return <BuyerOrderDetail orderId={selOid} initialMid={selMid} onBack={() => navTo('dashboard')} />
@@ -116,20 +123,22 @@ function Inner() {
     if (user.role === 'admin') {
       if (view === 'dashboard') return <AdminDashboard onNavigate={navTo} onOpen={openOrder} />
       if (view === 'orders') return <AdminOrders onOpen={openOrder} initialStatus={ordersStatus} />
-      if (view === 'action_items') return <ActionItemsCenter onOpen={openOrder} onNavigate={navTo} />
       if (view === 'order_detail' && selOid) return <AdminOrderDetail orderId={selOid} initialMid={selMid} onBack={() => navTo('orders')} />
       if (view === 'documents') return <AdminDocuments />
       if (view === 'reports') return <ReportingPage onOpen={openOrder} />
       if (view === 'audit') return <AdminAuditLog />
+      if (view === 'kriyaa') return <KriyaaPage />
       if (view === 'users' && user.adminType === 'master') return <UserSetup />
     }
     return <div style={{ textAlign: 'center', padding: '60px', color: T.textLight }}>Page not found</div>
   }
 
   return (
-    <Shell view={view} setView={navTo} onOpenOrder={openOrder}>
-      {renderView()}
-    </Shell>
+    <KriyaaChatProvider>
+      <Shell view={view} setView={navTo} onOpenOrder={openOrder}>
+        {renderView()}
+      </Shell>
+    </KriyaaChatProvider>
   )
 }
 

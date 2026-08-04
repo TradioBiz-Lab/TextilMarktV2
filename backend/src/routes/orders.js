@@ -7,7 +7,11 @@ import { Notification } from '../models/Notification.js'
 import { AuditLog }     from '../models/AuditLog.js'
 import { MasterOrder }  from '../models/MasterOrder.js'
 import { Document }     from '../models/Document.js'
-import { DEFAULT_STAGE_NAMES, ORDER_STATUS_VALUES }  from '../models/Order.js'
+import {
+  DEFAULT_STAGE_NAMES, ORDER_STATUS_VALUES, STAGE_KINDS, STAGE_STATUS_VALUES,
+  stageKindOf, deriveStageStatus, mirroredUnits, stageEtaVarianceDays, deriveActualEnd, deliveryVarianceDays,
+} from '../models/Order.js'
+import { dayNumber, getToday } from '../lib/stageMath.js'
 
 // Categories are now free-text — no validation needed
 const VALID_SEASONS    = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
@@ -15,12 +19,17 @@ const MAX_PRODUCT_PHOTO_SIZE = 1024 * 1024 // 1MB raw — reference thumbnail, n
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 // Email triggers for orders are intentionally suppressed — order activity is portal-notifications only
 
+// Rate limits are real behaviour, not test behaviour — a suite that writes 200
+// stages would trip updateLimiter (120/hr) and fail for a reason it isn't
+// asserting. Bypass only under NODE_ENV=test.
+const skipInTest = () => process.env.NODE_ENV === 'test'
+
 // 60 order creations per admin per hour — prevents runaway scripting
 const createOrderLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, max: 60,
   keyGenerator: req => req.user?.id || req.ip,
   message: { error: 'Too many order creation requests. Please wait.' },
-  standardHeaders: true, legacyHeaders: false, validate: false,
+  standardHeaders: true, legacyHeaders: false, validate: false, skip: skipInTest,
 })
 
 // 10 bulk (CSV) order-creation requests per admin per hour — separate from the
@@ -29,7 +38,7 @@ const bulkOrderLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, max: 10,
   keyGenerator: req => req.user?.id || req.ip,
   message: { error: 'Too many bulk upload requests. Please wait.' },
-  standardHeaders: true, legacyHeaders: false, validate: false,
+  standardHeaders: true, legacyHeaders: false, validate: false, skip: skipInTest,
 })
 
 // 30 materials-bulk-upload requests per admin per hour
@@ -37,7 +46,7 @@ const materialsBulkLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, max: 30,
   keyGenerator: req => req.user?.id || req.ip,
   message: { error: 'Too many bulk materials upload requests. Please wait.' },
-  standardHeaders: true, legacyHeaders: false, validate: false,
+  standardHeaders: true, legacyHeaders: false, validate: false, skip: skipInTest,
 })
 
 // 120 stage/status patches per user per hour
@@ -45,7 +54,7 @@ const updateLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, max: 120,
   keyGenerator: req => req.user?.id || req.ip,
   message: { error: 'Too many update requests. Please wait.' },
-  standardHeaders: true, legacyHeaders: false, validate: false,
+  standardHeaders: true, legacyHeaders: false, validate: false, skip: skipInTest,
 })
 
 // Max 3 escalations per buyer per 60 min (prevents email spam to master admins)
@@ -57,11 +66,28 @@ const escalationLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   validate: false,
+  skip: skipInTest,
 })
 
 const router = Router()
 const MFR_FIELDS = 'name company code'
 const BUYER_FIELDS = 'name company code'
+
+// Who may be a stage's accountable owner. Buyers are included because real TNA
+// plans assign the approval steps (lab dip, FPT/PP/GPT, final inspection) to the
+// buyer — roughly a third of the plan. Being responsible grants a deliberately
+// narrow write: the stage's own status and an update comment, nothing else.
+// See buyerMayWriteStage() and the explicit denies on the materials routes.
+const RESPONSIBLE_ROLES = ['admin', 'manufacturer', 'buyer']
+
+/**
+ * The one exception to "buyers can never write stage fields" (BRD §3).
+ * Scoped to stages the buyer is the responsibleId of, and — at the call sites —
+ * to `status`, `blocked` and update comments. Never dates, units, materials,
+ * responsibility, or order status.
+ */
+const buyerMayWriteStage = (user, stage) =>
+  user.role === 'buyer' && !!stage?.responsibleId && String(stage.responsibleId) === String(user.id)
 
 const enrichOrder = (o, viewerMfrId = null) => {
   const buyer = o.buyerId && typeof o.buyerId === 'object' && o.buyerId.company ? o.buyerId : null
@@ -77,6 +103,10 @@ const enrichOrder = (o, viewerMfrId = null) => {
   product: o.product, category: o.category,
   imageDataUrl: o.imageDataUrl || null, imageUrl: o.imageUrl || null,
   season: o.season, totalQty: o.totalQty, delivery: o.delivery, createdAt: o.createdAt,
+  baselineDelivery: o.baselineDelivery || null,
+  deliveryVarianceDays: deliveryVarianceDays(o),
+  colourways: (o.colourways || []).map(c => ({ name: c.name, code: c.code || '' })),
+  callout: o.callout || '',
   assignments: visibleAssignments.map(a => {
     const mfr = a.mfrId && typeof a.mfrId === 'object' && a.mfrId.company ? a.mfrId : null
     return {
@@ -100,6 +130,25 @@ const enrichOrder = (o, viewerMfrId = null) => {
           responsibleRole: responsible?.role ?? null,
           responsibleCompany: responsible?.company ?? null,
           description: s.description || '',
+          // Legacy stages carry none of these — resolved here (the only
+          // serialization point) rather than by migrating live documents.
+          kind:   stageKindOf(s),
+          status: deriveStageStatus(s),
+          blocked: !!s.blocked,
+          blockedReason: s.blockedReason || '',
+          // Falls back to eta so a stage that predates the field reads as zero
+          // slippage; the /eta route captures the real baseline on first revision.
+          baselineEta: s.baselineEta ?? s.eta ?? null,
+          etaVarianceDays: stageEtaVarianceDays({ baselineEta: s.baselineEta ?? s.eta, eta: s.eta }),
+          // When the stage actually finished — null until status reaches 'done'.
+          actualEnd: s.actualEnd || null,
+          items: (s.items || []).map(it => ({
+            name: it.name, colourway: it.colourway || '', status: it.status,
+            plannedDate: it.plannedDate ?? it.dueDate ?? null,
+            dueDate: it.dueDate || null, doneDate: it.doneDate || null, note: it.note || '',
+          })),
+          itemsDone: (s.items || []).filter(it => it.status === 'done').length,
+          itemsTotal: (s.items || []).length,
           updates: (s.updates || []).map(u => ({
             text: u.text,
             byUser: u.byUser?._id?.toString() ?? u.byUser?.toString(),
@@ -165,7 +214,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 // and creates it if valid. Centralizes rules (including the B1 required-end-date
 // check) so both call sites can't drift out of sync. Returns the raw created
 // Mongoose doc on success (not populated/enriched — that's caller-specific).
-async function validateAndCreateOrder({ id, buyerId, product, category, season, totalQty, delivery, createdAt, masterOrderId, assignments: asgns, stageEtas, stageStartDates, stageNames: customStages, stageResponsibleIds, stageDescriptions, stageTotalUnits, imageDataUrl, imageUrl }) {
+async function validateAndCreateOrder({ id, buyerId, product, category, season, totalQty, delivery, createdAt, masterOrderId, assignments: asgns, stageEtas, stageStartDates, stageNames: customStages, stageResponsibleIds, stageDescriptions, stageTotalUnits, stageKinds, colourways, callout, imageDataUrl, imageUrl }) {
   if (!id || !buyerId || !product || !totalQty || !delivery)
     return { ok: false, error: 'Missing required fields' }
   if (typeof id !== 'string' || typeof product !== 'string')
@@ -263,8 +312,8 @@ async function validateAndCreateOrder({ id, buyerId, product, category, season, 
         const rid = stageResponsibleIds[i]
         if (!rid) continue
         const u = respMap[rid]
-        if (!u || (u.role !== 'admin' && u.role !== 'manufacturer'))
-          return { ok: false, error: `Responsible person for stage "${stages[i]}" must be an admin or manufacturer` }
+        if (!u || !RESPONSIBLE_ROLES.includes(u.role))
+          return { ok: false, error: `Responsible person for stage "${stages[i]}" must be an admin, manufacturer, or buyer` }
         if (!u.isActive)
           return { ok: false, error: `Responsible person for stage "${stages[i]}" is inactive` }
         stageResponsibleIdsResolved[i] = rid
@@ -298,6 +347,40 @@ async function validateAndCreateOrder({ id, buyerId, product, category, season, 
     }
   }
 
+  // Optional per-stage kind. Absent means 'quantity' — identical to how every
+  // order behaved before this field existed. Deliberately NOT inferred from
+  // whether stageTotalUnits was supplied: the single-order form sends no target
+  // quantities at all, so inference would silently make every form-created order
+  // all-milestone. One rule, no inference.
+  const stageKindsResolved = stages.map(() => 'quantity')
+  if (Array.isArray(stageKinds)) {
+    for (let i = 0; i < stages.length; i++) {
+      const k = stageKinds[i]
+      if (k === undefined || k === null || k === '') continue
+      if (!STAGE_KINDS.includes(k)) return { ok: false, error: `Invalid kind "${k}" for stage "${stages[i]}" — must be one of: ${STAGE_KINDS.join(', ')}` }
+      stageKindsResolved[i] = k
+    }
+  }
+
+  // Optional colourway list — names the per-colour stages generate their
+  // checklist items from.
+  const colourwaysResolved = []
+  if (Array.isArray(colourways)) {
+    for (const c of colourways) {
+      const name = (typeof c === 'string' ? c : c?.name || '').trim()
+      if (!name) continue
+      if (name.length > 60) return { ok: false, error: `Colourway name too long: "${name.slice(0, 20)}…"` }
+      if (colourwaysResolved.some(x => x.name.toLowerCase() === name.toLowerCase())) continue
+      colourwaysResolved.push({ name, code: (typeof c === 'object' && c?.code ? String(c.code).trim() : '') })
+    }
+    if (colourwaysResolved.length > 40) return { ok: false, error: 'Too many colourways (max 40)' }
+  }
+
+  if (callout !== undefined && callout !== null) {
+    if (typeof callout !== 'string') return { ok: false, error: 'Callout must be text' }
+    if (callout.trim().length > 500) return { ok: false, error: 'Callout too long (max 500 characters)' }
+  }
+
   // Optional cover photo — either an uploaded base64 image (capped small) or an
   // external link fallback, never both.
   if (imageDataUrl && imageUrl) return { ok: false, error: 'Provide either an uploaded photo or a link, not both' }
@@ -317,16 +400,33 @@ async function validateAndCreateOrder({ id, buyerId, product, category, season, 
       _id: id, buyerId, product, category, season, totalQty, masterOrderId: masterOrderId || null,
       imageDataUrl: imageDataUrl || null, imageUrl: imageUrl ? imageUrl.trim() : null,
       delivery: new Date(delivery),
+      baselineDelivery: new Date(delivery),
+      colourways: colourwaysResolved,
+      callout: callout ? callout.trim() : '',
       createdAt: createdAt ? new Date(createdAt) : undefined,
       assignments: asgns.map((a, i) => ({
         mfrId: a.mid, qty: a.qty, status: 'Processing',
         sub: a.sub || `M${i + 1}`, note: '',
-        stages: stages.map((name, si) => ({
-          name, unitsDone: 0, totalUnits: stageTotalUnitsResolved[si] ?? a.qty,
-          startDate: startDates[si] || null, eta: etas[si] || null, note: '',
-          description: stageDescriptionsResolved[si] || '',
-          responsibleId: stageResponsibleIdsResolved[si] || null,
-        })),
+        stages: stages.map((name, si) => {
+          const kind = stageKindsResolved[si]
+          // A milestone or checklist stage has no meaningful garment count, so it
+          // defaults to a target of 1 rather than the assignment quantity — the
+          // old default is what produced "0 / 10,800 units" on a lab-dip step.
+          // It must never be 0: the "first incomplete stage" predicate that five
+          // frontend surfaces rely on is `unitsDone < totalUnits`, and 0 < 0 is
+          // false, which would read the stage as permanently complete.
+          const fallbackTotal = kind === 'quantity' ? a.qty : 1
+          return {
+            name, unitsDone: 0,
+            totalUnits: stageTotalUnitsResolved[si] ?? fallbackTotal,
+            startDate: startDates[si] || null, eta: etas[si] || null, note: '',
+            // Baseline is frozen at creation; `eta` is the one that moves.
+            baselineEta: etas[si] || null,
+            kind, status: 'not_started', blocked: false, blockedReason: '',
+            description: stageDescriptionsResolved[si] || '',
+            responsibleId: stageResponsibleIdsResolved[si] || null,
+          }
+        }),
       })),
     })
     return { ok: true, order: created }
@@ -468,6 +568,321 @@ router.post('/:orderId/assignments/:mfrId', requireAuth, updateLimiter, async (r
   }
 })
 
+// POST /api/orders/:orderId/assignments/:mfrId/stages/bulk — update many stages in one write.
+//
+// MUST stay registered ABOVE the /:stageIndex route below: Express matches in
+// declaration order, so the other route would otherwise capture this path with
+// stageIndex = 'bulk' → NaN → a misleading "Invalid stage index".
+//
+// This is what makes the daily-update grid viable. It also fixes a reachable
+// failure: the previous approach fired one request per changed stage, and
+// updateLimiter allows 120/hr/user — two bulk edits on a 27-stage order plus an
+// apply-to-siblings run exhausts it. Progress on quantity stages deliberately
+// stays on the single-stage route, where the materials gate lives.
+const BULK_STAGE_MAX = 50
+router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimiter, async (req, res) => {
+  try {
+    const { orderId, mfrId } = req.params
+    if (!mongoose.Types.ObjectId.isValid(mfrId))
+      return res.status(400).json({ error: 'Invalid manufacturer ID' })
+    const mfrObjectId = new mongoose.Types.ObjectId(mfrId)
+
+    const { stages: rows } = req.body
+    if (!Array.isArray(rows) || rows.length === 0)
+      return res.status(400).json({ error: 'Provide a non-empty stages array' })
+    if (rows.length > BULK_STAGE_MAX)
+      return res.status(400).json({ error: `Too many stages in one request (max ${BULK_STAGE_MAX})` })
+
+    if (req.user.role === 'manufacturer' && String(req.user.id) !== String(mfrId))
+      return res.status(403).json({ error: 'Forbidden' })
+
+    const existingOrder = await Order.findById(orderId).lean()
+    if (!existingOrder) return res.status(404).json({ error: 'Order not found' })
+    const existingAsgn = (existingOrder.assignments || []).find(a => a.mfrId?.toString() === mfrId)
+    if (!existingAsgn) return res.status(404).json({ error: 'Assignment not found' })
+    const allStages = existingAsgn.stages || []
+
+    const seen = new Set()
+    const setFields = { 'assignments.$[asgn].updatedAt': new Date() }
+    const touched = []
+
+    // Validate EVERY row before writing ANY. All-or-nothing is the point: the
+    // old serial loop could fail on stage 14 and leave 13 saved.
+    for (const row of rows) {
+      const i = parseInt(row?.index, 10)
+      if (isNaN(i) || i < 0 || i >= allStages.length)
+        return res.status(400).json({ error: `Invalid stage index ${row?.index} (0–${allStages.length - 1})` })
+      if (seen.has(i))
+        return res.status(400).json({ error: `Duplicate entry for stage index ${i}` })
+      seen.add(i)
+
+      const stage = allStages[i]
+      const kind = row.kind ?? stageKindOf(stage)
+      const has = k => Object.prototype.hasOwnProperty.call(row, k)
+      const p = f => `assignments.$[asgn].stages.${i}.${f}`
+
+      if (req.user.role === 'buyer') {
+        if (!buyerMayWriteStage(req.user, stage))
+          return res.status(403).json({ error: `Forbidden on stage ${i + 1} — buyers may only update stages they own` })
+        const attempted = Object.keys(row).filter(k => !['index', 'status', 'blocked', 'blockedReason'].includes(k))
+        if (attempted.length)
+          return res.status(403).json({ error: `Buyers may only set status (not: ${attempted.join(', ')})` })
+      }
+
+      if (has('kind')) {
+        if (!STAGE_KINDS.includes(row.kind))
+          return res.status(400).json({ error: `Invalid kind "${row.kind}" on stage ${i + 1}` })
+        setFields[p('kind')] = row.kind
+      }
+
+      if (has('totalUnits')) {
+        const t = parseInt(row.totalUnits, 10)
+        if (isNaN(t) || t < 1) return res.status(400).json({ error: `Target quantity on stage ${i + 1} must be a positive number` })
+        if (t < (stage.unitsDone || 0)) return res.status(400).json({ error: `Target quantity on stage ${i + 1} cannot be below units already completed (${stage.unitsDone})` })
+        setFields[p('totalUnits')] = t
+      }
+
+      if (has('responsibleId')) {
+        if (row.responsibleId) {
+          if (!mongoose.Types.ObjectId.isValid(row.responsibleId))
+            return res.status(400).json({ error: `Invalid responsible person ID on stage ${i + 1}` })
+          const u = await User.findById(row.responsibleId, 'role isActive').lean()
+          if (!u || !RESPONSIBLE_ROLES.includes(u.role))
+            return res.status(400).json({ error: `Responsible person on stage ${i + 1} must be an admin, manufacturer, or buyer` })
+          if (!u.isActive) return res.status(400).json({ error: `Responsible person on stage ${i + 1} is inactive` })
+        }
+        setFields[p('responsibleId')] = row.responsibleId || null
+      }
+
+      if (has('description')) {
+        const d = String(row.description ?? '').trim()
+        if (d.length > 1000) return res.status(400).json({ error: `Description on stage ${i + 1} is too long (max 1000 characters)` })
+        setFields[p('description')] = d
+      }
+
+      if (has('blocked')) setFields[p('blocked')] = !!row.blocked
+      if (has('blockedReason')) {
+        const r = String(row.blockedReason ?? '').trim()
+        if (r.length > 300) return res.status(400).json({ error: `Blocked reason on stage ${i + 1} is too long (max 300 characters)` })
+        setFields[p('blockedReason')] = r
+      }
+
+      // Dates: same rules as the single-stage /eta route, including the
+      // baseline capture on first revision.
+      const badDate = (label, v) => {
+        if (v === null || v === undefined || v === '') return `${label} on stage ${i + 1} cannot be blank — use "NA"`
+        if (v !== 'NA' && isNaN(new Date(v).getTime())) return `Invalid ${label} on stage ${i + 1}`
+        return null
+      }
+      if (has('eta')) {
+        const err = badDate('end date', row.eta); if (err) return res.status(400).json({ error: err })
+      }
+      if (has('startDate')) {
+        const err = badDate('start date', row.startDate); if (err) return res.status(400).json({ error: err })
+      }
+      const effStart = has('startDate') ? row.startDate : stage.startDate
+      const effEnd = has('eta') ? row.eta : stage.eta
+      if (effStart && effEnd && effStart !== 'NA' && effEnd !== 'NA' && new Date(effStart) > new Date(effEnd))
+        return res.status(400).json({ error: `Stage ${i + 1}: start date must be on or before the end date` })
+      if (has('startDate')) setFields[p('startDate')] = row.startDate
+      if (has('eta')) {
+        setFields[p('eta')] = row.eta
+        if (row.eta !== stage.eta && !stage.baselineEta) setFields[p('baselineEta')] = stage.eta ?? row.eta
+      }
+
+      // Backdating — "it actually finished on the 3rd" — same rule as the
+      // single-stage route: only meaningful alongside status: 'done' below,
+      // harmless (and ignored) otherwise.
+      if (has('actualEnd')) {
+        if (typeof row.actualEnd !== 'string' || isNaN(new Date(row.actualEnd).getTime()))
+          return res.status(400).json({ error: `Invalid actual completion date on stage ${i + 1}` })
+        if (dayNumber(row.actualEnd) > dayNumber(getToday()))
+          return res.status(400).json({ error: `Actual completion date on stage ${i + 1} cannot be in the future` })
+      }
+
+      if (has('status')) {
+        if (!STAGE_STATUS_VALUES.includes(row.status))
+          return res.status(400).json({ error: `Invalid status "${row.status}" on stage ${i + 1}` })
+        if (kind === 'quantity')
+          return res.status(400).json({ error: `Stage ${i + 1} tracks units — update its progress from the stage itself, not here` })
+        // Checklist full-close gate: the stage can't say done while its own
+        // items say otherwise. No override.
+        if (kind === 'checklist' && row.status === 'done') {
+          const items = stage.items || []
+          const pendingItems = items.filter(it => it.status !== 'done')
+          if (pendingItems.length > 0)
+            return res.status(400).json({ error: `Stage ${i + 1}: cannot mark done — ${pendingItems.length} of ${items.length} checklist item(s) still pending` })
+        }
+        const nextUnits = mirroredUnits(row.status, has('totalUnits') ? parseInt(row.totalUnits, 10) : (stage.totalUnits ?? 0))
+        // The mirror raises unitsDone, so the materials gate must apply here too.
+        const isTrims = (stage.name || '').trim().toLowerCase() === 'trims order'
+        const pending = (stage.materials || []).filter(m => isTrims ? m.status === 'pending' : m.status !== 'received')
+        if (pending.length > 0 && nextUnits > (stage.unitsDone || 0))
+          return res.status(400).json({ error: `Stage ${i + 1}: cannot advance — ${pending.length} material(s) still pending${isTrims ? '' : '/ordered'}` })
+        setFields[p('status')] = row.status
+        setFields[p('unitsDone')] = nextUnits
+        setFields[p('actualEnd')] = deriveActualEnd(row.status, stage.actualEnd, has('actualEnd') ? row.actualEnd : undefined)
+      } else if (has('kind') && row.kind !== 'quantity') {
+        // Kind flipped without an explicit status — re-derive so the two can't disagree.
+        const s = deriveStageStatus(stage)
+        if (row.kind === 'checklist' && s === 'done') {
+          const items = stage.items || []
+          const pendingItems = items.filter(it => it.status !== 'done')
+          if (pendingItems.length > 0)
+            return res.status(400).json({ error: `Stage ${i + 1}: cannot mark done — ${pendingItems.length} of ${items.length} checklist item(s) still pending` })
+        }
+        setFields[p('status')] = s
+        setFields[p('unitsDone')] = mirroredUnits(s, has('totalUnits') ? parseInt(row.totalUnits, 10) : (stage.totalUnits ?? 0))
+        setFields[p('actualEnd')] = deriveActualEnd(s, stage.actualEnd)
+      }
+
+      touched.push(i)
+    }
+
+    // One atomic write — single-document updates are atomic in MongoDB.
+    const order = await Order.findOneAndUpdate(
+      { _id: orderId, 'assignments.mfrId': mfrObjectId },
+      { $set: setFields },
+      { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }], new: true }
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+
+    if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
+
+    // One audit entry summarizing the batch, not one per stage.
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Stages Bulk Updated',
+      detail: `${orderId}: ${touched.length} stage(s) updated by ${req.user.name} [${touched.map(i => i + 1).join(', ')}]`,
+    })
+
+    res.json({ ...enrichOrder(order, req.user.role === 'manufacturer' ? String(req.user.id) : null), updated: touched.length })
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/orders/:orderId/assignments/:mfrId/stages/insert — insert a new stage
+// into an already-created order's plan (admin only). The stage list is otherwise
+// fixed at creation — this is the one way to add a step later (e.g. a TNA
+// revision adds "Fit Sample" that wasn't in the original plan). Registered above
+// the generic /stages/:stageIndex route, same reason /stages/bulk is: Express
+// would otherwise match "insert" as a stageIndex and 400 on the parseInt.
+router.post('/:orderId/assignments/:mfrId/stages/insert', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
+  try {
+    const { orderId, mfrId } = req.params
+    if (!mongoose.Types.ObjectId.isValid(mfrId))
+      return res.status(400).json({ error: 'Invalid manufacturer ID' })
+    const mfrObjectId = new mongoose.Types.ObjectId(mfrId)
+
+    const { name, kind, totalUnits, startDate, eta, description, responsibleId, status, actualEnd } = req.body
+    if (!name?.trim()) return res.status(400).json({ error: 'Stage name is required' })
+    if (kind !== undefined && kind !== null && !STAGE_KINDS.includes(kind))
+      return res.status(400).json({ error: `Invalid kind — must be one of: ${STAGE_KINDS.join(', ')}` })
+    const resolvedKind = kind || 'quantity'
+    if (status !== undefined && status !== null && !STAGE_STATUS_VALUES.includes(status))
+      return res.status(400).json({ error: `Invalid status — must be one of: ${STAGE_STATUS_VALUES.join(', ')}` })
+
+    // Same date rules as creation and /eta: a real date or literal "NA", never blank.
+    const invalidDateMsg = (label, val) => {
+      if (val === null || val === undefined || val === '') return `${label} cannot be blank — use "NA" if it doesn't apply`
+      if (val !== 'NA' && isNaN(new Date(val).getTime())) return `Invalid ${label} — must be a date or "NA"`
+      return null
+    }
+    let dateErr = invalidDateMsg('start date', startDate)
+    if (dateErr) return res.status(400).json({ error: dateErr })
+    dateErr = invalidDateMsg('end date', eta)
+    if (dateErr) return res.status(400).json({ error: dateErr })
+    if (startDate !== 'NA' && eta !== 'NA' && new Date(startDate) > new Date(eta))
+      return res.status(400).json({ error: 'Start date must be on or before the end date' })
+
+    let resolvedResponsibleId = null
+    if (responsibleId) {
+      if (!mongoose.Types.ObjectId.isValid(responsibleId))
+        return res.status(400).json({ error: 'Invalid responsible person ID' })
+      const u = await User.findById(responsibleId, 'role isActive').lean()
+      if (!u || !RESPONSIBLE_ROLES.includes(u.role))
+        return res.status(400).json({ error: 'Responsible person must be an admin, manufacturer, or buyer' })
+      if (!u.isActive) return res.status(400).json({ error: 'Responsible person is inactive' })
+      resolvedResponsibleId = responsibleId
+    }
+
+    const existingOrder = await Order.findById(orderId).lean()
+    if (!existingOrder) return res.status(404).json({ error: 'Order not found' })
+    const existingAsgn = (existingOrder.assignments || []).find(a => a.mfrId?.toString() === mfrId)
+    if (!existingAsgn) return res.status(404).json({ error: 'Assignment not found' })
+    const stages = existingAsgn.stages || []
+    if (stages.length >= 50)
+      return res.status(400).json({ error: 'This order already has the maximum of 50 stages' })
+
+    const index = req.body.index === undefined || req.body.index === null ? stages.length : parseInt(req.body.index, 10)
+    if (isNaN(index) || index < 0 || index > stages.length)
+      return res.status(400).json({ error: `Invalid insert position (0–${stages.length})` })
+
+    const resolvedTotalUnits = totalUnits != null
+      ? parseInt(totalUnits, 10)
+      : (resolvedKind === 'quantity' ? (existingAsgn.qty || 1) : 1)
+    if (isNaN(resolvedTotalUnits) || resolvedTotalUnits < 1)
+      return res.status(400).json({ error: 'Target quantity must be a positive number' })
+
+    // A new stage can be inserted already-closed (e.g. a TNA revision adds a step
+    // that, per the buyer's own tracker, already happened). If status isn't
+    // 'done', actualEnd is never taken from the request — it's always derived.
+    const resolvedStatus = status || 'not_started'
+    const resolvedActualEnd = resolvedStatus === 'done' ? (actualEnd || new Date().toISOString().slice(0, 10)) : null
+    const resolvedUnitsDone = mirroredUnits(resolvedStatus, resolvedTotalUnits)
+
+    const newStage = {
+      name: name.trim(), unitsDone: resolvedUnitsDone, totalUnits: resolvedTotalUnits,
+      startDate, eta, baselineEta: eta, stageDate: null, note: '',
+      description: (description || '').trim(), responsibleId: resolvedResponsibleId,
+      kind: resolvedKind, status: resolvedStatus, blocked: false, blockedReason: '',
+      updates: [], materials: [], items: [], actualEnd: resolvedActualEnd,
+    }
+
+    // Same landmine as the delete route below: this is a whole-array $set from a
+    // .lean() read, so every existing stage must have its legacy fields resolved
+    // explicitly rather than left to Mongoose's cast-time defaults.
+    const normalizedExisting = stages.map(s => ({
+      ...s,
+      kind: stageKindOf(s),
+      status: deriveStageStatus(s),
+      blocked: !!s.blocked,
+      blockedReason: s.blockedReason || '',
+      baselineEta: s.baselineEta ?? s.eta ?? null,
+    }))
+    const newStages = [...normalizedExisting.slice(0, index), newStage, ...normalizedExisting.slice(index)]
+
+    await Order.updateOne(
+      { _id: orderId, 'assignments.mfrId': mfrObjectId },
+      { $set: { 'assignments.$[asgn].stages': newStages, 'assignments.$[asgn].updatedAt': new Date() } },
+      { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }] }
+    )
+
+    // Documents linked to a stage at/after the insertion point shift up to match.
+    await Document.updateMany(
+      { orderId, mfrId: mfrObjectId, isActive: true, stageIndex: { $gte: index } },
+      { $inc: { stageIndex: 1 } }
+    )
+
+    const order = await Order.findById(orderId)
+      .populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS)
+      .populate('assignments.stages.responsibleId', 'name company code role')
+      .populate('assignments.stages.updates.byUser', 'name').lean()
+
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Stage Inserted',
+      detail: `${orderId}: added stage "${newStage.name}" at position ${index + 1} by ${req.user.name}`,
+    })
+
+    res.json(enrichOrder(order))
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
 // PATCH /api/orders/:orderId/assignments/:mfrId/stages/:stageIndex — update one stage
 router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, updateLimiter, async (req, res) => {
   try {
@@ -476,26 +891,30 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
       return res.status(400).json({ error: 'Invalid manufacturer ID' })
     const mfrObjectId = new mongoose.Types.ObjectId(mfrId)
     const stageIndex = parseInt(req.params.stageIndex, 10)
-    const { unitsDone, note, eta, startDate, stageDate, override } = req.body
-    const hasEta = Object.prototype.hasOwnProperty.call(req.body, 'eta')
-    const hasStartDate = Object.prototype.hasOwnProperty.call(req.body, 'startDate')
+    const { unitsDone, note, eta, startDate, stageDate, status, blocked, blockedReason, override, actualEnd } = req.body
+    const has = k => Object.prototype.hasOwnProperty.call(req.body, k)
+    const hasEta = has('eta')
+    const hasStartDate = has('startDate')
+    const hasActualEnd = has('actualEnd')
     const isMasterOverride = override === true
 
-    // BRD §3: Buyers cannot update production stages
-    if (req.user.role === 'buyer')
-      return res.status(403).json({ error: 'Buyers cannot update production stages' })
     if (req.user.role === 'manufacturer' && String(req.user.id) !== String(mfrId))
       return res.status(403).json({ error: 'Forbidden' })
     if (isMasterOverride && !(req.user.role === 'admin' && req.user.adminType === 'master'))
       return res.status(403).json({ error: 'Only master admin can override a stage' })
-    // Validate unitsDone is a non-negative number
-    const parsedUnits = parseInt(unitsDone, 10)
-    if (isNaN(parsedUnits) || parsedUnits < 0)
-      return res.status(400).json({ error: 'unitsDone must be a non-negative number' })
     if (note !== undefined && note !== null && typeof note === 'string' && note.length > 1000)
       return res.status(400).json({ error: 'Note too long (max 1000 characters)' })
+    // Backdating a completion date — "mark it done, it actually finished on
+    // the 3rd." Only meaningful alongside a done-transition; if the stage
+    // isn't ending up 'done' in this request, resolvedActualEnd below is null
+    // regardless, same as if this were never sent.
+    if (hasActualEnd) {
+      if (typeof actualEnd !== 'string' || isNaN(new Date(actualEnd).getTime()))
+        return res.status(400).json({ error: 'Invalid actual completion date' })
+      if (dayNumber(actualEnd) > dayNumber(getToday()))
+        return res.status(400).json({ error: 'Actual completion date cannot be in the future' })
+    }
 
-    // Validate unitsDone does not exceed totalUnits for this assignment's stage
     const existingOrder = await Order.findById(orderId).lean()
     if (!existingOrder) return res.status(404).json({ error: 'Order not found' })
     const existingAsgn = (existingOrder.assignments || []).find(a => a.mfrId?.toString() === mfrId)
@@ -505,44 +924,111 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
     if (isNaN(stageIndex) || stageIndex < 0 || stageIndex >= stageCount)
       return res.status(400).json({ error: `Invalid stage index (0–${stageCount - 1})` })
 
-    const totalUnits = existingAsgn.stages?.[stageIndex]?.totalUnits ?? 0
-    if (parsedUnits > totalUnits)
-      return res.status(400).json({ error: `unitsDone (${parsedUnits}) cannot exceed totalUnits (${totalUnits})` })
+    const stage = existingAsgn.stages[stageIndex]
+    const kind = stageKindOf(stage)
+    const totalUnits = stage.totalUnits ?? 0
+    const currentUnits = stage.unitsDone || 0
+
+    // BRD §3 carve-out: buyers own the approval steps in a real TNA, so a buyer
+    // who is this stage's responsibleId may set its status and blocked flag —
+    // and nothing else. Every other buyer write stays forbidden.
+    if (req.user.role === 'buyer') {
+      if (!buyerMayWriteStage(req.user, stage))
+        return res.status(403).json({ error: 'Buyers cannot update production stages' })
+      const BUYER_WRITABLE = new Set(['status', 'blocked', 'blockedReason'])
+      const attempted = Object.keys(req.body).filter(k => !BUYER_WRITABLE.has(k))
+      if (attempted.length)
+        return res.status(403).json({ error: `Buyers may only set status on a stage they own (not: ${attempted.join(', ')})` })
+    }
+
+    if (has('status') && !STAGE_STATUS_VALUES.includes(status))
+      return res.status(400).json({ error: `Invalid status — must be one of: ${STAGE_STATUS_VALUES.join(', ')}` })
+    if (blockedReason !== undefined && blockedReason !== null && String(blockedReason).length > 300)
+      return res.status(400).json({ error: 'Blocked reason too long (max 300 characters)' })
+
+    // Resolve status and unitsDone together, so they can never disagree.
+    //   quantity  → units are authoritative, status is derived from them
+    //   otherwise → status is authoritative, units mirror it
+    // The mirror is what lets the five frontend "first incomplete stage"
+    // derivations (`unitsDone < totalUnits`) keep working unchanged.
+    let nextStatus
+    let nextUnits
+    if (kind === 'quantity') {
+      // A write that doesn't mention units (flagging blocked, adding a note)
+      // holds the current progress rather than being rejected for omitting it.
+      if (!has('unitsDone')) {
+        nextUnits = currentUnits
+        nextStatus = deriveStageStatus({ unitsDone: currentUnits, totalUnits })
+      } else {
+        const parsedUnits = parseInt(unitsDone, 10)
+        if (isNaN(parsedUnits) || parsedUnits < 0)
+          return res.status(400).json({ error: 'unitsDone must be a non-negative number' })
+        if (parsedUnits > totalUnits)
+          return res.status(400).json({ error: `unitsDone (${parsedUnits}) cannot exceed totalUnits (${totalUnits})` })
+        nextUnits = parsedUnits
+        nextStatus = deriveStageStatus({ unitsDone: parsedUnits, totalUnits })
+      }
+    } else {
+      if (has('unitsDone') && !has('status')) {
+        // A quantity-shaped write against a milestone — accept it by translating.
+        const parsedUnits = parseInt(unitsDone, 10)
+        if (isNaN(parsedUnits) || parsedUnits < 0)
+          return res.status(400).json({ error: 'unitsDone must be a non-negative number' })
+        if (parsedUnits > totalUnits)
+          return res.status(400).json({ error: `unitsDone (${parsedUnits}) cannot exceed totalUnits (${totalUnits})` })
+        nextStatus = deriveStageStatus({ unitsDone: parsedUnits, totalUnits })
+      } else {
+        nextStatus = has('status') ? status : deriveStageStatus(stage)
+      }
+      nextUnits = mirroredUnits(nextStatus, totalUnits)
+    }
+
+    // Checklist full-close gate: a checklist stage's own status can't say 'done'
+    // while its own items say otherwise. No override (unlike the materials gate
+    // below) — this is the stage agreeing with itself, not an external PO.
+    if (kind === 'checklist' && nextStatus === 'done') {
+      const items = stage.items || []
+      const pendingItems = items.filter(it => it.status !== 'done')
+      if (pendingItems.length > 0)
+        return res.status(400).json({ error: `Cannot mark done — ${pendingItems.length} of ${items.length} checklist item(s) still pending` })
+    }
 
     // Materials gate: a stage with 1+ material lines cannot advance past its current
     // unitsDone while any line isn't cleared — applies uniformly to manufacturer
     // updates and admin Stage Override alike (both share this route). The "Trims
     // Order" stage itself is about placing the order, not having it in hand, so
     // 'ordered' already satisfies it there; every other stage still requires the
-    // material to actually be 'received'.
-    const gateStageName = (existingAsgn.stages?.[stageIndex]?.name || '').trim().toLowerCase()
+    // material to actually be 'received'. Milestones reach this via the mirror:
+    // flipping one to `done` raises unitsDone, so it trips the same check.
+    const gateStageName = (stage.name || '').trim().toLowerCase()
     const isTrimsOrderStage = gateStageName === 'trims order'
-    const stageMaterials = existingAsgn.stages?.[stageIndex]?.materials || []
-    const currentUnits = existingAsgn.stages?.[stageIndex]?.unitsDone || 0
+    const stageMaterials = stage.materials || []
     const pendingMaterials = stageMaterials.filter(m => isTrimsOrderStage ? m.status === 'pending' : m.status !== 'received')
-    if (!isMasterOverride && pendingMaterials.length > 0 && parsedUnits > currentUnits)
+    if (!isMasterOverride && pendingMaterials.length > 0 && nextUnits > currentUnits)
       return res.status(400).json({ error: `Cannot advance this stage — ${pendingMaterials.length} material(s) still pending${isTrimsOrderStage ? '' : '/ordered'}` })
 
-    // Build the $set — always update units/note/stageDate for the target stage.
-    // eta/startDate are only touched when explicitly present in the body — this route is
-    // mainly used for progress updates (unitsDone/note/stageDate) that never include a date,
-    // and both dates are required-and-never-blank once an order exists, so a value-less
-    // request must not silently null them out.
+    // Only fields actually present in the request are written. eta/startDate were
+    // already conditional; note/stageDate now are too, because a status-only
+    // update (the daily-update grid) must not silently blank a note someone typed.
     const setFields = {
-      [`assignments.$[asgn].stages.${stageIndex}.unitsDone`]:  parsedUnits,
-      [`assignments.$[asgn].stages.${stageIndex}.note`]:       note ?? '',
-      [`assignments.$[asgn].stages.${stageIndex}.stageDate`]:  stageDate ?? null,
+      [`assignments.$[asgn].stages.${stageIndex}.unitsDone`]: nextUnits,
+      [`assignments.$[asgn].stages.${stageIndex}.status`]:    nextStatus,
+      [`assignments.$[asgn].stages.${stageIndex}.actualEnd`]: deriveActualEnd(nextStatus, stage.actualEnd, hasActualEnd ? actualEnd : undefined),
       'assignments.$[asgn].updatedAt': new Date(),
     }
+    if (has('note'))      setFields[`assignments.$[asgn].stages.${stageIndex}.note`] = note ?? ''
+    if (has('stageDate')) setFields[`assignments.$[asgn].stages.${stageIndex}.stageDate`] = stageDate ?? null
+    if (has('blocked'))   setFields[`assignments.$[asgn].stages.${stageIndex}.blocked`] = !!blocked
+    if (has('blockedReason')) setFields[`assignments.$[asgn].stages.${stageIndex}.blockedReason`] = String(blockedReason ?? '').trim()
     if (hasEta) setFields[`assignments.$[asgn].stages.${stageIndex}.eta`] = eta
     if (hasStartDate) setFields[`assignments.$[asgn].stages.${stageIndex}.startDate`] = startDate
 
-    // Always reset all subsequent stages to 0 when updating a stage.
-    // Production is sequential — if you're working on stage N, stages N+1… cannot be ahead.
-    for (let i = stageIndex + 1; i < stageCount; i++) {
-      setFields[`assignments.$[asgn].stages.${i}.unitsDone`] = 0
-      setFields[`assignments.$[asgn].stages.${i}.note`] = ''
-    }
+    // NO sequential reset. Stages are tracked independently: real TNA plans run
+    // steps in parallel (FPT/PP/GPT samples overlap; approvals start before the
+    // prior approval closes), and the old rule zeroed unitsDone AND note on every
+    // later stage on every write — including note-only saves — destroying work to
+    // maintain a property nothing read. Out-of-order progress is now reported as a
+    // warning below instead of silently erased.
 
     // NOTE: arrayFilters do NOT auto-cast strings → ObjectId, so we must pass the ObjectId
     const order = await Order.findOneAndUpdate(
@@ -562,10 +1048,24 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
     await AuditLog.create({
       byUser: req.user.id,
       action: isMasterOverride ? 'Stage Override' : 'Stage Updated',
-      detail: `${orderId}: ${stageName} — ${parsedUnits}/${totalUnits} units by ${req.user.name}${isMasterOverride ? ' [MASTER OVERRIDE]' : ''}`,
+      detail: `${orderId}: ${stageName} — ${nextStatus}${kind === 'quantity' ? ` (${nextUnits}/${totalUnits} units)` : ''} by ${req.user.name}${isMasterOverride ? ' [MASTER OVERRIDE]' : ''}`,
     })
 
-    res.json(enrichOrder(order))
+    // Advisory only — what the sequential reset used to enforce destructively.
+    // Genuinely parallel plans will trip this legitimately, so it never blocks.
+    const warnings = []
+    if (nextStatus === 'done') {
+      const openEarlier = (updatedAsgn?.stages || [])
+        .slice(0, stageIndex)
+        .map((s, i) => ({ s, i }))
+        .filter(({ s }) => deriveStageStatus(s) !== 'done')
+      if (openEarlier.length) {
+        const names = openEarlier.slice(0, 3).map(({ s, i }) => `${i + 1}. ${s.name}`).join(', ')
+        warnings.push(`"${stageName}" is marked done while ${openEarlier.length} earlier step(s) are still open: ${names}${openEarlier.length > 3 ? '…' : ''}`)
+      }
+    }
+
+    res.json({ ...enrichOrder(order), warnings })
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -589,17 +1089,21 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
     const hasResponsibleId = Object.prototype.hasOwnProperty.call(req.body, 'responsibleId')
     const hasTotalUnits = Object.prototype.hasOwnProperty.call(req.body, 'totalUnits')
     const hasDescription = Object.prototype.hasOwnProperty.call(req.body, 'description')
-    const { eta, startDate, responsibleId, totalUnits, description } = req.body
+    const hasKind = Object.prototype.hasOwnProperty.call(req.body, 'kind')
+    const { eta, startDate, responsibleId, totalUnits, description, kind } = req.body
 
-    if (!hasEta && !hasStartDate && !hasResponsibleId && !hasTotalUnits && !hasDescription)
-      return res.status(400).json({ error: 'Provide eta, startDate, responsibleId, totalUnits, and/or description to update' })
+    if (!hasEta && !hasStartDate && !hasResponsibleId && !hasTotalUnits && !hasDescription && !hasKind)
+      return res.status(400).json({ error: 'Provide eta, startDate, responsibleId, totalUnits, description, and/or kind to update' })
+
+    if (hasKind && !STAGE_KINDS.includes(kind))
+      return res.status(400).json({ error: `Invalid kind — must be one of: ${STAGE_KINDS.join(', ')}` })
 
     if (hasResponsibleId && responsibleId) {
       if (!mongoose.Types.ObjectId.isValid(responsibleId))
         return res.status(400).json({ error: 'Invalid responsible person ID' })
       const responsibleUser = await User.findById(responsibleId, 'role isActive').lean()
-      if (!responsibleUser || (responsibleUser.role !== 'admin' && responsibleUser.role !== 'manufacturer'))
-        return res.status(400).json({ error: 'Responsible person must be an admin or manufacturer' })
+      if (!responsibleUser || !RESPONSIBLE_ROLES.includes(responsibleUser.role))
+        return res.status(400).json({ error: 'Responsible person must be an admin, manufacturer, or buyer' })
       if (!responsibleUser.isActive)
         return res.status(400).json({ error: 'Responsible person is inactive' })
     }
@@ -670,6 +1174,33 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
     if (hasTotalUnits) setFields[`assignments.$[asgn].stages.${stageIndex}.totalUnits`] = parsedTotalUnits
     if (hasDescription) setFields[`assignments.$[asgn].stages.${stageIndex}.description`] = trimmedDescription
 
+    // Capture the baseline at the exact moment it would otherwise be lost.
+    // A read-time `baselineEta ?? eta` fallback is not enough on its own: once
+    // eta is revised the fallback moves with it and variance is pinned at zero
+    // forever. Stages predating this field therefore report 0 days of slippage
+    // until their first revision, then measure correctly from there — the
+    // original baseline is genuinely gone and is not invented here.
+    if (hasEta && eta !== currentStage.eta && !currentStage.baselineEta)
+      setFields[`assignments.$[asgn].stages.${stageIndex}.baselineEta`] = currentStage.eta ?? eta
+
+    // Changing kind re-derives status and re-mirrors units, or a stage could end
+    // up 40% complete and simultaneously 'not_started'.
+    if (hasKind) {
+      setFields[`assignments.$[asgn].stages.${stageIndex}.kind`] = kind
+      const effectiveTotal = hasTotalUnits ? parsedTotalUnits : (currentStage.totalUnits ?? 0)
+      const nextStatus = deriveStageStatus(currentStage)
+      if (kind === 'checklist' && nextStatus === 'done') {
+        const items = currentStage.items || []
+        const pendingItems = items.filter(it => it.status !== 'done')
+        if (pendingItems.length > 0)
+          return res.status(400).json({ error: `Cannot mark done — ${pendingItems.length} of ${items.length} checklist item(s) still pending` })
+      }
+      setFields[`assignments.$[asgn].stages.${stageIndex}.status`] = nextStatus
+      if (kind !== 'quantity')
+        setFields[`assignments.$[asgn].stages.${stageIndex}.unitsDone`] = mirroredUnits(nextStatus, effectiveTotal)
+      setFields[`assignments.$[asgn].stages.${stageIndex}.actualEnd`] = deriveActualEnd(nextStatus, currentStage.actualEnd)
+    }
+
     const order = await Order.findOneAndUpdate(
       { _id: orderId, 'assignments.mfrId': mfrObjectId },
       { $set: setFields },
@@ -685,6 +1216,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
     if (hasResponsibleId) changes.push(`responsible → ${responsibleId || 'unassigned'}`)
     if (hasTotalUnits) changes.push(`target qty → ${parsedTotalUnits}`)
     if (hasDescription) changes.push('description updated')
+    if (hasKind) changes.push(`kind → ${kind}`)
     await AuditLog.create({
       byUser: req.user.id,
       action: 'Stage Dates Adjusted',
@@ -727,7 +1259,23 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/delete', requireAut
     if (linkedDocs > 0)
       return res.status(400).json({ error: `Cannot delete — ${linkedDocs} document(s) are linked to this stage. Remove those first.` })
 
-    const newStages = existingAsgn.stages.filter((_, i) => i !== stageIndex)
+    // This is the ONLY write in this file that $sets the whole stages array
+    // rather than dotted paths, and `existingAsgn` came from a .lean() read — so
+    // fields absent on documents predating them (kind/status/blocked/baselineEta)
+    // would be filled in by Mongoose's schema defaults during the cast. That
+    // would stamp status:'not_started' onto completed stages as a side effect of
+    // deleting an unrelated one. Resolve every such field explicitly here so the
+    // result never depends on cast semantics in either direction.
+    const newStages = existingAsgn.stages
+      .filter((_, i) => i !== stageIndex)
+      .map(s => ({
+        ...s,
+        kind: stageKindOf(s),
+        status: deriveStageStatus(s),
+        blocked: !!s.blocked,
+        blockedReason: s.blockedReason || '',
+        baselineEta: s.baselineEta ?? s.eta ?? null,
+      }))
 
     await Order.updateOne(
       { _id: orderId, 'assignments.mfrId': mfrObjectId },
@@ -771,8 +1319,6 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/updates', requireAu
     const stageIndex = parseInt(req.params.stageIndex, 10)
     const { text } = req.body
 
-    if (req.user.role === 'buyer')
-      return res.status(403).json({ error: 'Buyers cannot update production stages' })
     if (req.user.role === 'manufacturer' && String(req.user.id) !== String(mfrId))
       return res.status(403).json({ error: 'Forbidden' })
     if (!text?.trim()) return res.status(400).json({ error: 'Update text is required' })
@@ -785,6 +1331,13 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/updates', requireAu
     const stageCount = existingAsgn.stages?.length || 0
     if (isNaN(stageIndex) || stageIndex < 0 || stageIndex >= stageCount)
       return res.status(400).json({ error: `Invalid stage index (0–${stageCount - 1})` })
+
+    // Part of the buyer carve-out: a buyer who owns this stage may comment on it,
+    // since they own the approval steps and their reply IS the update. They still
+    // cannot write any other stage field. Checked after the stage is loaded,
+    // because ownership is per-stage.
+    if (req.user.role === 'buyer' && !buyerMayWriteStage(req.user, existingAsgn.stages[stageIndex]))
+      return res.status(403).json({ error: 'Buyers cannot update production stages' })
 
     const order = await Order.findOneAndUpdate(
       { _id: orderId, 'assignments.mfrId': mfrObjectId },
@@ -801,6 +1354,193 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/updates', requireAu
       detail: `${orderId}: ${stageName} — ${text.trim().slice(0, 100)}`,
     })
 
+    res.json(enrichOrder(order))
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// ── Stage checklist items ───────────────────────────────────────────────────
+// A `checklist` stage holds the actual deliverables it produces — "Lab Dip —
+// Red", "— Peacot", "— Olivine" — because a real step is often several things
+// finishing on different days ("we had to submit 3 and it was not together").
+// Distinct from materials, which are procurement and gate production; these are
+// the step's own output. Same permission shape as materials: any admin, or the
+// stage's responsible person. Buyers are denied — their carve-out is stage
+// status only.
+async function loadStageForItems(req, res) {
+  const { orderId, mfrId } = req.params
+  if (!mongoose.Types.ObjectId.isValid(mfrId)) {
+    res.status(400).json({ error: 'Invalid manufacturer ID' })
+    return null
+  }
+  const stageIndex = parseInt(req.params.stageIndex, 10)
+  const existingOrder = await Order.findById(orderId).lean()
+  if (!existingOrder) { res.status(404).json({ error: 'Order not found' }); return null }
+  const existingAsgn = (existingOrder.assignments || []).find(a => a.mfrId?.toString() === mfrId)
+  if (!existingAsgn) { res.status(404).json({ error: 'Assignment not found' }); return null }
+  const stageCount = existingAsgn.stages?.length || 0
+  if (isNaN(stageIndex) || stageIndex < 0 || stageIndex >= stageCount) {
+    res.status(400).json({ error: `Invalid stage index (0–${stageCount - 1})` })
+    return null
+  }
+  const stage = existingAsgn.stages[stageIndex]
+  if (req.user.role === 'buyer') {
+    res.status(403).json({ error: 'Buyers cannot manage checklist items' })
+    return null
+  }
+  const isResponsible = stage.responsibleId && String(stage.responsibleId) === String(req.user.id)
+  if (req.user.role !== 'admin' && !isResponsible) {
+    res.status(403).json({ error: "Only an admin or this stage's responsible person can manage checklist items" })
+    return null
+  }
+  return { orderId, mfrObjectId: new mongoose.Types.ObjectId(mfrId), stageIndex, stage, order: existingOrder }
+}
+
+const ITEMS_POPULATE = q => q
+  .populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS)
+  .populate('assignments.stages.responsibleId', 'name company code role')
+  .populate('assignments.stages.updates.byUser', 'name')
+
+// Add one item, or — with fromColourways — one per colourway on the order, so
+// the same three colour names aren't retyped on every per-colour step.
+router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items', requireAuth, updateLimiter, async (req, res) => {
+  try {
+    const ctx = await loadStageForItems(req, res)
+    if (!ctx) return
+    const { name, colourway, dueDate, note, fromColourways } = req.body
+
+    let lines = []
+    if (fromColourways) {
+      const colours = ctx.order.colourways || []
+      if (colours.length === 0)
+        return res.status(400).json({ error: 'This order has no colourways yet — add them to the order first' })
+      const prefix = (name || ctx.stage.name || 'Item').trim().slice(0, 150)
+      lines = colours.map(c => ({
+        name: `${prefix} — ${c.name}`, colourway: c.name,
+        status: 'pending', dueDate: dueDate || null, doneDate: null, note: '',
+      }))
+    } else {
+      if (!name?.trim()) return res.status(400).json({ error: 'Item name is required' })
+      lines = [{
+        name: name.trim().slice(0, 200), colourway: (colourway || '').trim(),
+        status: 'pending', dueDate: dueDate || null, doneDate: null, note: (note || '').trim(),
+      }]
+    }
+
+    const existingCount = (ctx.stage.items || []).length
+    if (existingCount + lines.length > 60)
+      return res.status(400).json({ error: 'Too many checklist items on this stage (max 60)' })
+
+    const order = await ITEMS_POPULATE(Order.findOneAndUpdate(
+      { _id: ctx.orderId, 'assignments.mfrId': ctx.mfrObjectId },
+      { $push: { [`assignments.$[asgn].stages.${ctx.stageIndex}.items`]: { $each: lines } } },
+      { arrayFilters: [{ 'asgn.mfrId': ctx.mfrObjectId }], new: true }
+    )).lean()
+    if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
+
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Stage Item Added',
+      detail: `${ctx.orderId}: ${ctx.stage.name || `Stage ${ctx.stageIndex + 1}`} — added ${lines.length} item(s)`,
+    })
+    res.json(enrichOrder(order))
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items/:lineIndex', requireAuth, updateLimiter, async (req, res) => {
+  try {
+    const ctx = await loadStageForItems(req, res)
+    if (!ctx) return
+    const lineIndex = parseInt(req.params.lineIndex, 10)
+    const items = ctx.stage.items || []
+    if (isNaN(lineIndex) || lineIndex < 0 || lineIndex >= items.length)
+      return res.status(400).json({ error: `Invalid item index (0–${items.length - 1})` })
+
+    const has = k => Object.prototype.hasOwnProperty.call(req.body, k)
+    const { status, name, colourway, dueDate, doneDate, note } = req.body
+    const base = `assignments.$[asgn].stages.${ctx.stageIndex}.items.${lineIndex}`
+    const setFields = {}
+
+    if (has('status')) {
+      if (!['pending', 'done'].includes(status))
+        return res.status(400).json({ error: 'Item status must be pending or done' })
+      setFields[`${base}.status`] = status
+      // Stamp the completion date automatically unless one was given.
+      if (status === 'done' && !has('doneDate'))
+        setFields[`${base}.doneDate`] = new Date().toISOString().slice(0, 10)
+      if (status === 'pending') setFields[`${base}.doneDate`] = null
+    }
+    if (has('name')) {
+      if (!name?.trim()) return res.status(400).json({ error: 'Item name cannot be blank' })
+      setFields[`${base}.name`] = name.trim().slice(0, 200)
+    }
+    if (has('colourway')) setFields[`${base}.colourway`] = String(colourway || '').trim()
+    if (has('dueDate')) {
+      setFields[`${base}.dueDate`] = dueDate || null
+      // Capture the planned date at the exact moment it would otherwise be lost —
+      // same pattern as stage.baselineEta vs stage.eta on the /eta route.
+      const item = items[lineIndex]
+      if (dueDate !== item.dueDate && !item.plannedDate)
+        setFields[`${base}.plannedDate`] = item.dueDate ?? dueDate
+    }
+    if (has('doneDate')) setFields[`${base}.doneDate`] = doneDate || null
+    if (has('note')) setFields[`${base}.note`] = String(note || '').trim().slice(0, 500)
+
+    if (Object.keys(setFields).length === 0)
+      return res.status(400).json({ error: 'Nothing to update' })
+    setFields['assignments.$[asgn].updatedAt'] = new Date()
+
+    const order = await ITEMS_POPULATE(Order.findOneAndUpdate(
+      { _id: ctx.orderId, 'assignments.mfrId': ctx.mfrObjectId },
+      { $set: setFields },
+      { arrayFilters: [{ 'asgn.mfrId': ctx.mfrObjectId }], new: true }
+    )).lean()
+    if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
+
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Stage Item Updated',
+      detail: `${ctx.orderId}: ${ctx.stage.name || `Stage ${ctx.stageIndex + 1}`} — "${items[lineIndex].name}"${has('status') ? ` → ${status}` : ''}`,
+    })
+    res.json(enrichOrder(order))
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items/:lineIndex/delete', requireAuth, updateLimiter, async (req, res) => {
+  try {
+    const ctx = await loadStageForItems(req, res)
+    if (!ctx) return
+    const lineIndex = parseInt(req.params.lineIndex, 10)
+    const items = ctx.stage.items || []
+    if (isNaN(lineIndex) || lineIndex < 0 || lineIndex >= items.length)
+      return res.status(400).json({ error: `Invalid item index (0–${items.length - 1})` })
+
+    // Items carry no external references (unlike materials, which Document rows
+    // point at by index), so a straightforward rewrite is safe here.
+    const next = items.filter((_, i) => i !== lineIndex)
+    const order = await ITEMS_POPULATE(Order.findOneAndUpdate(
+      { _id: ctx.orderId, 'assignments.mfrId': ctx.mfrObjectId },
+      { $set: {
+        [`assignments.$[asgn].stages.${ctx.stageIndex}.items`]: next,
+        'assignments.$[asgn].updatedAt': new Date(),
+      } },
+      { arrayFilters: [{ 'asgn.mfrId': ctx.mfrObjectId }], new: true }
+    )).lean()
+    if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
+
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Stage Item Removed',
+      detail: `${ctx.orderId}: ${ctx.stage.name || `Stage ${ctx.stageIndex + 1}`} — removed "${items[lineIndex].name}"`,
+    })
     res.json(enrichOrder(order))
   } catch (err) {
     console.error('[orders]', err)
@@ -832,6 +1572,11 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials', require
       return res.status(400).json({ error: `Invalid stage index (0–${stageCount - 1})` })
 
     const stage = existingAsgn.stages[stageIndex]
+    // Explicit deny, load-bearing: the isResponsible check below used to exclude
+    // buyers only as a side effect of their never being assignable as a stage
+    // owner. They now are, so procurement needs its own guard (BRD §3).
+    if (req.user.role === 'buyer')
+      return res.status(403).json({ error: 'Buyers cannot manage materials' })
     const isResponsible = stage.responsibleId && String(stage.responsibleId) === String(req.user.id)
     if (req.user.role !== 'admin' && !isResponsible)
       return res.status(403).json({ error: "Only an admin or this stage's responsible person can manage materials" })
@@ -884,6 +1629,11 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineInde
       return res.status(400).json({ error: `Invalid stage index (0–${stageCount - 1})` })
 
     const stage = existingAsgn.stages[stageIndex]
+    // Explicit deny, load-bearing: the isResponsible check below used to exclude
+    // buyers only as a side effect of their never being assignable as a stage
+    // owner. They now are, so procurement needs its own guard (BRD §3).
+    if (req.user.role === 'buyer')
+      return res.status(403).json({ error: 'Buyers cannot manage materials' })
     const isResponsible = stage.responsibleId && String(stage.responsibleId) === String(req.user.id)
     if (req.user.role !== 'admin' && !isResponsible)
       return res.status(403).json({ error: "Only an admin or this stage's responsible person can manage materials" })
@@ -965,6 +1715,11 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineInde
       return res.status(400).json({ error: `Invalid stage index (0–${stageCount - 1})` })
 
     const stage = existingAsgn.stages[stageIndex]
+    // Explicit deny, load-bearing: the isResponsible check below used to exclude
+    // buyers only as a side effect of their never being assignable as a stage
+    // owner. They now are, so procurement needs its own guard (BRD §3).
+    if (req.user.role === 'buyer')
+      return res.status(403).json({ error: 'Buyers cannot manage materials' })
     const isResponsible = stage.responsibleId && String(stage.responsibleId) === String(req.user.id)
     if (req.user.role !== 'admin' && !isResponsible)
       return res.status(403).json({ error: "Only an admin or this stage's responsible person can manage materials" })
@@ -1075,7 +1830,7 @@ router.post('/materials/bulk', requireAuth, requireAdmin, materialsBulkLimiter, 
 // PATCH /api/orders/:id — edit order top-level fields (admin only)
 router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
   try {
-    const { product, category, season, totalQty, delivery, imageDataUrl, imageUrl } = req.body
+    const { product, category, season, totalQty, delivery, imageDataUrl, imageUrl, colourways, callout } = req.body
     const orderId = req.params.id
 
     const existing = await Order.findById(orderId).lean()
@@ -1103,12 +1858,69 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
       const qty = parseInt(totalQty, 10)
       if (isNaN(qty) || qty < 1) return res.status(400).json({ error: 'Total quantity must be a positive number' })
       updates.totalQty = qty
+
+      // Creation enforces `Σ assignment.qty === totalQty`, but editing used to
+      // change only the order total — leaving the splits stale. Since every
+      // screen shows the assignment qty, the edit looked like it hadn't saved at
+      // all, and the order silently violated its own invariant.
+      const asgns = existing.assignments || []
+      const currentSum = asgns.reduce((n, a) => n + (a.qty || 0), 0)
+      if (qty !== currentSum) {
+        if (asgns.length === 1) {
+          updates['assignments.0.qty'] = qty
+          // Stage targets that were defaulted to the assignment qty follow it.
+          // Only quantity-kind stages, never a milestone/checklist target, and
+          // never below what's already been completed.
+          ;(asgns[0].stages || []).forEach((s, i) => {
+            if (stageKindOf(s) !== 'quantity') return
+            if ((s.totalUnits ?? 0) !== currentSum) return  // deliberately overridden — leave it
+            updates[`assignments.0.stages.${i}.totalUnits`] = Math.max(qty, s.unitsDone || 0)
+          })
+        } else {
+          // Reallocating between manufacturers is a commercial decision, not
+          // something to infer. Say exactly what the splits are today.
+          const detail = asgns.map(a => `${a.sub}: ${a.qty}`).join(', ')
+          return res.status(400).json({
+            error: `Total quantity must match the manufacturer splits (currently ${detail} = ${currentSum}). Adjust the splits first.`,
+          })
+        }
+      }
     }
 
     if (delivery !== undefined) {
       const d = new Date(delivery)
       if (isNaN(d.getTime())) return res.status(400).json({ error: 'Invalid delivery date' })
+      // Same baselineEta/eta convention as stages: capture the OLD delivery as
+      // the frozen baseline the first time it's ever revised, so a later
+      // correction (e.g. realigning it to the TNA plan's last stage) can't
+      // erase how far the promise itself has moved from what was first
+      // committed. Only fires once — a legacy order with no baseline yet, or
+      // a genuinely new one, gets it backfilled here; after that it's frozen.
+      if (!existing.baselineDelivery && existing.delivery && d.getTime() !== new Date(existing.delivery).getTime()) {
+        updates.baselineDelivery = existing.delivery
+      }
       updates.delivery = d
+    }
+
+    if (colourways !== undefined) {
+      if (!Array.isArray(colourways)) return res.status(400).json({ error: 'Colourways must be a list' })
+      const next = []
+      for (const c of colourways) {
+        const name = (typeof c === 'string' ? c : c?.name || '').trim()
+        if (!name) continue
+        if (name.length > 60) return res.status(400).json({ error: `Colourway name too long: "${name.slice(0, 20)}…"` })
+        if (next.some(x => x.name.toLowerCase() === name.toLowerCase())) continue
+        next.push({ name, code: (typeof c === 'object' && c?.code ? String(c.code).trim() : '') })
+      }
+      if (next.length > 40) return res.status(400).json({ error: 'Too many colourways (max 40)' })
+      updates.colourways = next
+    }
+
+    if (callout !== undefined) {
+      if (callout !== null && typeof callout !== 'string') return res.status(400).json({ error: 'Callout must be text' })
+      const c = (callout || '').trim()
+      if (c.length > 500) return res.status(400).json({ error: 'Callout too long (max 500 characters)' })
+      updates.callout = c
     }
 
     // Photo: null/'' clears it, a value validates same as at creation. Only one of

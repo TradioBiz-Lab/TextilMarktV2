@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3 } from 'lucide-react'
+import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot } from 'lucide-react'
 import { T } from '../constants.js'
 import { Btn, RibbonBanner } from './ui.jsx'
 import { NotifPanel } from './NotifPanel.jsx'
+import { KriyaaWidget } from './KriyaaWidget.jsx'
 import { useApp } from '../context.jsx'
 
 function NetworkBanner() {
@@ -70,18 +71,21 @@ export function Shell({ view, setView, children, onOpenOrder }) {
   const nav = {
     buyer: [
       { id: 'dashboard', icon: Home, label: 'Dashboard' },
+      { id: 'action_items', icon: ListChecks, label: 'Action Items' },
       { id: 'submit_req', icon: ClipboardList, label: 'Submit Requirement' },
       { id: 'documents', icon: Folder, label: 'Documents' },
       { id: 'reports', icon: BarChart3, label: 'Reports' },
     ],
     manufacturer: [
       { id: 'dashboard', icon: Home, label: 'Dashboard' },
+      { id: 'action_items', icon: ListChecks, label: 'Action Items' },
       { id: 'certs', icon: ShieldCheck, label: 'Certificates' },
     ],
     admin: [
       { id: 'dashboard', icon: Home, label: 'Dashboard' },
-      { id: 'orders',    icon: Package, label: 'Orders' },
       { id: 'action_items', icon: ListChecks, label: 'Action Items' },
+      { id: 'kriyaa',    icon: Bot, label: 'Kriyaa' },
+      { id: 'orders',    icon: Package, label: 'Orders' },
       { id: 'documents', icon: Folder, label: 'Documents' },
       { id: 'reports',   icon: BarChart3, label: 'Reports' },
       { id: 'audit',     icon: History, label: 'Audit Log' },
@@ -203,6 +207,11 @@ export function Shell({ view, setView, children, onOpenOrder }) {
         {/* Page content */}
         <main className="main-content" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>{children}</main>
       </div>
+
+      {/* Floating AI assistant — admin-only (matches the backend's requireAdmin
+          gate), rendered unconditionally so its conversation survives
+          navigating between pages within the session. */}
+      {user?.role === 'admin' && <KriyaaWidget />}
     </div>
   )
 }

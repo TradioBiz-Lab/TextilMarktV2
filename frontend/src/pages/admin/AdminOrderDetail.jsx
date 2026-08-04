@@ -1,5 +1,9 @@
-import { useState, useMemo } from 'react'
-import { T, ORDER_STATUSES, STAGE_DOC_MAP, DOC_ICONS } from '../../constants.js'
+import { useState, useMemo, Fragment } from 'react'
+import {
+  T, ORDER_STATUSES, STAGE_DOC_MAP, DOC_ICONS,
+  stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone,
+  stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber,
+} from '../../constants.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { ordersApi } from '../../api.js'
@@ -16,7 +20,8 @@ function fmtDate(d) {
 
 export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   const { currentUser, orders, docs, users, loading, updateAssignment, updateStage, uploadDoc, getDocData, refreshOrders, editOrder, deleteOrder,
-    addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial } = useApp()
+    addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
+    addStageItem, updateStageItem, removeStageItem } = useApp()
   const toast = useToast()
 
   const [showEdit, setShowEdit] = useState(false)
@@ -41,11 +46,15 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   const [sgUnits, setSgUnits] = useState('')
   const [sgNote, setSgNote] = useState('')
 
-  // Update Stage modal (status + updates + materials) — opened by clicking a stage row
+  // Update Stage modal (status + dates + updates + materials) — opened by clicking a stage row.
+  // Mirrors QuickStageModal (Order Management page) so the two entry points show the same thing.
   const [showUpdateStage, setShowUpdateStage] = useState(false)
   const [usTarget, setUsTarget] = useState(null) // mfrId
   const [usIndex, setUsIndex] = useState(0)
   const [usUnits, setUsUnits] = useState('')
+  const [usStatus, setUsStatus] = useState('not_started')
+  const [usEtaDraft, setUsEtaDraft] = useState('')
+  const [savingUsEta, setSavingUsEta] = useState(false)
   const [usDescription, setUsDescription] = useState('')
 
   // Stage dates (start/end) adjustment modal
@@ -105,6 +114,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     const asgn = order.assignments.find(a => String(a.mid) === String(usTarget))
     return asgn?.stages?.[usIndex] || null
   }, [order, usTarget, usIndex])
+  const usKind = usStageData ? stageKindOf(usStageData) : 'quantity'
 
   if (loading) return <LoadingScreen />
   if (!order) return null
@@ -236,6 +246,25 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     }
   }
 
+  // Checklist items — the deliverables a step actually produces (three lab dips,
+  // one per colourway). Generating from the order's colourway list beats typing
+  // the same colour names onto every per-colour step.
+  const generateItemsFromColourways = async (mfrId, stageIndex, stageName) => {
+    try {
+      await addStageItem(order.id, mfrId, stageIndex, { name: stageName, fromColourways: true })
+    } catch (err) {
+      toast(err?.message || 'Could not create checklist items', 'error')
+    }
+  }
+
+  const toggleStageItem = async (mfrId, stageIndex, lineIndex, current) => {
+    try {
+      await updateStageItem(order.id, mfrId, stageIndex, lineIndex, { status: current === 'done' ? 'pending' : 'done' })
+    } catch (err) {
+      toast(err?.message || 'Could not update item', 'error')
+    }
+  }
+
   const emptyMaterialDraft = { name: '', requiredQty: '', unit: '', supplier: '', poNumber: '', expectedDate: '' }
   const submitAddMaterial = async (mfrId, stageIndex) => {
     const key = `${mfrId}:${stageIndex}`
@@ -344,25 +373,43 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     } finally { setSaving(false) }
   }
 
-  // ── Update Stage modal (status + updates + materials) ──
+  // ── Update Stage modal (status + dates + updates + materials) ──
   const openUpdateStage = (mfrId, stageIndex) => {
     const asgn = order.assignments.find(a => String(a.mid) === String(mfrId))
+    const s = asgn?.stages?.[stageIndex]
     setUsTarget(mfrId)
     setUsIndex(stageIndex)
-    setUsUnits(asgn?.stages?.[stageIndex]?.unitsDone?.toString() || '0')
-    setUsDescription(asgn?.stages?.[stageIndex]?.description || '')
+    setUsUnits(s?.unitsDone?.toString() || '0')
+    setUsStatus(s ? stageStatusOf(s) : 'not_started')
+    setUsEtaDraft(dateToInput(s?.eta))
+    setUsDescription(s?.description || '')
     setShowUpdateStage(true)
   }
 
   const submitStatusChange = async () => {
     setSaving(true)
     try {
-      const units = parseInt(usUnits) || 0
-      await updateStage(order.id, usTarget, usIndex, { unitsDone: units })
-      toast('Stage progress updated', 'success')
+      const body = usKind === 'quantity' ? { unitsDone: parseInt(usUnits, 10) || 0 } : { status: usStatus }
+      const res = await updateStage(order.id, usTarget, usIndex, body)
+      if (res?.warnings?.length) toast(res.warnings[0], 'warning')
+      else toast('Stage progress updated', 'success')
     } catch (err) {
       toast(err?.message || 'Failed to update stage', 'error')
     } finally { setSaving(false) }
+  }
+
+  // Same /eta route (and refreshOrders() refetch) QuickStageModal and the
+  // Adjust Stage Details modal both use — one write path for the New date.
+  const saveUsEta = async () => {
+    if (usEtaDraft === dateToInput(usStageData?.eta)) return
+    setSavingUsEta(true)
+    try {
+      await ordersApi.updateStageDates(order.id, usTarget, usIndex, { eta: usEtaDraft === 'NA' ? 'NA' : (usEtaDraft || null) })
+      await refreshOrders()
+      toast('Date updated', 'success')
+    } catch (err) {
+      toast(err?.message || 'Failed to update date', 'error')
+    } finally { setSavingUsEta(false) }
   }
 
   const submitDescriptionChange = async () => {
@@ -648,23 +695,76 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
 
               {/* Status */}
               <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
-                <SectionLabel>Status</SectionLabel>
-                {usStageData && (
-                  <div style={{ background: '#f8fafc', borderRadius: 10, border: `1px solid ${T.border}`, padding: '12px 14px', marginBottom: 10 }}>
-                    <FlexRow justify="space-between" style={{ marginBottom: 6 }}>
-                      <span style={{ fontSize: 12, color: T.textMuted }}>Current: {usStageData.unitsDone} / {usStageData.totalUnits} units</span>
-                    </FlexRow>
-                    <div style={{ height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
-                      <div style={{ height: 6, background: T.primary, borderRadius: 3, width: `${usStageData.totalUnits > 0 ? (usStageData.unitsDone / usStageData.totalUnits) * 100 : 0}%`, transition: 'width 0.3s' }} />
+                <SectionLabel>Progress</SectionLabel>
+                {usKind === 'quantity' ? (
+                  <>
+                    {usStageData && (
+                      <div style={{ background: '#f8fafc', borderRadius: 10, border: `1px solid ${T.border}`, padding: '12px 14px', marginBottom: 10 }}>
+                        <FlexRow justify="space-between" style={{ marginBottom: 6 }}>
+                          <span style={{ fontSize: 12, color: T.textMuted }}>Current: {usStageData.unitsDone} / {usStageData.totalUnits} units</span>
+                        </FlexRow>
+                        <div style={{ height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
+                          <div style={{ height: 6, background: T.primary, borderRadius: 3, width: `${usStageData.totalUnits > 0 ? (usStageData.unitsDone / usStageData.totalUnits) * 100 : 0}%`, transition: 'width 0.3s' }} />
+                        </div>
+                      </div>
+                    )}
+                    <Input label={`Units Done (max ${usStageData?.totalUnits || 0})`} type="number" value={usUnits} onChange={e => setUsUnits(e.target.value)} placeholder="0" />
+                  </>
+                ) : (
+                  <Select label="Status" value={usStatus} onChange={e => setUsStatus(e.target.value)}>
+                    {Object.entries(STAGE_STATUS_LABELS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+                  </Select>
+                )}
+                <FlexRow justify="flex-end" style={{ marginTop: 8 }}>
+                  <Btn size="sm" disabled={saving} onClick={submitStatusChange}>{saving ? 'Saving…' : 'Save Progress'}</Btn>
+                </FlexRow>
+              </div>
+
+              {/* Dates */}
+              <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
+                <SectionLabel>Dates</SectionLabel>
+                <FlexRow gap={10} style={{ alignItems: 'flex-end' }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: T.textLight, marginBottom: 4 }}>Planned</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>
+                      {usStageData?.baselineEta === 'NA' ? 'N/A' : usStageData?.baselineEta ? fmtDate(usStageData.baselineEta) : '—'}
                     </div>
                   </div>
-                )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <Input label={`Units Done (max ${usStageData?.totalUnits || 0})`} type="number" value={usUnits} onChange={e => setUsUnits(e.target.value)} placeholder="0" />
-                  <FlexRow justify="flex-end">
-                    <Btn size="sm" disabled={saving} onClick={submitStatusChange}>{saving ? 'Saving…' : 'Save Progress'}</Btn>
-                  </FlexRow>
-                </div>
+                  <div style={{ flex: 1, minWidth: 110 }}>
+                    <div style={{ fontSize: 10, color: T.textLight, marginBottom: 4 }}>New</div>
+                    <input
+                      type={usEtaDraft === 'NA' ? 'text' : 'date'}
+                      value={usEtaDraft}
+                      onChange={e => setUsEtaDraft(e.target.value)}
+                      style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: usEtaDraft === 'NA' ? T.textLight : T.text, boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: T.textLight, marginBottom: 4 }}>Actual</div>
+                    <FlexRow gap={4}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>
+                        {usStageData?.actualEnd ? fmtDate(usStageData.actualEnd) : '—'}
+                      </div>
+                      {(() => {
+                        const av = stageActualVariance(usStageData)
+                        return av != null && av !== 0 ? (
+                          <span style={{ fontSize: 10, fontWeight: 800, color: av > 0 ? T.danger : T.success }}>
+                            {av > 0 ? '+' : ''}{av}d
+                          </span>
+                        ) : null
+                      })()}
+                    </FlexRow>
+                  </div>
+                  <Btn size="sm" disabled={savingUsEta || usEtaDraft === dateToInput(usStageData?.eta)} onClick={saveUsEta}>{savingUsEta ? 'Saving…' : 'Save Date'}</Btn>
+                </FlexRow>
+                {(() => {
+                  const v = stageVariance(usStageData)
+                  return v != null && v !== 0 ? (
+                    <div style={{ fontSize: 10, color: v > 0 ? T.danger : T.success, marginTop: 6, fontWeight: 700 }}>
+                      {v > 0 ? '+' : ''}{v}d vs plan
+                    </div>
+                  ) : null
+                })()}
               </div>
 
               {/* Updates thread */}
@@ -1079,66 +1179,147 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                     <div style={{ padding: '14px 18px' }}>
                       {stages.length > 0 && <StageTimeline stages={stages} />}
 
-                      {/* Stage detail grid with ETAs and evidence docs */}
-                      <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {/* TNA table — one row per step, the same shape as the plan
+                          the team keeps in Excel: step, owner, planned vs revised
+                          end date, slippage, state. Click a row to update it. */}
+                      <div className="table-scroll" style={{ marginTop: 14 }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
+                          <thead>
+                            <tr style={{ background: '#f8fafc' }}>
+                              {['#', 'Step', 'Owner', 'Start', 'Planned', 'Revised', 'Δ', 'Actual', 'State', 'Progress', ''].map(h => (
+                                <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
                         {stages.map((s, i) => {
-                          const pct = s.totalUnits > 0 ? Math.round((s.unitsDone / s.totalUnits) * 100) : 0
-                          const done = pct >= 100
-                          const isLate = s.eta && s.eta !== 'NA' && new Date(s.eta) < new Date() && !done
+                          const pct = stagePct(s)
+                          const done = isStageDone(s)
+                          const isLate = stageIsOverdue(s)
+                          const kind = stageKindOf(s)
+                          const variance = stageVariance(s)
                           const etaStr = s.eta === 'NA' ? 'N/A' : s.eta ? fmtDate(s.eta) : '—'
+                          const baseStr = s.baselineEta === 'NA' ? 'N/A' : s.baselineEta ? fmtDate(s.baselineEta) : '—'
                           const startStr = s.startDate === 'NA' ? 'N/A' : s.startDate ? fmtDate(s.startDate) : '—'
                           const rowKey = `${a.mid}:${i}`
                           const rowExpanded = expandedStage === rowKey
+                          const stateTone = done ? { bg: T.successBg, fg: T.success, label: 'Done' }
+                            : s.blocked ? { bg: T.dangerBg, fg: T.danger, label: 'Blocked' }
+                            : isLate ? { bg: T.dangerBg, fg: T.danger, label: 'Late' }
+                            : stageStatusOf(s) === 'in_progress' ? { bg: '#dbeafe', fg: '#1d4ed8', label: 'In progress' }
+                            : { bg: '#f1f5f9', fg: T.textMuted, label: 'Upcoming' }
+                          const receivedCount = (s.materials || []).filter(m => m.status === 'received').length
                           return (
-                            <div key={i} onClick={() => openUpdateStage(a.mid, i)}
-                              style={{ background: done ? T.successBg : isLate ? T.dangerBg : '#f8fafc', borderRadius: 8, border: `1px solid ${done ? T.successBorder : isLate ? T.dangerBorder : T.border}`, padding: '10px 12px', cursor: 'pointer' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ fontSize: 11, fontWeight: 700, color: done ? T.success : isLate ? T.danger : T.text, minWidth: 110 }}>
-                                  {i + 1}. {s.name}
-                                </span>
-                                <div style={{ flex: 1, height: 4, background: '#e2e8f0', borderRadius: 2, overflow: 'hidden' }}>
+                            <Fragment key={i}>
+                            <tr onClick={() => openUpdateStage(a.mid, i)}
+                              style={{ borderTop: `1px solid ${T.border}`, cursor: 'pointer', background: done ? T.successBg : (isLate || s.blocked) ? T.dangerBg : 'transparent' }}>
+                              <td style={{ padding: '8px 10px', fontSize: 10, color: T.textLight }}>{i + 1}</td>
+                              <td style={{ padding: '8px 10px', minWidth: 200 }}>
+                                <div style={{ fontSize: 12, fontWeight: 600, color: T.text }}>{s.name}</div>
+                                {s.description && <div style={{ fontSize: 10, color: T.textLight, fontStyle: 'italic' }}>{s.description}</div>}
+                                <FlexRow gap={6} style={{ marginTop: 2, flexWrap: 'wrap' }}>
+                                  {kind !== 'quantity' && <span style={{ fontSize: 9, fontWeight: 700, color: T.textLight, textTransform: 'uppercase' }}>{kind}</span>}
+                                  {(s.materials || []).length > 0 && (
+                                    <span style={{ fontSize: 9, fontWeight: 800, padding: '1px 5px', borderRadius: 3, background: receivedCount === s.materials.length ? T.successBg : T.warningBg, color: receivedCount === s.materials.length ? T.success : T.warning }}>
+                                      📦 {receivedCount}/{s.materials.length}
+                                    </span>
+                                  )}
+                                  {(s.updates || []).length > 0 && <span style={{ fontSize: 9, color: T.textMuted }}>💬 {s.updates.length}</span>}
+                                </FlexRow>
+                              </td>
+                              <td style={{ padding: '8px 10px', fontSize: 11, color: T.textMuted, whiteSpace: 'nowrap' }}>
+                                {s.responsibleName || '—'}
+                                {s.responsibleRole === 'buyer' && <div style={{ fontSize: 9, color: T.textLight }}>buyer</div>}
+                              </td>
+                              <td style={{ padding: '8px 10px', fontSize: 11, color: T.textMuted, whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono',monospace" }}>{startStr}</td>
+                              <td style={{ padding: '8px 10px', fontSize: 11, color: T.textLight, whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono',monospace" }}>{baseStr}</td>
+                              <td style={{ padding: '8px 10px', fontSize: 11, fontWeight: isLate ? 700 : 500, color: isLate ? T.danger : T.text, whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono',monospace" }}>{etaStr}</td>
+                              <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                                {variance == null || variance === 0
+                                  ? <span style={{ fontSize: 10, color: T.textLight }}>—</span>
+                                  : <span style={{ fontSize: 10, fontWeight: 800, color: variance > 0 ? T.danger : T.success }}>{variance > 0 ? '+' : ''}{variance}d</span>}
+                              </td>
+                              <td style={{ padding: '8px 10px', fontSize: 11, color: T.textMuted, whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono',monospace" }}>
+                                {s.actualEnd ? fmtDate(s.actualEnd) : '—'}
+                                {(() => {
+                                  const av = stageActualVariance(s)
+                                  return av != null && av !== 0 ? (
+                                    <span style={{ marginLeft: 4, fontWeight: 800, color: av > 0 ? T.danger : T.success }}>
+                                      {av > 0 ? '+' : ''}{av}d
+                                    </span>
+                                  ) : null
+                                })()}
+                              </td>
+                              <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                                <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: stateTone.bg, color: stateTone.fg }}>{stateTone.label}</span>
+                              </td>
+                              <td style={{ padding: '8px 10px', minWidth: 120 }}>
+                                <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 3 }}>{stageProgressLabel(s)}</div>
+                                <div style={{ height: 4, background: '#e2e8f0', borderRadius: 2, overflow: 'hidden' }}>
                                   <div style={{ height: 4, background: done ? T.success : isLate ? T.danger : T.primary, borderRadius: 2, width: `${pct}%` }} />
                                 </div>
-                                <span style={{ fontSize: 10, color: T.textMuted, minWidth: 32, textAlign: 'right' }}>{pct}%</span>
-                                {isLate && <span style={{ fontSize: 8, fontWeight: 800, color: T.danger, background: T.dangerBg, padding: '1px 4px', borderRadius: 3 }}>LATE</span>}
+                              </td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right' }}>
                                 <button onClick={e => { e.stopPropagation(); setExpandedStage(rowExpanded ? null : rowKey) }}
-                                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-                                  <span style={{ fontSize: 13, color: T.textMuted, transition: 'transform 0.2s', display: 'inline-block', transform: rowExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>›</span>
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2 }}>
+                                  <span style={{ fontSize: 13, color: T.textMuted, display: 'inline-block', transform: rowExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>›</span>
                                 </button>
-                              </div>
-                              <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4, flexWrap: 'wrap', cursor: 'default' }}>
-                                <span style={{ fontSize: 10, color: isLate ? T.danger : T.textMuted, fontWeight: isLate ? 700 : 400 }}>
-                                  ETA: {etaStr}
-                                </span>
-                                <span style={{ fontSize: 10, color: T.textMuted }}>
-                                  Start: {startStr}
-                                </span>
-                                <span style={{ fontSize: 10, color: T.textMuted }}>
-                                  {s.unitsDone}/{s.totalUnits} units
-                                </span>
-                                {s.responsibleName && (
-                                  <span style={{ fontSize: 10, color: T.textMuted }}>👤 {s.responsibleName}</span>
-                                )}
-                                {(s.materials || []).length > 0 && (() => {
-                                  const receivedCount = s.materials.filter(m => m.status === 'received').length
-                                  const allReceived = receivedCount === s.materials.length
-                                  return (
-                                    <span style={{ fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 4, background: allReceived ? T.successBg : T.warningBg, color: allReceived ? T.success : T.warning }}>
-                                      📦 {receivedCount}/{s.materials.length} received
-                                    </span>
-                                  )
-                                })()}
-                                {(s.updates || []).length > 0 && (
-                                  <span style={{ fontSize: 10, color: T.textMuted }}>💬 {(s.updates || []).length}</span>
-                                )}
-                              </div>
-                              {s.description && (
-                                <div style={{ fontSize: 10, color: T.textLight, fontStyle: 'italic', marginTop: 4 }}>
-                                  {s.description}
-                                </div>
-                              )}
-                              {rowExpanded && (
-                                <div onClick={e => e.stopPropagation()} style={{ marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${T.border}`, cursor: 'default' }}>
+                              </td>
+                            </tr>
+                            {rowExpanded && (
+                              <tr>
+                                <td colSpan={11} style={{ padding: 0, background: '#f8fafc', borderTop: `1px solid ${T.border}` }}>
+                                <div onClick={e => e.stopPropagation()} style={{ padding: '12px 16px', cursor: 'default' }}>
+                                  {s.blocked && s.blockedReason && (
+                                    <div style={{ fontSize: 11, color: T.danger, background: T.dangerBg, borderRadius: 5, padding: '5px 9px', marginBottom: 10 }}>⛔ {s.blockedReason}</div>
+                                  )}
+
+                                  {kind === 'checklist' && (
+                                    <>
+                                      <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>
+                                        Checklist ({s.itemsDone || 0}/{s.itemsTotal || 0})
+                                      </div>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 12 }}>
+                                        {(s.items || []).length === 0 && (
+                                          <FlexRow gap={6}>
+                                            <div style={{ fontSize: 11, color: T.textLight }}>No items yet.</div>
+                                            {(order.colourways || []).length > 0 && (
+                                              <Btn size="sm" variant="secondary" onClick={() => generateItemsFromColourways(a.mid, i, s.name)}>
+                                                + One per colourway ({order.colourways.length})
+                                              </Btn>
+                                            )}
+                                          </FlexRow>
+                                        )}
+                                        {(s.items || []).map((it, ii) => {
+                                          const itemVariance = it.plannedDate && it.dueDate && it.plannedDate !== 'NA' && it.dueDate !== 'NA'
+                                            ? dayNumber(it.dueDate) - dayNumber(it.plannedDate) : null
+                                          return (
+                                          <FlexRow key={ii} gap={8} style={{ background: '#fff', borderRadius: 6, padding: '5px 9px', border: `1px solid ${T.border}` }}>
+                                            <button
+                                              onClick={() => toggleStageItem(a.mid, i, ii, it.status)}
+                                              title={it.status === 'done' ? 'Mark pending' : 'Mark done'}
+                                              style={{ cursor: 'pointer', border: `1px solid ${it.status === 'done' ? T.success : T.border}`, background: it.status === 'done' ? T.success : '#fff', color: '#fff', borderRadius: 4, width: 18, height: 18, fontSize: 11, lineHeight: 1, flexShrink: 0 }}
+                                            >{it.status === 'done' ? '✓' : ''}</button>
+                                            <span style={{ flex: 1, fontSize: 11, color: T.text, textDecoration: it.status === 'done' ? 'line-through' : 'none' }}>{it.name}</span>
+                                            {it.dueDate && (
+                                              <span style={{ fontSize: 9, color: T.textLight, fontFamily: "'JetBrains Mono',monospace", whiteSpace: 'nowrap' }} title={`Planned ${it.plannedDate === 'NA' ? 'N/A' : it.plannedDate ? fmtDate(it.plannedDate) : '—'}`}>
+                                                {it.dueDate === 'NA' ? 'N/A' : fmtDate(it.dueDate)}{itemVariance != null && itemVariance !== 0 ? ` (${itemVariance > 0 ? '+' : ''}${itemVariance}d)` : ''}
+                                              </span>
+                                            )}
+                                            {it.doneDate && (
+                                              <span style={{ fontSize: 10, fontWeight: 700, color: T.success, fontFamily: "'JetBrains Mono',monospace", whiteSpace: 'nowrap' }} title="Actual completion date">
+                                                ✓ {fmtDate(it.doneDate)}
+                                              </span>
+                                            )}
+                                            <button onClick={() => removeStageItem(order.id, a.mid, i, ii)} title="Remove"
+                                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textLight, fontSize: 13 }}>×</button>
+                                          </FlexRow>
+                                          )
+                                        })}
+                                      </div>
+                                    </>
+                                  )}
+
                                   <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Updates</div>
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
                                     {(s.updates || []).length === 0 && <div style={{ fontSize: 11, color: T.textLight }}>No updates yet.</div>}
@@ -1181,10 +1362,14 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                                     })}
                                   </div>
                                 </div>
-                              )}
-                            </div>
+                                </td>
+                              </tr>
+                            )}
+                            </Fragment>
                           )
                         })}
+                          </tbody>
+                        </table>
                       </div>
 
                       {a.note && (
