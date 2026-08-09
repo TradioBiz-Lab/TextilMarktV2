@@ -3,7 +3,7 @@ import {
   T, dayNumber, getToday, fmtN,
   stageStatusOf, stageIsOverdue, isStageDone, inFlightStages, stageProgressLabel, stageVariance,
 } from '../../constants.js'
-import { Btn, Card, EmptyState, FlexRow, Mono, LoadingScreen, PageHeader, ProductThumb, StatCard } from '../../components/ui.jsx'
+import { Btn, Card, EmptyState, FlexRow, Modal, Mono, LoadingScreen, PageHeader, ProductThumb, StatCard } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
 // This page answers one question per row: WHERE IS THIS ORDER?
@@ -54,11 +54,135 @@ const Chip = ({ tone, children, title }) => (
   }}>{children}</span>
 )
 
+const GANTT_LEGEND = [
+  ['Done', 'success'],
+  ['In progress', 'primary'],
+  ['Blocked', 'blocked'],
+  ['Late', 'danger'],
+  ['Upcoming', 'pending'],
+]
+
+// Plain HTML/CSS timeline — one row per stage, a bar from its planned start to
+// its eta on a shared day-scale, colored by current state. A stage whose
+// startDate equals its eta (a milestone like "Dyeing Start"/"Production
+// Start", or any other single-day step) renders as a diamond instead of an
+// invisible zero-width bar — the standard Gantt convention for a
+// zero-duration item. A thin line marks today so slippage reads at a glance.
+function GanttChart({ asgn }) {
+  const stages = asgn.stages || []
+  const todayNum = dayNumber(getToday())
+
+  const validDays = stages
+    .flatMap(s => [s.startDate, s.eta])
+    .filter(d => d && d !== 'NA')
+    .map(dayNumber)
+    .filter(d => d != null)
+
+  const colorFor = key => key === 'success' ? T.success : key === 'primary' ? T.primary
+    : key === 'blocked' ? '#7c3aed' : key === 'danger' ? T.danger : '#cbd5e1'
+
+  if (validDays.length === 0) {
+    return <EmptyState icon="📅" title="No dates on this timeline" desc="This order's stages don't have start/end dates set yet." />
+  }
+
+  const minDay = Math.min(...validDays, todayNum)
+  const maxDay = Math.max(...validDays, todayNum)
+  const span = Math.max(1, maxDay - minDay)
+  const pctForDay = day => ((day - minDay) / span) * 100
+  const todayPct = pctForDay(todayNum)
+
+  return (
+    <div>
+      <FlexRow gap={16} style={{ marginBottom: 16, flexWrap: 'wrap' }}>
+        {GANTT_LEGEND.map(([label, key]) => (
+          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 10, height: 10, borderRadius: 3, background: colorFor(key), display: 'inline-block', flexShrink: 0 }} />
+            <span style={{ fontSize: 11, fontWeight: 600, color: T.textMuted }}>{label}</span>
+          </div>
+        ))}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+          <span style={{ width: 1, height: 12, background: T.textLight, display: 'inline-block' }} />
+          <span style={{ fontSize: 11, fontWeight: 600, color: T.textMuted }}>Today ({fmtDate(getToday())})</span>
+        </div>
+      </FlexRow>
+
+      <div style={{ overflowX: 'auto' }}>
+        <div style={{ minWidth: 620, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {stages.map((s, i) => {
+            const done = isStageDone(s)
+            const hasDates = s.startDate && s.startDate !== 'NA' && s.eta && s.eta !== 'NA'
+            const overdue = !done && hasDates && stageIsOverdue(s)
+            const colorKey = done ? 'success' : s.blocked ? 'blocked' : overdue ? 'danger'
+              : stageStatusOf(s) === 'in_progress' ? 'primary' : 'pending'
+            const left = hasDates ? pctForDay(dayNumber(s.startDate)) : 0
+            const rawWidth = hasDates ? pctForDay(dayNumber(s.eta)) - left : 0
+            const isMilestone = hasDates && (s.startDate === s.eta || rawWidth < 0.6)
+            const width = Math.max(1.5, rawWidth)
+            const tip = hasDates
+              ? `${s.name}: ${fmtDate(s.startDate)}${isMilestone ? '' : ` → ${fmtDate(s.eta)}`} · ${stageProgressLabel(s)}`
+              : s.name
+            return (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0' }}>
+                <div
+                  title={s.name}
+                  style={{ width: 190, flexShrink: 0, fontSize: 12, fontWeight: colorKey === 'primary' ? 700 : 500, color: colorKey === 'primary' ? T.text : T.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                >
+                  {i + 1}. {s.name}
+                </div>
+                <div style={{ flex: 1, position: 'relative', height: 22, background: '#f8fafc', borderRadius: 5 }}>
+                  <div style={{ position: 'absolute', left: `${todayPct}%`, top: -3, bottom: -3, width: 1, background: T.textLight }} />
+                  {hasDates ? (
+                    isMilestone ? (
+                      <div
+                        title={tip}
+                        style={{ position: 'absolute', left: `calc(${left}% - 5px)`, top: '50%', width: 10, height: 10, background: colorFor(colorKey), borderRadius: 2, transform: 'translateY(-50%) rotate(45deg)' }}
+                      />
+                    ) : (
+                      <div
+                        title={tip}
+                        style={{ position: 'absolute', left: `${left}%`, width: `${width}%`, top: 3, bottom: 3, minWidth: 6, background: colorFor(colorKey), borderRadius: 4 }}
+                      />
+                    )
+                  ) : (
+                    <span style={{ position: 'absolute', left: 6, top: 3, fontSize: 10, color: T.textLight, fontStyle: 'italic' }}>No date</span>
+                  )}
+                </div>
+                <span style={{ fontSize: 10, color: T.textMuted, width: 76, flexShrink: 0, textAlign: 'right', fontFamily: "'JetBrains Mono',monospace" }}>
+                  {hasDates ? fmtDate(s.eta) : '—'}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function GanttModal({ order, asgn, onClose, onOpen }) {
+  const multi = (order.assignments || []).length > 1
+  return (
+    <Modal
+      title={order.product}
+      subtitle={`${order.id}${multi ? `-${asgn.sub}` : ''} · ${asgn.mfrCompany || 'Manufacturer'} · ${asgn.qty?.toLocaleString() || 0} pcs`}
+      size="xxl"
+      onClose={onClose}
+    >
+      <GanttChart asgn={asgn} />
+      <FlexRow justify="flex-end" gap={8} style={{ marginTop: 20 }}>
+        <Btn variant="secondary" onClick={onClose}>Close</Btn>
+        {onOpen && <Btn onClick={() => { onClose(); onOpen(order.id, asgn.mid) }}>Open Order →</Btn>}
+      </FlexRow>
+    </Modal>
+  )
+}
+
 export function ReportingPage({ onOpen }) {
   const { orders, masterOrders, currentUser, loading, loadError } = useApp()
   const [q, setQ] = useState('')
   const [healthFilter, setHealthFilter] = useState('All')
   const [collapsed, setCollapsed] = useState({})
+  const [ganttTarget, setGanttTarget] = useState(null)
   const isBuyer = currentUser?.role === 'buyer'
   const todayNum = dayNumber(getToday())
 
@@ -325,7 +449,14 @@ export function ReportingPage({ onOpen }) {
                             )}
                           </td>
 
-                          <td style={{ padding: '10px 14px', textAlign: 'right', color: T.textLight }}>›</td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            <button
+                              onClick={e => { e.stopPropagation(); setGanttTarget({ order: r.order, asgn: r.asgn }) }}
+                              title="View timeline"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, fontSize: 14, marginRight: 4, verticalAlign: 'middle' }}
+                            >📅</button>
+                            <span style={{ color: T.textLight }}>›</span>
+                          </td>
                         </tr>
                       )
                     })}
@@ -336,6 +467,10 @@ export function ReportingPage({ onOpen }) {
           </Card>
         )
       })}
+
+      {ganttTarget && (
+        <GanttModal order={ganttTarget.order} asgn={ganttTarget.asgn} onClose={() => setGanttTarget(null)} onOpen={onOpen} />
+      )}
     </div>
   )
 }

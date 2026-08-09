@@ -1,5 +1,9 @@
-import { useState } from 'react'
-import { T, isExpiringSoon, isExpired } from '../../constants.js'
+import { useState, Fragment } from 'react'
+import {
+  T, isExpiringSoon, isExpired,
+  stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone,
+  stagePct, stageProgressLabel, dayNumber,
+} from '../../constants.js'
 import { Badge, Btn, Card, FlexRow, Mono, EmptyState, DocCard, Tabs, Alert, LoadingScreen, StageTimeline, MfrProfileLink, StageDocGroup, dataUrlToBlobUrl, ProductThumb } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
@@ -19,6 +23,7 @@ export function BuyerOrderDetail({ orderId, onBack, initialMid }) {
   const [viewerBlob, setViewerBlob] = useState(null)
   const [viewerName, setViewerName] = useState('')
   const [viewerLoading, setViewerLoading] = useState(false)
+  const [expandedStage, setExpandedStage] = useState(null) // `${mfrId}:${stageIndex}` or null
 
   const closeViewer = () => { if (viewerBlob) { viewerBlob.revoke(); setViewerBlob(null) }; setViewerLoading(false) }
 
@@ -258,78 +263,194 @@ export function BuyerOrderDetail({ orderId, onBack, initialMid }) {
                       <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>{totalDone.toLocaleString()} / {totalAll.toLocaleString()} units across {stages.length} stages</div>
                     </div>
 
-                    {/* Stage rows with inline evidence docs */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {stages.map((s, i) => {
-                        const pct = s.totalUnits > 0 ? Math.round((s.unitsDone / s.totalUnits) * 100) : 0
-                        const done = pct >= 100
-                        const active = pct > 0 && !done
-                        const stageDocs = orderDocs.filter(d =>
-                          d.stageIndex === i &&
-                          (order.assignments.length === 1 || String(d.mfrId || '') === String(a.mid))
-                        )
-                        return (
-                          <div key={i} style={{
-                            border: `1px solid ${done ? T.successBorder : active ? '#fed7aa' : T.border}`,
-                            borderRadius: 10, overflow: 'hidden',
-                            background: done ? '#fafffe' : active ? '#fffdf8' : T.surface,
-                          }}>
-                            {/* Stage header row */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px' }}>
-                              {/* Step bubble */}
-                              <div style={{
-                                width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-                                background: done ? T.success : active ? T.primary : '#e2e8f0',
-                                color: done || active ? '#fff' : T.textLight,
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontSize: 11, fontWeight: 800,
-                              }}>
-                                {done ? '✓' : i + 1}
-                              </div>
+                    {/* TNA table — same detailed view as the master admin's Order
+                        Detail page. Read-only: no click-to-edit, no write actions. */}
+                    <div className="table-scroll" style={{ marginTop: 4 }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
+                        <thead>
+                          <tr style={{ background: '#f8fafc' }}>
+                            {['#', 'Step', 'Owner', 'Start', 'Planned', 'Revised', 'Δ', 'Actual', 'State', 'Progress', ''].map(h => (
+                              <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {stages.map((s, i) => {
+                            const pct = stagePct(s)
+                            const done = isStageDone(s)
+                            const isLate = stageIsOverdue(s)
+                            const kind = stageKindOf(s)
+                            const variance = stageVariance(s)
+                            const etaStr = s.eta === 'NA' ? 'N/A' : (s.eta && s.eta === s.baselineEta) ? 'N/A' : s.eta ? fmtDate(s.eta) : '—'
+                            const baseStr = s.baselineEta === 'NA' ? 'N/A' : s.baselineEta ? fmtDate(s.baselineEta) : '—'
+                            const startStr = s.startDate === 'NA' ? 'N/A' : s.startDate ? fmtDate(s.startDate) : '—'
+                            const rowKey = `${a.mid}:${i}`
+                            const rowExpanded = expandedStage === rowKey
+                            const stateTone = done ? { bg: T.successBg, fg: T.success, label: 'Done' }
+                              : s.blocked ? { bg: T.dangerBg, fg: T.danger, label: 'Blocked' }
+                              : isLate ? { bg: T.dangerBg, fg: T.danger, label: 'Late' }
+                              : stageStatusOf(s) === 'in_progress' ? { bg: '#dbeafe', fg: '#1d4ed8', label: 'In progress' }
+                              : { bg: '#f1f5f9', fg: T.textMuted, label: 'Upcoming' }
+                            const receivedCount = (s.materials || []).filter(m => m.status === 'received').length
+                            const stageEvidenceDocs = orderDocs.filter(d =>
+                              d.stageIndex === i && (order.assignments.length === 1 || String(d.mfrId || '') === String(a.mid))
+                            )
+                            return (
+                              <Fragment key={i}>
+                              <tr style={{ borderTop: `1px solid ${T.border}`, background: done ? T.successBg : (isLate || s.blocked) ? T.dangerBg : 'transparent' }}>
+                                <td style={{ padding: '8px 10px', fontSize: 10, color: T.textLight }}>{i + 1}</td>
+                                <td style={{ padding: '8px 10px', minWidth: 200 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 600, color: T.text }}>{s.name}</div>
+                                  {s.description && <div style={{ fontSize: 10, color: T.textLight, fontStyle: 'italic' }}>{s.description}</div>}
+                                  <FlexRow gap={6} style={{ marginTop: 2, flexWrap: 'wrap' }}>
+                                    {kind !== 'quantity' && <span style={{ fontSize: 9, fontWeight: 700, color: T.textLight, textTransform: 'uppercase' }}>{kind}</span>}
+                                    {(s.materials || []).length > 0 && (
+                                      <span style={{ fontSize: 9, fontWeight: 800, padding: '1px 5px', borderRadius: 3, background: receivedCount === s.materials.length ? T.successBg : T.warningBg, color: receivedCount === s.materials.length ? T.success : T.warning }}>
+                                        📦 {receivedCount}/{s.materials.length}
+                                      </span>
+                                    )}
+                                    {(s.updates || []).length > 0 && <span style={{ fontSize: 9, color: T.textMuted }}>💬 {s.updates.length}</span>}
+                                    {stageEvidenceDocs.length > 0 && (
+                                      <button
+                                        onClick={e => { e.stopPropagation(); openDoc(stageEvidenceDocs[0]) }}
+                                        style={{ fontSize: 9, fontWeight: 700, color: '#1d4ed8', background: '#dbeafe', border: '1px solid #bfdbfe', borderRadius: 8, padding: '1px 6px', cursor: 'pointer', fontFamily: 'inherit' }}
+                                        title={stageEvidenceDocs.length > 1 ? `${stageEvidenceDocs.length} files — expand row to view all` : 'Click to view evidence'}
+                                      >
+                                        👁 {stageEvidenceDocs.length}
+                                      </button>
+                                    )}
+                                  </FlexRow>
+                                </td>
+                                <td style={{ padding: '8px 10px', fontSize: 11, color: T.textMuted, whiteSpace: 'nowrap' }}>
+                                  {s.responsibleName || '—'}
+                                  {s.responsibleRole === 'buyer' && <div style={{ fontSize: 9, color: T.textLight }}>buyer</div>}
+                                </td>
+                                <td style={{ padding: '8px 10px', fontSize: 11, color: T.textMuted, whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono',monospace" }}>{startStr}</td>
+                                <td style={{ padding: '8px 10px', fontSize: 11, color: T.textLight, whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono',monospace" }}>{baseStr}</td>
+                                <td style={{ padding: '8px 10px', fontSize: 11, fontWeight: isLate ? 700 : 500, color: isLate ? T.danger : T.text, whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono',monospace" }}>{etaStr}</td>
+                                <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                                  {variance == null || variance === 0
+                                    ? <span style={{ fontSize: 10, color: T.textLight }}>—</span>
+                                    : <span style={{ fontSize: 10, fontWeight: 800, color: variance > 0 ? T.danger : T.success }}>{variance > 0 ? '+' : ''}{variance}d</span>}
+                                </td>
+                                <td style={{ padding: '8px 10px', fontSize: 11, color: T.textMuted, whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono',monospace" }}>
+                                  {s.actualEnd ? fmtDate(s.actualEnd) : '—'}
+                                  {(() => {
+                                    const av = stageActualVariance(s)
+                                    return av != null && av !== 0 ? (
+                                      <span style={{ marginLeft: 4, fontWeight: 800, color: av > 0 ? T.danger : T.success }}>
+                                        {av > 0 ? '+' : ''}{av}d
+                                      </span>
+                                    ) : null
+                                  })()}
+                                </td>
+                                <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                                  <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: stateTone.bg, color: stateTone.fg }}>{stateTone.label}</span>
+                                </td>
+                                <td style={{ padding: '8px 10px', minWidth: 120 }}>
+                                  <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 3 }}>{stageProgressLabel(s)}</div>
+                                  <div style={{ height: 4, background: '#e2e8f0', borderRadius: 2, overflow: 'hidden' }}>
+                                    <div style={{ height: 4, background: done ? T.success : isLate ? T.danger : T.primary, borderRadius: 2, width: `${pct}%` }} />
+                                  </div>
+                                </td>
+                                <td style={{ padding: '8px 10px', textAlign: 'right' }}>
+                                  <button onClick={() => setExpandedStage(rowExpanded ? null : rowKey)}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2 }}>
+                                    <span style={{ fontSize: 13, color: T.textMuted, display: 'inline-block', transform: rowExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>›</span>
+                                  </button>
+                                </td>
+                              </tr>
+                              {rowExpanded && (
+                                <tr>
+                                  <td colSpan={11} style={{ padding: 0, background: '#f8fafc', borderTop: `1px solid ${T.border}` }}>
+                                  <div style={{ padding: '12px 16px' }}>
+                                    {s.blocked && s.blockedReason && (
+                                      <div style={{ fontSize: 11, color: T.danger, background: T.dangerBg, borderRadius: 5, padding: '5px 9px', marginBottom: 10 }}>⛔ {s.blockedReason}</div>
+                                    )}
 
-                              {/* Name + bar */}
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 13, fontWeight: 600, color: done ? T.success : active ? T.text : T.textMuted, marginBottom: 4 }}>
-                                  {s.name}
-                                </div>
-                                <div style={{ background: '#e2e8f0', borderRadius: 4, height: 5, overflow: 'hidden' }}>
-                                  <div style={{ width: `${pct}%`, height: '100%', background: done ? T.success : T.primary, borderRadius: 4, transition: 'width 0.3s' }} />
-                                </div>
-                              </div>
+                                    {kind === 'checklist' && (
+                                      <>
+                                        <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>
+                                          Checklist ({s.itemsDone || 0}/{s.itemsTotal || 0})
+                                        </div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 12 }}>
+                                          {(s.items || []).length === 0 && <div style={{ fontSize: 11, color: T.textLight }}>No items yet.</div>}
+                                          {(s.items || []).map((it, ii) => {
+                                            const itemVariance = it.plannedDate && it.dueDate && it.plannedDate !== 'NA' && it.dueDate !== 'NA'
+                                              ? dayNumber(it.dueDate) - dayNumber(it.plannedDate) : null
+                                            return (
+                                            <FlexRow key={ii} gap={8} style={{ background: '#fff', borderRadius: 6, padding: '5px 9px', border: `1px solid ${T.border}` }}>
+                                              <span style={{ display: 'inline-block', border: `1px solid ${it.status === 'done' ? T.success : T.border}`, background: it.status === 'done' ? T.success : '#fff', color: '#fff', borderRadius: 4, width: 18, height: 18, fontSize: 11, lineHeight: '16px', flexShrink: 0, textAlign: 'center' }}>{it.status === 'done' ? '✓' : ''}</span>
+                                              <span style={{ flex: 1, fontSize: 11, color: T.text, textDecoration: it.status === 'done' ? 'line-through' : 'none' }}>{it.name}</span>
+                                              {it.dueDate && (
+                                                <span style={{ fontSize: 9, color: T.textLight, fontFamily: "'JetBrains Mono',monospace", whiteSpace: 'nowrap' }} title={`Planned ${it.plannedDate === 'NA' ? 'N/A' : it.plannedDate ? fmtDate(it.plannedDate) : '—'}`}>
+                                                  {it.dueDate === 'NA' ? 'N/A' : fmtDate(it.dueDate)}{itemVariance != null && itemVariance !== 0 ? ` (${itemVariance > 0 ? '+' : ''}${itemVariance}d)` : ''}
+                                                </span>
+                                              )}
+                                              {it.doneDate && (
+                                                <span style={{ fontSize: 10, fontWeight: 700, color: T.success, fontFamily: "'JetBrains Mono',monospace", whiteSpace: 'nowrap' }} title="Actual completion date">
+                                                  ✓ {fmtDate(it.doneDate)}
+                                                </span>
+                                              )}
+                                            </FlexRow>
+                                            )
+                                          })}
+                                        </div>
+                                      </>
+                                    )}
 
-                              {/* Date — actual (stageDate) once recorded, else the planned ETA */}
-                              {s.stageDate
-                                ? <span style={{ fontSize: 11, fontWeight: 600, color: done ? T.success : T.primary, background: done ? T.successBg : T.primaryLight, padding: '2px 8px', borderRadius: 6, flexShrink: 0 }}>{fmtDate(s.stageDate)}</span>
-                                : (s.eta && s.eta !== 'NA')
-                                  ? <span style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, background: '#f1f5f9', padding: '2px 8px', borderRadius: 6, flexShrink: 0 }}>Due {fmtDate(s.eta)}</span>
-                                  : <span style={{ fontSize: 11, color: T.textLight, fontStyle: 'italic', flexShrink: 0 }}>No date</span>
-                              }
+                                    <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Updates</div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: (s.materials || []).length > 0 || stageEvidenceDocs.length > 0 ? 12 : 0 }}>
+                                      {(s.updates || []).length === 0 && <div style={{ fontSize: 11, color: T.textLight }}>No updates yet.</div>}
+                                      {(s.updates || []).map((u, ui) => (
+                                        <div key={ui} style={{ background: '#fff', borderRadius: 6, padding: '6px 10px', border: `1px solid ${T.border}` }}>
+                                          <div style={{ fontSize: 11, color: T.text }}>{u.text}</div>
+                                          <div style={{ fontSize: 9, color: T.textLight, marginTop: 2 }}>{u.byUserName || 'Someone'} · {fmtDate(u.at)}</div>
+                                        </div>
+                                      ))}
+                                    </div>
 
-                              {/* Pct */}
-                              <span style={{ fontSize: 13, fontWeight: 800, color: done ? T.success : active ? T.primary : T.textLight, flexShrink: 0, minWidth: 38, textAlign: 'right' }}>{pct}%</span>
+                                    {(s.materials || []).length > 0 && (
+                                      <>
+                                        <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Materials / PO</div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: stageEvidenceDocs.length > 0 ? 12 : 0 }}>
+                                          {s.materials.map((m, mi) => {
+                                            const statusStyle = m.status === 'received' ? { bg: T.successBg, c: T.success, border: T.successBorder }
+                                              : m.status === 'ordered' ? { bg: T.warningBg, c: T.warning, border: T.warningBorder }
+                                              : { bg: '#f1f5f9', c: T.textMuted, border: T.border }
+                                            return (
+                                              <div key={mi} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fff', borderRadius: 6, padding: '6px 10px', border: `1px solid ${T.border}` }}>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                  <div style={{ fontSize: 11, fontWeight: 600, color: T.text }}>{m.name} — {m.requiredQty}{m.unit ? ` ${m.unit}` : ''}</div>
+                                                  <div style={{ fontSize: 10, color: T.textLight }}>{[m.supplier, m.poNumber, m.expectedDate].filter(Boolean).join(' · ') || '—'}</div>
+                                                </div>
+                                                <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: statusStyle.bg, color: statusStyle.c, border: `1px solid ${statusStyle.border}`, whiteSpace: 'nowrap' }}>
+                                                  {m.status}
+                                                </span>
+                                              </div>
+                                            )
+                                          })}
+                                        </div>
+                                      </>
+                                    )}
 
-                              {/* Docs badge — clickable to open first doc */}
-                              {stageDocs.length > 0 && (
-                                <button
-                                  onClick={e => { e.stopPropagation(); openDoc(stageDocs[0]) }}
-                                  style={{ fontSize: 10, fontWeight: 700, color: '#1d4ed8', background: '#dbeafe', border: '1px solid #bfdbfe', borderRadius: 10, padding: '2px 9px', flexShrink: 0, cursor: 'pointer', fontFamily: 'inherit' }}
-                                  title={stageDocs.length > 1 ? `${stageDocs.length} files — scroll below to view all` : 'Click to view evidence'}
-                                >
-                                  👁 {stageDocs.length} evidence file{stageDocs.length !== 1 ? 's' : ''}
-                                </button>
+                                    {stageEvidenceDocs.length > 0 && (
+                                      <>
+                                        <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Evidence Documents</div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                          {stageEvidenceDocs.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} stageName={s.name} />)}
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                  </td>
+                                </tr>
                               )}
-                            </div>
-
-                            {/* Evidence docs — only if present */}
-                            {stageDocs.length > 0 && (
-                              <div style={{ borderTop: `1px solid ${done ? T.successBorder : '#fed7aa'}`, padding: '8px 10px', background: done ? '#f0fdf4' : '#fffbf5', display: 'flex', flexDirection: 'column', gap: 0 }}>
-                                <div style={{ fontSize: 9, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6, paddingLeft: 4 }}>Evidence Documents</div>
-                                {stageDocs.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} stageName={s.name} />)}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
+                              </Fragment>
+                            )
+                          })}
+                        </tbody>
+                      </table>
                     </div>
 
                   </div>

@@ -2,9 +2,9 @@ import { useState, useRef, useEffect } from 'react'
 import {
   T, CATEGORIES, SEASONS, DEFAULT_STAGE_NAMES, ORDER_STATUSES,
   isStageDone, stageIsOverdue, stageStatusOf, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct,
-  STAGE_STATUS_LABELS,
+  STAGE_STATUS_LABELS, CELL_STATE, cellState, buildMatrixSpine,
 } from '../../constants.js'
-import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, FileUpload, LoadingScreen, useToast, fileUploadPayload, ProductThumb, Modal, SectionLabel } from '../../components/ui.jsx'
+import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, FileUpload, LoadingScreen, useToast, fileUploadPayload, ProductThumb, Modal, SectionLabel, Textarea } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
@@ -51,9 +51,9 @@ function fmtDateTime(d) {
 // A focused stage-update modal that lives ON the Order Management page — no
 // navigation to Order Detail. Clicking a matrix date cell (or, later, any
 // other quick-action entry point) opens this in place, so saving an edit
-// leaves you exactly where you were. Deliberately a SUBSET of the full Order
-// Detail modal — progress, updates, materials — not description or evidence
-// upload, which stay full-order-detail-only ("Open full order" reaches them).
+// leaves you exactly where you were. A subset of the full Order Detail modal
+// — description, progress, updates, materials — not evidence upload, which
+// stays full-order-detail-only ("Open full order" reaches it).
 function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrder }) {
   const { currentUser, orders, updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial, refreshOrders } = useApp()
   const toast = useToast()
@@ -62,6 +62,7 @@ function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrder }) {
   const stage = asgn?.stages?.[stageIndex]
   const isMaster = currentUser?.adminType === 'master'
 
+  const [description, setDescription] = useState(stage?.description || '')
   const [units, setUnits] = useState(String(stage?.unitsDone ?? 0))
   const [status, setStatus] = useState(stage ? stageStatusOf(stage) : 'not_started')
   const [etaDraft, setEtaDraft] = useState(dateToInput(stage?.eta))
@@ -79,15 +80,27 @@ function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrder }) {
   // Keep the form in step once a save round-trips fresh data back.
   useEffect(() => {
     if (!stage) return
+    setDescription(stage.description || '')
     setUnits(String(stage.unitsDone ?? 0))
     setStatus(stageStatusOf(stage))
     setEtaDraft(dateToInput(stage.eta))
     setBaselineEtaDraft(dateToInput(stage.baselineEta))
     setActualEndDraft(dateToInput(stage.actualEnd))
-  }, [stage?.unitsDone, stage?.status, stage?.eta, stage?.baselineEta, stage?.actualEnd])
+  }, [stage?.description, stage?.unitsDone, stage?.status, stage?.eta, stage?.baselineEta, stage?.actualEnd])
 
   if (!order || !asgn || !stage) return null
   const kind = stageKindOf(stage)
+
+  const saveDescription = async () => {
+    setSaving(true)
+    try {
+      await ordersApi.updateStageDates(orderId, mfrId, stageIndex, { description })
+      await refreshOrders()
+      toast('Description updated', 'success')
+    } catch (err) {
+      toast(err?.message || 'Failed to update description', 'error')
+    } finally { setSaving(false) }
+  }
 
   const saveProgress = async () => {
     setSaving(true)
@@ -163,6 +176,16 @@ function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrder }) {
   return (
     <Modal title={stage.name} subtitle={`${order.product} · ${asgn.mfrCompany || 'Manufacturer'}`} size="lg" onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div>
+          <SectionLabel>Description</SectionLabel>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="What does this stage involve? (optional)" />
+            <FlexRow justify="flex-end">
+              <Btn size="sm" variant="secondary" disabled={saving} onClick={saveDescription}>{saving ? 'Saving…' : 'Save Description'}</Btn>
+            </FlexRow>
+          </div>
+        </div>
+
         <div>
           <SectionLabel>Progress</SectionLabel>
           {kind === 'quantity' ? (
@@ -317,26 +340,6 @@ function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrder }) {
 // The shape the team already keeps by hand in the Summary TNA sheet — one
 // glance at a whole master order's plan, rather than one row per order.
 
-const CELL_STATE = {
-  done:    { bg: '#d1fae5', fg: '#047857', label: 'Done' },
-  blocked: { bg: '#fee2e2', fg: '#b91c1c', label: 'Blocked' },
-  overdue: { bg: '#fee2e2', fg: '#b91c1c', label: 'Overdue' },
-  active:  { bg: '#dbeafe', fg: '#1d4ed8', label: 'In progress' },
-  pending: { bg: '#f1f5f9', fg: '#64748b', label: 'Upcoming' },
-}
-
-function cellState(stage) {
-  if (!stage) return null
-  if (isStageDone(stage)) return 'done'
-  if (stage.blocked) return 'blocked'
-  if (stageIsOverdue(stage)) return 'overdue'
-  if (stageStatusOf(stage) === 'in_progress') return 'active'
-  return 'pending'
-}
-
-// The step spine for a group of styles: the union of stage names across every
-// order×assignment column, longest plan first — sibling styles in a master
-// order are normally cut to the same plan, so this is usually just one list.
 // "Fitleasure — Core Series" rather than just "Core Series" — the master-order
 // name alone doesn't say whose order it is. A real master-order group always
 // belongs to one buyer; the "Other Orders" catch-all can span several, so it
@@ -345,21 +348,6 @@ function groupDisplayLabel(g) {
   const base = g.mo?.orderName || (g.moId === '__none__' ? 'Other Orders' : g.moId)
   const buyers = new Set(g.orders.map(o => o.buyerCompany).filter(Boolean))
   return buyers.size === 1 ? `${[...buyers][0]} — ${base}` : base
-}
-
-function buildMatrixSpine(entries) {
-  const spine = []
-  const seen = new Set()
-  const ordered = [...entries].sort((a, b) => (b.asgn.stages?.length || 0) - (a.asgn.stages?.length || 0))
-  for (const { asgn } of ordered) {
-    for (const s of asgn.stages || []) {
-      const key = s.name.trim().toLowerCase()
-      if (seen.has(key)) continue
-      seen.add(key)
-      spine.push(s.name.trim())
-    }
-  }
-  return spine
 }
 
 export function AdminOrders({ onOpen, initialStatus }) {

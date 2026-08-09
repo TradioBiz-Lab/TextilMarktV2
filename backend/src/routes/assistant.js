@@ -292,6 +292,8 @@ function buildSystemPrompt(user) {
   const who = user.adminType === 'master' ? 'the master admin' : 'an admin'
   return `You are Kriyaa, TextilMarkt's production-tracking assistant, talking with ${user.name}, ${who} of the platform. Introduce yourself as Kriyaa if asked who you are.
 
+CAPABILITY BOUNDARY: your tools only cover order/stage production tracking and the action-item task list — that is the entire scope of what this system tracks. There is no performance, KPI, staffing, HR, or team-comparison data anywhere here, and no tool that could surface it. If a question is not about a specific order, stage, or action item — career advice, "how do I become the best X", team rankings, anything outside production tracking — say so directly in your very first reply and stop there. Do not call a tool hoping it might contain something relevant to a question like that; list_orders/list_action_items/get_order have no such data, so calling them just burns time and produces no answer.
+
 Today's date is ${today} (India Standard Time). Use it to resolve any relative date the admin mentions ("next Friday", "yesterday", "in 3 days").
 
 Always fetch current state (get_order / list_orders / list_action_items) before acting or answering — do not trust numbers from earlier in this conversation. Only your own text replies are preserved turn to turn, not the underlying tool results, and the real data can genuinely have changed since. Before calling update_stage_status, confirm the stage's \`kind\` (via get_order/list_orders): quantity-kind stages take \`unitsDone\`, milestone/checklist-kind stages take \`status\` — never send both.
@@ -332,7 +334,17 @@ router.post('/chat', requireAuth, requireAdmin, assistantLimiter, async (req, re
   }
 
   const cookie = req.headers.cookie || ''
-  const system = buildSystemPrompt(req.user)
+  // Cache breakpoint on the system prompt's one block. Render order is
+  // tools -> system -> messages, so this single marker caches TOOLS (a
+  // static module-level array) together with the system prompt itself.
+  // The prompt is deterministic per admin within a calendar day (getToday()
+  // is date-granular, not a timestamp), so this pays off twice: across the
+  // up-to-8 messages.create() calls in one tool-use loop below, which today
+  // all resend the identical system+tools at full price, and across a
+  // user's separate chat turns within the cache TTL.
+  const system = [
+    { type: 'text', text: buildSystemPrompt(req.user), cache_control: { type: 'ephemeral' } },
+  ]
   const messages = rawMessages.map(m => ({ role: m.role, content: m.content }))
 
   let finalText = ''

@@ -1,8 +1,14 @@
 import { useState, useMemo } from 'react'
-import { T, ORDER_STATUSES, getToday, isExpiringSoon, isExpired } from '../../constants.js'
+import { T, ORDER_STATUSES, getToday, isExpiringSoon, isExpired, cellState, CELL_STATE, buildMatrixSpine, stagePct } from '../../constants.js'
 import { Badge, Card, EmptyState, Mono, Btn, LoadingScreen, MfrProfileLink, ProductThumb } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { ordersApi } from '../../api.js'
+
+function fmtStageDate(d) {
+  if (!d || d === 'NA') return '—'
+  const [y, m, day] = String(d).slice(0, 10).split('-')
+  return y && m && day ? `${day}-${m}-${y}` : '—'
+}
 
 // 4-value order-level status
 function orderStatus(o) {
@@ -91,9 +97,110 @@ function EscalateModal({ order, onClose, onSuccess }) {
   )
 }
 
+// Read-only counterpart to the admin Order Management matrix — same step×style
+// grid (via the shared buildMatrixSpine/cellState from constants.js), one
+// master-order group at a time, but no edit affordance: clicking a cell just
+// opens that order, matching every other click surface on this dashboard.
+function BuyerMatrixView({ groups, collapsedGroups, toggleGroup, onOpen }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {groups.map(g => {
+        // Earliest delivery leftmost — same rule as the admin matrix.
+        const entries = g.txns
+          .filter(t => t.mfr)
+          .map(t => ({ order: t.order, asgn: t.mfr }))
+          .sort((x, y) => {
+            const dx = x.order.delivery ? new Date(x.order.delivery).getTime() : Infinity
+            const dy = y.order.delivery ? new Date(y.order.delivery).getTime() : Infinity
+            return dx - dy
+          })
+        if (entries.length === 0) return null
+        const spine = buildMatrixSpine(entries)
+        const collapsed = collapsedGroups.has(g.moId)
+        const groupLabel = g.mo?.orderName || (g.moId === '__none__' ? 'Other Orders' : g.moId)
+        return (
+          <div key={g.moId} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, overflow: 'hidden' }}>
+            <div onClick={() => toggleGroup(g.moId)}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 18px', background: '#f1f5f9', cursor: 'pointer', userSelect: 'none' }}>
+              <span style={{ fontSize: 11, color: T.textMuted, transition: 'transform 0.15s', transform: collapsed ? 'rotate(-90deg)' : 'none' }}>▾</span>
+              <span style={{ fontSize: 13, fontWeight: 800, color: T.text }}>📁 {groupLabel}</span>
+              {g.mo?.season && <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', background: '#dbeafe', padding: '2px 7px', borderRadius: 4 }}>{g.mo.season}</span>}
+              <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{entries.length} style{entries.length !== 1 ? 's' : ''} · {spine.length} steps</span>
+            </div>
+
+            {!collapsed && (
+              <div className="table-scroll">
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 340 + entries.length * 150 }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc' }}>
+                      <th style={{ padding: '9px 14px', textAlign: 'left', fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.07em', position: 'sticky', left: 0, zIndex: 2, background: '#f8fafc', minWidth: 220 }}>
+                        Step
+                      </th>
+                      {entries.map(({ order, asgn }) => (
+                        <th key={`${order.id}-${asgn.mid}`} onClick={() => onOpen(order.id, asgn.mid)}
+                          title={`${order.product} — ${order.id}`}
+                          style={{ padding: '9px 10px', textAlign: 'left', minWidth: 150, cursor: 'pointer', borderLeft: `1px solid ${T.border}` }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 130 }}>
+                            {order.product}
+                          </div>
+                          <Mono style={{ fontSize: 9 }}>{asgn.qty?.toLocaleString()} pcs</Mono>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {spine.map((step, ri) => {
+                      const key = step.toLowerCase()
+                      return (
+                        <tr key={step} style={{ borderTop: `1px solid ${T.border}` }}>
+                          <td style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, color: T.text, position: 'sticky', left: 0, zIndex: 1, background: T.surface, whiteSpace: 'nowrap' }}>
+                            <span style={{ color: T.textLight, fontSize: 10, marginRight: 6 }}>{ri + 1}</span>{step}
+                          </td>
+                          {entries.map(({ order, asgn }) => {
+                            const stageIdx = (asgn.stages || []).findIndex(s => s.name.trim().toLowerCase() === key)
+                            const stage = stageIdx >= 0 ? asgn.stages[stageIdx] : null
+                            const state = cellState(stage)
+                            const st = state ? CELL_STATE[state] : null
+                            const tip = stage
+                              ? `${step} — ${st.label}\nPlanned: ${fmtStageDate(stage.baselineEta)}${stage.eta && stage.eta !== stage.baselineEta ? `  →  Revised: ${fmtStageDate(stage.eta)}` : ''}\nActual: ${fmtStageDate(stage.actualEnd)}`
+                              : step
+                            return (
+                              <td key={`${order.id}-${asgn.mid}`} onClick={() => onOpen(order.id, asgn.mid)}
+                                title={tip}
+                                style={{ padding: '5px 8px', borderLeft: `1px solid ${T.border}`, cursor: 'pointer', verticalAlign: 'top' }}>
+                                {!stage ? (
+                                  <span style={{ fontSize: 11, color: '#cbd5e1' }}>NA</span>
+                                ) : (
+                                  <div style={{ background: st.bg, borderRadius: 5, padding: '4px 7px' }}>
+                                    <span style={{ fontSize: 12, fontWeight: 800, color: st.fg, whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono',monospace" }}>
+                                      {state === 'done' ? '✓ ' : state === 'blocked' ? '⛔ ' : state === 'overdue' ? '! ' : ''}{fmtStageDate(state === 'done' ? stage.actualEnd : stage.eta)}
+                                    </span>
+                                    <div style={{ fontSize: 9, color: st.fg, opacity: 0.75, marginTop: 1 }}>
+                                      {stagePct(stage)}%
+                                    </div>
+                                  </div>
+                                )}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export function BuyerDashboard({ onOpen, onSubmitReq }) {
   const { orders, docs, masterOrders, currentUser, loading, loadError, getDocData } = useApp()
   const [collapsedGroups, setCollapsedGroups] = useState(() => new Set())
+  const [viewMode,       setViewMode]      = useState('list')
   const [q,             setQ]             = useState('')
   const [sf,            setSf]            = useState('All')
   const [showSugg,      setShowSugg]      = useState(false)
@@ -327,6 +434,19 @@ export function BuyerDashboard({ onOpen, onSubmitReq }) {
             {myTxns.length} order{myTxns.length !== 1 ? 's' : ''}
           </span>
         </div>
+        {/* List = one row per order. Matrix = styles across the top, TNA steps
+            down the side, for "where does the whole book stand" at a glance. */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+          {[['list', '☰ List'], ['matrix', '▦ Matrix']].map(([id, label]) => (
+            <button key={id} onClick={() => setViewMode(id)}
+              style={{ fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
+                border: `1px solid ${viewMode === id ? T.primary : T.border}`,
+                background: viewMode === id ? T.primaryLight : T.surface,
+                color: viewMode === id ? T.primaryDark : T.textMuted }}>
+              {label}
+            </button>
+          ))}
+        </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <div style={{ position: 'relative', flex: 1 }}>
             <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: T.textLight, pointerEvents: 'none', zIndex: 1 }}>🔍</span>
@@ -375,6 +495,8 @@ export function BuyerDashboard({ onOpen, onSubmitReq }) {
             desc={q || sf !== 'All' ? 'Try adjusting your search or filter' : 'Orders assigned to you will appear here'}
           />
         </Card>
+      ) : viewMode === 'matrix' ? (
+        <BuyerMatrixView groups={groupedFiltered} collapsedGroups={collapsedGroups} toggleGroup={toggleGroup} onOpen={onOpen} />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           {groupedFiltered.map(g => {

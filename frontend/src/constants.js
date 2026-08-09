@@ -213,6 +213,44 @@ export const stageActualVariance = s => {
   return a == null || b == null ? null : b - a
 }
 
+// Shared step×style matrix building blocks — used by both the admin Order
+// Management matrix and the buyer dashboard's read-only equivalent, so the
+// two views can never silently drift into different cell colors/labels.
+export const CELL_STATE = {
+  done:    { bg: '#d1fae5', fg: '#047857', label: 'Done' },
+  blocked: { bg: '#fee2e2', fg: '#b91c1c', label: 'Blocked' },
+  overdue: { bg: '#fee2e2', fg: '#b91c1c', label: 'Overdue' },
+  active:  { bg: '#dbeafe', fg: '#1d4ed8', label: 'In progress' },
+  pending: { bg: '#f1f5f9', fg: '#64748b', label: 'Upcoming' },
+}
+
+export const cellState = stage => {
+  if (!stage) return null
+  if (isStageDone(stage)) return 'done'
+  if (stage.blocked) return 'blocked'
+  if (stageIsOverdue(stage)) return 'overdue'
+  if (stageStatusOf(stage) === 'in_progress') return 'active'
+  return 'pending'
+}
+
+// The step spine for a group of styles: the union of stage names across every
+// order×assignment column, longest plan first — sibling styles in a master
+// order are normally cut to the same plan, so this is usually just one list.
+export const buildMatrixSpine = entries => {
+  const spine = []
+  const seen = new Set()
+  const ordered = [...entries].sort((a, b) => (b.asgn.stages?.length || 0) - (a.asgn.stages?.length || 0))
+  for (const { asgn } of ordered) {
+    for (const s of asgn.stages || []) {
+      const key = s.name.trim().toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      spine.push(s.name.trim())
+    }
+  }
+  return spine
+}
+
 /**
  * Every stage currently in play — NOT just the first incomplete one.
  *
