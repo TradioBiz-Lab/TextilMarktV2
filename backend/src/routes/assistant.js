@@ -59,7 +59,10 @@ const loopbackPort = () =>
 async function loopbackFetch(cookie, method, path, body) {
   const res = await fetch(`http://127.0.0.1:${loopbackPort()}${path}`, {
     method,
-    headers: { 'Content-Type': 'application/json', Cookie: cookie },
+    // X-Kriyaa-Loopback lets orders.js's updateLimiter key this traffic into
+    // its own bucket, separate from the admin's own manual edits — see the
+    // comment on updateLimiter for why that split matters.
+    headers: { 'Content-Type': 'application/json', Cookie: cookie, 'X-Kriyaa-Loopback': '1' },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
   let data

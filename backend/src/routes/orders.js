@@ -49,10 +49,19 @@ const materialsBulkLimiter = rateLimit({
   standardHeaders: true, legacyHeaders: false, validate: false, skip: skipInTest,
 })
 
-// 120 stage/status patches per user per hour
+// 120 stage/status patches per user per hour. Kriyaa's write tools loop back
+// through these same routes carrying the admin's own session cookie (see
+// assistant.js's loopbackFetch), so without a split, heavy AI-driven editing
+// would exhaust the same bucket the admin's own manual UI edits draw from
+// and lock them out of their own dashboard. The X-Kriyaa-Loopback header,
+// set only by that internal loopback call, buckets Kriyaa's traffic
+// separately per admin so the two can never contend for the same 120/hr.
 const updateLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, max: 120,
-  keyGenerator: req => req.user?.id || req.ip,
+  keyGenerator: req => {
+    const base = req.user?.id || req.ip
+    return req.headers['x-kriyaa-loopback'] ? `${base}:kriyaa` : base
+  },
   message: { error: 'Too many update requests. Please wait.' },
   standardHeaders: true, legacyHeaders: false, validate: false, skip: skipInTest,
 })
