@@ -109,11 +109,14 @@ function Inner() {
     if (view === 'action_items' || view === 'daily') return <ActionItemsPage onOpen={openOrder} onNavigate={navTo} />
 
     if (user.role === 'buyer') {
-      if (view === 'dashboard') return <BuyerDashboard onOpen={openOrder} onSubmitReq={() => navTo('submit_req')} />
+      // Swapped on purpose: Dashboard (homepage) shows the KPI/Gantt reporting
+      // view; Reports shows the order List/Matrix table. See git history if
+      // this ever needs to go back the other way.
+      if (view === 'dashboard') return <ReportingPage onOpen={openOrder} />
       if (view === 'order_detail' && selOid) return <BuyerOrderDetail orderId={selOid} initialMid={selMid} onBack={() => navTo('dashboard')} />
       if (view === 'submit_req') return <BuyerSubmitReq />
       if (view === 'documents') return <BuyerDocuments />
-      if (view === 'reports') return <ReportingPage onOpen={openOrder} />
+      if (view === 'reports') return <BuyerDashboard onOpen={openOrder} onSubmitReq={() => navTo('submit_req')} />
     }
     if (user.role === 'manufacturer') {
       if (view === 'dashboard') return <MfrDashboard onOpen={openOrder} />
