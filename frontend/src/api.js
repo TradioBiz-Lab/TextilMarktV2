@@ -9,10 +9,16 @@ export const setStoredToken = (userId) => userId
   ? localStorage.setItem(SENTINEL_KEY, userId)
   : localStorage.removeItem(SENTINEL_KEY)
 
-// Fallback auth token, sent as an Authorization header on every request. The cookie
-// is primary, but iOS WebKit (Chrome/Safari on iPhone) can silently drop cross-site
-// SameSite=None cookies, leaving the cookie-only flow stuck bouncing back to login.
-// requireAuth on the backend already accepts either the cookie or this header.
+// Fallback auth token — stored, but NOT currently sent. It was meant to travel as an
+// Authorization header when the cross-site cookie doesn't survive (iOS WebKit), but any
+// custom header forces a CORS preflight, and Catalyst AppSail's edge answers preflight
+// OPTIONS itself with no CORS headers (see the text/plain comment below) — so attaching
+// this header doesn't fall back gracefully, it hard-blocks EVERY request for EVERYONE,
+// not just iOS. Confirmed live: identical fetch with vs without the header goes from a
+// normal 401 to a network-level "Failed to fetch". Left in place (unused) for whichever
+// preflight-safe delivery mechanism (e.g. a query param, at the cost of the token
+// appearing in server logs/history) replaces this — do not wire this back up as a
+// request header without first confirming AppSail's preflight handling has changed.
 const AUTH_TOKEN_KEY = 'tradio_auth_token'
 export const getAuthToken = () => localStorage.getItem(AUTH_TOKEN_KEY)
 export const setAuthToken = (token) => token
@@ -22,18 +28,13 @@ export const setAuthToken = (token) => token
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
   timeout: 30000,
-  withCredentials: true, // sends the httpOnly cookie automatically, where it survives
+  withCredentials: true, // sends the httpOnly cookie automatically
   // Sent as text/plain (a CORS-simple content type) so browsers skip the OPTIONS
   // preflight — Catalyst AppSail's edge doesn't add CORS headers to preflight
   // responses, which blocks the real request. Body is still JSON underneath.
+  // Custom headers (e.g. Authorization) would force a preflight too — don't add any.
   headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
   transformRequest: [data => JSON.stringify(data)],
-})
-
-api.interceptors.request.use(config => {
-  const token = getAuthToken()
-  if (token) config.headers.Authorization = `Bearer ${token}`
-  return config
 })
 
 api.interceptors.response.use(
