@@ -75,11 +75,12 @@ router.post('/login', loginLimiter, async (req, res) => {
     })
 
     AuditLog.create({ byUser: user._id, action: 'Login', detail: `Successful login: ${user.email}` }).catch(err => console.error('[auth] Audit log failed:', err))
-    // Token is delivered via httpOnly cookie. In non-production, also include it in the body
-    // so that the test suite (which uses Authorization headers) can still function.
-    const body = { user: payload }
-    if (!isProd) body.token = token
-    res.json(body)
+    // Token is delivered via httpOnly cookie AND in the response body. The cookie is
+    // primary, but iOS WebKit (Chrome/Safari on iPhone) can silently drop cross-site
+    // SameSite=None cookies, so the frontend also stores this token and sends it as
+    // an Authorization header — requireAuth already accepts either. Always included
+    // (not just in non-prod) since prod is exactly where the cookie can fail.
+    res.json({ user: payload, token })
   } catch (err) {
     res.status(500).json({ error: 'Server error' })
   }
@@ -131,10 +132,8 @@ router.get('/me', requireAuth, (req, res) => {
     maxAge: 60 * 60 * 1000,
     path: '/',
   })
-  // Token in cookie only; expose in body only for non-production (test suite needs it)
-  const meBody = { user: req.user }
-  if (!isProd) meBody.token = token
-  res.json(meBody)
+  // Same Authorization-header fallback as /login — see comment there.
+  res.json({ user: req.user, token })
 })
 
 // POST /api/auth/logout — clear the httpOnly cookie

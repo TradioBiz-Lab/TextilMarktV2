@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-// Token is stored in an httpOnly cookie (set by the backend) — not accessible via JS.
+// Token is primarily an httpOnly cookie (set by the backend) — not accessible via JS.
 // setStoredToken stores the user's ID (not the token) as a cross-tab sentinel so tabs
 // can detect when a different user logs in and clear their stale session state.
 const SENTINEL_KEY = 'tradio_session'
@@ -9,15 +9,31 @@ export const setStoredToken = (userId) => userId
   ? localStorage.setItem(SENTINEL_KEY, userId)
   : localStorage.removeItem(SENTINEL_KEY)
 
+// Fallback auth token, sent as an Authorization header on every request. The cookie
+// is primary, but iOS WebKit (Chrome/Safari on iPhone) can silently drop cross-site
+// SameSite=None cookies, leaving the cookie-only flow stuck bouncing back to login.
+// requireAuth on the backend already accepts either the cookie or this header.
+const AUTH_TOKEN_KEY = 'tradio_auth_token'
+export const getAuthToken = () => localStorage.getItem(AUTH_TOKEN_KEY)
+export const setAuthToken = (token) => token
+  ? localStorage.setItem(AUTH_TOKEN_KEY, token)
+  : localStorage.removeItem(AUTH_TOKEN_KEY)
+
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
   timeout: 30000,
-  withCredentials: true, // sends the httpOnly cookie automatically
+  withCredentials: true, // sends the httpOnly cookie automatically, where it survives
   // Sent as text/plain (a CORS-simple content type) so browsers skip the OPTIONS
   // preflight — Catalyst AppSail's edge doesn't add CORS headers to preflight
   // responses, which blocks the real request. Body is still JSON underneath.
   headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
   transformRequest: [data => JSON.stringify(data)],
+})
+
+api.interceptors.request.use(config => {
+  const token = getAuthToken()
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  return config
 })
 
 api.interceptors.response.use(
@@ -27,6 +43,7 @@ api.interceptors.response.use(
     if (err.response?.status === 401 && !url.includes('/auth/')) {
       const hadSession = getStoredToken() !== null
       setStoredToken(null)
+      setAuthToken(null)
       // Only reload if we had an active session — avoids reload loops on first page load
       if (hadSession) window.location.reload()
     }

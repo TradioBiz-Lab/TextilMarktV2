@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { authApi, ordersApi, documentsApi, usersApi, notificationsApi, auditApi, ribbonsApi, masterOrdersApi, actionItemsApi, setStoredToken } from './api.js'
+import { authApi, ordersApi, documentsApi, usersApi, notificationsApi, auditApi, ribbonsApi, masterOrdersApi, actionItemsApi, setStoredToken, setAuthToken } from './api.js'
 import { isExpiringSoon, isExpired } from './constants.js'
 
 const AppContext = createContext(null)
@@ -63,8 +63,9 @@ export function AppProvider({ children }) {
   }, [])
 
   const login = useCallback(async (email, password) => {
-    const { user } = await authApi.login(email, password)
+    const { user, token } = await authApi.login(email, password)
     setStoredToken(user.id) // sentinel: carry user ID so other tabs can detect a different user logged in
+    setAuthToken(token) // Authorization-header fallback for when the cross-site cookie doesn't survive
     setCurrentUser(user)
     await loadData(user)
     return user
@@ -73,6 +74,7 @@ export function AppProvider({ children }) {
   const logout = useCallback(async () => {
     try { await authApi.logout() } catch { /* best-effort */ }
     setStoredToken(null)
+    setAuthToken(null)
     setCurrentUser(null)
     setOrders([])
     setDocs([])
@@ -97,6 +99,7 @@ export function AppProvider({ children }) {
       if (forceLogin) {
         try { await authApi.logout() } catch { /* best-effort */ }
         setStoredToken(null)
+        setAuthToken(null)
         // Clean the URL so a future refresh doesn't keep forcing logout
         params.delete('login')
         const clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '')
@@ -104,13 +107,15 @@ export function AppProvider({ children }) {
         return
       }
       try {
-        const { user } = await authApi.me()
+        const { user, token } = await authApi.me()
         if (cancelled) return
         setStoredToken(user.id)
+        setAuthToken(token)
         setCurrentUser(user)
         loadData(user)
       } catch {
         setStoredToken(null) // no valid session — stay on login
+        setAuthToken(null)
       }
     }
     init()
@@ -122,7 +127,8 @@ export function AppProvider({ children }) {
     if (!currentUser) return
     const iv = setInterval(async () => {
       try {
-        await authApi.me() // backend re-issues cookie; nothing to store in JS
+        const { token } = await authApi.me() // backend re-issues cookie + a fresh fallback token
+        setAuthToken(token)
       } catch { /* session expired — next API call will trigger 401 reload */ }
     }, 30 * 60 * 1000)
     return () => clearInterval(iv)
