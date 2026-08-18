@@ -10,6 +10,7 @@ frontend/node_modules/
 .env.development
 .env.production
 backend/.env
+backend/.env.sandbox
 frontend/.env
 frontend/.env.development
 frontend/.env.production

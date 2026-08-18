@@ -51,9 +51,11 @@ backend/src/
   app.js              # Express bootstrap, security middleware, route mounting
   db/index.js         # Mongoose connect + model re-exports
   middleware/auth.js  # requireAuth / requireAdmin / requireMaster / sanitizeBody
-  models/             # User, Order, Document, Notification, AuditLog, Ribbon, MasterOrder
+  models/             # User, Order, Document, Notification, AuditLog, Ribbon, MasterOrder,
+                       # ActionItem, WikiPage
   routes/             # auth, orders, documents, users, notifications, audit, ribbons,
-                       # masterOrders, signup
+                       # masterOrders, signup, actionItems, assistant, wikiPages
+  lib/                # email, stageMath, wikiAccess (shared Wiki scoping logic)
 frontend/src/
   App.jsx             # top-level view router (hand-rolled, no react-router)
   context.jsx         # AppProvider — single global data/actions store
@@ -94,6 +96,17 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   runs a single process today. If AppSail autoscaling is ever enabled, both need a shared/
   DB-backed store — track this as one combined item, not two, since the fix is the same shape
   for both.
+- **Local sandbox.** Local dev and production share one Atlas cluster — `backend/.env.sandbox`
+  (gitignored, not committed) points at an explicit, distinct database name
+  (`textilmarkt_sandbox`) on that same cluster, so local work never touches real
+  Cocoblu/Fitleasure/Vibemist data. Run it with `npm run dev:sandbox` (backend) +
+  `npm run dev` (frontend, already proxies to `localhost:3001`), seed sample data with
+  `npm run seed:sandbox`. `backend/src/db/seed.js` refuses to run (exits before deleting
+  anything) unless it resolves to that exact database name — the real `backend/.env` is
+  never read by these scripts. Default to sandbox for routine feature verification
+  instead of creating-and-deleting a scratch order in production; reserve real Atlas
+  data for changes that genuinely require it (e.g. confirming a live-environment-only
+  bug like a cross-site cookie issue).
 - **AppSail does not auto-deploy on git push, unlike Slate.** Every backend change needs a
   manual `catalyst deploy --only appsail` from a machine with the CLI authenticated (check
   with `catalyst whoami`) — pushing to `main` alone does nothing for the backend. GitHub
