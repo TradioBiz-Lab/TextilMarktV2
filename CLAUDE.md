@@ -107,6 +107,22 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   instead of creating-and-deleting a scratch order in production; reserve real Atlas
   data for changes that genuinely require it (e.g. confirming a live-environment-only
   bug like a cross-site cookie issue).
+- **Hosted sandbox.** A second, fully separate Catalyst project — `Textimarkt-Sandbox`
+  (id `20878000000293003`) — hosts a live, shareable copy pointed at the same
+  `textilmarkt_sandbox` database, so pushing code shows up at a real URL without touching
+  `TradioApp`. Lives in a **sibling git worktree**, `../TextilMarktV1-sandbox`, permanently
+  bound to that project via its own `.catalystrc` — never toggle the active project inside
+  `TextilMarktV1-main` to deploy there, that's the whole point of the separate directory.
+  Push commits to the **`staging`** branch (`main` stays production-only); backend deploy is
+  manual, same as prod: `cd ../TextilMarktV1-sandbox/backend && catalyst deploy --only appsail`.
+  Frontend (Slate) auto-deploys on push to `staging` once connected in console (Configuration →
+  Environment Variables → `VITE_API_URL` must point at the sandbox AppSail's `/api` URL — Slate
+  needs a manual redeploy after any env var change, it doesn't rebuild automatically). Sandbox
+  URLs: frontend `https://textilmarktv2-xhdvrzis.onslate.in`, backend
+  `https://textilmarkt-50045068738.development.catalystappsail.in`. **Known gotcha**: Slate's
+  edge caches `index.html` aggressively — a plain reload right after a redeploy can serve the
+  previous build; append a cache-busting query string (`?v=...`) or wait a bit if a "just
+  deployed" change doesn't appear to have landed.
 - **AppSail does not auto-deploy on git push, unlike Slate.** Every backend change needs a
   manual `catalyst deploy --only appsail` from a machine with the CLI authenticated (check
   with `catalyst whoami`) — pushing to `main` alone does nothing for the backend. GitHub
