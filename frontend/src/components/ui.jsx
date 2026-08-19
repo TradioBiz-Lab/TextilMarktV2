@@ -212,6 +212,26 @@ export function Input({ label, error, hint, style: s, inputStyle, ...p }) {
   )
 }
 
+// A supplier field backed by the Supplier catalog, but never locked to it —
+// `suppliers` is the list fetched via useApp().listSuppliers() (global +
+// the caller's own private ones), rendered as a <datalist> so free-text
+// entry keeps working exactly as it always has everywhere `supplier` already
+// appears (stage materials, MaterialRequirement/CostSheet lines).
+let supplierComboboxSeq = 0
+export function SupplierCombobox({ label = 'Supplier', suppliers = [], value, onChange, placeholder }) {
+  const listId = useRef(`supplier-list-${++supplierComboboxSeq}`).current
+  return (
+    <div>
+      {label && <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>{label}</label>}
+      <input list={listId} value={value || ''} onChange={e => onChange(e.target.value)} placeholder={placeholder || 'Supplier name'}
+        style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+      <datalist id={listId}>
+        {suppliers.map(s => <option key={s.id} value={s.name} />)}
+      </datalist>
+    </div>
+  )
+}
+
 export function Select({ label, children, style: s, ...p }) {
   return (
     <div style={s}>

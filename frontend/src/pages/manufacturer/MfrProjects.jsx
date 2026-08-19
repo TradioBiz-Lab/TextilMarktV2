@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
-import { T } from '../../constants.js'
-import { PageHeader, Input, Btn, Card, Badge, FlexRow, EmptyState, LoadingScreen, useToast } from '../../components/ui.jsx'
+import { T, REQUIREMENT_CATEGORIES, REQUIREMENT_CATEGORY_LABEL } from '../../constants.js'
+import { PageHeader, Input, Btn, Card, Badge, FlexRow, EmptyState, LoadingScreen, useToast, SupplierCombobox, Modal } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { CostSheetPanel } from '../shared/CostSheetPanel.jsx'
+import { AiDraftModal } from '../shared/AiDraftModal.jsx'
 
 // Manufacturer's own non-Tradio business — Master Project → Project, mirroring
 // AdminOrders.jsx's Master Order → Order flow one level up, but private
@@ -99,12 +100,18 @@ function ProjectRow({ p, onOpen, onDelete }) {
 }
 
 function ProjectDetail({ project, onBack, getMaterialRequirement, addRequirementLine, updateRequirementLine, removeRequirementLine }) {
-  const { currentUser } = useApp()
+  const { currentUser, listSuppliers, duplicateRequirement, generateRequirementPO, listMfrProjects, docs } = useApp()
   const toast = useToast()
   const [doc, setDoc] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [form, setForm] = useState({ category: 'fabric', name: '', requiredQty: '', unit: '', supplier: '' })
+  const [form, setForm] = useState({ category: 'fabric_primary', name: '', requiredQty: '', unit: '', supplier: '', wastagePct: '', rate: '' })
   const [busy, setBusy] = useState(false)
+  const [suppliers, setSuppliers] = useState([])
+  const [otherProjects, setOtherProjects] = useState([])
+  const [showClone, setShowClone] = useState(false)
+  const [cloneTargetId, setCloneTargetId] = useState('')
+  const [showAiDraft, setShowAiDraft] = useState(false)
+  const [selectedLineIds, setSelectedLineIds] = useState(new Set())
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -114,14 +121,22 @@ function ProjectDetail({ project, onBack, getMaterialRequirement, addRequirement
   }, [project.id])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    listSuppliers().then(setSuppliers).catch(() => {})
+    listMfrProjects().then(list => setOtherProjects(list.filter(p => p.id !== project.id))).catch(() => {})
+  }, [listSuppliers, listMfrProjects, project.id])
 
   async function handleAdd() {
     if (!form.name.trim() || !form.requiredQty) { toast('Name and quantity required', 'error'); return }
     setBusy(true)
     try {
-      const res = await addRequirementLine({ scopeType: 'mfr_project', mfrProjectId: project.id, ...form, requiredQty: Number(form.requiredQty) })
+      const res = await addRequirementLine({
+        scopeType: 'mfr_project', mfrProjectId: project.id, ...form, requiredQty: Number(form.requiredQty),
+        wastagePct: form.wastagePct ? Number(form.wastagePct) : undefined,
+        rate: form.rate ? Number(form.rate) : undefined,
+      })
       setDoc(res)
-      setForm({ category: 'fabric', name: '', requiredQty: '', unit: '', supplier: '' })
+      setForm({ category: 'fabric_primary', name: '', requiredQty: '', unit: '', supplier: '', wastagePct: '', rate: '' })
     } catch (err) { toast(err.message || 'Failed to add line', 'error') } finally { setBusy(false) }
   }
 
@@ -131,25 +146,91 @@ function ProjectDetail({ project, onBack, getMaterialRequirement, addRequirement
     catch (err) { toast(err.message || 'Update failed', 'error') } finally { setBusy(false) }
   }
 
+  async function handleClone() {
+    if (!doc?.id || !cloneTargetId) return
+    setBusy(true)
+    try {
+      await duplicateRequirement(doc.id, { targetMfrProjectId: cloneTargetId })
+      toast('BOM cloned to the selected style', 'success')
+      setShowClone(false)
+      setCloneTargetId('')
+    } catch (err) { toast(err.message || 'Failed to clone', 'error') } finally { setBusy(false) }
+  }
+
+  function toggleLineSelection(lineId) {
+    setSelectedLineIds(prev => { const next = new Set(prev); next.has(lineId) ? next.delete(lineId) : next.add(lineId); return next })
+  }
+
+  async function handleGeneratePO() {
+    if (selectedLineIds.size === 0) return
+    setBusy(true)
+    try {
+      const res = await generateRequirementPO(doc.id, { lineIds: [...selectedLineIds] })
+      setDoc(res)
+      setSelectedLineIds(new Set())
+      toast('PO generated', 'success')
+    } catch (err) { toast(err.message || 'Failed to generate PO', 'error') } finally { setBusy(false) }
+  }
+
+  const candidateDocs = (docs || []).filter(d => String(d.mfrProjectId) === String(project.id) && ['tech_pack', 'measurement_sheet', 'PO', 'buyer_order', 'RFQ'].includes(d.type))
+
   return (
     <div>
+      {showAiDraft && (
+        <AiDraftModal scopeType="mfr_project" mfrProjectId={project.id} candidateDocs={candidateDocs}
+          onClose={() => setShowAiDraft(false)}
+          onAccept={async (line) => {
+            const res = await addRequirementLine({ scopeType: 'mfr_project', mfrProjectId: project.id, ...line, requiredQty: line.requiredQty ?? 0 })
+            setDoc(res)
+          }} />
+      )}
+      {showClone && (
+        <Modal title="Clone BOM to Another Style" onClose={() => setShowClone(false)}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <select value={cloneTargetId} onChange={e => setCloneTargetId(e.target.value)}
+              style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${T.border}`, fontSize: 13 }}>
+              <option value="">Select target style…</option>
+              {otherProjects.map(p => <option key={p.id} value={p.id}>{p.styleName}</option>)}
+            </select>
+            <FlexRow justify="flex-end" gap={8}>
+              <Btn variant="secondary" onClick={() => setShowClone(false)}>Cancel</Btn>
+              <Btn disabled={!cloneTargetId || busy} onClick={handleClone}>Clone</Btn>
+            </FlexRow>
+          </div>
+        </Modal>
+      )}
+
       <FlexRow style={{ marginBottom: 12 }}>
         <Btn size="sm" variant="secondary" onClick={onBack}>← Back</Btn>
       </FlexRow>
-      <PageHeader title={project.styleName} subtitle={`${project.buyerName || 'No buyer set'} · ${project.category || '—'}`} />
+      <PageHeader title={project.styleName} subtitle={`${project.buyerName || 'No buyer set'} · ${project.category || '—'}`}
+        action={<FlexRow gap={8}>
+          <Btn size="sm" variant="secondary" onClick={() => setShowAiDraft(true)}>🤖 AI Draft</Btn>
+          <Btn size="sm" variant="secondary" disabled={!doc?.id || (doc?.lines || []).length === 0} onClick={() => setShowClone(true)}>⧉ Clone to…</Btn>
+        </FlexRow>} />
 
       <Card style={{ marginBottom: 16 }}>
-        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Materials</div>
+        <FlexRow style={{ justifyContent: 'space-between', marginBottom: 10 }}>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>Materials</div>
+          {selectedLineIds.size > 0 && <Btn size="sm" disabled={busy} onClick={handleGeneratePO}>Generate PO — {selectedLineIds.size} selected</Btn>}
+        </FlexRow>
         {loading ? <LoadingScreen /> : (
           <>
             {(doc?.lines || []).length === 0
               ? <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>No lines yet.</div>
               : (doc.lines.map(l => (
                 <FlexRow key={l.id} style={{ justifyContent: 'space-between', padding: '6px 0', borderTop: `1px solid ${T.border}` }}>
-                  <div style={{ fontSize: 13 }}>
-                    <span style={{ fontWeight: 600 }}>{l.name}</span>
-                    <span style={{ color: T.textMuted, marginLeft: 6 }}>{l.requiredQty} {l.unit}{l.supplier ? ` · ${l.supplier}` : ''}</span>
-                  </div>
+                  <FlexRow gap={8}>
+                    <input type="checkbox" checked={selectedLineIds.has(l.id)} onChange={() => toggleLineSelection(l.id)} />
+                    <div style={{ fontSize: 13 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginRight: 6 }}>{REQUIREMENT_CATEGORY_LABEL[l.category] || l.category}</span>
+                      <span style={{ fontWeight: 600 }}>{l.name}</span>
+                      <span style={{ color: T.textMuted, marginLeft: 6 }}>{l.requiredQty} {l.unit}{l.supplier ? ` · ${l.supplier}` : ''}</span>
+                      {l.wastagePct > 0 && <span style={{ color: T.warning, marginLeft: 6, fontSize: 11 }}>+{l.wastagePct}% wastage → order {l.qtyToOrder} {l.unit}</span>}
+                      {l.rate != null && <span style={{ color: T.textMuted, marginLeft: 6, fontSize: 11 }}>@ ₹{l.rate}/{l.unit || 'unit'}</span>}
+                      {l.poNumber && <span style={{ color: T.textMuted, marginLeft: 6, fontSize: 11 }}>PO {l.poNumber}</span>}
+                    </div>
+                  </FlexRow>
                   <FlexRow gap={6}>
                     <Badge status={l.status} />
                     <select value={l.status} disabled={busy} onChange={e => handleStatus(l.id, e.target.value)}
@@ -161,17 +242,21 @@ function ProjectDetail({ project, onBack, getMaterialRequirement, addRequirement
                   </FlexRow>
                 </FlexRow>
               )))}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr 1fr 1fr', gap: 6, marginTop: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr 1fr', gap: 6, marginTop: 12 }}>
               <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
                 style={{ padding: '6px 8px', borderRadius: 6, border: `1px solid ${T.border}`, fontSize: 12 }}>
-                <option value="fabric">Fabric</option><option value="trim">Trim</option>
-                <option value="accessory">Accessory</option><option value="other">Other</option>
+                {REQUIREMENT_CATEGORIES.map(c => <option key={c.v} value={c.v}>{c.l}</option>)}
               </select>
               <Input placeholder="Material name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
               <Input placeholder="Qty" type="number" value={form.requiredQty} onChange={e => setForm(f => ({ ...f, requiredQty: e.target.value }))} />
               <Input placeholder="Unit" value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} />
-              <Btn size="sm" disabled={busy} onClick={handleAdd}>+ Add</Btn>
             </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginTop: 6 }}>
+              <SupplierCombobox label="" suppliers={suppliers} value={form.supplier} onChange={v => setForm(f => ({ ...f, supplier: v }))} placeholder="Supplier (optional)" />
+              <Input placeholder="Wastage % (optional)" type="number" min="0" value={form.wastagePct} onChange={e => setForm(f => ({ ...f, wastagePct: e.target.value }))} />
+              <Input placeholder="Rate per unit (optional)" type="number" min="0" value={form.rate} onChange={e => setForm(f => ({ ...f, rate: e.target.value }))} />
+            </div>
+            <div style={{ marginTop: 8 }}><Btn size="sm" disabled={busy} onClick={handleAdd}>+ Add</Btn></div>
           </>
         )}
       </Card>

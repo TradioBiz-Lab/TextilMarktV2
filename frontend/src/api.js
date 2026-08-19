@@ -187,6 +187,16 @@ export const materialRequirementsApi = {
   removeLine: (reqId, lineId) => api.post(`/material-requirements/${reqId}/lines/${lineId}/delete`),
   push: (reqId, lineId, data) => api.post(`/material-requirements/${reqId}/lines/${lineId}/push`, data),
   bulk: (rows) => api.post('/material-requirements/bulk', { rows }),
+  duplicate: (reqId, data) => api.post(`/material-requirements/${reqId}/duplicate`, data),
+  generatePo: (reqId, data) => api.post(`/material-requirements/${reqId}/generate-po`, data),
+  aiDraft: data => api.post('/material-requirements/ai-draft', data, { timeout: 90000 }),
+}
+
+export const suppliersApi = {
+  list: () => api.get('/suppliers'),
+  create: data => api.post('/suppliers', data),
+  update: (id, data) => api.post(`/suppliers/${id}`, data),
+  remove: id => api.post(`/suppliers/${id}/delete`),
 }
 
 export const costSheetsApi = {

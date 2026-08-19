@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { authApi, ordersApi, documentsApi, usersApi, notificationsApi, auditApi, ribbonsApi, masterOrdersApi, actionItemsApi, wikiPagesApi, materialDefinitionsApi, materialRequirementsApi, costSheetsApi, mfrProjectsApi, inventoryApi, setStoredToken, setAuthToken } from './api.js'
+import { authApi, ordersApi, documentsApi, usersApi, notificationsApi, auditApi, ribbonsApi, masterOrdersApi, actionItemsApi, wikiPagesApi, materialDefinitionsApi, materialRequirementsApi, costSheetsApi, mfrProjectsApi, inventoryApi, suppliersApi, setStoredToken, setAuthToken } from './api.js'
 import { isExpiringSoon, isExpired } from './constants.js'
 
 const AppContext = createContext(null)
@@ -650,6 +650,24 @@ export function AppProvider({ children }) {
     refreshOrders().catch(() => {}) // pushed line is now a real stage material line — refresh so Production tab shows it without a reload
     return doc
   }, [addAudit, refreshOrders])
+  const duplicateRequirement = useCallback(async (reqId, data) => {
+    const doc = await materialRequirementsApi.duplicate(reqId, data)
+    await addAudit('Material Requirement Duplicated', `${reqId} -> ${data.targetOrderId || data.targetMfrProjectId}`)
+    return doc
+  }, [addAudit])
+  const generateRequirementPO = useCallback(async (reqId, data) => {
+    const doc = await materialRequirementsApi.generatePo(reqId, data)
+    await addAudit('Material PO Generated', reqId)
+    return doc
+  }, [addAudit])
+  const draftBomFromDocuments = useCallback((data) => materialRequirementsApi.aiDraft(data), [])
+
+  const listSuppliers = useCallback(() => suppliersApi.list(), [])
+  const createSupplier = useCallback(async (data) => {
+    const s = await suppliersApi.create(data)
+    await addAudit('Supplier Created', data.name)
+    return s
+  }, [addAudit])
 
   const listCostSheets = useCallback((scope) => costSheetsApi.list(scope), [])
   const getCostSheet = useCallback((id) => costSheetsApi.get(id), [])
@@ -710,7 +728,8 @@ export function AppProvider({ children }) {
       createActionItem, updateActionItem, addActionItemUpdate, removeActionItem, refreshActionItems,
       listMaterialDefinitions, createMaterialDefinition,
       getMaterialRequirement, addRequirementLine, updateRequirementLine, removeRequirementLine, pushRequirementToStage,
-      bulkUploadMaterialRequirements,
+      bulkUploadMaterialRequirements, duplicateRequirement, generateRequirementPO, draftBomFromDocuments,
+      listSuppliers, createSupplier,
       listCostSheets, getCostSheet, saveCostSheet, setCostSheetMargin, saveCostSheetActuals,
       submitCostSheet, withdrawCostSheet, approveCostSheet, duplicateCostSheet,
       listMfrMasterProjects, createMfrMasterProject, deleteMfrMasterProject,

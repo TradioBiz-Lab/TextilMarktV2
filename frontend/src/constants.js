@@ -120,6 +120,15 @@ export const DOC_ICONS = {
 export const CATEGORIES = ['TSHRT', 'JEANS', 'BEDSH', 'SHIRT', 'DRESS', 'JACKET', 'POLO', 'SHORTS', 'HOODIE']
 export const SEASONS = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
 
+// MaterialRequirement line categories — shared between the admin and
+// manufacturer Materials UIs (and the AI draft review table) so both stay
+// in sync with backend/src/models/MaterialRequirement.js's REQUIREMENT_CATEGORIES.
+export const REQUIREMENT_CATEGORIES = [
+  { v: 'fabric_primary', l: 'Primary Fabric' }, { v: 'fabric_secondary', l: 'Secondary Fabric' },
+  { v: 'trim', l: 'Trim' }, { v: 'accessory', l: 'Accessory' }, { v: 'other', l: 'Other' },
+]
+export const REQUIREMENT_CATEGORY_LABEL = Object.fromEntries([...REQUIREMENT_CATEGORIES, { v: 'fabric', l: 'Fabric' }].map(c => [c.v, c.l]))
+
 export const T = {
   bg: '#F8FAFC', surface: '#FFFFFF', border: '#e2e8f0', borderHover: '#CBD5E1',
   primary: '#F97316', primaryDark: '#EA580C', primaryLight: '#FFF7ED',
