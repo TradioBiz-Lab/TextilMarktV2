@@ -37,6 +37,8 @@ function csvRowToStructured(raw, rowIndex) {
     assignments,
     stages,
     orderId: (raw.order_id || '').trim(),
+    colourways: (raw.colourways || '').trim(),
+    imageUrl: (raw.image_url || '').trim(),
   }
 }
 
@@ -88,6 +90,11 @@ function validateRow(row, mfrUsers, responsibleUsers) {
     }
   })
   if (filledStages.length === 0) errors.push('At least one production stage with start/end dates is required')
+
+  if (row.imageUrl?.trim()) {
+    try { const u = new URL(row.imageUrl.trim()); if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error() }
+    catch { errors.push('Image URL must be a valid http(s) link') }
+  }
 
   return { errors, status: errors.length ? 'error' : 'valid', resolvedAssignments, filledStages }
 }
@@ -157,6 +164,8 @@ export function BulkUploadCsvPanel({ masterOrder, onDone }) {
         stageDescriptions: v.filledStages.map(s => s.description || ''),
         stageTotalUnits: v.filledStages.map(s => s.targetQty?.trim() ? parseInt(s.targetQty, 10) : null),
         orderId: row.orderId || undefined,
+        colourways: row.colourways ? row.colourways.split(',').map(c => c.trim()).filter(Boolean) : undefined,
+        imageUrl: row.imageUrl?.trim() || undefined,
       }))
       const result = await bulkCreateOrders(masterOrder.id, payloadRows)
       setResults(result)
@@ -262,6 +271,21 @@ export function BulkUploadCsvPanel({ masterOrder, onDone }) {
                         <div>
                           <label style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>Delivery</label>
                           <input type="date" value={row.delivery} onChange={e => updateRow(row.rowIndex, { delivery: e.target.value })}
+                            style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                        </div>
+                      </div>
+
+                      <div className="form-grid-3" style={{ marginBottom: 10 }}>
+                        <div>
+                          <label style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>Colourways</label>
+                          <input value={row.colourways} placeholder="Comma-separated, e.g. Black, Navy"
+                            onChange={e => updateRow(row.rowIndex, { colourways: e.target.value })}
+                            style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                        </div>
+                        <div style={{ gridColumn: 'span 2' }}>
+                          <label style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase' }}>Product Photo Link (optional)</label>
+                          <input value={row.imageUrl} placeholder="https://…"
+                            onChange={e => updateRow(row.rowIndex, { imageUrl: e.target.value })}
                             style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box' }} />
                         </div>
                       </div>

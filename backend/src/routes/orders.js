@@ -16,10 +16,10 @@ import {
 } from '../models/Order.js'
 import { dayNumber, getToday } from '../lib/stageMath.js'
 import { captureConsumptionOnDelivery } from '../lib/consumptionCapture.js'
+import { validateImagePayload } from '../lib/imagePayload.js'
 
 // Categories are now free-text — no validation needed
 const VALID_SEASONS    = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
-const MAX_PRODUCT_PHOTO_SIZE = 1024 * 1024 // 1MB raw — reference thumbnail, not full-res
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 // Email triggers for orders are intentionally suppressed — order activity is portal-notifications only
 
@@ -398,17 +398,8 @@ async function validateAndCreateOrder({ id, buyerId, product, category, season, 
 
   // Optional cover photo — either an uploaded base64 image (capped small) or an
   // external link fallback, never both.
-  if (imageDataUrl && imageUrl) return { ok: false, error: 'Provide either an uploaded photo or a link, not both' }
-  if (imageDataUrl) {
-    const m = /^data:(image\/jpeg|image\/jpg|image\/png);base64,(.+)$/.exec(imageDataUrl)
-    if (!m) return { ok: false, error: 'Photo must be a JPEG or PNG image' }
-    if (m[2].length * 0.75 > MAX_PRODUCT_PHOTO_SIZE) return { ok: false, error: 'Photo too large — keep it under 1MB' }
-  }
-  if (imageUrl) {
-    if (imageUrl.trim().length > 2000) return { ok: false, error: 'Image URL too long' }
-    try { const u = new URL(imageUrl.trim()); if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error() }
-    catch { return { ok: false, error: 'Invalid image URL — must be a valid http(s) link' } }
-  }
+  const imgCheck = validateImagePayload(imageDataUrl, imageUrl)
+  if (!imgCheck.ok) return { ok: false, error: imgCheck.error }
 
   try {
     const created = await Order.create({
@@ -512,6 +503,9 @@ router.post('/bulk', requireAuth, requireAdmin, bulkOrderLimiter, async (req, re
           stageStartDates: row.stageStartDates, stageEtas: row.stageEtas,
           stageResponsibleIds: row.stageResponsibleIds, stageDescriptions: row.stageDescriptions,
           stageTotalUnits: row.stageTotalUnits,
+          // Line-item fields (Order Setup Wizard) — validateAndCreateOrder already
+          // accepts and validates these; this route just wasn't forwarding them.
+          colourways: row.colourways, imageDataUrl: row.imageDataUrl, imageUrl: row.imageUrl,
         })
 
         if (result.ok) {
@@ -2049,17 +2043,8 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
     if (imageDataUrl !== undefined || imageUrl !== undefined) {
       const nextDataUrl = imageDataUrl !== undefined ? (imageDataUrl || null) : (existing.imageDataUrl || null)
       const nextUrl     = imageUrl !== undefined ? (imageUrl || null) : (existing.imageUrl || null)
-      if (nextDataUrl && nextUrl) return res.status(400).json({ error: 'Provide either an uploaded photo or a link, not both' })
-      if (nextDataUrl) {
-        const m = /^data:(image\/jpeg|image\/jpg|image\/png);base64,(.+)$/.exec(nextDataUrl)
-        if (!m) return res.status(400).json({ error: 'Photo must be a JPEG or PNG image' })
-        if (m[2].length * 0.75 > MAX_PRODUCT_PHOTO_SIZE) return res.status(400).json({ error: 'Photo too large — keep it under 1MB' })
-      }
-      if (nextUrl) {
-        if (nextUrl.trim().length > 2000) return res.status(400).json({ error: 'Image URL too long' })
-        try { const u = new URL(nextUrl.trim()); if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error() }
-        catch { return res.status(400).json({ error: 'Invalid image URL — must be a valid http(s) link' } )}
-      }
+      const imgCheck = validateImagePayload(nextDataUrl, nextUrl)
+      if (!imgCheck.ok) return res.status(400).json({ error: imgCheck.error })
       if (imageDataUrl !== undefined) updates.imageDataUrl = imageDataUrl || null
       if (imageUrl !== undefined) updates.imageUrl = imageUrl ? imageUrl.trim() : null
     }

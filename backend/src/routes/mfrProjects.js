@@ -1,6 +1,17 @@
 import { Router } from 'express'
+import rateLimit from 'express-rate-limit'
 import { MfrMasterProject, MfrProject, AuditLog } from '../db/index.js'
 import { requireAuth } from '../middleware/auth.js'
+import { validateImagePayload } from '../lib/imagePayload.js'
+
+// Mirrors orders.js's bulkOrderLimiter — a manufacturer batch-creating many
+// styles at once via the wizard's CSV/repeatable-row line-items step.
+const bulkProjectLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, max: 20,
+  keyGenerator: req => req.user?.id || req.ip,
+  message: { error: 'Too many bulk uploads. Please wait before trying again.' },
+  standardHeaders: true, legacyHeaders: false, validate: false,
+})
 
 const router = Router()
 
@@ -72,7 +83,9 @@ const mapProject = p => ({
   styleName: p.styleName, buyerName: p.buyerName || '', category: p.category || '',
   season: p.season || '', totalQty: p.totalQty || 0, delivery: p.delivery || null,
   colourways: (p.colourways || []).map(c => ({ name: c.name, code: c.code || '' })),
-  notes: p.notes || '', createdAt: p.createdAt, updatedAt: p.updatedAt,
+  notes: p.notes || '',
+  imageDataUrl: p.imageDataUrl || null, imageUrl: p.imageUrl || null,
+  createdAt: p.createdAt, updatedAt: p.updatedAt,
 })
 
 router.get('/mfr-projects', requireAuth, async (req, res) => {
@@ -91,7 +104,7 @@ router.get('/mfr-projects', requireAuth, async (req, res) => {
 router.post('/mfr-projects', requireAuth, async (req, res) => {
   try {
     if (req.user.role !== 'manufacturer') return res.status(403).json({ error: 'Manufacturer only' })
-    const { mfrMasterProjectId, styleName, buyerName, category, season, totalQty, delivery, colourways, notes } = req.body
+    const { mfrMasterProjectId, styleName, buyerName, category, season, totalQty, delivery, colourways, notes, imageDataUrl, imageUrl } = req.body
     if (!styleName?.trim()) return res.status(400).json({ error: 'Style name is required' })
 
     if (mfrMasterProjectId) {
@@ -99,6 +112,9 @@ router.post('/mfr-projects', requireAuth, async (req, res) => {
       const denied = requireOwnMfrProject(req.user.id, parent)
       if (denied) return res.status(denied.status).json({ error: 'Invalid master project' })
     }
+
+    const imgCheck = validateImagePayload(imageDataUrl, imageUrl)
+    if (!imgCheck.ok) return res.status(400).json({ error: imgCheck.error })
 
     const project = await MfrProject.create({
       mfrId: req.user.id,
@@ -111,9 +127,81 @@ router.post('/mfr-projects', requireAuth, async (req, res) => {
       delivery: delivery || null,
       colourways: Array.isArray(colourways) ? colourways.filter(c => c?.name?.trim()).map(c => ({ name: c.name.trim().slice(0, 60), code: c.code || '' })) : [],
       notes: (notes || '').slice(0, 1000),
+      imageDataUrl: imageDataUrl || null,
+      imageUrl: imageUrl ? imageUrl.trim() : null,
     })
     await AuditLog.create({ byUser: req.user.id, action: 'Mfr Project Created', detail: project.styleName })
     res.status(201).json(mapProject(project.toObject()))
+  } catch (err) {
+    console.error('[mfrProjects]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/mfr-projects/bulk — CSV/repeatable-row batch creation of many styles
+// under one MfrMasterProject (Order Setup Wizard's Line Items step, manufacturer
+// path). Mirrors orders.js's POST /bulk shape (validate-every-row, all-or-nothing
+// per row, {total,created,failed,results}) — owner-only, no admin variant, same
+// privacy invariant as every other route in this file.
+router.post('/mfr-projects/bulk', requireAuth, bulkProjectLimiter, async (req, res) => {
+  try {
+    if (req.user.role !== 'manufacturer') return res.status(403).json({ error: 'Manufacturer only' })
+    const { mfrMasterProjectId, rows } = req.body
+    if (!Array.isArray(rows) || rows.length === 0) return res.status(400).json({ error: 'At least one row is required' })
+    if (rows.length > 100) return res.status(400).json({ error: 'Too many rows (max 100 per bulk upload)' })
+
+    if (mfrMasterProjectId) {
+      const parent = await MfrMasterProject.findById(mfrMasterProjectId).lean()
+      const denied = requireOwnMfrProject(req.user.id, parent)
+      if (denied) return res.status(denied.status).json({ error: 'Invalid master project' })
+    }
+
+    const results = []
+    let created = 0, failed = 0
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i]
+      try {
+        if (!row.styleName?.trim()) {
+          failed++
+          results.push({ row: i, success: false, error: 'Style name is required' })
+          continue
+        }
+        const imgCheck = validateImagePayload(row.imageDataUrl, row.imageUrl)
+        if (!imgCheck.ok) {
+          failed++
+          results.push({ row: i, success: false, error: imgCheck.error })
+          continue
+        }
+        const project = await MfrProject.create({
+          mfrId: req.user.id,
+          mfrMasterProjectId: mfrMasterProjectId || null,
+          styleName: row.styleName.trim().slice(0, 200),
+          buyerName: (row.buyerName || '').trim().slice(0, 200),
+          category: (row.category || '').trim().slice(0, 60),
+          season: (row.season || '').trim().slice(0, 60),
+          totalQty: Number(row.totalQty) || 0,
+          delivery: row.delivery || null,
+          colourways: Array.isArray(row.colourways) ? row.colourways.filter(c => c?.name?.trim()).map(c => ({ name: c.name.trim().slice(0, 60), code: c.code || '' })) : [],
+          notes: (row.notes || '').slice(0, 1000),
+          imageDataUrl: row.imageDataUrl || null,
+          imageUrl: row.imageUrl ? row.imageUrl.trim() : null,
+        })
+        created++
+        results.push({ row: i, success: true, id: project._id.toString() })
+      } catch (err) {
+        failed++
+        results.push({ row: i, success: false, error: 'Server error creating this row' })
+      }
+    }
+
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Mfr Project Bulk Upload',
+      detail: `Bulk upload: ${created} created, ${failed} failed`,
+    })
+
+    res.status(200).json({ total: rows.length, created, failed, results })
   } catch (err) {
     console.error('[mfrProjects]', err)
     res.status(500).json({ error: 'Server error' })

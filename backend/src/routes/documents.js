@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
-import { Document, Order, User, Notification, AuditLog } from '../db/index.js'
+import { Document, Order, User, Notification, AuditLog, MasterOrder, MfrMasterProject, MfrProject } from '../db/index.js'
+import { PATTERN_LINK_ONLY_TYPES } from '../models/Document.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { sendEmail, emailCertExpiry, emailBuyerDocumentReceived } from '../lib/email.js'
 import { validateWikiScopeShape } from '../lib/wikiAccess.js'
@@ -15,7 +16,7 @@ const uploadLimiter = rateLimit({
 
 const CERT_TYPES = ['compliance_cert', 'factory_audit', 'chemical_cert', 'environmental_cert', 'insurance']
 
-async function assertDocAccess(user, { orderId, mfrId, type, wikiScope, buyerId }) {
+async function assertDocAccess(user, { orderId, mfrId, type, wikiScope, buyerId, masterOrderId, mfrMasterProjectId, mfrProjectId }) {
   const isWikiType = typeof type === 'string' && type.startsWith('wiki_')
   // Any wiki_* type requires wikiScope, and any wikiScope requires a wiki_* type —
   // the two fields travel together or not at all.
@@ -31,6 +32,28 @@ async function assertDocAccess(user, { orderId, mfrId, type, wikiScope, buyerId 
     return
   }
 
+  // Order/Project Setup Wizard scoping — the manufacturer scopes (mfrMasterProjectId/
+  // mfrProjectId) are owner-only, no admin override, matching MfrProject's own privacy
+  // invariant (see mfrProjects.js) — a buyer must never be able to set these at all.
+  if (mfrMasterProjectId || mfrProjectId) {
+    if (user.role !== 'manufacturer' && user.role !== 'admin')
+      throw Object.assign(new Error('Only the owning manufacturer can attach documents to a project'), { status: 403 })
+    if (user.role === 'manufacturer') {
+      if (mfrMasterProjectId) {
+        const mp = await MfrMasterProject.findById(mfrMasterProjectId, { mfrId: 1 }).lean()
+        if (!mp || String(mp.mfrId) !== String(user.id))
+          throw Object.assign(new Error('You can only upload documents to your own master project'), { status: 403 })
+      }
+      if (mfrProjectId) {
+        const p = await MfrProject.findById(mfrProjectId, { mfrId: 1 }).lean()
+        if (!p || String(p.mfrId) !== String(user.id))
+          throw Object.assign(new Error('You can only upload documents to your own project'), { status: 403 })
+      }
+    }
+    if (user.role === 'admin')
+      throw Object.assign(new Error('Admin cannot attach documents to a manufacturer\'s private project'), { status: 403 })
+  }
+
   if (user.role === 'buyer') {
     // Buyers may not set mfrId — that would let them attach docs to a manufacturer they chose
     if (mfrId)
@@ -42,6 +65,11 @@ async function assertDocAccess(user, { orderId, mfrId, type, wikiScope, buyerId 
       const order = await Order.findById(orderId, { buyerId: 1 }).lean()
       if (!order || order.buyerId.toString() !== user.id)
         throw Object.assign(new Error('You can only upload documents to your own orders'), { status: 403 })
+    }
+    if (masterOrderId) {
+      const mo = await MasterOrder.findById(masterOrderId, { buyerId: 1 }).lean()
+      if (!mo || String(mo.buyerId) !== user.id)
+        throw Object.assign(new Error('You can only upload documents to your own master orders'), { status: 403 })
     }
   }
   if (user.role === 'manufacturer') {
@@ -61,6 +89,9 @@ const mapDoc = (d, includeData = false) => {
     id: d._id, type: d.type, name: d.name,
     mfrId: d.mfrId ? d.mfrId.toString() : null,
     orderId: d.orderId ? d.orderId.toString() : null,
+    masterOrderId: d.masterOrderId ? d.masterOrderId.toString() : null,
+    mfrMasterProjectId: d.mfrMasterProjectId ? d.mfrMasterProjectId.toString() : null,
+    mfrProjectId: d.mfrProjectId ? d.mfrProjectId.toString() : null,
     stageIndex: d.stageIndex != null ? d.stageIndex : null,
     materialLineIndex: d.materialLineIndex != null ? d.materialLineIndex : null,
     issueDate: d.issueDate, expiryDate: d.expiryDate,
@@ -95,12 +126,16 @@ router.get('/', requireAuth, async (req, res) => {
       const orderIds = buyerOrders.map(o => o._id)
       const mfrIds   = [...new Set(buyerOrders.flatMap(o => (o.assignments || []).map(a => a.mfrId?.toString()).filter(Boolean)))]
 
+      const buyerMasterOrders = await MasterOrder.find({ buyerId: req.user.id }, { _id: 1 }).lean()
+      const masterOrderIds = buyerMasterOrders.map(mo => mo._id)
+
       // mfrId match only for docs without an orderId (standalone compliance certs),
       // not docs that belong to a different buyer's order
       docs = await populateUploader(Document.find({
         isActive: true,
         $or: [
           { orderId: { $in: orderIds } },
+          { masterOrderId: { $in: masterOrderIds } },
           { mfrId: { $in: mfrIds }, orderId: null },
           { uploadedBy: req.user.id },
           { wikiScope: 'company' },
@@ -112,6 +147,10 @@ router.get('/', requireAuth, async (req, res) => {
       const mfrOrders = await Order.find({ 'assignments.mfrId': req.user.id }, { _id: 1, buyerId: 1 }).lean()
       const orderIds  = mfrOrders.map(o => o._id)
       const assignedBuyerIds = [...new Set(mfrOrders.map(o => o.buyerId?.toString()).filter(Boolean))]
+      const mfrMasterProjects = await MfrMasterProject.find({ mfrId: req.user.id }, { _id: 1 }).lean()
+      const mfrMasterProjectIds = mfrMasterProjects.map(p => p._id)
+      const mfrProjects = await MfrProject.find({ mfrId: req.user.id }, { _id: 1 }).lean()
+      const mfrProjectIds = mfrProjects.map(p => p._id)
 
       docs = await populateUploader(Document.find({
         isActive: true,
@@ -122,6 +161,11 @@ router.get('/', requireAuth, async (req, res) => {
           // rule GET /:id/data already enforces (a doc with someone else's mfrId
           // is a flat deny). Only mfrId:null order docs are visible via orderId alone.
           { orderId: { $in: orderIds }, mfrId: null },
+          // Wizard-scoped docs on the manufacturer's own private master project/
+          // project — owner-only, no admin override, matching MfrProject's own
+          // privacy invariant.
+          { mfrMasterProjectId: { $in: mfrMasterProjectIds } },
+          { mfrProjectId: { $in: mfrProjectIds } },
           { wikiScope: 'company' },
           { wikiScope: 'buyer', buyerId: { $in: assignedBuyerIds } },
         ],
@@ -306,7 +350,7 @@ router.get('/:id/data', requireAuth, async (req, res) => {
 // POST /api/documents
 router.post('/', requireAuth, uploadLimiter, async (req, res) => {
   try {
-    const { type, name, mfrId, orderId, stageIndex, materialLineIndex, issueDate, expiryDate, issuer, dataUrl, externalUrl, fileName, fileSize, mimeType, notes, wikiScope, buyerId } = req.body
+    const { type, name, mfrId, orderId, stageIndex, materialLineIndex, issueDate, expiryDate, issuer, dataUrl, externalUrl, fileName, fileSize, mimeType, notes, wikiScope, buyerId, masterOrderId, mfrMasterProjectId, mfrProjectId } = req.body
     if (!type || !name || !name.trim()) return res.status(400).json({ error: 'type and name required' })
     if (typeof type !== 'string' || typeof name !== 'string') return res.status(400).json({ error: 'Invalid input types' })
     if (name.length > 300 || type.length > 50) return res.status(400).json({ error: 'Input too long' })
@@ -318,7 +362,7 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
     // Checked early so a buyer/manufacturer sending a wiki_* type gets a clean 403
     // rather than a confusing 400 from the shape checks below.
     try {
-      await assertDocAccess(req.user, { orderId, mfrId, type, wikiScope, buyerId })
+      await assertDocAccess(req.user, { orderId, mfrId, type, wikiScope, buyerId, masterOrderId, mfrMasterProjectId, mfrProjectId })
     } catch (e) {
       return res.status(e.status || 403).json({ error: e.message })
     }
@@ -375,6 +419,17 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Wiki documents require an external link (externalUrl)' })
     }
 
+    // Pattern files (can be DXF) are link-only — see PATTERN_LINK_ONLY_TYPES' comment
+    // in models/Document.js for why this can't go through the same base64
+    // mime-sniffing every other inline upload does.
+    const isPatternType = PATTERN_LINK_ONLY_TYPES.includes(type)
+    if (isPatternType && hasFile) {
+      return res.status(400).json({ error: 'Pattern files must use an external link (e.g. a WorkDrive/Drive share URL), not an inline upload' })
+    }
+    if (isPatternType && !hasUrl) {
+      return res.status(400).json({ error: 'Pattern files require an external link (externalUrl)' })
+    }
+
     let normalizedUrl = null
     if (hasUrl) {
       if (typeof externalUrl !== 'string') return res.status(400).json({ error: 'Invalid link' })
@@ -419,6 +474,9 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
       type, name,
       mfrId:      mfrId     || null,
       orderId:    orderId   || null,
+      masterOrderId:      masterOrderId      || null,
+      mfrMasterProjectId: mfrMasterProjectId || null,
+      mfrProjectId:       mfrProjectId       || null,
       stageIndex: stageIndex != null && stageIndex !== '' ? stageIndex : null,
       materialLineIndex: hasMaterialLineIndex ? parseInt(materialLineIndex, 10) : null,
       issueDate:  issueDate ? new Date(issueDate) : new Date(),

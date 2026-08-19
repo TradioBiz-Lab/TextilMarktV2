@@ -29,6 +29,9 @@ const mfrProjectSchema = new mongoose.Schema({
     code: { type: String, default: '' },
   }],
   notes:    { type: String, default: '', maxlength: 1000 },
+  // Same shape/1MB cap as Order.imageDataUrl/imageUrl — see lib/imagePayload.js.
+  imageDataUrl: { type: String, default: null },
+  imageUrl:     { type: String, default: null, trim: true },
   isActive: { type: Boolean, default: true },
 }, { timestamps: true })
 

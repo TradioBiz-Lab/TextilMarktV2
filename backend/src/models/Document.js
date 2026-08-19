@@ -13,7 +13,18 @@ const DOC_TYPES = [
   // Wiki — link-only reference categories (externalUrl required, no dataUrl).
   // Tech Pack/SOP content lives in the separate WikiPage model instead.
   'wiki_inspection_form', 'wiki_fit_comments', 'wiki_photos',
+  // Order/Project Setup Wizard — Documents step (see the wizard plan). fit_comments
+  // here is distinct from wiki_fit_comments above: this one is order/project-scoped
+  // reference material uploaded during setup, not a company/buyer-wide Wiki entry.
+  // 'pattern' is link-only (externalUrl required) — see PATTERN_LINK_ONLY_TYPES below.
+  'measurement_sheet', 'pattern', 'fit_comments', 'sop',
 ]
+
+// Cutting/sewing pattern files (can be DXF) have no reliable mime signature and
+// browsers send application/octet-stream (or nothing) for .dxf — rather than
+// weaken the base64 mime-sniffing check every other inline upload goes through
+// (see ALLOWED_MIME in routes/documents.js), this type is link-only.
+export const PATTERN_LINK_ONLY_TYPES = ['pattern']
 
 const documentSchema = new mongoose.Schema({
   type:       { type: String, required: true, enum: DOC_TYPES },
@@ -22,6 +33,16 @@ const documentSchema = new mongoose.Schema({
   // A document belongs to a manufacturer OR an order (or both)
   mfrId:      { type: mongoose.Schema.Types.ObjectId, ref: 'User',  default: null },
   orderId:    { type: String,                          ref: 'Order', default: null },
+
+  // Order/Project Setup Wizard scoping — a document uploaded in the wizard's
+  // Documents step belongs to the master order/project, before any line-item
+  // Order/MfrProject exists yet to hang orderId/mfrProjectId off of. All optional,
+  // additive, default null — legacy docs (and every doc uploaded outside the
+  // wizard) are simply unscoped by these, same "enrich at read time" precedent
+  // as every other field in this file.
+  masterOrderId:      { type: String,                          ref: 'MasterOrder',       default: null },
+  mfrMasterProjectId: { type: mongoose.Schema.Types.ObjectId,  ref: 'MfrMasterProject',  default: null },
+  mfrProjectId:        { type: mongoose.Schema.Types.ObjectId,  ref: 'MfrProject',        default: null },
 
   issueDate:  { type: Date, default: Date.now },
   expiryDate: { type: Date, default: null },
@@ -60,6 +81,9 @@ const documentSchema = new mongoose.Schema({
 
 documentSchema.index({ mfrId: 1, isActive: 1 })
 documentSchema.index({ orderId: 1, isActive: 1 })
+documentSchema.index({ masterOrderId: 1, isActive: 1 })
+documentSchema.index({ mfrMasterProjectId: 1, isActive: 1 })
+documentSchema.index({ mfrProjectId: 1, isActive: 1 })
 documentSchema.index({ expiryDate: 1 })          // for expiry-alert queries
 documentSchema.index({ uploadedBy: 1 })
 documentSchema.index({ createdAt: -1 })           // for list sort (avoids in-memory sort on Atlas)

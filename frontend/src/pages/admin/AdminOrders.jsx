@@ -10,7 +10,6 @@ import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
 import { BulkUploadCsvPanel } from './BulkUploadCsvPanel.jsx'
-import { MaterialsBulkUploadPanel } from './MaterialsBulkUploadPanel.jsx'
 import { TnaImportPanel } from './TnaImportPanel.jsx'
 
 function fmtDate(d) {
@@ -395,7 +394,6 @@ export function AdminOrders({ onOpen, initialStatus }) {
   // ── Edit / Delete modal state ──
   const [editTarget, setEditTarget] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
-  const [showMatBulk, setShowMatBulk] = useState(false)
   const [showTnaImport, setShowTnaImport] = useState(false)
 
   // ── Create Order state ──
@@ -961,7 +959,6 @@ export function AdminOrders({ onOpen, initialStatus }) {
         <FlexRow gap={8}>
           <Btn variant="secondary" onClick={() => setShowMO(true)} icon="📁">New Master Order</Btn>
           <Btn variant="secondary" onClick={() => setShowTnaImport(true)} icon="📊">Import TNA Dates</Btn>
-          <Btn variant="secondary" onClick={() => setShowMatBulk(true)} icon="📦">Bulk Upload Materials</Btn>
           <Btn onClick={() => setShowC(true)} icon="➕">Create Order</Btn>
         </FlexRow>
       } />
@@ -981,16 +978,9 @@ export function AdminOrders({ onOpen, initialStatus }) {
         ))}
       </FlexRow>
 
-      {/* ── Materials Bulk Upload Modal ── */}
       {showTnaImport && (
         <Modal title="Import TNA Dates" subtitle="Re-sync revised start/end dates from a Summary TNA sheet onto existing orders" size="xl" onClose={() => setShowTnaImport(false)}>
           <TnaImportPanel onClose={() => setShowTnaImport(false)} />
-        </Modal>
-      )}
-
-      {showMatBulk && (
-        <Modal title="Bulk Upload Materials" subtitle="Add materials/PO lines onto existing orders' stages, by order ID + manufacturer code + stage name" size="xl" onClose={() => setShowMatBulk(false)}>
-          <MaterialsBulkUploadPanel onDone={() => setShowMatBulk(false)} />
         </Modal>
       )}
 
