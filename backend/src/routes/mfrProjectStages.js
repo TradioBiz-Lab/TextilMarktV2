@@ -9,14 +9,14 @@ import {
 import { dayNumber, getToday } from '../lib/stageMath.js'
 import { requireOwnMfrProject, mapProject } from './mfrProjects.js'
 
-// TNA for MfrProject (Order Setup Wizard, Phase 4) — mirrors orders.js's stage
+// TNA for MfrProject (Order Setup Wizard, Phase 4) - mirrors orders.js's stage
 // surface with the assignment/buyer/responsibleId indirection stripped out.
 // A manufacturer's own project has exactly one implicit owner and no
 // manufacturer-split or buyer party at all, so every route here is a flat
 // owner-only gate (requireOwnMfrProject, no admin branch, ever) rather than
 // the admin/manufacturer/buyer three-way permission shape orders.js needs.
 // Stage-insert (mid-plan restructuring) is deliberately not mirrored in this
-// pass — a manufacturer sets up their own plan once via /seed and edits it
+// pass - a manufacturer sets up their own plan once via /seed and edits it
 // with bulk/single-stage updates; the smaller, higher-value surface (seed,
 // bulk, single-stage, eta, delete, updates, items CRUD, materials CRUD)
 // covers real day-to-day TNA use without the extra reindexing complexity
@@ -50,16 +50,16 @@ function stageAt(project, stageIndex, res) {
   return project.stages[stageIndex]
 }
 
-// POST /api/mfr-projects/:id/stages/seed — one-time creation-time stage
+// POST /api/mfr-projects/:id/stages/seed - one-time creation-time stage
 // builder, called once the project already exists (the wizard puts TNA after
-// costing). Refuses once any stage exists — use bulk/single-stage/delete to
+// costing). Refuses once any stage exists - use bulk/single-stage/delete to
 // revise a plan afterward, matching Order creation's own one-shot stage list.
 router.post('/mfr-projects/:id/stages/seed', requireAuth, updateLimiter, async (req, res) => {
   try {
     const project = await loadOwnProject(req, res)
     if (!project) return
     if ((project.stages || []).length > 0)
-      return res.status(400).json({ error: 'This project already has stages — use bulk update or add/delete individual stages instead' })
+      return res.status(400).json({ error: 'This project already has stages - use bulk update or add/delete individual stages instead' })
 
     const { stageNames, stageStartDates, stageEtas, stageKinds } = req.body
     if (!Array.isArray(stageNames) || stageNames.length === 0)
@@ -68,7 +68,7 @@ router.post('/mfr-projects/:id/stages/seed', requireAuth, updateLimiter, async (
       return res.status(400).json({ error: `Too many stages (max ${BULK_STAGE_MAX})` })
 
     const badDate = (label, v) => {
-      if (v === null || v === undefined || v === '') return `${label} cannot be blank — use "NA" if it doesn't apply`
+      if (v === null || v === undefined || v === '') return `${label} cannot be blank - use "NA" if it doesn't apply`
       if (v !== 'NA' && isNaN(new Date(v).getTime())) return `Invalid ${label}`
       return null
     }
@@ -103,7 +103,7 @@ router.post('/mfr-projects/:id/stages/seed', requireAuth, updateLimiter, async (
   }
 })
 
-// POST /api/mfr-projects/:id/stages/bulk — validate every row before writing
+// POST /api/mfr-projects/:id/stages/bulk - validate every row before writing
 // any (all-or-nothing), one atomic save. Mirrors orders.js's stages/bulk.
 router.post('/mfr-projects/:id/stages/bulk', requireAuth, updateLimiter, async (req, res) => {
   try {
@@ -147,7 +147,7 @@ router.post('/mfr-projects/:id/stages/bulk', requireAuth, updateLimiter, async (
       }
 
       const badDate = (label, v) => {
-        if (v === null || v === undefined || v === '') return `${label} on stage ${i + 1} cannot be blank — use "NA"`
+        if (v === null || v === undefined || v === '') return `${label} on stage ${i + 1} cannot be blank - use "NA"`
         if (v !== 'NA' && isNaN(new Date(v).getTime())) return `Invalid ${label} on stage ${i + 1}`
         return null
       }
@@ -169,31 +169,31 @@ router.post('/mfr-projects/:id/stages/bulk', requireAuth, updateLimiter, async (
         if (!STAGE_STATUS_VALUES.includes(row.status))
           return res.status(400).json({ error: `Invalid status "${row.status}" on stage ${i + 1}` })
         if (kind === 'quantity')
-          return res.status(400).json({ error: `Stage ${i + 1} tracks units — update its progress from the stage itself, not here` })
+          return res.status(400).json({ error: `Stage ${i + 1} tracks units - update its progress from the stage itself, not here` })
         if (kind === 'checklist' && row.status === 'done') {
           const items = stage.items || []
           const pendingItems = items.filter(it => it.status !== 'done')
           if (pendingItems.length > 0)
-            return res.status(400).json({ error: `Stage ${i + 1}: cannot mark done — ${pendingItems.length} of ${items.length} checklist item(s) still pending` })
+            return res.status(400).json({ error: `Stage ${i + 1}: cannot mark done - ${pendingItems.length} of ${items.length} checklist item(s) still pending` })
         }
         const nextUnits = mirroredUnits(row.status, has('totalUnits') ? parseInt(row.totalUnits, 10) : (stage.totalUnits ?? 0))
         const isTrims = (stage.name || '').trim().toLowerCase() === 'trims order'
         const pending = (stage.materials || []).filter(m => isTrims ? m.status === 'pending' : m.status !== 'received')
         if (pending.length > 0 && nextUnits > (stage.unitsDone || 0))
-          return res.status(400).json({ error: `Stage ${i + 1}: cannot advance — ${pending.length} material(s) still pending${isTrims ? '' : '/ordered'}` })
+          return res.status(400).json({ error: `Stage ${i + 1}: cannot advance - ${pending.length} material(s) still pending${isTrims ? '' : '/ordered'}` })
       }
 
       touched.push(i)
     }
 
-    // All rows validated — apply in one pass, one save.
+    // All rows validated - apply in one pass, one save.
     for (const row of rows) {
       const i = parseInt(row.index, 10)
       const stage = allStages[i]
       const has = k => Object.prototype.hasOwnProperty.call(row, k)
       if (has('kind')) stage.kind = row.kind
       if (has('totalUnits')) stage.totalUnits = parseInt(row.totalUnits, 10)
-      if (has('responsibleId')) { /* not applicable to this single-owner scope — ignored */ }
+      if (has('responsibleId')) { /* not applicable to this single-owner scope - ignored */ }
       if (has('description')) stage.description = String(row.description ?? '').trim()
       if (has('blocked')) stage.blocked = !!row.blocked
       if (has('blockedReason')) stage.blockedReason = String(row.blockedReason ?? '').trim()
@@ -224,7 +224,7 @@ router.post('/mfr-projects/:id/stages/bulk', requireAuth, updateLimiter, async (
   }
 })
 
-// POST /api/mfr-projects/:id/stages/:stageIndex — day-to-day progress update.
+// POST /api/mfr-projects/:id/stages/:stageIndex - day-to-day progress update.
 router.post('/mfr-projects/:id/stages/:stageIndex', requireAuth, updateLimiter, async (req, res) => {
   try {
     const project = await loadOwnProject(req, res)
@@ -246,7 +246,7 @@ router.post('/mfr-projects/:id/stages/:stageIndex', requireAuth, updateLimiter, 
         return res.status(400).json({ error: 'Actual completion date cannot be in the future' })
     }
     if (has('status') && !STAGE_STATUS_VALUES.includes(status))
-      return res.status(400).json({ error: `Invalid status — must be one of: ${STAGE_STATUS_VALUES.join(', ')}` })
+      return res.status(400).json({ error: `Invalid status - must be one of: ${STAGE_STATUS_VALUES.join(', ')}` })
     if (blockedReason !== undefined && blockedReason !== null && String(blockedReason).length > 300)
       return res.status(400).json({ error: 'Blocked reason too long (max 300 characters)' })
 
@@ -281,14 +281,14 @@ router.post('/mfr-projects/:id/stages/:stageIndex', requireAuth, updateLimiter, 
       const items = stage.items || []
       const pendingItems = items.filter(it => it.status !== 'done')
       if (pendingItems.length > 0)
-        return res.status(400).json({ error: `Cannot mark done — ${pendingItems.length} of ${items.length} checklist item(s) still pending` })
+        return res.status(400).json({ error: `Cannot mark done - ${pendingItems.length} of ${items.length} checklist item(s) still pending` })
     }
 
     const gateStageName = (stage.name || '').trim().toLowerCase()
     const isTrimsOrderStage = gateStageName === 'trims order'
     const pendingMaterials = (stage.materials || []).filter(m => isTrimsOrderStage ? m.status === 'pending' : m.status !== 'received')
     if (pendingMaterials.length > 0 && nextUnits > currentUnits)
-      return res.status(400).json({ error: `Cannot advance this stage — ${pendingMaterials.length} material(s) still pending${isTrimsOrderStage ? '' : '/ordered'}` })
+      return res.status(400).json({ error: `Cannot advance this stage - ${pendingMaterials.length} material(s) still pending${isTrimsOrderStage ? '' : '/ordered'}` })
 
     stage.unitsDone = nextUnits
     stage.status = nextStatus
@@ -303,7 +303,7 @@ router.post('/mfr-projects/:id/stages/:stageIndex', requireAuth, updateLimiter, 
     await project.save()
     await AuditLog.create({
       byUser: req.user.id, action: 'Mfr Project Stage Updated',
-      detail: `${project._id}: ${stage.name} — ${nextStatus}${kind === 'quantity' ? ` (${nextUnits}/${totalUnits} units)` : ''}`,
+      detail: `${project._id}: ${stage.name} - ${nextStatus}${kind === 'quantity' ? ` (${nextUnits}/${totalUnits} units)` : ''}`,
     })
     res.json(mapProject(project.toObject()))
   } catch (err) {
@@ -312,7 +312,7 @@ router.post('/mfr-projects/:id/stages/:stageIndex', requireAuth, updateLimiter, 
   }
 })
 
-// POST /api/mfr-projects/:id/stages/:stageIndex/eta — adjust a stage's metadata
+// POST /api/mfr-projects/:id/stages/:stageIndex/eta - adjust a stage's metadata
 // (dates/kind/totalUnits/description/name) after creation.
 router.post('/mfr-projects/:id/stages/:stageIndex/eta', requireAuth, updateLimiter, async (req, res) => {
   try {
@@ -333,7 +333,7 @@ router.post('/mfr-projects/:id/stages/:stageIndex/eta', requireAuth, updateLimit
       trimmedName = name.trim().slice(0, 200)
     }
     if (has('kind') && !STAGE_KINDS.includes(kind))
-      return res.status(400).json({ error: `Invalid kind — must be one of: ${STAGE_KINDS.join(', ')}` })
+      return res.status(400).json({ error: `Invalid kind - must be one of: ${STAGE_KINDS.join(', ')}` })
 
     let parsedTotalUnits
     if (has('totalUnits')) {
@@ -351,8 +351,8 @@ router.post('/mfr-projects/:id/stages/:stageIndex/eta', requireAuth, updateLimit
     }
 
     const invalidDateMsg = (label, val) => {
-      if (val === null || val === undefined || val === '') return `${label} cannot be blank — use "NA" if it doesn't apply`
-      if (val !== 'NA' && isNaN(new Date(val).getTime())) return `Invalid ${label} — must be a date or "NA"`
+      if (val === null || val === undefined || val === '') return `${label} cannot be blank - use "NA" if it doesn't apply`
+      if (val !== 'NA' && isNaN(new Date(val).getTime())) return `Invalid ${label} - must be a date or "NA"`
       return null
     }
     if (has('eta')) { const err = invalidDateMsg('end date', eta); if (err) return res.status(400).json({ error: err }) }
@@ -378,7 +378,7 @@ router.post('/mfr-projects/:id/stages/:stageIndex/eta', requireAuth, updateLimit
         const items = stage.items || []
         const pendingItems = items.filter(it => it.status !== 'done')
         if (pendingItems.length > 0)
-          return res.status(400).json({ error: `Cannot mark done — ${pendingItems.length} of ${items.length} checklist item(s) still pending` })
+          return res.status(400).json({ error: `Cannot mark done - ${pendingItems.length} of ${items.length} checklist item(s) still pending` })
       }
       stage.kind = kind
       stage.status = nextStatus
@@ -414,7 +414,7 @@ router.post('/mfr-projects/:id/stages/:stageIndex/delete', requireAuth, updateLi
   }
 })
 
-// POST /api/mfr-projects/:id/stages/:stageIndex/updates — comment thread.
+// POST /api/mfr-projects/:id/stages/:stageIndex/updates - comment thread.
 router.post('/mfr-projects/:id/stages/:stageIndex/updates', requireAuth, updateLimiter, async (req, res) => {
   try {
     const project = await loadOwnProject(req, res)
@@ -428,7 +428,7 @@ router.post('/mfr-projects/:id/stages/:stageIndex/updates', requireAuth, updateL
 
     stage.updates.push({ text: text.trim(), byUser: req.user.id, at: new Date() })
     await project.save()
-    await AuditLog.create({ byUser: req.user.id, action: 'Mfr Project Stage Update Added', detail: `${project._id}: ${stage.name} — ${text.trim().slice(0, 100)}` })
+    await AuditLog.create({ byUser: req.user.id, action: 'Mfr Project Stage Update Added', detail: `${project._id}: ${stage.name} - ${text.trim().slice(0, 100)}` })
     res.json(mapProject(project.toObject()))
   } catch (err) {
     console.error('[mfrProjectStages]', err)
@@ -450,9 +450,9 @@ router.post('/mfr-projects/:id/stages/:stageIndex/items', requireAuth, updateLim
     let lines = []
     if (fromColourways) {
       const colours = project.colourways || []
-      if (colours.length === 0) return res.status(400).json({ error: 'This project has no colourways yet — add them to the project first' })
+      if (colours.length === 0) return res.status(400).json({ error: 'This project has no colourways yet - add them to the project first' })
       const prefix = (name || stage.name || 'Item').trim().slice(0, 150)
-      lines = colours.map(c => ({ name: `${prefix} — ${c.name}`, colourway: c.name, status: 'pending', dueDate: dueDate || null, doneDate: null, note: '' }))
+      lines = colours.map(c => ({ name: `${prefix} - ${c.name}`, colourway: c.name, status: 'pending', dueDate: dueDate || null, doneDate: null, note: '' }))
     } else {
       if (!name?.trim()) return res.status(400).json({ error: 'Item name is required' })
       lines = [{ name: name.trim().slice(0, 200), colourway: (colourway || '').trim(), status: 'pending', dueDate: dueDate || null, doneDate: null, note: (note || '').trim() }]
@@ -463,7 +463,7 @@ router.post('/mfr-projects/:id/stages/:stageIndex/items', requireAuth, updateLim
 
     stage.items.push(...lines)
     await project.save()
-    await AuditLog.create({ byUser: req.user.id, action: 'Mfr Project Stage Item Added', detail: `${project._id}: ${stage.name} — added ${lines.length} item(s)` })
+    await AuditLog.create({ byUser: req.user.id, action: 'Mfr Project Stage Item Added', detail: `${project._id}: ${stage.name} - added ${lines.length} item(s)` })
     res.json(mapProject(project.toObject()))
   } catch (err) {
     console.error('[mfrProjectStages]', err)
@@ -509,7 +509,7 @@ router.post('/mfr-projects/:id/stages/:stageIndex/items/:lineIndex', requireAuth
     if (!touched) return res.status(400).json({ error: 'Nothing to update' })
 
     await project.save()
-    await AuditLog.create({ byUser: req.user.id, action: 'Mfr Project Stage Item Updated', detail: `${project._id}: ${stage.name} — "${item.name}"${has('status') ? ` → ${status}` : ''}` })
+    await AuditLog.create({ byUser: req.user.id, action: 'Mfr Project Stage Item Updated', detail: `${project._id}: ${stage.name} - "${item.name}"${has('status') ? ` → ${status}` : ''}` })
     res.json(mapProject(project.toObject()))
   } catch (err) {
     console.error('[mfrProjectStages]', err)
@@ -531,7 +531,7 @@ router.post('/mfr-projects/:id/stages/:stageIndex/items/:lineIndex/delete', requ
     const removedName = items[lineIndex].name
     stage.items = items.filter((_, i) => i !== lineIndex)
     await project.save()
-    await AuditLog.create({ byUser: req.user.id, action: 'Mfr Project Stage Item Removed', detail: `${project._id}: ${stage.name} — removed "${removedName}"` })
+    await AuditLog.create({ byUser: req.user.id, action: 'Mfr Project Stage Item Removed', detail: `${project._id}: ${stage.name} - removed "${removedName}"` })
     res.json(mapProject(project.toObject()))
   } catch (err) {
     console.error('[mfrProjectStages]', err)
@@ -563,7 +563,7 @@ router.post('/mfr-projects/:id/stages/:stageIndex/materials', requireAuth, updat
     }
     stage.materials.push(line)
     await project.save()
-    await AuditLog.create({ byUser: req.user.id, action: 'Mfr Project Stage Material Added', detail: `${project._id}: ${stage.name} — added "${line.name}" (${line.requiredQty} ${line.unit})` })
+    await AuditLog.create({ byUser: req.user.id, action: 'Mfr Project Stage Material Added', detail: `${project._id}: ${stage.name} - added "${line.name}" (${line.requiredQty} ${line.unit})` })
     res.json(mapProject(project.toObject()))
   } catch (err) {
     console.error('[mfrProjectStages]', err)
@@ -623,9 +623,9 @@ router.post('/mfr-projects/:id/stages/:stageIndex/materials/:lineIndex', require
     const lineUnit = line.unit
     const lineId = line._id
     await project.save()
-    await AuditLog.create({ byUser: req.user.id, action: 'Mfr Project Stage Material Updated', detail: `${project._id}: ${stage.name} — "${lineName}"${status ? ` → ${status}` : ''}` })
+    await AuditLog.create({ byUser: req.user.id, action: 'Mfr Project Stage Material Updated', detail: `${project._id}: ${stage.name} - "${lineName}"${status ? ` → ${status}` : ''}` })
 
-    // Finance-module data seam (§1g) — same InventoryMovement 'in' hook as
+    // Finance-module data seam (§1g) - same InventoryMovement 'in' hook as
     // orders.js's materials-update route. Delta only, never the running total.
     if (receivedDelta > 0) {
       try {
@@ -660,7 +660,7 @@ router.post('/mfr-projects/:id/stages/:stageIndex/materials/:lineIndex/delete', 
     const removedName = stage.materials[lineIndex].name
     stage.materials = stage.materials.filter((_, i) => i !== lineIndex)
     await project.save()
-    await AuditLog.create({ byUser: req.user.id, action: 'Mfr Project Stage Material Deleted', detail: `${project._id}: ${stage.name} — removed "${removedName}"` })
+    await AuditLog.create({ byUser: req.user.id, action: 'Mfr Project Stage Material Deleted', detail: `${project._id}: ${stage.name} - removed "${removedName}"` })
     res.json(mapProject(project.toObject()))
   } catch (err) {
     console.error('[mfrProjectStages]', err)

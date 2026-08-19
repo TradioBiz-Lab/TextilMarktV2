@@ -4,14 +4,14 @@ import { stageSchema } from './shared/stage.js'
 // One style of a manufacturer's own non-Tradio work.
 //
 // Deliberately NOT an Order: no buyerId (that's a real Tradio account), no
-// assignments[] — a manufacturer's own project has exactly one owner and no
+// assignments[] - a manufacturer's own project has exactly one owner and no
 // manufacturer-split concept. It DOES carry real TNA stages[] (Order Setup
-// Wizard, Phase 4) using the exact same stage machinery as a Tradio Order —
+// Wizard, Phase 4) using the exact same stage machinery as a Tradio Order -
 // see routes/mfrProjectStages.js, which mirrors routes/orders.js's stage
 // surface with the assignment/buyer/responsibleId indirection stripped out
 // (single owner, no accountability-delegation across roles).
 //
-// PRIVACY: same rule as MfrMasterProject — mfrId owns it, no admin override.
+// PRIVACY: same rule as MfrMasterProject - mfrId owns it, no admin override.
 const mfrProjectSchema = new mongoose.Schema({
   mfrId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   // Optional grouping, exactly as Order.masterOrderId optionally groups an Order —
@@ -36,7 +36,7 @@ const mfrProjectSchema = new mongoose.Schema({
   // Same shape/1MB cap as Order.imageDataUrl/imageUrl — see lib/imagePayload.js.
   imageDataUrl: { type: String, default: null },
   imageUrl:     { type: String, default: null, trim: true },
-  // TNA — same stageSchema as Order.js's assignments[].stages, just not nested
+  // TNA - same stageSchema as Order.js's assignments[].stages, just not nested
   // in an assignments array (no split, no buyer party for this scope).
   stages: [stageSchema],
   isActive: { type: Boolean, default: true },

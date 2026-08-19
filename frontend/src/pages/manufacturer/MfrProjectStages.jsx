@@ -54,7 +54,7 @@ export function MfrProjectStages({ project, onUpdated }) {
     return (
       <Card>
         <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Set up your TNA plan</div>
-        <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 12 }}>Define the steps once — you can edit, reorder work, or delete a step afterward.</div>
+        <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 12 }}>Define the steps once - you can edit, reorder work, or delete a step afterward.</div>
         {seedRows.map((row, i) => (
           <FlexRow key={i} gap={6} style={{ marginBottom: 6 }}>
             <Input placeholder="Stage name" value={row.name} onChange={e => updateSeedRow(i, { name: e.target.value })} style={{ flex: 2 }} />
@@ -194,7 +194,7 @@ function StageMaterials({ stage, busy, onAdd, onUpdate, onRemove }) {
       <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 6 }}>Materials / PO Checklist</div>
       {(stage.materials || []).map((m, li) => (
         <FlexRow key={m.id || li} style={{ justifyContent: 'space-between', padding: '4px 0' }}>
-          <div style={{ fontSize: 12 }}>{m.name} — {m.requiredQty} {m.unit}</div>
+          <div style={{ fontSize: 12 }}>{m.name} · {m.requiredQty} {m.unit}</div>
           <FlexRow gap={6}>
             <select value={m.status} disabled={busy} onChange={e => onUpdate(li, { status: e.target.value, receivedQty: e.target.value === 'received' ? m.requiredQty : m.receivedQty })}
               style={{ padding: '4px 6px', borderRadius: 6, border: `1px solid ${T.border}`, fontSize: 12 }}>

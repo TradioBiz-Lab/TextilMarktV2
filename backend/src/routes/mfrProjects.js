@@ -78,11 +78,11 @@ router.post('/mfr-master-projects/:id/delete', requireAuth, async (req, res) => 
 
 // ── MfrProject ────────────────────────────────────────────────────────────
 
-// TNA stage mapper — the MfrProject analogue of orders.js's enrichOrder stage
+// TNA stage mapper - the MfrProject analogue of orders.js's enrichOrder stage
 // map. No viewerMfrId narrowing (single owner, nothing to filter) and no
 // populate on responsibleId/updates.byUser (this scope has no accountability-
-// delegation across roles — the owning manufacturer is the only possible
-// author — so a raw id string is enough; the frontend already knows who "you"
+// delegation across roles - the owning manufacturer is the only possible
+// author - so a raw id string is enough; the frontend already knows who "you"
 // are without a round-trip).
 const mapStage = s => ({
   name: s.name, unitsDone: s.unitsDone, totalUnits: s.totalUnits,

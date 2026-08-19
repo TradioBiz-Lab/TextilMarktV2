@@ -708,7 +708,7 @@ export function AppProvider({ children }) {
   const deleteMfrProject = useCallback((id) => mfrProjectsApi.delete(id), [])
   const bulkCreateMfrProjects = useCallback((mfrMasterProjectId, rows) => mfrProjectsApi.bulkCreate(mfrMasterProjectId, rows), [])
 
-  // TNA for MfrProject (Order Setup Wizard, Phase 4) — same thin wrapper shape
+  // TNA for MfrProject (Order Setup Wizard, Phase 4) - same thin wrapper shape
   // as the Order stage actions above, minus the mfrId segment.
   const seedMfrProjectStages = useCallback((id, data) => mfrProjectsApi.seedStages(id, data), [])
   const updateMfrProjectStage = useCallback((id, stageIndex, data) => mfrProjectsApi.updateStage(id, stageIndex, data), [])

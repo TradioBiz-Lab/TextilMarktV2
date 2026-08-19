@@ -1,5 +1,5 @@
 // Order Setup Wizard, Phase 4: TNA for MfrProject. Mirrors orders.js's stage
-// surface with the assignment/buyer/responsibleId indirection stripped out —
+// surface with the assignment/buyer/responsibleId indirection stripped out.
 // every route is a flat owner-only gate, no admin branch, ever. This suite's
 // top priority is proving that inversion holds (admin/master/buyer/other-
 // manufacturer all 403, the same way the existing MfrProject/CostSheet
@@ -41,7 +41,7 @@ async function seedProject(mfr, id, overrides = {}) {
   return res.body
 }
 
-describe('MfrProject TNA — privacy invariant: owner-only, no admin branch', () => {
+describe('MfrProject TNA - privacy invariant: owner-only, no admin branch', () => {
   test('admin, master, buyer, and an unrelated manufacturer all 403 on every stage route', async () => {
     const mfrA = await makeMfr()
     const mfrB = await makeMfr()
@@ -91,7 +91,7 @@ describe('MfrProject TNA — privacy invariant: owner-only, no admin branch', ()
   })
 })
 
-describe('MfrProject TNA — seed', () => {
+describe('MfrProject TNA - seed', () => {
   test('owner can seed stages once, and seeding again is refused', async () => {
     const mfr = await makeMfr()
     const id = await makeProject(mfr)
@@ -113,7 +113,7 @@ describe('MfrProject TNA — seed', () => {
   })
 })
 
-describe('MfrProject TNA — single-stage progress + gates', () => {
+describe('MfrProject TNA - single-stage progress + gates', () => {
   test('quantity stage progress derives status from units', async () => {
     const mfr = await makeMfr()
     const id = await makeProject(mfr)
@@ -138,8 +138,8 @@ describe('MfrProject TNA — single-stage progress + gates', () => {
     const mfr = await makeMfr()
     const id = await makeProject(mfr)
     await seedProject(mfr, id, { stageKinds: ['checklist', 'quantity', 'milestone'] })
-    await as(mfr).post(`/api/mfr-projects/${id}/stages/0/items`, { name: 'Lab Dip — Red' })
-    await as(mfr).post(`/api/mfr-projects/${id}/stages/0/items`, { name: 'Lab Dip — Blue' })
+    await as(mfr).post(`/api/mfr-projects/${id}/stages/0/items`, { name: 'Lab Dip - Red' })
+    await as(mfr).post(`/api/mfr-projects/${id}/stages/0/items`, { name: 'Lab Dip - Blue' })
 
     const blocked = await as(mfr).post(`/api/mfr-projects/${id}/stages/0`, { status: 'done' })
     assert.equal(blocked.status, 400)
@@ -171,7 +171,7 @@ describe('MfrProject TNA — single-stage progress + gates', () => {
   })
 })
 
-describe('MfrProject TNA — bulk update', () => {
+describe('MfrProject TNA - bulk update', () => {
   test('updates several stages atomically, all-or-nothing on a bad row', async () => {
     const mfr = await makeMfr()
     const id = await makeProject(mfr)
@@ -192,7 +192,7 @@ describe('MfrProject TNA — bulk update', () => {
   })
 })
 
-describe('MfrProject TNA — eta route (baseline capture, kind flip)', () => {
+describe('MfrProject TNA - eta route (baseline capture, kind flip)', () => {
   test('first eta revision backfills baselineEta; second revision does not overwrite it', async () => {
     const mfr = await makeMfr()
     const id = await makeProject(mfr)
@@ -219,7 +219,7 @@ describe('MfrProject TNA — eta route (baseline capture, kind flip)', () => {
   })
 })
 
-describe('MfrProject TNA — delete, updates, items, materials CRUD', () => {
+describe('MfrProject TNA - delete, updates, items, materials CRUD', () => {
   test('delete removes a stage and shifts later indices down', async () => {
     const mfr = await makeMfr()
     const id = await makeProject(mfr)

@@ -225,7 +225,7 @@ export const mfrProjectsApi = {
   update: (id, data) => api.post(`/mfr-projects/${id}`, data),
   delete: id => api.post(`/mfr-projects/${id}/delete`),
   bulkCreate: (mfrMasterProjectId, rows) => api.post('/mfr-projects/bulk', { mfrMasterProjectId, rows }),
-  // TNA (Order Setup Wizard, Phase 4) — mirrors ordersApi's stage methods
+  // TNA (Order Setup Wizard, Phase 4) - mirrors ordersApi's stage methods
   // one-for-one, minus the mfrId segment (a project has exactly one owner).
   seedStages: (id, data) => api.post(`/mfr-projects/${id}/stages/seed`, data),
   updateStage: (id, stageIndex, data) => api.post(`/mfr-projects/${id}/stages/${stageIndex}`, data),
