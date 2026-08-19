@@ -2,6 +2,7 @@ import { Router } from 'express'
 import mongoose from 'mongoose'
 import rateLimit from 'express-rate-limit'
 import { MaterialDefinition, MaterialRequirement, Order, AuditLog, Notification } from '../db/index.js'
+import { REQUIREMENT_CATEGORIES } from '../models/MaterialRequirement.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { assertScopeShape } from '../lib/scopeAccess.js'
 
@@ -84,6 +85,10 @@ const mapLine = l => ({
   materialDefinitionId: l.materialDefinitionId ? l.materialDefinitionId.toString() : null,
   colourway: l.colourway || '', requiredQty: l.requiredQty, unit: l.unit || '',
   supplier: l.supplier || '', note: l.note || '',
+  wastagePct: l.wastagePct || 0, rate: l.rate ?? null,
+  // Quantity to actually order, grossed up for wastage — derived, never stored
+  // (same discipline as CostSheet's computed totals).
+  qtyToOrder: Math.round((l.requiredQty * (1 + (l.wastagePct || 0) / 100)) * 1000) / 1000,
   status: l.status, orderedQty: l.orderedQty, receivedQty: l.receivedQty, poNumber: l.poNumber || '',
   pushedTo: (l.pushedTo || []).map(p => ({
     mfrId: p.mfrId.toString(), stageIndex: p.stageIndex, materialLineId: p.materialLineId.toString(), pushedAt: p.pushedAt,
@@ -184,7 +189,7 @@ router.get('/material-requirements', requireAuth, async (req, res) => {
 // upsert, since exactly one MaterialRequirement exists per scope (§1c).
 async function addLine(req, res) {
   try {
-    const { scopeType, orderId, mfrProjectId, category, name, materialDefinitionId, colourway, requiredQty, unit, supplier, note } = req.body
+    const { scopeType, orderId, mfrProjectId, category, name, materialDefinitionId, colourway, requiredQty, unit, supplier, wastagePct, rate, note } = req.body
 
     try {
       await assertScopeShape(scopeType, orderId, mfrProjectId, req.user)
@@ -198,14 +203,25 @@ async function addLine(req, res) {
     // mfr_project: assertScopeShape already confirmed ownership above.
 
     if (!name?.trim()) return res.status(400).json({ error: 'Material name is required' })
-    if (!['fabric', 'trim', 'accessory', 'other'].includes(category)) return res.status(400).json({ error: 'Invalid category' })
+    if (!REQUIREMENT_CATEGORIES.includes(category)) return res.status(400).json({ error: 'Invalid category' })
     const reqQty = parseFloat(requiredQty)
     if (isNaN(reqQty) || reqQty < 0) return res.status(400).json({ error: 'Required quantity must be a non-negative number' })
+    let wastage = 0
+    if (wastagePct !== undefined && wastagePct !== null && wastagePct !== '') {
+      wastage = parseFloat(wastagePct)
+      if (isNaN(wastage) || wastage < 0) return res.status(400).json({ error: 'Wastage % must be a non-negative number' })
+    }
+    let parsedRate = null
+    if (rate !== undefined && rate !== null && rate !== '') {
+      parsedRate = parseFloat(rate)
+      if (isNaN(parsedRate) || parsedRate < 0) return res.status(400).json({ error: 'Rate must be a non-negative number' })
+    }
 
     const line = {
       category, name: name.trim().slice(0, 200),
       materialDefinitionId: materialDefinitionId || null, colourway: colourway || '',
-      requiredQty: reqQty, unit: unit || '', supplier: supplier || '', note: note || '',
+      requiredQty: reqQty, unit: unit || '', supplier: supplier || '',
+      wastagePct: wastage, rate: parsedRate, note: note || '',
     }
 
     const filter = scopeType === 'tradio_order' ? { scopeType, orderId } : { scopeType, mfrProjectId }
@@ -251,7 +267,7 @@ router.post('/material-requirements/bulk', requireAuth, requireAdmin, requiremen
           failed++; results.push({ row: i, success: false, error: 'Required quantity must be a non-negative number' }); continue
         }
         const cat = category || 'other'
-        if (!['fabric', 'trim', 'accessory', 'other'].includes(cat)) {
+        if (!REQUIREMENT_CATEGORIES.includes(cat)) {
           failed++; results.push({ row: i, success: false, error: `Invalid category "${category}"` }); continue
         }
         const order = await Order.exists({ _id: orderId })
@@ -298,9 +314,9 @@ router.post('/material-requirements/:id/lines/:lineId', requireAuth, async (req,
     const line = doc.lines.id(req.params.lineId)
     if (!line) return res.status(404).json({ error: 'Line not found' })
 
-    const { category, name, colourway, requiredQty, unit, supplier, note } = req.body
+    const { category, name, colourway, requiredQty, unit, supplier, wastagePct, rate, note } = req.body
     if (category !== undefined) {
-      if (!['fabric', 'trim', 'accessory', 'other'].includes(category)) return res.status(400).json({ error: 'Invalid category' })
+      if (!REQUIREMENT_CATEGORIES.includes(category)) return res.status(400).json({ error: 'Invalid category' })
       line.category = category
     }
     if (name !== undefined) {
@@ -315,6 +331,19 @@ router.post('/material-requirements/:id/lines/:lineId', requireAuth, async (req,
     }
     if (unit !== undefined) line.unit = unit
     if (supplier !== undefined) line.supplier = supplier
+    if (wastagePct !== undefined) {
+      const w = wastagePct === null || wastagePct === '' ? 0 : parseFloat(wastagePct)
+      if (isNaN(w) || w < 0) return res.status(400).json({ error: 'Wastage % must be a non-negative number' })
+      line.wastagePct = w
+    }
+    if (rate !== undefined) {
+      if (rate === null || rate === '') { line.rate = null }
+      else {
+        const r = parseFloat(rate)
+        if (isNaN(r) || r < 0) return res.status(400).json({ error: 'Rate must be a non-negative number' })
+        line.rate = r
+      }
+    }
     if (note !== undefined) line.note = note
 
     await doc.save()
@@ -412,6 +441,108 @@ router.post('/material-requirements/:id/lines/:lineId/push', requireAuth, requir
       orderId: doc.orderId,
     })
 
+    res.json(await enrichMaterialRequirement(doc.toObject(), req.user))
+  } catch (err) {
+    console.error('[materials]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// ── Clone a whole BOM to another product ────────────────────────────────────
+// The "clone function" from the wizard's Materials step — authoring a BOM
+// product-by-product doesn't mean retyping a near-identical one from scratch.
+// Mirrors costing.js's /duplicate shape and reset rules exactly: content
+// copies over, but pushedTo/status/PO fields never do (a new scope has no
+// relationship yet to whatever stage the source was pushed onto).
+router.post('/material-requirements/:id/duplicate', requireAuth, async (req, res) => {
+  try {
+    const source = await MaterialRequirement.findById(req.params.id).lean()
+    if (!source) return res.status(404).json({ error: 'Requirement not found' })
+
+    if (req.user.role === 'buyer') return res.status(403).json({ error: 'Buyers cannot manage material requirements' })
+    if (source.scopeType === 'tradio_order' && req.user.role !== 'admin')
+      return res.status(403).json({ error: 'Only an admin can manage material requirements on a Tradio order' })
+    if (source.scopeType === 'mfr_project') {
+      const project = await mongoose.model('MfrProject').findById(source.mfrProjectId, 'mfrId').lean()
+      if (!project || String(project.mfrId) !== req.user.id) return res.status(403).json({ error: 'Forbidden' })
+    }
+
+    const { targetOrderId, targetMfrProjectId } = req.body
+    if (!targetOrderId && !targetMfrProjectId) return res.status(400).json({ error: 'targetOrderId or targetMfrProjectId is required' })
+    if (targetOrderId && targetMfrProjectId) return res.status(400).json({ error: 'Provide exactly one target' })
+    const targetScopeType = targetOrderId ? 'tradio_order' : 'mfr_project'
+
+    try {
+      await assertScopeShape(targetScopeType, targetOrderId || null, targetMfrProjectId || null, req.user)
+    } catch (e) {
+      return res.status(e.status || 400).json({ error: e.message })
+    }
+    if (targetScopeType === 'tradio_order' && req.user.role !== 'admin')
+      return res.status(403).json({ error: 'Only an admin can manage material requirements on a Tradio order' })
+
+    const targetFilter = targetScopeType === 'tradio_order' ? { scopeType: targetScopeType, orderId: targetOrderId } : { scopeType: targetScopeType, mfrProjectId: targetMfrProjectId }
+    const existing = await MaterialRequirement.findOne(targetFilter, '_id').lean()
+    if (existing) return res.status(400).json({ error: 'A material requirement already exists for that scope — add lines to it directly instead' })
+
+    const clonedLines = (source.lines || []).map(l => ({
+      category: l.category, name: l.name, materialDefinitionId: l.materialDefinitionId || null,
+      colourway: l.colourway || '', requiredQty: l.requiredQty, unit: l.unit || '', supplier: l.supplier || '',
+      wastagePct: l.wastagePct || 0, rate: l.rate ?? null, note: l.note || '',
+      // Deliberately NOT copied: status/orderedQty/receivedQty/poNumber/pushedTo —
+      // a new scope has no receiving history and nothing pushed to any stage yet.
+    }))
+
+    const dup = await MaterialRequirement.create({
+      ...targetFilter, createdBy: req.user.id, lines: clonedLines,
+    })
+    await AuditLog.create({ byUser: req.user.id, action: 'Material Requirement Duplicated', detail: `${req.params.id} -> ${targetOrderId || targetMfrProjectId} (${clonedLines.length} lines)` })
+    res.status(201).json(await enrichMaterialRequirement(dup.toObject(), req.user))
+  } catch (err) {
+    console.error('[materials]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// ── PO generation (mfr_project scope only) ─────────────────────────────────
+// No new PurchaseOrder collection — a PO is just a set of requirement lines
+// sharing a poNumber (derive, don't duplicate, same discipline as the rest
+// of this app). tradio_order scope already has a working PO mechanism —
+// MaterialRequirementsPanel's existing "Raise PO" action, which operates on
+// the PUSHED stage material line (the actual source of truth for that scope,
+// per enrichMaterialRequirement above). Writing status/poNumber onto THIS
+// doc's own line for an already-pushed tradio_order line would be silently
+// overridden by that same derivation on the next read — so this route only
+// makes sense, and is only offered, for mfr_project scope, where the line's
+// own stored fields are authoritative (no stage to push to).
+router.post('/material-requirements/:id/generate-po', requireAuth, async (req, res) => {
+  try {
+    const doc = await MaterialRequirement.findById(req.params.id)
+    if (!doc) return res.status(404).json({ error: 'Requirement not found' })
+    if (doc.scopeType !== 'mfr_project')
+      return res.status(400).json({ error: 'Use the Raise PO action on the pushed stage line for a Tradio order' })
+
+    const project = await mongoose.model('MfrProject').findById(doc.mfrProjectId, 'mfrId').lean()
+    if (!project || String(project.mfrId) !== req.user.id) return res.status(403).json({ error: 'Forbidden' })
+
+    const { lineIds, poNumber, notes } = req.body
+    if (!Array.isArray(lineIds) || lineIds.length === 0) return res.status(400).json({ error: 'lineIds is required' })
+
+    const lines = lineIds.map(id => doc.lines.id(id)).filter(Boolean)
+    if (lines.length !== lineIds.length) return res.status(400).json({ error: 'One or more lines were not found' })
+
+    const scopeRef = doc.orderId || doc.mfrProjectId.toString()
+    const resolvedPoNumber = (poNumber && String(poNumber).trim())
+      || `PO-${scopeRef}-${Date.now().toString(36).toUpperCase()}`
+
+    for (const line of lines) {
+      line.status = 'ordered'
+      line.poNumber = resolvedPoNumber
+      if (line.orderedQty < line.requiredQty) line.orderedQty = line.requiredQty
+      if (notes) line.note = notes
+    }
+    await doc.save()
+
+    await AuditLog.create({ byUser: req.user.id, action: 'Material PO Generated', detail: `${scopeRef}: ${resolvedPoNumber} (${lines.length} lines)` })
     res.json(await enrichMaterialRequirement(doc.toObject(), req.user))
   } catch (err) {
     console.error('[materials]', err)

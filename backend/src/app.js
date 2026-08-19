@@ -21,9 +21,11 @@ import actionItemsRouter   from './routes/actionItems.js'
 import assistantRouter     from './routes/assistant.js'
 import wikiPagesRouter     from './routes/wikiPages.js'
 import materialsRouter     from './routes/materials.js'
+import materialsAiRouter   from './routes/materialsAi.js'
 import costingRouter       from './routes/costing.js'
 import mfrProjectsRouter   from './routes/mfrProjects.js'
 import inventoryRouter     from './routes/inventory.js'
+import suppliersRouter     from './routes/suppliers.js'
 
 // ── Validate required env vars at startup ──────────────────────────────────
 const isProd = process.env.NODE_ENV === 'production'
@@ -171,9 +173,11 @@ app.use('/api/action-items',  actionItemsRouter)
 app.use('/api/assistant',     assistantRouter)
 app.use('/api/wiki-pages',    wikiPagesRouter)
 app.use('/api',                materialsRouter)   // /material-definitions, /material-requirements
+app.use('/api',                materialsAiRouter) // /material-requirements/ai-draft
 app.use('/api',                costingRouter)     // /cost-sheets
 app.use('/api',                mfrProjectsRouter) // /mfr-master-projects, /mfr-projects
 app.use('/api',                inventoryRouter)   // /inventory
+app.use('/api',                suppliersRouter)   // /suppliers
 app.use('/api/master-orders', masterOrdersRouter)
 app.use('/api/signup',        signupRouter)
 

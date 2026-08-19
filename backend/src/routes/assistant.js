@@ -1,16 +1,15 @@
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
-import Anthropic from '@anthropic-ai/sdk'
 import { requireAuth } from '../middleware/auth.js'
 import { Order } from '../db/index.js'
 import { stageEtaVarianceDays, deliveryVarianceDays } from '../models/Order.js'
 import { getToday, stageActualVariance, deliveryOverrunDays } from '../lib/stageMath.js'
+import { getClient, ANTHROPIC_MODEL } from '../lib/anthropicClient.js'
 
 const router = Router()
 
 const skipInTest = () => process.env.NODE_ENV === 'test'
 
-const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5'
 const MAX_TOOL_LOOP_ITERATIONS = 8
 const MAX_MESSAGES = 100
 const MAX_MESSAGE_LENGTH = 8000
@@ -30,14 +29,6 @@ const assistantLimiter = rateLimit({
   message: { error: 'Too many assistant requests. Please wait.' },
   standardHeaders: true, legacyHeaders: false, validate: false, skip: skipInTest,
 })
-
-// Lazy — constructing the client only when a request actually needs it means
-// importing this file never throws just because ANTHROPIC_API_KEY is unset.
-let anthropicClient = null
-function getClient() {
-  if (!anthropicClient) anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-  return anthropicClient
-}
 
 // Mirrors backend/src/app.js's PORT resolution exactly. Deliberately NOT
 // memoized — read fresh on every request so tests that bind the app to a

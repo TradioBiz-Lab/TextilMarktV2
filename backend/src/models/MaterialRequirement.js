@@ -14,14 +14,30 @@ const pushedToSchema = new mongoose.Schema({
   pushedBy:       { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
 }, { _id: false })
 
+// Additive extension: 'fabric_primary'/'fabric_secondary' split out the old
+// generic 'fabric' value for the AI-drafted-BOM categorisation (Primary
+// Fabric/Secondary Fabric/Trims/Accessories). Existing 'fabric' lines and the
+// name-keyed (not category-keyed) trims-order production gate in orders.js
+// are untouched — new lines (manual or AI-drafted) use the split values.
+export const REQUIREMENT_CATEGORIES = ['fabric', 'fabric_primary', 'fabric_secondary', 'trim', 'accessory', 'other']
+
 const requirementLineSchema = new mongoose.Schema({
-  category: { type: String, enum: ['fabric', 'trim', 'accessory', 'other'], required: true },
+  category: { type: String, enum: REQUIREMENT_CATEGORIES, required: true },
   name:     { type: String, required: true, maxlength: 200 },
   materialDefinitionId: { type: mongoose.Schema.Types.ObjectId, ref: 'MaterialDefinition', default: null },
   colourway: { type: String, default: '' }, // '' = applies to all colourways
   requiredQty: { type: Number, required: true, min: 0 },
   unit:     { type: String, default: '' },
   supplier: { type: String, default: '' },
+  // Wastage/consumption-side multiplier — "quantity to order" = requiredQty *
+  // (1 + wastagePct/100). Distinct from CostSheet's overheadPct/rejectionPct,
+  // which are cost-side percentages; this one grosses up a physical quantity,
+  // consistent with TRADIO.md's conservative-efficiency-factor philosophy.
+  wastagePct: { type: Number, default: 0, min: 0 },
+  // Estimated per-unit rate for this line — lets Materials Management show a
+  // planning-stage cost ("add the costs of each consumable item") independent
+  // of whatever a CostSheet later refines it to.
+  rate:     { type: Number, default: null, min: 0 },
   note:     { type: String, default: '' },
   // Receiving fields — AUTHORITATIVE FOR mfr_project SCOPE ONLY. For tradio_order
   // lines these stay at their defaults and are never read: the pushed stage
