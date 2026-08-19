@@ -43,7 +43,11 @@ export function LoginPage() {
   if (showSignUp) return <SignUpPage onBackToLogin={() => setShowSignUp(false)} />
 
   return (
-    <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, overflow: 'auto' }}>
+    <div style={{
+      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, overflow: 'auto',
+      backgroundImage: `linear-gradient(rgba(248,250,252,0.88), rgba(248,250,252,0.88)), url('/images/login-bg.jpg')`,
+      backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', backgroundAttachment: 'fixed',
+    }}>
       <div style={{ width: '100%', maxWidth: 400 }}>
         <div style={{ background: T.surface, borderRadius: 20, border: `1px solid ${T.border}`, padding: '40px 36px', boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
 
