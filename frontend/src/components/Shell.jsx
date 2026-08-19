@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot } from 'lucide-react'
+import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot, Boxes, Briefcase, Calculator, Warehouse } from 'lucide-react'
 import { T } from '../constants.js'
 import { Btn, RibbonBanner } from './ui.jsx'
 import { NotifPanel } from './NotifPanel.jsx'
@@ -72,6 +72,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
     buyer: [
       { id: 'dashboard', icon: Home, label: 'Dashboard' },
       { id: 'action_items', icon: ListChecks, label: 'Action Items' },
+      { id: 'kriyaa', icon: Bot, label: 'Kriyaa' },
       { id: 'submit_req', icon: ClipboardList, label: 'Submit Requirement' },
       { id: 'documents', icon: Folder, label: 'Documents' },
       { id: 'reports', icon: BarChart3, label: 'Reports' },
@@ -79,6 +80,12 @@ export function Shell({ view, setView, children, onOpenOrder }) {
     manufacturer: [
       { id: 'dashboard', icon: Home, label: 'Dashboard' },
       { id: 'action_items', icon: ListChecks, label: 'Action Items' },
+      { id: 'kriyaa', icon: Bot, label: 'Kriyaa' },
+      { id: 'materials', icon: Boxes, label: 'Materials' },
+      { id: 'costing', icon: Calculator, label: 'Costing' },
+      { id: 'inventory', icon: Warehouse, label: 'Inventory' },
+      { id: 'projects', icon: Briefcase, label: 'My Projects' },
+      { id: 'documents', icon: Folder, label: 'Documents' },
       { id: 'certs', icon: ShieldCheck, label: 'Certificates' },
     ],
     admin: [
@@ -86,6 +93,9 @@ export function Shell({ view, setView, children, onOpenOrder }) {
       { id: 'action_items', icon: ListChecks, label: 'Action Items' },
       { id: 'kriyaa',    icon: Bot, label: 'Kriyaa' },
       { id: 'orders',    icon: Package, label: 'Orders' },
+      { id: 'materials', icon: Boxes, label: 'Materials' },
+      { id: 'costing',   icon: Calculator, label: 'Costing' },
+      { id: 'inventory', icon: Warehouse, label: 'Inventory' },
       { id: 'documents', icon: Folder, label: 'Documents' },
       { id: 'reports',   icon: BarChart3, label: 'Reports' },
       { id: 'audit',     icon: History, label: 'Audit Log' },
@@ -208,10 +218,10 @@ export function Shell({ view, setView, children, onOpenOrder }) {
         <main className="main-content" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>{children}</main>
       </div>
 
-      {/* Floating AI assistant — admin-only (matches the backend's requireAdmin
-          gate), rendered unconditionally so its conversation survives
-          navigating between pages within the session. */}
-      {user?.role === 'admin' && <KriyaaWidget />}
+      {/* Floating AI assistant — open to all three roles (the backend scopes
+          tools/data per role, not this gate), rendered unconditionally so its
+          conversation survives navigating between pages within the session. */}
+      {['admin', 'buyer', 'manufacturer'].includes(user?.role) && <KriyaaWidget />}
     </div>
   )
 }

@@ -10,6 +10,9 @@ const DOC_TYPES = [
   'material_po', 'knitting_grn', 'knitting_qc',
   'dyeing_grn', 'dyeing_qc', 'processing_grn', 'processing_qc',
   'cutting_qc', 'stitching_qc', 'final_qc', 'packing_qc', 'dispatch_docs',
+  // Wiki — link-only reference categories (externalUrl required, no dataUrl).
+  // Tech Pack/SOP content lives in the separate WikiPage model instead.
+  'wiki_inspection_form', 'wiki_fit_comments', 'wiki_photos',
 ]
 
 const documentSchema = new mongoose.Schema({
@@ -47,6 +50,12 @@ const documentSchema = new mongoose.Schema({
   fileName:    { type: String, default: null },
   fileSize:    { type: Number, default: null },
   mimeType:    { type: String, default: null },
+
+  // Wiki scoping — set only for wiki_* types (see DOC_TYPES above). Company-wide
+  // items are visible to every authenticated user; buyer-scoped items to that
+  // buyer, admins, and any manufacturer currently assigned to one of their orders.
+  wikiScope: { type: String, enum: ['company', 'buyer'], default: null },
+  buyerId:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 }, { timestamps: true })
 
 documentSchema.index({ mfrId: 1, isActive: 1 })
@@ -54,5 +63,6 @@ documentSchema.index({ orderId: 1, isActive: 1 })
 documentSchema.index({ expiryDate: 1 })          // for expiry-alert queries
 documentSchema.index({ uploadedBy: 1 })
 documentSchema.index({ createdAt: -1 })           // for list sort (avoids in-memory sort on Atlas)
+documentSchema.index({ buyerId: 1, wikiScope: 1, isActive: 1 })
 
 export const Document = mongoose.model('Document', documentSchema)

@@ -16,6 +16,7 @@
 | `notifications` | In-app alerts per user                                  | ObjectId         |
 | `auditlogs`     | Immutable action trail (admin-visible)                  | ObjectId         |
 | `ribbons`       | Admin-published banner alerts                           | ObjectId         |
+| `wikipages`     | Admin-authored Tech Pack/SOP reference pages             | ObjectId         |
 
 ---
 
@@ -354,6 +355,10 @@ manufacturer, an order, or both — or is stage-evidence tied to a specific stag
   fileSize    Number | null       bytes
   mimeType    String | null       e.g. "application/pdf"
 
+  wikiScope   String | null       enum: ["company","buyer"] — set only for wiki_* types,
+                                  see Wiki below
+  buyerId     ObjectId → users    nullable — set only when wikiScope is "buyer"
+
   createdAt   Date                auto (= uploadedAt)
   updatedAt   Date                auto
 }
@@ -361,6 +366,9 @@ manufacturer, an order, or both — or is stage-evidence tied to a specific stag
 
 > For non-stage documents, exactly one of `dataUrl` / `externalUrl` is set. Stage-evidence
 > documents (`stageIndex != null`) may have neither if `notes` alone captures the evidence.
+> **Wiki (`wiki_*`) types are the one exception that's stricter, not looser: `externalUrl`
+> is required and `dataUrl` is forbidden** — these are always Zoho-hosted links, never an
+> inline upload (see Wiki below).
 
 **Document Types** (`type` enum):
 - General: `PO`, `buyer_order`, `tech_pack`, `cost_sheet`, `RFQ`, `terms`
@@ -370,6 +378,7 @@ manufacturer, an order, or both — or is stage-evidence tied to a specific stag
 - Stage evidence: `material_po`, `knitting_grn`, `knitting_qc`, `dyeing_grn`, `dyeing_qc`,
   `processing_grn`, `processing_qc`, `cutting_qc`, `stitching_qc`, `final_qc`, `packing_qc`,
   `dispatch_docs`
+- Wiki (link-only): `wiki_inspection_form`, `wiki_fit_comments`, `wiki_photos` — see Wiki below
 
 **Indexes:**
 - `{ mfrId: 1, isActive: 1 }` — manufacturer cert queries
@@ -377,13 +386,14 @@ manufacturer, an order, or both — or is stage-evidence tied to a specific stag
 - `{ expiryDate: 1 }` — expiry alert cron jobs
 - `{ uploadedBy: 1 }` — audit queries
 - `{ createdAt: -1 }` — list sort (avoids in-memory sort on Atlas)
+- `{ buyerId: 1, wikiScope: 1, isActive: 1 }` — wiki visibility queries
 
 **Visibility rules:**
 | Role         | Can see                                                              |
 |--------------|------------------------------------------------------------------------|
 | Admin        | All active documents                                                    |
-| Buyer        | Docs for their orders + certs of manufacturers assigned to those orders|
-| Manufacturer | Their own certs + docs for orders they are assigned to                 |
+| Buyer        | Docs for their orders + certs of manufacturers assigned to those orders, plus wiki docs (see Wiki below) |
+| Manufacturer | Their own certs + docs for orders they are assigned to, plus wiki docs (see Wiki below) |
 
 ---
 
@@ -506,6 +516,197 @@ Never shown to buyers or manufacturers.
 **Indexes:**
 - `{ assigneeId: 1, status: 1 }` — "my open items"
 - `{ buyerId: 1, status: 1 }` — per-customer grouping
+
+---
+
+## 9. `wikipages`
+
+Admin-authored Tech Pack/SOP reference pages — the "Wiki." Unlike `documents`, this is
+never a file: content is typed/pasted as Markdown and rendered as an in-app page. Trim
+lists, packaging/wash-care guidance, and similar reference material fold into SOP pages
+as their own page rather than getting a separate category. The Wiki's other three
+categories (Inspection Form, Fit Comments, Photos) are link-only and live on the
+`documents` collection instead (`wiki_*` types, see §4) — those are files that live on
+Zoho WorkDrive, not content to author in-app.
+
+```
+{
+  _id          ObjectId            auto
+  title        String              required, trim, max 200 chars
+  category     String              enum: ["tech_pack","sop"], required
+  bodyMarkdown String              required, max 50,000 chars — plain Markdown text,
+                                   sanitized at render time (never trusted as raw HTML)
+  wikiScope    String              enum: ["company","buyer"], required
+  buyerId      ObjectId → users    nullable — required when wikiScope is "buyer",
+                                   forbidden when "company"
+  createdBy    ObjectId → users    required
+  updatedBy    ObjectId → users    nullable — set on every edit
+  isActive     Boolean             soft-delete flag, default: true
+  createdAt    Date                auto
+  updatedAt    Date                auto
+}
+```
+
+**Indexes:**
+- `{ buyerId: 1, wikiScope: 1, isActive: 1 }`
+
+**Visibility (same rule for `wikipages` and `documents`' `wiki_*` subset):**
+| Role         | Can see                                                                 |
+|--------------|--------------------------------------------------------------------------|
+| Admin        | Everything — the only role that can create/edit/soft-delete              |
+| Buyer        | `wikiScope: "company"` pages + `wikiScope: "buyer"` pages where `buyerId` is their own id |
+| Manufacturer | `wikiScope: "company"` pages + `wikiScope: "buyer"` pages for any buyer they currently have at least one order-assignment with |
+
+Shared scoping logic lives in `backend/src/lib/wikiAccess.js` (`canAccessWikiScope`,
+`resolveAssignedBuyerIds`, `validateWikiScopeShape`) — used by both `wikiPages.js` and
+`documents.js` so the two collections can never drift on this rule.
+
+---
+
+## 10. Materials Management + Costing Engine
+
+Six new collections (plus a `stageMaterialSchema` extension, §1 above), all sharing one
+`scopeType` discriminator: every `MaterialRequirement`/`CostSheet`/`InventoryMovement` is
+tied to **either** a real Tradio `Order` **or** a manufacturer's own private `MfrProject` —
+never both. This is what makes Materials Management and Costing a general-purpose
+manufacturer tool, not only a Tradio-brokered-order feature.
+
+### `stageMaterialSchema` extension (on `orders`, §1 stage sub-schema)
+```
+category   String   enum: ["fabric","trim","accessory","other"], default: "other" — planning
+                    metadata only, does NOT feed the existing trims-order production gate
+colourway  String   default: "" — matches order.colourways[].name
+```
+Real subdocument `_id` (was `{_id: false}`) so `MaterialRequirement.pushedTo[]` can
+reference a line stably — a positional index would silently mis-point after a
+stage-insert, stage-delete, or another material-line delete.
+
+### `materialdefinitions` — the catalog
+```
+{ name, category, defaultUnit, defaultSupplier, spec, isActive, createdBy, createdAt, updatedAt }
+```
+No `scopeType` — a fabric definition is useful regardless of which client it's for.
+All roles read; admin-only write. Optional soft link from requirement/cost-sheet lines
+(`materialDefinitionId`) — free-text entry keeps working exactly as before.
+
+### `materialrequirements` — the planning layer, one document per scope
+```
+{
+  scopeType     String    enum: ["tradio_order","mfr_project"]
+  orderId       String    → orders, set only when tradio_order
+  mfrProjectId  ObjectId  → mfrprojects, set only when mfr_project
+  createdBy     ObjectId  → users
+  lines: [{
+    category, name, materialDefinitionId, colourway, requiredQty, unit, supplier, note,
+    status, orderedQty, receivedQty, poNumber,   // authoritative for mfr_project ONLY —
+                                                  // for tradio_order these mirror whatever
+                                                  // the line is pushed to (see below)
+    pushedTo: [{ mfrId, stageIndex, materialLineId, pushedAt, pushedBy }]  // tradio_order only
+  }]
+}
+```
+Unique partial indexes — `{orderId}` filtered to `scopeType:"tradio_order"`,
+`{mfrProjectId}` filtered to `scopeType:"mfr_project"` — enforce exactly one document
+per scope. **Receiving stays single-sourced**: for `tradio_order` lines, the pushed
+`stages[].materials[]` line (§1) is the one source of truth for receiving; this
+collection's own status/qty fields are derived from `pushedTo[]` at read time, never
+written back to directly, so there's never a second place receiving data can drift.
+Push-to-stage (Phase 2) is a real, stable-id reference — no name-matching heuristic.
+
+**Visibility**: admin/buyer see the full `tradio_order` document; a manufacturer sees
+*only* lines with a `pushedTo` entry naming them (the direct analogue of `enrichOrder`'s
+`viewerMfrId` stripping) — on a split order, a manufacturer never sees a competitor's
+supplier/PO/quantity data pushed to someone else. `mfr_project` documents are owner-only,
+full stop — see Privacy below.
+
+### `costsheets` — fields taken directly from a real Tradio cost sheet
+One document per `(scope, mfrId)` — per assignment, not per order, since a split order's
+manufacturers author their own costs independently.
+```
+{
+  scopeType, orderId | mfrProjectId, mfrId, styleRef,
+  fabricSource  String   enum: ["tradio","buyer"] — TRADIO.md's fabric-risk-ownership rule
+  currency, status: enum ["draft","submitted","approved"], submittedAt/By, approvedAt/By,
+
+  // manufacturer-writable while draft (or master, any time — the on-behalf-of escape hatch)
+  fabric: { name, unit, consumption, rate, supplier, materialRequirementId, materialRequirementLineId },
+  process: [{label,value}], trims: [{label,value}], labelsPackaging: [{label,value}],
+  extraLines: [{group: "material"|"labour", label, value}],   // open-ended escape hatch
+  labour: { cuttingThreads, making, finishingPacking },
+  overheadPct (default 5), rejectionPct (default 3),
+
+  // master-admin only, always — tradio_order scope only, always null for mfr_project
+  marginPct, tradioFeePct, finalNegotiatedPrice, negotiatedDiscountPct,
+
+  // actuals — feeds the consumption-moat capture and the inventory ledger
+  actualFabricConsumption, actualLabourCost, actualRejectionValue,
+  createdBy
+}
+```
+Unique partial indexes mirror `materialrequirements`, additionally keyed on `mfrId`.
+**Totals are computed, never stored** — `rawMaterialTotal`, `labourTotal`,
+`totalLabourAndRawMaterial`, `overheadValue`, `rejectionValue`, `marginValue`,
+`tradioFeeValue`, `priceValue` (exported functions, `backend/src/models/CostSheet.js`),
+same "derive, don't duplicate" discipline as `stageEtaVarianceDays`.
+
+**The actual workflow**: manufacturer authors their own base cost (draft) → submits →
+master admin reviews, sets the margin/fee layer, approves → only then does the buyer see
+`{finalNegotiatedPrice, currency, status}` — never a cost line, never the margin. A
+regular (non-master) admin has read access for oversight but cannot touch margin or
+approve. Serialization is a deny-list, not positional: manufacturer/buyer responses strip
+the four master-only source fields **and** the computed `Margin`/`Tradio fee`/`Price`
+outputs derived from them — a manufacturer who authored every other term must never
+recover the margin by subtracting their own subtotal from a visible price.
+
+### `mfrmasterprojects` / `mfrprojects` — a manufacturer's own non-Tradio work
+The manufacturer-owned mirror of `masterorders`/`orders`, minus TNA: no `buyerId`
+(a real Tradio account), no `assignments[]`, no `stages[]` — materials + costing only.
+```
+mfrmasterprojects: { mfrId, buyerName, season, notes, isActive }
+mfrprojects:       { mfrId, mfrMasterProjectId, styleName, buyerName, category, season,
+                      totalQty, delivery, colourways: [{name,code}], notes, isActive }
+```
+**Privacy is the entire point of both collections**: every route scopes to
+`mfrId === req.user.id` with **no admin override anywhere** — a deliberate inversion of
+this app's normal admin-sees-everything convention. Tradio provides the tool; it does not
+gain visibility into a manufacturer's other client relationships. `MaterialRequirement`
+and `CostSheet` documents scoped to an `MfrProject` inherit this same wall.
+
+### `inventorymovements` — the Finance-module data seam
+Append-only ledger, written automatically (no manual entry) from events that already
+exist in this feature — never a new burden for the manufacturer:
+```
+{ mfrId, materialDefinitionId, materialName, direction: "in"|"out", qty, unit,
+  scopeType, orderId | mfrProjectId, orderRef,
+  sourceType: "material_receipt"|"consumption"|"manual_adjustment",
+  sourceRef: { stageIndex, materialLineId, costSheetId }, occurredAt, note }
+```
+`in` records a receiving **delta** (never the running total); `out` is written from
+exactly one place — the consumption-moat capture — via an idempotent upsert keyed on
+`{sourceType, sourceRef.costSheetId, direction}`, so a corrected actual replaces its
+movement rather than stacking a duplicate. Unlike `consumptionrecords` (below), this
+collection **does** carry `mfr_project` rows — a manufacturer's own stock ledger has to
+span all their work to be useful to them — but Tradio can never read that half, same
+owner-only rule as everywhere else `mfr_project` data lives. A future Finance module
+computes on-hand stock as `sum(in) − sum(out)` grouped by `mfrId + materialName`; order
+value is already `costsheets`' computed `priceValue`.
+
+### `consumptionrecords` — the strategic moat (TRADIO.md §4c)
+```
+{ orderId, orderRef, mfrId, costSheetId, capturedAt, capturedBy,
+  trigger: "assignment_delivered",
+  garmentType, colourway, fabricSource, fabricWidth, fabricGsm, sizeRatio, unit,
+  plannedConsumptionPerUnit, actualConsumptionPerUnit,   // the real datapoint
+  totalUnitsProduced, totalActualConsumption, variancePct,
+  materialRequirementLineId, note }
+```
+**Deliberately Tradio-brokered-only — no `scopeType`, the one exception among the scoped
+collections above.** Harvesting consumption data out of a manufacturer's private
+non-Tradio business would contradict `mfrprojects`' privacy promise; the trigger (an
+assignment reaching `Delivered`) structurally can't fire for an `MfrProject` anyway,
+since it has no assignments. Idempotent on `{orderId, mfrId, costSheetId}` — a re-`Delivered`
+transition never duplicates a row. No browse UI yet; this is data capture for a future
+lookup/suggestion feature, not one itself.
 
 ---
 

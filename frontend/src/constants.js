@@ -51,6 +51,21 @@ export const DOC_TYPES = [
   { v: 'environmental_cert', l: 'Environmental Certification' },
   { v: 'insurance', l: 'Insurance Certificate' },
   { v: 'mfr_profile', l: 'Manufacturer Profile' },
+  // Wiki — link-only reference categories (externalUrl only, see WikiPage.jsx)
+  { v: 'wiki_inspection_form', l: 'Inspection / Testing Form' },
+  { v: 'wiki_fit_comments', l: 'Fit Comments' },
+  { v: 'wiki_photos', l: 'Photos (lab dip / approval)' },
+]
+
+// Single source of truth for the Wiki's "Files" tab category filter — the three
+// link-only Document types above.
+export const WIKI_DOC_TYPES = DOC_TYPES.filter(d => d.v.startsWith('wiki_'))
+
+// Wiki "Pages" tab — Tech Pack/SOP content authored as in-app Markdown pages
+// (WikiPage model), not file uploads.
+export const WIKI_PAGE_CATEGORIES = [
+  { v: 'tech_pack', l: 'Tech Pack' },
+  { v: 'sop', l: 'SOP' },
 ]
 
 // Production stage evidence document types
@@ -86,6 +101,7 @@ export const DOC_ICONS = {
   cutting_qc: '✂️', stitching_qc: '🪡', final_qc: '🏆',
   packing_qc: '📦', dispatch_docs: '🚚',
   mfr_profile: '🏭',
+  wiki_inspection_form: '🔍', wiki_fit_comments: '📝', wiki_photos: '📷',
 }
 
 export const CATEGORIES = ['TSHRT', 'JEANS', 'BEDSH', 'SHIRT', 'DRESS', 'JACKET', 'POLO', 'SHORTS', 'HOODIE']

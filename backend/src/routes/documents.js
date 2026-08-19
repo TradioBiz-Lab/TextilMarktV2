@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit'
 import { Document, Order, User, Notification, AuditLog } from '../db/index.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { sendEmail, emailCertExpiry, emailBuyerDocumentReceived } from '../lib/email.js'
+import { validateWikiScopeShape } from '../lib/wikiAccess.js'
 
 // Max 20 document uploads per user per hour — prevents storage abuse
 const uploadLimiter = rateLimit({
@@ -14,7 +15,22 @@ const uploadLimiter = rateLimit({
 
 const CERT_TYPES = ['compliance_cert', 'factory_audit', 'chemical_cert', 'environmental_cert', 'insurance']
 
-async function assertDocAccess(user, { orderId, mfrId, type }) {
+async function assertDocAccess(user, { orderId, mfrId, type, wikiScope, buyerId }) {
+  const isWikiType = typeof type === 'string' && type.startsWith('wiki_')
+  // Any wiki_* type requires wikiScope, and any wikiScope requires a wiki_* type —
+  // the two fields travel together or not at all.
+  if (isWikiType !== !!wikiScope) {
+    throw Object.assign(new Error('wiki_* document types require wikiScope, and wikiScope requires a wiki_* type'), { status: 400 })
+  }
+  if (isWikiType) {
+    // Wiki documents are admin-curated only — buyers/manufacturers never upload them.
+    if (user.role !== 'admin')
+      throw Object.assign(new Error('Only admins can add wiki documents'), { status: 403 })
+    await validateWikiScopeShape(wikiScope, buyerId)
+    // Wiki docs aren't order-scoped — the orderId/mfrId checks below don't apply.
+    return
+  }
+
   if (user.role === 'buyer') {
     // Buyers may not set mfrId — that would let them attach docs to a manufacturer they chose
     if (mfrId)
@@ -56,6 +72,8 @@ const mapDoc = (d, includeData = false) => {
     fileName: d.fileName, fileSize: d.fileSize, mimeType: d.mimeType,
     externalUrl: d.externalUrl || null,
     notes: d.notes || null,
+    wikiScope: d.wikiScope || null,
+    buyerId: d.buyerId ? d.buyerId.toString() : null,
     ...(includeData ? { dataUrl: d.dataUrl } : {}),
   }
 }
@@ -85,16 +103,28 @@ router.get('/', requireAuth, async (req, res) => {
           { orderId: { $in: orderIds } },
           { mfrId: { $in: mfrIds }, orderId: null },
           { uploadedBy: req.user.id },
+          { wikiScope: 'company' },
+          { wikiScope: 'buyer', buyerId: req.user.id },
         ],
       }).sort({ createdAt: -1 })).lean()
 
     } else {
-      const mfrOrders = await Order.find({ 'assignments.mfrId': req.user.id }, { _id: 1 }).lean()
+      const mfrOrders = await Order.find({ 'assignments.mfrId': req.user.id }, { _id: 1, buyerId: 1 }).lean()
       const orderIds  = mfrOrders.map(o => o._id)
+      const assignedBuyerIds = [...new Set(mfrOrders.map(o => o.buyerId?.toString()).filter(Boolean))]
 
       docs = await populateUploader(Document.find({
         isActive: true,
-        $or: [{ mfrId: req.user.id }, { orderId: { $in: orderIds } }],
+        $or: [
+          { mfrId: req.user.id },
+          // A competing manufacturer's own doc on the same split order (e.g. a
+          // material_po, mfrId-stamped since Phase 2) must not leak here — same
+          // rule GET /:id/data already enforces (a doc with someone else's mfrId
+          // is a flat deny). Only mfrId:null order docs are visible via orderId alone.
+          { orderId: { $in: orderIds }, mfrId: null },
+          { wikiScope: 'company' },
+          { wikiScope: 'buyer', buyerId: { $in: assignedBuyerIds } },
+        ],
       }).sort({ createdAt: -1 })).lean()
     }
 
@@ -229,6 +259,9 @@ router.get('/:id/data', requireAuth, async (req, res) => {
   try {
     const doc = await Document.findById(req.params.id).lean()
     if (!doc || !doc.isActive) return res.status(404).json({ error: 'Document not found' })
+    // This route serves only the inline dataUrl payload — link-only docs (all wiki_*
+    // types) never have one, so there's nothing here for them to fetch.
+    if (!doc.dataUrl) return res.status(404).json({ error: 'No inline file for this document' })
 
     if (req.user.role === 'buyer') {
       // Allow access to docs they uploaded themselves (e.g. via Submit Requirement)
@@ -273,7 +306,7 @@ router.get('/:id/data', requireAuth, async (req, res) => {
 // POST /api/documents
 router.post('/', requireAuth, uploadLimiter, async (req, res) => {
   try {
-    const { type, name, mfrId, orderId, stageIndex, materialLineIndex, issueDate, expiryDate, issuer, dataUrl, externalUrl, fileName, fileSize, mimeType, notes } = req.body
+    const { type, name, mfrId, orderId, stageIndex, materialLineIndex, issueDate, expiryDate, issuer, dataUrl, externalUrl, fileName, fileSize, mimeType, notes, wikiScope, buyerId } = req.body
     if (!type || !name || !name.trim()) return res.status(400).json({ error: 'type and name required' })
     if (typeof type !== 'string' || typeof name !== 'string') return res.status(400).json({ error: 'Invalid input types' })
     if (name.length > 300 || type.length > 50) return res.status(400).json({ error: 'Input too long' })
@@ -281,6 +314,14 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Issuer name too long (max 200 chars)' })
     if (fileName && typeof fileName === 'string' && fileName.length > 500)
       return res.status(400).json({ error: 'File name too long (max 500 chars)' })
+
+    // Checked early so a buyer/manufacturer sending a wiki_* type gets a clean 403
+    // rather than a confusing 400 from the shape checks below.
+    try {
+      await assertDocAccess(req.user, { orderId, mfrId, type, wikiScope, buyerId })
+    } catch (e) {
+      return res.status(e.status || 403).json({ error: e.message })
+    }
 
     // A materials/PO attachment must reference a specific stage
     const hasMaterialLineIndex = materialLineIndex != null && materialLineIndex !== ''
@@ -323,6 +364,17 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
       }
     }
 
+    // Wiki documents (Inspection Form/Fit Comments/Photos) are link-only — the file
+    // lives on Zoho WorkDrive and the Wiki just stores the share link, never an
+    // inline upload.
+    const isWikiType = type.startsWith('wiki_')
+    if (isWikiType && hasFile) {
+      return res.status(400).json({ error: 'Wiki documents must use an external link, not an inline file' })
+    }
+    if (isWikiType && !hasUrl) {
+      return res.status(400).json({ error: 'Wiki documents require an external link (externalUrl)' })
+    }
+
     let normalizedUrl = null
     if (hasUrl) {
       if (typeof externalUrl !== 'string') return res.status(400).json({ error: 'Invalid link' })
@@ -363,12 +415,6 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
         return res.status(400).json({ error: 'File payload too large' })
     }
 
-    try {
-      await assertDocAccess(req.user, { orderId, mfrId, type })
-    } catch (e) {
-      return res.status(e.status || 403).json({ error: e.message })
-    }
-
     const doc = await Document.create({
       type, name,
       mfrId:      mfrId     || null,
@@ -386,6 +432,8 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
       fileName:    fileName || null,
       fileSize:    hasFile ? (fileSize || null) : null,
       mimeType:    hasFile ? (mimeType || null) : null,
+      wikiScope:   isWikiType ? wikiScope : null,
+      buyerId:     isWikiType && wikiScope === 'buyer' ? buyerId : null,
     })
 
     // Buyer document upload → notify Tradio (email-only; all other upload events stay as portal notifications)

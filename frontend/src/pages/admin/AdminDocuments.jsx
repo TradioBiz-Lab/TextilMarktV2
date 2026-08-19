@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { T, DOC_TYPES, DOC_ICONS, isExpiringSoon, isExpired } from '../../constants.js'
 import { Modal, Select, Input, Btn, Card, Alert, EmptyState, FlexRow, PageHeader, DocCard, FileUpload, StatCard, LoadingScreen, useToast, fileUploadPayload, Grid } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
+import { WikiPage } from '../shared/WikiPage.jsx'
 
 const CERT_TYPES = ['compliance_cert', 'factory_audit', 'chemical_cert', 'environmental_cert', 'insurance']
 
@@ -193,17 +194,23 @@ export function AdminDocuments() {
         )
       })()}
 
-      <PageHeader title="Document Repository" subtitle="All documents across orders and manufacturers" action={<Btn onClick={() => setShow(true)} icon="📎">Upload Document</Btn>} />
+      {mode !== 'wiki' && (
+        <PageHeader title="Document Repository" subtitle="All documents across orders and manufacturers" action={<Btn onClick={() => setShow(true)} icon="📎">Upload Document</Btn>} />
+      )}
 
-      {/* Mode toggle: Documents vs Certificate Tracker */}
+      {/* Mode toggle: Documents vs Certificate Tracker vs Wiki — Wiki is part of this
+          same feature, not a separate nav destination (tech packs, SOPs, inspection
+          forms etc. are all "documents"). */}
       <div style={{ display: 'flex', gap: 0, borderBottom: `2px solid ${T.border}`, marginBottom: 16 }}>
-        {[{ id: 'docs', l: 'All Documents' }, { id: 'certs', l: 'Certificate Tracker' }].map(m => (
+        {[{ id: 'docs', l: 'All Documents' }, { id: 'certs', l: 'Certificate Tracker' }, { id: 'wiki', l: 'Wiki' }].map(m => (
           <button key={m.id} onClick={() => setMode(m.id)}
             style={{ padding: '10px 22px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: mode === m.id ? T.primary : T.textMuted, borderBottom: `2px solid ${mode === m.id ? T.primary : 'transparent'}`, marginBottom: -2, fontFamily: 'inherit' }}>
-            {m.id === 'certs' ? '🛡 ' : '📁 '}{m.l}
+            {m.id === 'certs' ? '🛡 ' : m.id === 'wiki' ? '📖 ' : '📁 '}{m.l}
           </button>
         ))}
       </div>
+
+      {mode === 'wiki' && <WikiPage />}
 
       {mode === 'docs' && (
         <>

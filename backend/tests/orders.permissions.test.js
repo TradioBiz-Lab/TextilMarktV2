@@ -85,6 +85,65 @@ describe('enrichOrder — cross-tenant stripping', () => {
   })
 })
 
+// Regression for the enrichOrder(order) call sites that echoed back the WHOLE
+// order (including the other manufacturer's assignment) after a write,
+// unlike GET /:id which correctly strips it. Not just a Kriyaa concern — the
+// human UI's own manual edits hit these same routes and got the same leak in
+// the raw response body. Every site a manufacturer can actually reach.
+describe('a manufacturer\'s own write never echoes the other manufacturer\'s assignment back', () => {
+  test('the general stage-status route', async () => {
+    const { mfrA, mfrB } = await arrangeSplit()
+    const { status, body } = await as(mfrA).post(`/api/orders/${ORDER_ID}/assignments/${mfrA._id}/stages/0`, { unitsDone: 1 })
+    assert.equal(status, 200)
+    assert.ok(!JSON.stringify(body).includes(String(mfrB._id)), 'mfrB must not appear in mfrA\'s own write response')
+    assert.equal(body.assignments.length, 1)
+  })
+
+  test('the stage-updates (comment thread) route', async () => {
+    const { mfrA, mfrB } = await arrangeSplit()
+    const { status, body } = await as(mfrA).post(`/api/orders/${ORDER_ID}/assignments/${mfrA._id}/stages/0/updates`, { text: 'fabric received' })
+    assert.equal(status, 200)
+    assert.ok(!JSON.stringify(body).includes(String(mfrB._id)))
+  })
+
+  test('the materials add/update/delete routes', async () => {
+    const { mfrA, mfrB, api } = await arrangeSplit()
+    // Materials routes gate on admin OR that stage's own responsibleId.
+    await api.post(`/api/orders/${ORDER_ID}/assignments/${mfrA._id}/stages/bulk`, { stages: [{ index: 0, responsibleId: String(mfrA._id) }] })
+    const add = await as(mfrA).post(`/api/orders/${ORDER_ID}/assignments/${mfrA._id}/stages/0/materials`, { name: 'Zipper', requiredQty: 10 })
+    assert.equal(add.status, 200)
+    assert.ok(!JSON.stringify(add.body).includes(String(mfrB._id)))
+
+    const lineId = add.body.assignments[0].stages[0].materials[0].id
+    const upd = await as(mfrA).post(`/api/orders/${ORDER_ID}/assignments/${mfrA._id}/stages/0/materials/0`, { receivedQty: 5 })
+    assert.equal(upd.status, 200)
+    assert.ok(!JSON.stringify(upd.body).includes(String(mfrB._id)))
+
+    const del = await as(mfrA).post(`/api/orders/${ORDER_ID}/assignments/${mfrA._id}/stages/0/materials/0/delete`)
+    assert.equal(del.status, 200)
+    assert.ok(!JSON.stringify(del.body).includes(String(mfrB._id)))
+  })
+
+  test('the checklist items add/update/delete routes', async () => {
+    const { mfrA, mfrB, api } = await arrangeSplit()
+    // Items live on a checklist-kind stage, and the route gates on admin OR
+    // that stage's own responsibleId — set both via bulk first.
+    await api.post(`/api/orders/${ORDER_ID}/assignments/${mfrA._id}/stages/bulk`, { stages: [{ index: 0, kind: 'checklist', responsibleId: String(mfrA._id) }] })
+
+    const add = await as(mfrA).post(`/api/orders/${ORDER_ID}/assignments/${mfrA._id}/stages/0/items`, { name: 'Lab Dip — Red' })
+    assert.equal(add.status, 200, JSON.stringify(add.body))
+    assert.ok(!JSON.stringify(add.body).includes(String(mfrB._id)))
+
+    const upd = await as(mfrA).post(`/api/orders/${ORDER_ID}/assignments/${mfrA._id}/stages/0/items/0`, { status: 'done' })
+    assert.equal(upd.status, 200)
+    assert.ok(!JSON.stringify(upd.body).includes(String(mfrB._id)))
+
+    const del = await as(mfrA).post(`/api/orders/${ORDER_ID}/assignments/${mfrA._id}/stages/0/items/0/delete`)
+    assert.equal(del.status, 200)
+    assert.ok(!JSON.stringify(del.body).includes(String(mfrB._id)))
+  })
+})
+
 describe('stage writes — who may write', () => {
   test('a manufacturer may update their own stage', async () => {
     const { mfrA } = await arrangeSplit()

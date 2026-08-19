@@ -9,8 +9,14 @@ import { BuyerSubmitReq } from './pages/buyer/BuyerSubmitReq.jsx'
 import { MfrDashboard } from './pages/manufacturer/MfrDashboard.jsx'
 import { MfrOrderDetail } from './pages/manufacturer/MfrOrderDetail.jsx'
 import { MfrCerts } from './pages/manufacturer/MfrCerts.jsx'
+import { MfrMaterials } from './pages/manufacturer/MfrMaterials.jsx'
+import { MfrCosting } from './pages/manufacturer/MfrCosting.jsx'
+import { MfrProjects } from './pages/manufacturer/MfrProjects.jsx'
 import { AdminDashboard } from './pages/admin/AdminDashboard.jsx'
 import { AdminOrders } from './pages/admin/AdminOrders.jsx'
+import { AdminMaterials } from './pages/admin/AdminMaterials.jsx'
+import { AdminCosting } from './pages/admin/AdminCosting.jsx'
+import { InventoryPage } from './pages/shared/InventoryPage.jsx'
 import { AdminOrderDetail } from './pages/admin/AdminOrderDetail.jsx'
 import { AdminDocuments } from './pages/admin/AdminDocuments.jsx'
 import { AdminAuditLog } from './pages/admin/AdminAuditLog.jsx'
@@ -19,6 +25,7 @@ import { KriyaaPage } from './pages/admin/KriyaaPage.jsx'
 import { KriyaaChatProvider } from './kriyaaChatContext.jsx'
 import { ReportingPage } from './pages/shared/ReportingPage.jsx'
 import { ActionItemsPage } from './pages/shared/ActionItemsPage.jsx'
+import { WikiPage } from './pages/shared/WikiPage.jsx'
 import { authApi } from './api.js'
 import { T } from './constants.js'
 import { Input, Btn, ToastProvider } from './components/ui.jsx'
@@ -114,6 +121,7 @@ function Inner() {
       // this ever needs to go back the other way.
       if (view === 'dashboard') return <ReportingPage onOpen={openOrder} />
       if (view === 'order_detail' && selOid) return <BuyerOrderDetail orderId={selOid} initialMid={selMid} onBack={() => navTo('dashboard')} />
+      if (view === 'kriyaa') return <KriyaaPage />
       if (view === 'submit_req') return <BuyerSubmitReq />
       if (view === 'documents') return <BuyerDocuments />
       if (view === 'reports') return <BuyerDashboard onOpen={openOrder} onSubmitReq={() => navTo('submit_req')} />
@@ -122,10 +130,21 @@ function Inner() {
       if (view === 'dashboard') return <MfrDashboard onOpen={openOrder} />
       if (view === 'order_detail' && selOid) return <MfrOrderDetail orderId={selOid} onBack={() => navTo('dashboard')} />
       if (view === 'certs') return <MfrCerts />
+      if (view === 'kriyaa') return <KriyaaPage />
+      if (view === 'materials') return <MfrMaterials />
+      if (view === 'costing') return <MfrCosting />
+      if (view === 'inventory') return <InventoryPage />
+      if (view === 'projects') return <MfrProjects />
+      // Manufacturers have no general document repository — the Wiki (Tech
+      // Packs/SOPs/Inspection Forms) is their entire "Documents" experience today.
+      if (view === 'documents') return <WikiPage />
     }
     if (user.role === 'admin') {
       if (view === 'dashboard') return <AdminDashboard onNavigate={navTo} onOpen={openOrder} />
       if (view === 'orders') return <AdminOrders onOpen={openOrder} initialStatus={ordersStatus} />
+      if (view === 'materials') return <AdminMaterials />
+      if (view === 'costing') return <AdminCosting />
+      if (view === 'inventory') return <InventoryPage />
       if (view === 'order_detail' && selOid) return <AdminOrderDetail orderId={selOid} initialMid={selMid} onBack={() => navTo('orders')} />
       if (view === 'documents') return <AdminDocuments />
       if (view === 'reports') return <ReportingPage onOpen={openOrder} />

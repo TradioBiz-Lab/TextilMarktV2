@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { T, DOC_TYPES, DOC_ICONS, getToday, isExpiringSoon, isExpired } from '../../constants.js'
 import { Card, EmptyState, DocCard, PageHeader, LoadingScreen, StageDocGroup } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
+import { WikiPage } from '../shared/WikiPage.jsx'
 const COMPLIANCE_TYPES = ['compliance_cert', 'factory_audit', 'chemical_cert', 'environmental_cert', 'insurance']
 
 function fmtDate(d) {
@@ -63,6 +64,7 @@ function OrderGroup({ order, docs, users, getDocData }) {
 export function BuyerDocuments() {
   const { orders, docs, currentUser: user, users, loading, getDocData, loadError } = useApp()
   const [filt, setFilt] = useState('all')
+  const [mode, setMode] = useState('docs') // 'docs' | 'wiki' — Wiki lives inside Documents, not a separate nav item
 
   if (loading) return <LoadingScreen />
 
@@ -130,10 +132,26 @@ export function BuyerDocuments() {
 
   return (
     <div>
-      <PageHeader
-        title="Documents"
-        subtitle={`${myDocs.length} document${myDocs.length !== 1 ? 's' : ''} across ${ordersWithDocCount} order${ordersWithDocCount !== 1 ? 's' : ''}`}
-      />
+      {mode !== 'wiki' && (
+        <PageHeader
+          title="Documents"
+          subtitle={`${myDocs.length} document${myDocs.length !== 1 ? 's' : ''} across ${ordersWithDocCount} order${ordersWithDocCount !== 1 ? 's' : ''}`}
+        />
+      )}
+
+      {/* Mode toggle: Documents vs Wiki — same feature, not a separate nav destination */}
+      <div style={{ display: 'flex', gap: 0, borderBottom: `2px solid ${T.border}`, marginBottom: 16 }}>
+        {[{ id: 'docs', l: 'Documents' }, { id: 'wiki', l: 'Wiki' }].map(m => (
+          <button key={m.id} onClick={() => setMode(m.id)}
+            style={{ padding: '10px 22px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: mode === m.id ? T.primary : T.textMuted, borderBottom: `2px solid ${mode === m.id ? T.primary : 'transparent'}`, marginBottom: -2, fontFamily: 'inherit' }}>
+            {m.id === 'wiki' ? '📖 ' : '📁 '}{m.l}
+          </button>
+        ))}
+      </div>
+
+      {mode === 'wiki' && <WikiPage />}
+
+      {mode === 'docs' && (<>
 
       {/* Filter pills */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
@@ -221,6 +239,7 @@ export function BuyerDocuments() {
           }
         </div>
       )}
+      </>)}
     </div>
   )
 }

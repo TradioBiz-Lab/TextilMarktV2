@@ -7,11 +7,15 @@ import { Notification } from '../models/Notification.js'
 import { AuditLog }     from '../models/AuditLog.js'
 import { MasterOrder }  from '../models/MasterOrder.js'
 import { Document }     from '../models/Document.js'
+import { InventoryMovement } from '../models/InventoryMovement.js'
+import { CostSheet } from '../models/CostSheet.js'
+import { MaterialRequirement } from '../models/MaterialRequirement.js'
 import {
   DEFAULT_STAGE_NAMES, ORDER_STATUS_VALUES, STAGE_KINDS, STAGE_STATUS_VALUES,
   stageKindOf, deriveStageStatus, mirroredUnits, stageEtaVarianceDays, deriveActualEnd, deliveryVarianceDays,
 } from '../models/Order.js'
 import { dayNumber, getToday } from '../lib/stageMath.js'
+import { captureConsumptionOnDelivery } from '../lib/consumptionCapture.js'
 
 // Categories are now free-text — no validation needed
 const VALID_SEASONS    = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
@@ -165,7 +169,9 @@ const enrichOrder = (o, viewerMfrId = null) => {
             at: u.at,
           })),
           materials: (s.materials || []).map(m => ({
-            name: m.name, requiredQty: m.requiredQty, unit: m.unit, supplier: m.supplier,
+            id: m._id?.toString() ?? null,
+            name: m.name, category: m.category || 'other', colourway: m.colourway || '',
+            requiredQty: m.requiredQty, unit: m.unit, supplier: m.supplier,
             poNumber: m.poNumber, expectedDate: m.expectedDate, status: m.status,
             orderedQty: m.orderedQty, receivedQty: m.receivedQty, note: m.note,
           })),
@@ -569,6 +575,18 @@ router.post('/:orderId/assignments/:mfrId', requireAuth, updateLimiter, async (r
       action: 'Status Updated',
       detail: `${orderId}: assignment status → ${status}${note ? ' | ' + note.slice(0, 200) : ''}`,
     })
+
+    // Phase 4 of the Materials Management + Costing Engine plan — the
+    // consumption-moat capture. Idempotent (upsert-keyed), so re-marking
+    // Delivered never duplicates a row; a no-op if no cost sheet exists yet.
+    // Awaited (not fire-and-forget) so the write is guaranteed done before
+    // this response returns; wrapped so a capture failure never fails the
+    // status update itself — it's a best-effort side effect, not the point
+    // of this request.
+    if (status === 'Delivered') {
+      try { await captureConsumptionOnDelivery(orderId, mfrId) }
+      catch (err) { console.error('[consumptionCapture]', err) }
+    }
 
     res.json(enrichOrder(order))
   } catch (err) {
@@ -1074,7 +1092,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
       }
     }
 
-    res.json({ ...enrichOrder(order), warnings })
+    res.json({ ...enrichOrder(order, req.user.role === 'manufacturer' ? String(req.user.id) : null), warnings })
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -1423,7 +1441,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/updates', requireAu
       detail: `${orderId}: ${stageName} — ${text.trim().slice(0, 100)}`,
     })
 
-    res.json(enrichOrder(order))
+    res.json(enrichOrder(order, req.user.role === 'manufacturer' ? String(req.user.id) : null))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -1514,7 +1532,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items', requireAuth
       action: 'Stage Item Added',
       detail: `${ctx.orderId}: ${ctx.stage.name || `Stage ${ctx.stageIndex + 1}`} — added ${lines.length} item(s)`,
     })
-    res.json(enrichOrder(order))
+    res.json(enrichOrder(order, req.user.role === 'manufacturer' ? String(req.user.id) : null))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -1576,7 +1594,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items/:lineIndex', 
       action: 'Stage Item Updated',
       detail: `${ctx.orderId}: ${ctx.stage.name || `Stage ${ctx.stageIndex + 1}`} — "${items[lineIndex].name}"${has('status') ? ` → ${status}` : ''}`,
     })
-    res.json(enrichOrder(order))
+    res.json(enrichOrder(order, req.user.role === 'manufacturer' ? String(req.user.id) : null))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -1610,7 +1628,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items/:lineIndex/de
       action: 'Stage Item Removed',
       detail: `${ctx.orderId}: ${ctx.stage.name || `Stage ${ctx.stageIndex + 1}`} — removed "${items[lineIndex].name}"`,
     })
-    res.json(enrichOrder(order))
+    res.json(enrichOrder(order, req.user.role === 'manufacturer' ? String(req.user.id) : null))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -1626,11 +1644,13 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials', require
       return res.status(400).json({ error: 'Invalid manufacturer ID' })
     const mfrObjectId = new mongoose.Types.ObjectId(mfrId)
     const stageIndex = parseInt(req.params.stageIndex, 10)
-    const { name, requiredQty, unit, supplier, poNumber, expectedDate } = req.body
+    const { name, category, colourway, requiredQty, unit, supplier, poNumber, expectedDate } = req.body
 
     if (!name?.trim()) return res.status(400).json({ error: 'Material name is required' })
     const reqQty = parseFloat(requiredQty)
     if (isNaN(reqQty) || reqQty < 0) return res.status(400).json({ error: 'Required quantity must be a non-negative number' })
+    if (category !== undefined && !['fabric', 'trim', 'accessory', 'other'].includes(category))
+      return res.status(400).json({ error: 'Invalid category' })
 
     const existingOrder = await Order.findById(orderId).lean()
     if (!existingOrder) return res.status(404).json({ error: 'Order not found' })
@@ -1651,7 +1671,9 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials', require
       return res.status(403).json({ error: "Only an admin or this stage's responsible person can manage materials" })
 
     const line = {
-      name: name.trim().slice(0, 200), requiredQty: reqQty,
+      name: name.trim().slice(0, 200),
+      category: category || 'other', colourway: colourway || '',
+      requiredQty: reqQty,
       unit: unit || '', supplier: supplier || '', poNumber: poNumber || '',
       expectedDate: expectedDate || null, status: 'pending', orderedQty: 0, receivedQty: 0, note: '',
     }
@@ -1670,7 +1692,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials', require
       detail: `${orderId}: ${stage.name || `Stage ${stageIndex + 1}`} — added "${line.name}" (${line.requiredQty} ${line.unit})`,
     })
 
-    res.json(enrichOrder(order))
+    res.json(enrichOrder(order, req.user.role === 'manufacturer' ? String(req.user.id) : null))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -1687,7 +1709,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineInde
     const mfrObjectId = new mongoose.Types.ObjectId(mfrId)
     const stageIndex = parseInt(req.params.stageIndex, 10)
     const lineIndex = parseInt(req.params.lineIndex, 10)
-    const { name, requiredQty, unit, supplier, poNumber, expectedDate, status, orderedQty, receivedQty, note } = req.body
+    const { name, category, colourway, requiredQty, unit, supplier, poNumber, expectedDate, status, orderedQty, receivedQty, note } = req.body
 
     const existingOrder = await Order.findById(orderId).lean()
     if (!existingOrder) return res.status(404).json({ error: 'Order not found' })
@@ -1713,6 +1735,8 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineInde
 
     if (status !== undefined && !['pending', 'ordered', 'received'].includes(status))
       return res.status(400).json({ error: 'Invalid status' })
+    if (category !== undefined && !['fabric', 'trim', 'accessory', 'other'].includes(category))
+      return res.status(400).json({ error: 'Invalid category' })
 
     const prefix = `assignments.$[asgn].stages.${stageIndex}.materials.${lineIndex}`
     const setFields = {}
@@ -1720,6 +1744,8 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineInde
       if (!name.trim()) return res.status(400).json({ error: 'Material name is required' })
       setFields[`${prefix}.name`] = name.trim().slice(0, 200)
     }
+    if (category !== undefined) setFields[`${prefix}.category`] = category
+    if (colourway !== undefined) setFields[`${prefix}.colourway`] = colourway
     if (requiredQty !== undefined) {
       const q = parseFloat(requiredQty)
       if (isNaN(q) || q < 0) return res.status(400).json({ error: 'Required quantity must be a non-negative number' })
@@ -1744,6 +1770,12 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineInde
 
     if (Object.keys(setFields).length === 0) return res.status(400).json({ error: 'No fields to update' })
 
+    // Captured before the write — the delta this receiving update represents,
+    // for the InventoryMovement 'in' row below. Never the new total: re-saving
+    // the same or a corrected-downward qty must not re-book a full receipt.
+    const priorLine = stage.materials[lineIndex]
+    const receivedDelta = receivedQty !== undefined ? parseFloat(receivedQty) - (priorLine.receivedQty || 0) : 0
+
     const order = await Order.findOneAndUpdate(
       { _id: orderId, 'assignments.mfrId': mfrObjectId },
       { $set: setFields },
@@ -1758,7 +1790,22 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineInde
       detail: `${orderId}: ${stage.name || `Stage ${stageIndex + 1}`} — "${stage.materials[lineIndex].name}"${status ? ` → ${status}` : ''}`,
     })
 
-    res.json(enrichOrder(order))
+    // Phase 4 — the Finance-module data seam (§1g). A positive delta only;
+    // a downward correction is not a negative receipt, just leave no movement.
+    // Awaited (best-effort, wrapped) — same discipline as the Delivered hook.
+    if (receivedDelta > 0) {
+      try {
+        await InventoryMovement.create({
+          mfrId: mfrObjectId, materialName: priorLine.name, direction: 'in',
+          qty: receivedDelta, unit: priorLine.unit || '',
+          scopeType: 'tradio_order', orderId, orderRef: orderId,
+          sourceType: 'material_receipt',
+          sourceRef: { stageIndex, materialLineId: priorLine._id },
+        })
+      } catch (err) { console.error('[inventoryMovement]', err) }
+    }
+
+    res.json(enrichOrder(order, req.user.role === 'manufacturer' ? String(req.user.id) : null))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -1822,7 +1869,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineInde
       detail: `${orderId}: ${stage.name || `Stage ${stageIndex + 1}`} — removed "${removedName}"`,
     })
 
-    res.json(enrichOrder(order))
+    res.json(enrichOrder(order, req.user.role === 'manufacturer' ? String(req.user.id) : null))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -1844,13 +1891,16 @@ router.post('/materials/bulk', requireAuth, requireAdmin, materialsBulkLimiter, 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i]
       try {
-        const { orderId, mfrCode, stageName, name, requiredQty, unit, supplier, poNumber, expectedDate } = row
+        const { orderId, mfrCode, stageName, name, category, colourway, requiredQty, unit, supplier, poNumber, expectedDate } = row
         if (!orderId || !mfrCode || !stageName || !name) {
           failed++; results.push({ row: i, success: false, error: 'orderId, mfrCode, stageName, and name are required' }); continue
         }
         const reqQty = parseFloat(requiredQty)
         if (isNaN(reqQty) || reqQty < 0) {
           failed++; results.push({ row: i, success: false, error: 'Required quantity must be a non-negative number' }); continue
+        }
+        if (category !== undefined && category !== '' && !['fabric', 'trim', 'accessory', 'other'].includes(category)) {
+          failed++; results.push({ row: i, success: false, error: `Invalid category "${category}"` }); continue
         }
 
         const order = await Order.findById(orderId).lean()
@@ -1866,7 +1916,9 @@ router.post('/materials/bulk', requireAuth, requireAdmin, materialsBulkLimiter, 
         if (stageIndex === -1) { failed++; results.push({ row: i, success: false, error: `Stage "${stageName}" not found on this order/manufacturer` }); continue }
 
         const line = {
-          name: String(name).trim().slice(0, 200), requiredQty: reqQty,
+          name: String(name).trim().slice(0, 200),
+          category: category || 'other', colourway: colourway || '',
+          requiredQty: reqQty,
           unit: unit || '', supplier: supplier || '', poNumber: poNumber || '',
           expectedDate: expectedDate || null, status: 'pending', orderedQty: 0, receivedQty: 0, note: '',
         }
@@ -2043,7 +2095,24 @@ router.post('/:id/delete', requireAuth, requireAdmin, async (req, res) => {
     const order = await Order.findById(orderId).lean()
     if (!order) return res.status(404).json({ error: 'Order not found' })
 
+    // A submitted/approved CostSheet is a commercial record, not disposable
+    // planning data — refuse rather than silently destroying the only
+    // context that makes it interpretable. Draft sheets have no such value
+    // and are cascade-deleted below instead.
+    const blockingSheet = await CostSheet.findOne({ scopeType: 'tradio_order', orderId, status: { $ne: 'draft' } }, '_id').lean()
+    if (blockingSheet) {
+      return res.status(400).json({ error: 'Cannot delete this order — it has a submitted or approved cost sheet. Withdraw or reopen it first.' })
+    }
+
     await Order.findByIdAndDelete(orderId)
+    // Draft cost sheets and the requirement doc have no value once the order
+    // is gone and become unreachable anyway (their scoping resolves through
+    // Order.find(...)) — cascade them. ConsumptionRecord and InventoryMovement
+    // are deliberately NOT touched: they're the consumption-moat dataset and
+    // the Finance ledger, both already denormalized with an orderRef label so
+    // they stay attributable after the order id they point at is gone.
+    await CostSheet.deleteMany({ scopeType: 'tradio_order', orderId })
+    await MaterialRequirement.deleteMany({ scopeType: 'tradio_order', orderId })
 
     await AuditLog.create({
       byUser: req.user.id,

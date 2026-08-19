@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { authApi, ordersApi, documentsApi, usersApi, notificationsApi, auditApi, ribbonsApi, masterOrdersApi, actionItemsApi, setStoredToken, setAuthToken } from './api.js'
+import { authApi, ordersApi, documentsApi, usersApi, notificationsApi, auditApi, ribbonsApi, masterOrdersApi, actionItemsApi, wikiPagesApi, materialDefinitionsApi, materialRequirementsApi, costSheetsApi, mfrProjectsApi, inventoryApi, setStoredToken, setAuthToken } from './api.js'
 import { isExpiringSoon, isExpired } from './constants.js'
 
 const AppContext = createContext(null)
@@ -15,6 +15,7 @@ export function AppProvider({ children }) {
   const [serverRibbons, setServerRibbons] = useState([])
   const [masterOrders, setMasterOrders] = useState([])
   const [actionItems, setActionItems] = useState([])
+  const [wikiPages, setWikiPages]     = useState([])
   const [loading, setLoading]         = useState(false)
   const [loadError, setLoadError]     = useState(false)
 
@@ -34,6 +35,7 @@ export function AppProvider({ children }) {
         documentsApi.list(),
         notificationsApi.list(),
         ribbonsApi.list(),
+        wikiPagesApi.list(),
         isMfr ? Promise.resolve([]) : masterOrdersApi.list(), // manufacturers cannot access master orders
         ...(isAdmin ? [usersApi.list(), auditApi.list(), actionItemsApi.list()] : []),
       ]
@@ -42,13 +44,14 @@ export function AppProvider({ children }) {
       setDocs(results[1])
       setNotifs(results[2])
       setServerRibbons(results[3])
-      setMasterOrders(results[4])
+      setWikiPages(results[4])
+      setMasterOrders(results[5])
       if (isAdmin) {
-        setUsers(results[5])
+        setUsers(results[6])
         // audit endpoint now returns { total, limit, skip, items }
-        const auditResult = results[6]
+        const auditResult = results[7]
         setAudit(Array.isArray(auditResult) ? auditResult : (auditResult?.items ?? []))
-        setActionItems(results[7])
+        setActionItems(results[8])
         // Cert expiry check — fire and forget, don't re-fetch notifications
         documentsApi.checkCertExpiry().catch(() => {})
       } else {
@@ -84,6 +87,7 @@ export function AppProvider({ children }) {
     setServerRibbons([])
     setMasterOrders([])
     setActionItems([])
+    setWikiPages([])
     docDataCache.current = {}
   }, [])
 
@@ -142,7 +146,7 @@ export function AppProvider({ children }) {
         // Another tab logged out — clear local state and go to login
         setCurrentUser(null)
         setOrders([]); setDocs([]); setNotifs([]); setAudit([])
-        setUsers([]); setServerRibbons([]); setMasterOrders([]); setActionItems([])
+        setUsers([]); setServerRibbons([]); setMasterOrders([]); setActionItems([]); setWikiPages([])
         docDataCache.current = {}
         return
       }
@@ -156,7 +160,7 @@ export function AppProvider({ children }) {
         // Log this tab out to avoid the session mismatch silently serving wrong data.
         setCurrentUser(null)
         setOrders([]); setDocs([]); setNotifs([]); setAudit([])
-        setUsers([]); setServerRibbons([]); setMasterOrders([]); setActionItems([])
+        setUsers([]); setServerRibbons([]); setMasterOrders([]); setActionItems([]); setWikiPages([])
         docDataCache.current = {}
       }
     }
@@ -588,13 +592,113 @@ export function AppProvider({ children }) {
     setActionItems(await actionItemsApi.list())
   }, [])
 
+  // ── Wiki (Tech Pack/SOP pages — admin write, all roles read) ──
+  const createWikiPage = useCallback(async (data) => {
+    const page = await wikiPagesApi.create(data)
+    setWikiPages(await wikiPagesApi.list())
+    await addAudit('Wiki Page Created', `${data.title} (${data.category})`)
+    return page
+  }, [addAudit])
+
+  const updateWikiPage = useCallback(async (id, data) => {
+    const page = await wikiPagesApi.update(id, data)
+    setWikiPages(await wikiPagesApi.list())
+    await addAudit('Wiki Page Updated', `${page.title} (${page.category})`)
+    return page
+  }, [addAudit])
+
+  const removeWikiPage = useCallback(async (id) => {
+    const page = wikiPages.find(p => p.id === id)
+    await wikiPagesApi.remove(id)
+    setWikiPages(p => p.filter(w => w.id !== id))
+    await addAudit('Wiki Page Deleted', page?.title || id)
+  }, [wikiPages, addAudit])
+
+  const refreshWikiPages = useCallback(async () => {
+    setWikiPages(await wikiPagesApi.list())
+  }, [])
+
+  const getWikiPage = useCallback((id) => wikiPagesApi.get(id), [])
+
+  // ── Materials Management + Costing Engine ──
+  // On-demand, not bootstrap-loaded: a MaterialRequirement/CostSheet belongs
+  // to ONE order or project at a time, same as getDocData/getWikiPage above —
+  // there's no sensible "all requirements across every order" global list.
+  const listMaterialDefinitions = useCallback((category) => materialDefinitionsApi.list(category), [])
+  const createMaterialDefinition = useCallback(async (data) => {
+    const def = await materialDefinitionsApi.create(data)
+    await addAudit('Material Definition Created', data.name)
+    return def
+  }, [addAudit])
+
+  const getMaterialRequirement = useCallback((scope) => materialRequirementsApi.get(scope), [])
+  const addRequirementLine = useCallback(async (data) => {
+    const doc = await materialRequirementsApi.addLine(data)
+    await addAudit('Material Requirement Line Added', data.name)
+    return doc
+  }, [addAudit])
+  const updateRequirementLine = useCallback((reqId, lineId, data) => materialRequirementsApi.updateLine(reqId, lineId, data), [])
+  const removeRequirementLine = useCallback((reqId, lineId) => materialRequirementsApi.removeLine(reqId, lineId), [])
+  const bulkUploadMaterialRequirements = useCallback(async (rows) => {
+    const result = await materialRequirementsApi.bulk(rows)
+    await addAudit('Bulk Material Requirements Upload', `${result.created} created, ${result.failed} failed`)
+    return result
+  }, [addAudit])
+  const pushRequirementToStage = useCallback(async (reqId, lineId, data) => {
+    const doc = await materialRequirementsApi.push(reqId, lineId, data)
+    await addAudit('Material Requirement Pushed to Stage', `${data.mfrId} / stage ${data.stageIndex}`)
+    refreshOrders().catch(() => {}) // pushed line is now a real stage material line — refresh so Production tab shows it without a reload
+    return doc
+  }, [addAudit, refreshOrders])
+
+  const listCostSheets = useCallback((scope) => costSheetsApi.list(scope), [])
+  const getCostSheet = useCallback((id) => costSheetsApi.get(id), [])
+  const saveCostSheet = useCallback(async (data) => {
+    const sheet = await costSheetsApi.save(data)
+    await addAudit('Cost Sheet Saved', data.orderId || data.mfrProjectId || '')
+    return sheet
+  }, [addAudit])
+  const setCostSheetMargin = useCallback(async (id, data) => {
+    const sheet = await costSheetsApi.setMargin(id, data)
+    await addAudit('Cost Sheet Margin Set', id)
+    return sheet
+  }, [addAudit])
+  const saveCostSheetActuals = useCallback((id, data) => costSheetsApi.saveActuals(id, data), [])
+  const submitCostSheet = useCallback(async (id) => {
+    const sheet = await costSheetsApi.submit(id)
+    await addAudit('Cost Sheet Submitted', id)
+    return sheet
+  }, [addAudit])
+  const withdrawCostSheet = useCallback((id) => costSheetsApi.withdraw(id), [])
+  const approveCostSheet = useCallback(async (id) => {
+    const sheet = await costSheetsApi.approve(id)
+    await addAudit('Cost Sheet Approved', id)
+    return sheet
+  }, [addAudit])
+  const duplicateCostSheet = useCallback(async (id, data) => {
+    const sheet = await costSheetsApi.duplicate(id, data)
+    await addAudit('Cost Sheet Duplicated', `${id} -> ${data.targetOrderId || data.targetMfrProjectId}`)
+    return sheet
+  }, [addAudit])
+
+  const listMfrMasterProjects = useCallback(() => mfrProjectsApi.listMasterProjects(), [])
+  const createMfrMasterProject = useCallback((data) => mfrProjectsApi.createMasterProject(data), [])
+  const deleteMfrMasterProject = useCallback((id) => mfrProjectsApi.deleteMasterProject(id), [])
+  const listMfrProjects = useCallback((mfrMasterProjectId) => mfrProjectsApi.list(mfrMasterProjectId), [])
+  const createMfrProject = useCallback((data) => mfrProjectsApi.create(data), [])
+  const updateMfrProject = useCallback((id, data) => mfrProjectsApi.update(id, data), [])
+  const deleteMfrProject = useCallback((id) => mfrProjectsApi.delete(id), [])
+
+  const listInventory = useCallback(() => inventoryApi.list(), [])
+
   const unread = notifs.filter(n => !n.read).length
 
   return (
     <AppContext.Provider value={{
       currentUser, users, orders, docs, notifs, audit, loading, loadError, unread, ribbons, masterOrders,
-      actionItems,
+      actionItems, wikiPages,
       login, logout,
+      createWikiPage, updateWikiPage, removeWikiPage, refreshWikiPages, getWikiPage,
       updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial, bulkUploadMaterials,
       bulkUpdateStages, addStageItem, updateStageItem, removeStageItem,
       updateAssignment, uploadDoc, createOrder, bulkCreateOrders, createMasterOrder, deleteMasterOrder,
@@ -603,6 +707,14 @@ export function AppProvider({ children }) {
       markAllRead, markOneRead, getDocData, addAudit, pushNotif,
       refreshOrders, listAllRibbons, createRibbon, updateRibbon, removeRibbon,
       createActionItem, updateActionItem, addActionItemUpdate, removeActionItem, refreshActionItems,
+      listMaterialDefinitions, createMaterialDefinition,
+      getMaterialRequirement, addRequirementLine, updateRequirementLine, removeRequirementLine, pushRequirementToStage,
+      bulkUploadMaterialRequirements,
+      listCostSheets, getCostSheet, saveCostSheet, setCostSheetMargin, saveCostSheetActuals,
+      submitCostSheet, withdrawCostSheet, approveCostSheet, duplicateCostSheet,
+      listMfrMasterProjects, createMfrMasterProject, deleteMfrMasterProject,
+      listMfrProjects, createMfrProject, updateMfrProject, deleteMfrProject,
+      listInventory,
     }}>
       {children}
     </AppContext.Provider>

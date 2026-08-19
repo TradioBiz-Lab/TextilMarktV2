@@ -50,7 +50,7 @@ async function arrange({ stageNames = ['One', 'Two'], stageKinds, delivery = '20
   }))
   assert.equal(res.status, 201, `arrange failed: ${JSON.stringify(res.body)}`)
 
-  const ctx = { cookie: cookieFor(admin) }
+  const ctx = { cookie: cookieFor(admin), user: { role: 'admin', id: String(admin._id) } }
   return { admin, buyer, mfr, api, ctx }
 }
 
@@ -228,6 +228,182 @@ describe('check_delivery_risk', () => {
 
   test('404 for an unknown order', async () => {
     const result = await TOOL_HANDLERS.check_delivery_risk({ orderId: 'DOES-NOT-EXIST' })
+    assert.equal(result.ok, false)
+    assert.equal(result.status, 404)
+  })
+
+  // The ownership fix — mandatory per the isolation invariant. check_delivery_risk
+  // is the one handler that reads Mongoose directly instead of looping back
+  // through a REST route, so it's the one place that must reimplement (not
+  // inherit) the exact ownership predicates GET /:id already uses.
+  test('a buyer or manufacturer with no relationship to the order is refused', async () => {
+    const { admin } = await arrange()
+    const outsiderBuyer = await makeBuyer()
+    const outsiderMfr = await makeMfr()
+
+    const asOutsiderBuyer = await TOOL_HANDLERS.check_delivery_risk(
+      { orderId: ORDER_ID }, { user: { role: 'buyer', id: String(outsiderBuyer._id) } })
+    assert.equal(asOutsiderBuyer.ok, false)
+    assert.equal(asOutsiderBuyer.status, 403)
+
+    const asOutsiderMfr = await TOOL_HANDLERS.check_delivery_risk(
+      { orderId: ORDER_ID }, { user: { role: 'manufacturer', id: String(outsiderMfr._id) } })
+    assert.equal(asOutsiderMfr.ok, false)
+    assert.equal(asOutsiderMfr.status, 403)
+  })
+
+  test('the owning buyer, the assigned manufacturer, and any admin all succeed', async () => {
+    const { admin, buyer, mfr } = await arrange()
+
+    const asBuyer = await TOOL_HANDLERS.check_delivery_risk(
+      { orderId: ORDER_ID }, { user: { role: 'buyer', id: String(buyer._id) } })
+    assert.equal(asBuyer.ok, true)
+
+    const asMfr = await TOOL_HANDLERS.check_delivery_risk(
+      { orderId: ORDER_ID }, { user: { role: 'manufacturer', id: String(mfr._id) } })
+    assert.equal(asMfr.ok, true)
+
+    const asAdmin = await TOOL_HANDLERS.check_delivery_risk(
+      { orderId: ORDER_ID }, { user: { role: 'admin', id: String(admin._id) } })
+    assert.equal(asAdmin.ok, true)
+  })
+})
+
+describe('materials/costing tools (manufacturer)', () => {
+  async function arrangeMfrCostSheet() {
+    const { admin, mfr, api, ctx } = await arrange()
+    const mfrCtx = { cookie: cookieFor(mfr), user: { role: 'manufacturer', id: String(mfr._id) } }
+    await api.post('/api/material-requirements', { scopeType: 'tradio_order', orderId: ORDER_ID, category: 'fabric', name: 'Cotton', requiredQty: 100, unit: 'm' })
+    return { admin, mfr, api, ctx, mfrCtx }
+  }
+
+  test('list_material_requirements returns lines for one order', async () => {
+    const { mfrCtx } = await arrangeMfrCostSheet()
+    const result = await TOOL_HANDLERS.list_material_requirements({ orderId: ORDER_ID }, mfrCtx)
+    assert.equal(result.ok, true)
+    // Nothing pushed to this manufacturer yet — matches the human UI's own
+    // "nothing until pushed" rule, not an error.
+    assert.equal(result.data.lines.length, 0)
+  })
+
+  test('get_cost_sheet says so plainly when no sheet exists yet, then returns full content once created', async () => {
+    const { mfrCtx, mfr } = await arrangeMfrCostSheet()
+    const before = await TOOL_HANDLERS.get_cost_sheet({ orderId: ORDER_ID }, mfrCtx)
+    assert.equal(before.ok, true)
+    assert.equal(before.data.exists, false)
+
+    const createRes = await as(mfr).post('/api/cost-sheets', { scopeType: 'tradio_order', orderId: ORDER_ID, fabricSource: 'tradio', fabric: { name: 'Cotton', unit: 'm', consumption: 1.5 } })
+    assert.equal(createRes.status, 200, JSON.stringify(createRes.body))
+
+    const after = await TOOL_HANDLERS.get_cost_sheet({ orderId: ORDER_ID }, mfrCtx)
+    assert.equal(after.ok, true)
+    assert.equal(after.data.fabric.name, 'Cotton')
+    // Margin/fee/negotiated-price never reach a manufacturer, at any status.
+    const raw = JSON.stringify(after.data)
+    assert.ok(!raw.includes('marginPct') && !raw.includes('tradioFeePct') && !raw.includes('finalNegotiatedPrice'))
+  })
+
+  test('submit_cost_sheet_actuals writes the manufacturer\'s own actuals', async () => {
+    const { mfrCtx, mfr } = await arrangeMfrCostSheet()
+    const createRes = await as(mfr).post('/api/cost-sheets', { scopeType: 'tradio_order', orderId: ORDER_ID, fabricSource: 'tradio', fabric: { name: 'Cotton', unit: 'm', consumption: 1.5 } })
+    assert.equal(createRes.status, 200, JSON.stringify(createRes.body))
+    await as(mfr).post(`/api/cost-sheets/${createRes.body.id}/submit`, {})
+
+    const result = await TOOL_HANDLERS.submit_cost_sheet_actuals(
+      { costSheetId: createRes.body.id, actualFabricConsumption: 1.6 }, mfrCtx)
+    assert.equal(result.ok, true)
+    assert.equal(result.data.actualFabricConsumption, 1.6)
+  })
+
+  test('list_mfr_projects and get_mfr_project — a manufacturer\'s own private work', async () => {
+    const { mfr, mfrCtx } = await arrangeMfrCostSheet()
+    const created = await as(mfr).post('/api/mfr-master-projects', { buyerName: 'Local Boutique' })
+    assert.equal(created.status, 201, JSON.stringify(created.body))
+    const project = await as(mfr).post('/api/mfr-projects', { styleName: 'Denim Jacket', mfrMasterProjectId: created.body.id, totalQty: 200 })
+    assert.equal(project.status, 201, JSON.stringify(project.body))
+
+    const list = await TOOL_HANDLERS.list_mfr_projects({}, mfrCtx)
+    assert.equal(list.ok, true)
+    assert.equal(list.data.length, 1)
+    assert.equal(list.data[0].styleName, 'Denim Jacket')
+
+    const get = await TOOL_HANDLERS.get_mfr_project({ projectId: list.data[0].id }, mfrCtx)
+    assert.equal(get.ok, true)
+    assert.equal(get.data.styleName, 'Denim Jacket')
+
+    const missing = await TOOL_HANDLERS.get_mfr_project({ projectId: '000000000000000000000000' }, mfrCtx)
+    assert.equal(missing.ok, false)
+    assert.equal(missing.status, 404)
+  })
+
+  test('a different manufacturer\'s Kriyaa session never sees this manufacturer\'s requirement lines, cost sheet, or projects', async () => {
+    const { mfrCtx, mfr } = await arrangeMfrCostSheet()
+    await as(mfr).post('/api/cost-sheets', { scopeType: 'tradio_order', orderId: ORDER_ID, fabricSource: 'tradio', fabric: { name: 'Cotton', unit: 'm' } })
+    const master = await as(mfr).post('/api/mfr-master-projects', { buyerName: 'Local Boutique' })
+    await as(mfr).post('/api/mfr-projects', { styleName: 'Denim Jacket', mfrMasterProjectId: master.body.id, totalQty: 200 })
+
+    const outsider = await makeMfr()
+    const outsiderCtx = { cookie: cookieFor(outsider), user: { role: 'manufacturer', id: String(outsider._id) } }
+
+    // Tighter than merely "sees no lines" — a manufacturer with zero
+    // relationship to this order is refused outright by loadRequirementForRead.
+    const reqs = await TOOL_HANDLERS.list_material_requirements({ orderId: ORDER_ID }, outsiderCtx)
+    assert.equal(reqs.ok, false)
+    assert.equal(reqs.status, 403)
+
+    const sheet = await TOOL_HANDLERS.get_cost_sheet({ orderId: ORDER_ID }, outsiderCtx)
+    assert.equal(sheet.ok, true)
+    assert.equal(sheet.data.exists, false, 'the outsider has no cost sheet on this order, even though mfrA does')
+
+    const projects = await TOOL_HANDLERS.list_mfr_projects({}, outsiderCtx)
+    assert.equal(projects.ok, true)
+    assert.equal(projects.data.length, 0, 'mfrA\'s private project is invisible to a different manufacturer')
+  })
+})
+
+describe('wiki tools', () => {
+  test('list_wiki_pages returns pages visible to this admin, no bodyMarkdown', async () => {
+    const admin = await makeAdmin()
+    const api = as(admin)
+    const created = await api.post('/api/wiki-pages', {
+      title: 'Neobrands Manufacturer SOP', category: 'sop', bodyMarkdown: 'Step 1...', wikiScope: 'company',
+    })
+    assert.equal(created.status, 201, JSON.stringify(created.body))
+
+    const result = await TOOL_HANDLERS.list_wiki_pages({}, { cookie: cookieFor(admin) })
+    assert.equal(result.ok, true)
+    assert.equal(result.data.length, 1)
+    assert.equal(result.data[0].title, 'Neobrands Manufacturer SOP')
+    assert.equal(result.data[0].bodyMarkdown, undefined)
+  })
+
+  test('list_wiki_pages filters by category', async () => {
+    const admin = await makeAdmin()
+    const api = as(admin)
+    await api.post('/api/wiki-pages', { title: 'A Tech Pack', category: 'tech_pack', bodyMarkdown: 'x', wikiScope: 'company' })
+    await api.post('/api/wiki-pages', { title: 'A SOP', category: 'sop', bodyMarkdown: 'y', wikiScope: 'company' })
+
+    const result = await TOOL_HANDLERS.list_wiki_pages({ category: 'sop' }, { cookie: cookieFor(admin) })
+    assert.equal(result.ok, true)
+    assert.equal(result.data.length, 1)
+    assert.equal(result.data[0].category, 'sop')
+  })
+
+  test('get_wiki_page returns the full content', async () => {
+    const admin = await makeAdmin()
+    const api = as(admin)
+    const created = await api.post('/api/wiki-pages', {
+      title: 'Packaging SOP', category: 'sop', bodyMarkdown: 'Fold garments flat, poly-bag, carton mark per style.', wikiScope: 'company',
+    })
+    const result = await TOOL_HANDLERS.get_wiki_page({ pageId: created.body.id }, { cookie: cookieFor(admin) })
+    assert.equal(result.ok, true)
+    assert.equal(result.data.bodyMarkdown, 'Fold garments flat, poly-bag, carton mark per style.')
+  })
+
+  test('get_wiki_page 404s for an unknown id', async () => {
+    const admin = await makeAdmin()
+    const result = await TOOL_HANDLERS.get_wiki_page(
+      { pageId: '000000000000000000000000' }, { cookie: cookieFor(admin) })
     assert.equal(result.ok, false)
     assert.equal(result.status, 404)
   })

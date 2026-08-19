@@ -26,16 +26,35 @@ describe('POST /api/assistant/chat', () => {
     assert.equal(status, 401)
   })
 
-  test('403 for a buyer', async () => {
-    const buyer = await makeBuyer()
-    const { status } = await as(buyer).post('/api/assistant/chat', { messages: [{ role: 'user', content: 'hi' }] })
-    assert.equal(status, 403)
+  // Kriyaa is now open to all three roles — a buyer/manufacturer reaches
+  // exactly as far as an admin does with no API key configured (503, not
+  // 403). Reuses the same real-503-no-mock-SDK pattern as the test below,
+  // proving these roles now pass the auth gate rather than being blocked
+  // at the door.
+  test('a buyer reaches past the auth gate (503 config-missing, not 403)', async () => {
+    const original = process.env.ANTHROPIC_API_KEY
+    delete process.env.ANTHROPIC_API_KEY
+    try {
+      const buyer = await makeBuyer()
+      const { status, body } = await as(buyer).post('/api/assistant/chat', { messages: [{ role: 'user', content: 'hi' }] })
+      assert.equal(status, 503)
+      assert.match(body.error, /not configured/i)
+    } finally {
+      if (original !== undefined) process.env.ANTHROPIC_API_KEY = original
+    }
   })
 
-  test('403 for a manufacturer', async () => {
-    const mfr = await makeMfr()
-    const { status } = await as(mfr).post('/api/assistant/chat', { messages: [{ role: 'user', content: 'hi' }] })
-    assert.equal(status, 403)
+  test('a manufacturer reaches past the auth gate (503 config-missing, not 403)', async () => {
+    const original = process.env.ANTHROPIC_API_KEY
+    delete process.env.ANTHROPIC_API_KEY
+    try {
+      const mfr = await makeMfr()
+      const { status, body } = await as(mfr).post('/api/assistant/chat', { messages: [{ role: 'user', content: 'hi' }] })
+      assert.equal(status, 503)
+      assert.match(body.error, /not configured/i)
+    } finally {
+      if (original !== undefined) process.env.ANTHROPIC_API_KEY = original
+    }
   })
 
   test('503 when ANTHROPIC_API_KEY is unset', async () => {

@@ -23,8 +23,17 @@ const stageUpdateSchema = new mongoose.Schema({
 }, { _id: false })
 
 // One raw-material/trim line to procure for a stage — tracked to PO/received level.
+// Real _id (Mongoose's default for a subdocument array) so MaterialRequirement's
+// pushedTo[] can reference a line stably — a positional index would silently
+// mis-point after a stage-insert, stage-delete, or another material-line delete,
+// all of which shift array positions elsewhere in this file.
 const stageMaterialSchema = new mongoose.Schema({
   name:         { type: String, required: true, maxlength: 200 },
+  // Planning metadata for the Materials Management module — deliberately NOT read
+  // by the production gate below (isTrims/isTrimsOrderStage stay name-keyed only,
+  // see routes/orders.js), so this never changes existing gating behavior.
+  category:     { type: String, enum: ['fabric', 'trim', 'accessory', 'other'], default: 'other' },
+  colourway:    { type: String, default: '' }, // matches order.colourways[].name; '' = not colourway-specific
   requiredQty:  { type: Number, required: true, min: 0 },
   unit:         { type: String, default: '' },   // 'm', 'pcs', 'kg' — free text
   supplier:     { type: String, default: '' },   // free text — no separate Supplier collection
@@ -34,7 +43,7 @@ const stageMaterialSchema = new mongoose.Schema({
   orderedQty:   { type: Number, default: 0, min: 0 },
   receivedQty:  { type: Number, default: 0, min: 0 },
   note:         { type: String, default: '' },
-}, { _id: false })
+})
 
 // How a stage measures "done". Most real TNA steps are milestones — of the 16
 // steps in a Cocoblu plan, only Production counts garments. A `checklist` stage

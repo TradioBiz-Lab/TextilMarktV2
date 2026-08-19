@@ -160,10 +160,60 @@ export const assistantApi = {
   chat: (messages) => api.post('/assistant/chat', { messages }, { timeout: 120000 }),
 }
 
+export const wikiPagesApi = {
+  list: () => api.get('/wiki-pages'),
+  get: id => api.get(`/wiki-pages/${id}`),
+  create: data => api.post('/wiki-pages', data),
+  update: (id, data) => api.post(`/wiki-pages/${id}`, data),
+  remove: id => api.post(`/wiki-pages/${id}/delete`),
+}
+
 export const masterOrdersApi = {
   list: () => api.get('/master-orders'),
   create: data => api.post('/master-orders', data),
   delete: id => api.post(`/master-orders/${id}/delete`),
+}
+
+export const materialDefinitionsApi = {
+  list: (category) => api.get('/material-definitions' + (category ? `?category=${category}` : '')),
+  create: data => api.post('/material-definitions', data),
+  update: (id, data) => api.post(`/material-definitions/${id}`, data),
+}
+
+export const materialRequirementsApi = {
+  get: ({ orderId, mfrProjectId }) => api.get(`/material-requirements?${orderId ? `orderId=${orderId}` : `mfrProjectId=${mfrProjectId}`}`),
+  addLine: data => api.post('/material-requirements', data),
+  updateLine: (reqId, lineId, data) => api.post(`/material-requirements/${reqId}/lines/${lineId}`, data),
+  removeLine: (reqId, lineId) => api.post(`/material-requirements/${reqId}/lines/${lineId}/delete`),
+  push: (reqId, lineId, data) => api.post(`/material-requirements/${reqId}/lines/${lineId}/push`, data),
+  bulk: (rows) => api.post('/material-requirements/bulk', { rows }),
+}
+
+export const costSheetsApi = {
+  list: ({ orderId, mfrProjectId }) => api.get(`/cost-sheets?${orderId ? `orderId=${orderId}` : `mfrProjectId=${mfrProjectId}`}`),
+  get: id => api.get(`/cost-sheets/${id}`),
+  save: data => api.post('/cost-sheets', data),
+  setMargin: (id, data) => api.post(`/cost-sheets/${id}/margin`, data),
+  saveActuals: (id, data) => api.post(`/cost-sheets/${id}/actuals`, data),
+  submit: id => api.post(`/cost-sheets/${id}/submit`, {}),
+  withdraw: id => api.post(`/cost-sheets/${id}/withdraw`, {}),
+  approve: id => api.post(`/cost-sheets/${id}/approve`, {}),
+  duplicate: (id, data) => api.post(`/cost-sheets/${id}/duplicate`, data),
+  exportUrl: (id, internal) => `${api.defaults.baseURL}/cost-sheets/${id}/export.xlsx${internal ? '?view=internal' : ''}`,
+}
+
+export const inventoryApi = {
+  list: () => api.get('/inventory'),
+}
+
+export const mfrProjectsApi = {
+  listMasterProjects: () => api.get('/mfr-master-projects'),
+  createMasterProject: data => api.post('/mfr-master-projects', data),
+  deleteMasterProject: id => api.post(`/mfr-master-projects/${id}/delete`),
+  list: (mfrMasterProjectId) => api.get('/mfr-projects' + (mfrMasterProjectId ? `?mfrMasterProjectId=${mfrMasterProjectId}` : '')),
+  create: data => api.post('/mfr-projects', data),
+  update: (id, data) => api.post(`/mfr-projects/${id}`, data),
+  delete: id => api.post(`/mfr-projects/${id}/delete`),
 }
 
 export default api

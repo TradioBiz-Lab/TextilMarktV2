@@ -205,3 +205,46 @@ table { border-collapse: collapse; width: 100%; }
   from { opacity: 0; transform: translateY(10px) scale(0.97); }
   to   { opacity: 1; transform: translateY(0)   scale(1); }
 }
+
+/* ── Rendered Wiki Markdown (marked + DOMPurify output) ──
+   marked/DOMPurify emit bare HTML with zero styling — tables render
+   borderless/uncollapsed and images at native px (a real photo can be
+   900+ px wide), so both need explicit rules here. */
+.markdown-body img {
+  max-width: 100%;
+  max-height: 480px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  display: block;
+  margin: 6px 0;
+}
+.markdown-body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+  font-size: 13px;
+}
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid #e2e8f0;
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.markdown-body th {
+  background: #f8fafc;
+  font-weight: 700;
+  color: #0f172a;
+}
+.markdown-body tr:nth-child(even) td {
+  background: #fafbfc;
+}
+.markdown-body table table {
+  /* raw HTML tables left un-converted by turndown (e.g. photo-gallery layout
+     tables from a docx import) can end up nested inside a real table cell —
+     don't compound the border/margin rules when that happens */
+  margin: 0;
+}
