@@ -24,7 +24,7 @@ export function StepHandoff({ wizardState, onBack, onNavigate, onOpenOrder }) {
     <Card>
       <SectionLabel>Step 4 — Materials, Costing & TNA</SectionLabel>
       <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 14 }}>
-        {wizardState.lineItemIds.length} line item{wizardState.lineItemIds.length !== 1 ? 's' : ''} created. Open each one to build its Bill of Materials, cost sheet, and (for admin) TNA plan.
+        {wizardState.lineItemIds.length} line item{wizardState.lineItemIds.length !== 1 ? 's' : ''} created. Open each one to build its Bill of Materials, cost sheet, and TNA plan.
       </div>
 
       {items.length === 0 ? (
@@ -42,7 +42,7 @@ export function StepHandoff({ wizardState, onBack, onNavigate, onOpenOrder }) {
                 {isAdmin ? (
                   <Btn size="sm" variant="secondary" onClick={() => onOpenOrder(item.id)}>Open Order (Materials/Costing/TNA) →</Btn>
                 ) : (
-                  <Btn size="sm" variant="secondary" onClick={() => onNavigate('projects')}>Open Project (Materials/Costing) →</Btn>
+                  <Btn size="sm" variant="secondary" onClick={() => onNavigate('projects')}>Open Project (Materials/Costing/TNA) →</Btn>
                 )}
               </FlexRow>
             </div>

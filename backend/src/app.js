@@ -24,6 +24,7 @@ import materialsRouter     from './routes/materials.js'
 import materialsAiRouter   from './routes/materialsAi.js'
 import costingRouter       from './routes/costing.js'
 import mfrProjectsRouter   from './routes/mfrProjects.js'
+import mfrProjectStagesRouter from './routes/mfrProjectStages.js'
 import inventoryRouter     from './routes/inventory.js'
 import suppliersRouter     from './routes/suppliers.js'
 
@@ -176,6 +177,7 @@ app.use('/api',                materialsRouter)   // /material-definitions, /mat
 app.use('/api',                materialsAiRouter) // /material-requirements/ai-draft
 app.use('/api',                costingRouter)     // /cost-sheets
 app.use('/api',                mfrProjectsRouter) // /mfr-master-projects, /mfr-projects
+app.use('/api',                mfrProjectStagesRouter) // /mfr-projects/:id/stages/...
 app.use('/api',                inventoryRouter)   // /inventory
 app.use('/api',                suppliersRouter)   // /suppliers
 app.use('/api/master-orders', masterOrdersRouter)

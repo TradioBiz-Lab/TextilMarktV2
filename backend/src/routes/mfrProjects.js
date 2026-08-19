@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit'
 import { MfrMasterProject, MfrProject, AuditLog } from '../db/index.js'
 import { requireAuth } from '../middleware/auth.js'
 import { validateImagePayload } from '../lib/imagePayload.js'
+import { stageKindOf, deriveStageStatus, stageEtaVarianceDays } from '../models/shared/stage.js'
 
 // Mirrors orders.js's bulkOrderLimiter — a manufacturer batch-creating many
 // styles at once via the wizard's CSV/repeatable-row line-items step.
@@ -77,6 +78,40 @@ router.post('/mfr-master-projects/:id/delete', requireAuth, async (req, res) => 
 
 // ── MfrProject ────────────────────────────────────────────────────────────
 
+// TNA stage mapper — the MfrProject analogue of orders.js's enrichOrder stage
+// map. No viewerMfrId narrowing (single owner, nothing to filter) and no
+// populate on responsibleId/updates.byUser (this scope has no accountability-
+// delegation across roles — the owning manufacturer is the only possible
+// author — so a raw id string is enough; the frontend already knows who "you"
+// are without a round-trip).
+const mapStage = s => ({
+  name: s.name, unitsDone: s.unitsDone, totalUnits: s.totalUnits,
+  startDate: s.startDate || null, eta: s.eta, stageDate: s.stageDate || null, note: s.note,
+  description: s.description || '',
+  kind: stageKindOf(s), status: deriveStageStatus(s),
+  blocked: !!s.blocked, blockedReason: s.blockedReason || '',
+  baselineEta: s.baselineEta ?? s.eta ?? null,
+  etaVarianceDays: stageEtaVarianceDays({ baselineEta: s.baselineEta ?? s.eta, eta: s.eta }),
+  actualEnd: s.actualEnd || null,
+  items: (s.items || []).map(it => ({
+    name: it.name, colourway: it.colourway || '', status: it.status,
+    plannedDate: it.plannedDate ?? it.dueDate ?? null,
+    dueDate: it.dueDate || null, doneDate: it.doneDate || null, note: it.note || '',
+  })),
+  itemsDone: (s.items || []).filter(it => it.status === 'done').length,
+  itemsTotal: (s.items || []).length,
+  updates: (s.updates || []).map(u => ({
+    text: u.text, byUser: u.byUser?.toString?.() ?? u.byUser, at: u.at,
+  })),
+  materials: (s.materials || []).map(m => ({
+    id: m._id?.toString() ?? null,
+    name: m.name, category: m.category || 'other', colourway: m.colourway || '',
+    requiredQty: m.requiredQty, unit: m.unit, supplier: m.supplier,
+    poNumber: m.poNumber, expectedDate: m.expectedDate, status: m.status,
+    orderedQty: m.orderedQty, receivedQty: m.receivedQty, note: m.note,
+  })),
+})
+
 const mapProject = p => ({
   id: p._id.toString(),
   mfrMasterProjectId: p.mfrMasterProjectId ? p.mfrMasterProjectId.toString() : null,
@@ -85,6 +120,7 @@ const mapProject = p => ({
   colourways: (p.colourways || []).map(c => ({ name: c.name, code: c.code || '' })),
   notes: p.notes || '',
   imageDataUrl: p.imageDataUrl || null, imageUrl: p.imageUrl || null,
+  stages: (p.stages || []).map(mapStage),
   createdAt: p.createdAt, updatedAt: p.updatedAt,
 })
 
@@ -254,4 +290,4 @@ router.post('/mfr-projects/:id/delete', requireAuth, async (req, res) => {
 })
 
 export default router
-export { requireOwnMfrProject }
+export { requireOwnMfrProject, mapProject, mapStage }

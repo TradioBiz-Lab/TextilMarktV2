@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { T, REQUIREMENT_CATEGORIES, REQUIREMENT_CATEGORY_LABEL } from '../../constants.js'
-import { PageHeader, Input, Btn, Card, Badge, FlexRow, EmptyState, LoadingScreen, useToast, SupplierCombobox, Modal } from '../../components/ui.jsx'
+import { PageHeader, Input, Btn, Card, Badge, FlexRow, EmptyState, LoadingScreen, useToast, SupplierCombobox, Modal, Tabs } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { CostSheetPanel } from '../shared/CostSheetPanel.jsx'
 import { AiDraftModal } from '../shared/AiDraftModal.jsx'
+import { MfrProjectStages } from './MfrProjectStages.jsx'
 
 // Manufacturer's own non-Tradio business — Master Project → Project, mirroring
 // AdminOrders.jsx's Master Order → Order flow one level up, but private
@@ -99,9 +100,11 @@ function ProjectRow({ p, onOpen, onDelete }) {
   )
 }
 
-function ProjectDetail({ project, onBack, getMaterialRequirement, addRequirementLine, updateRequirementLine, removeRequirementLine }) {
+function ProjectDetail({ project: initialProject, onBack, getMaterialRequirement, addRequirementLine, updateRequirementLine, removeRequirementLine }) {
   const { currentUser, listSuppliers, duplicateRequirement, generateRequirementPO, listMfrProjects, docs } = useApp()
   const toast = useToast()
+  const [project, setProject] = useState(initialProject)
+  const [tab, setTab] = useState('materials')
   const [doc, setDoc] = useState(null)
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState({ category: 'fabric_primary', name: '', requiredQty: '', unit: '', supplier: '', wastagePct: '', rate: '' })
@@ -209,7 +212,13 @@ function ProjectDetail({ project, onBack, getMaterialRequirement, addRequirement
           <Btn size="sm" variant="secondary" disabled={!doc?.id || (doc?.lines || []).length === 0} onClick={() => setShowClone(true)}>⧉ Clone to…</Btn>
         </FlexRow>} />
 
-      <Card style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 16 }}>
+        <Tabs tabs={[{ id: 'materials', label: 'Materials' }, { id: 'costing', label: 'Costing' }, { id: 'tna', label: 'TNA' }]} active={tab} onChange={setTab} />
+      </div>
+
+      {tab === 'tna' && <MfrProjectStages project={project} onUpdated={setProject} />}
+
+      {tab === 'materials' && <Card style={{ marginBottom: 16 }}>
         <FlexRow style={{ justifyContent: 'space-between', marginBottom: 10 }}>
           <div style={{ fontWeight: 700, fontSize: 14 }}>Materials</div>
           {selectedLineIds.size > 0 && <Btn size="sm" disabled={busy} onClick={handleGeneratePO}>Generate PO — {selectedLineIds.size} selected</Btn>}
@@ -259,9 +268,9 @@ function ProjectDetail({ project, onBack, getMaterialRequirement, addRequirement
             <div style={{ marginTop: 8 }}><Btn size="sm" disabled={busy} onClick={handleAdd}>+ Add</Btn></div>
           </>
         )}
-      </Card>
+      </Card>}
 
-      <CostSheetPanel scopeType="mfr_project" mfrProjectId={project.id} mfrId={currentUser.id} orderQty={project.totalQty} styleLabel="Cost Sheet" />
+      {tab === 'costing' && <CostSheetPanel scopeType="mfr_project" mfrProjectId={project.id} mfrId={currentUser.id} orderQty={project.totalQty} styleLabel="Cost Sheet" />}
     </div>
   )
 }

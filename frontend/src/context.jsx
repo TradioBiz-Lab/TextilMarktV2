@@ -708,6 +708,21 @@ export function AppProvider({ children }) {
   const deleteMfrProject = useCallback((id) => mfrProjectsApi.delete(id), [])
   const bulkCreateMfrProjects = useCallback((mfrMasterProjectId, rows) => mfrProjectsApi.bulkCreate(mfrMasterProjectId, rows), [])
 
+  // TNA for MfrProject (Order Setup Wizard, Phase 4) — same thin wrapper shape
+  // as the Order stage actions above, minus the mfrId segment.
+  const seedMfrProjectStages = useCallback((id, data) => mfrProjectsApi.seedStages(id, data), [])
+  const updateMfrProjectStage = useCallback((id, stageIndex, data) => mfrProjectsApi.updateStage(id, stageIndex, data), [])
+  const updateMfrProjectStageDates = useCallback((id, stageIndex, dates) => mfrProjectsApi.updateStageDates(id, stageIndex, dates), [])
+  const bulkUpdateMfrProjectStages = useCallback((id, stages) => mfrProjectsApi.bulkUpdateStages(id, stages), [])
+  const removeMfrProjectStage = useCallback((id, stageIndex) => mfrProjectsApi.removeStage(id, stageIndex), [])
+  const addMfrProjectStageUpdate = useCallback((id, stageIndex, text) => mfrProjectsApi.addStageUpdate(id, stageIndex, text), [])
+  const addMfrProjectStageItem = useCallback((id, stageIndex, data) => mfrProjectsApi.addStageItem(id, stageIndex, data), [])
+  const updateMfrProjectStageItem = useCallback((id, stageIndex, lineIndex, data) => mfrProjectsApi.updateStageItem(id, stageIndex, lineIndex, data), [])
+  const removeMfrProjectStageItem = useCallback((id, stageIndex, lineIndex) => mfrProjectsApi.removeStageItem(id, stageIndex, lineIndex), [])
+  const addMfrProjectStageMaterial = useCallback((id, stageIndex, data) => mfrProjectsApi.addStageMaterial(id, stageIndex, data), [])
+  const updateMfrProjectStageMaterial = useCallback((id, stageIndex, lineIndex, data) => mfrProjectsApi.updateStageMaterial(id, stageIndex, lineIndex, data), [])
+  const removeMfrProjectStageMaterial = useCallback((id, stageIndex, lineIndex) => mfrProjectsApi.removeStageMaterial(id, stageIndex, lineIndex), [])
+
   const listInventory = useCallback(() => inventoryApi.list(), [])
 
   const unread = notifs.filter(n => !n.read).length
@@ -734,6 +749,9 @@ export function AppProvider({ children }) {
       submitCostSheet, withdrawCostSheet, approveCostSheet, duplicateCostSheet,
       listMfrMasterProjects, createMfrMasterProject, deleteMfrMasterProject,
       listMfrProjects, createMfrProject, updateMfrProject, deleteMfrProject, bulkCreateMfrProjects,
+      seedMfrProjectStages, updateMfrProjectStage, updateMfrProjectStageDates, bulkUpdateMfrProjectStages, removeMfrProjectStage,
+      addMfrProjectStageUpdate, addMfrProjectStageItem, updateMfrProjectStageItem, removeMfrProjectStageItem,
+      addMfrProjectStageMaterial, updateMfrProjectStageMaterial, removeMfrProjectStageMaterial,
       listInventory,
     }}>
       {children}
