@@ -45,7 +45,8 @@ export function LoginPage() {
   return (
     <div style={{
       minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, overflow: 'auto',
-      backgroundImage: `linear-gradient(rgba(248,250,252,0.88), rgba(248,250,252,0.88)), url('/images/login-bg.jpg')`,
+      backgroundColor: T.bg,
+      backgroundImage: `linear-gradient(rgba(248,250,252,0.45), rgba(248,250,252,0.45)), url('/images/login-bg.jpg')`,
       backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', backgroundAttachment: 'fixed',
     }}>
       <div style={{ width: '100%', maxWidth: 400 }}>
