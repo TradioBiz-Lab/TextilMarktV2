@@ -57,6 +57,11 @@ const costSheetSchema = new mongoose.Schema({
     name: { type: String, default: '' }, unit: { type: String, default: '' },
     consumption: { type: Number, default: null }, rate: { type: Number, default: null },
     supplier: { type: String, default: '' },
+    // Cutting-wastage gross-up, per-fabric (not sheet-level — overhead/rejection
+    // stay sheet-level, but wastage is specific to how efficiently THIS fabric
+    // cuts). `consumption` stays the stated NET per-garment figure; wastage
+    // grosses it up before costing — see fabricGrossConsumption below.
+    wastagePct: { type: Number, default: 0, min: 0 },
     // Provenance back-reference stamped by "pull from requirement" — values stay
     // frozen copies, this only records where they came from so the consumption
     // sanity-check has a join key to compare against.
@@ -82,6 +87,16 @@ const costSheetSchema = new mongoose.Schema({
   },
   overheadPct: { type: Number, default: 5 },
   rejectionPct: { type: Number, default: 3 },
+
+  // ── Manufacturer's own margin — content field like overheadPct/rejectionPct
+  // above (NOT master-only, unlike the Tradio margin/fee block below). On a
+  // Tradio order this is the manufacturer's own sell-to-Tradio margin; Tradio's
+  // marginPct/tradioFeePct then compute on top of the manufacturer's full price
+  // (baseCost + this), not just their raw cost — confirmed directly: mirrors how
+  // a real buying house prices on top of a supplier's quote. On mfr_project
+  // scope (no Tradio party at all) this is simply the manufacturer's own final
+  // margin — baseCost + this IS the final price, full stop. ──
+  mfrMarginPct: { type: Number, default: null },
 
   // ── Master-admin only, always — tradio_order scope ONLY. Always null/hidden
   // for mfr_project (there's no Tradio fee or negotiated price on a
@@ -122,9 +137,19 @@ export const CostSheet = mongoose.model('CostSheet', costSheetSchema)
 const sumValues = arr => (arr || []).reduce((sum, l) => sum + (l.value || 0), 0)
 const sumExtra = (sheet, group) => (sheet.extraLines || []).filter(l => l.group === group).reduce((sum, l) => sum + (l.value || 0), 0)
 
+// Grossed-up consumption after wastage — consumption stays the NET stated
+// figure, this is what actually gets ordered/costed. null (not 0) when
+// consumption itself isn't set, so fabricValue below can tell "no fabric
+// entered yet" apart from "entered as zero."
+export function fabricGrossConsumption(sheet) {
+  const c = sheet?.fabric?.consumption
+  if (typeof c !== 'number') return null
+  return c * (1 + (sheet?.fabric?.wastagePct || 0) / 100)
+}
+
 export function fabricValue(sheet) {
-  const c = sheet?.fabric?.consumption, r = sheet?.fabric?.rate
-  return (typeof c === 'number' && typeof r === 'number') ? c * r : 0
+  const gross = fabricGrossConsumption(sheet), r = sheet?.fabric?.rate
+  return (typeof gross === 'number' && typeof r === 'number') ? gross * r : 0
 }
 
 export function rawMaterialTotal(sheet) {
@@ -148,23 +173,55 @@ export function rejectionValue(sheet) {
   return totalLabourAndRawMaterial(sheet) * ((sheet.rejectionPct ?? 0) / 100)
 }
 
+// The manufacturer's own raw production cost — labour + materials + overhead
+// + rejection. Visible to the owning manufacturer and admin (not master-only,
+// unlike everything below this point).
+export function baseCost(sheet) {
+  return totalLabourAndRawMaterial(sheet) + overheadValue(sheet) + rejectionValue(sheet)
+}
+
+// The manufacturer's own margin on top of their raw cost — content, not
+// master-only. null when the manufacturer hasn't set one yet.
+export function mfrMarginValue(sheet) {
+  if (sheet.mfrMarginPct == null) return null
+  return baseCost(sheet) * (sheet.mfrMarginPct / 100)
+}
+
+// baseCost + the manufacturer's own margin — their sell-to-Tradio price on a
+// Tradio order, or simply their final price on their own mfr_project work.
+export function mfrSellPrice(sheet) {
+  const mv = mfrMarginValue(sheet)
+  return mv == null ? null : baseCost(sheet) + mv
+}
+
 // Everything from here down is master-admin-only content — computed here so the
 // route layer never has to re-derive the margin math, but callers (enrichCostSheet)
 // must strip these outputs for manufacturer/buyer viewers, not just the source
 // fields they're computed from.
+//
+// Tradio's margin/fee compute on the manufacturer's FULL submitted price
+// (mfrSellPrice), not just their raw cost — confirmed directly: Tradio earns
+// a cut of the manufacturer's own markup too, same as a real buying house
+// pricing on top of a supplier's quote. Falls back to baseCost when the
+// manufacturer hasn't set mfrMarginPct — every sheet that predates this
+// field (or simply hasn't been priced by the manufacturer yet) computes
+// exactly as it always did, zero migration needed.
+function priceBase(sheet) {
+  return mfrSellPrice(sheet) ?? baseCost(sheet)
+}
+
 export function marginValue(sheet) {
   if (sheet.marginPct == null) return null
-  return totalLabourAndRawMaterial(sheet) * (sheet.marginPct / 100)
+  return priceBase(sheet) * (sheet.marginPct / 100)
 }
 
 export function tradioFeeValue(sheet) {
   if (sheet.tradioFeePct == null) return null
-  return totalLabourAndRawMaterial(sheet) * (sheet.tradioFeePct / 100)
+  return priceBase(sheet) * (sheet.tradioFeePct / 100)
 }
 
 export function priceValue(sheet) {
-  const base = totalLabourAndRawMaterial(sheet) + overheadValue(sheet) + rejectionValue(sheet)
   const margin = marginValue(sheet), fee = tradioFeeValue(sheet)
   if (margin == null || fee == null) return null
-  return base + margin + fee
+  return priceBase(sheet) + margin + fee
 }

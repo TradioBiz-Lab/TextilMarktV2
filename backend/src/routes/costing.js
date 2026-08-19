@@ -6,6 +6,7 @@ import {
 import {
   fabricValue, rawMaterialTotal, labourTotal, totalLabourAndRawMaterial,
   overheadValue, rejectionValue, marginValue, tradioFeeValue, priceValue,
+  baseCost, mfrMarginValue, mfrSellPrice,
 } from '../models/CostSheet.js'
 import { requireAuth, requireMaster } from '../middleware/auth.js'
 import { assertScopeShape } from '../lib/scopeAccess.js'
@@ -69,6 +70,7 @@ function enrichCostSheet(sheet, user) {
     fabric: sheet.fabric ? {
       name: sheet.fabric.name || '', unit: sheet.fabric.unit || '',
       consumption: sheet.fabric.consumption ?? null, rate: sheet.fabric.rate ?? null,
+      wastagePct: sheet.fabric.wastagePct || 0,
       supplier: sheet.fabric.supplier || '',
       materialRequirementId: sheet.fabric.materialRequirementId ? sheet.fabric.materialRequirementId.toString() : null,
       materialRequirementLineId: sheet.fabric.materialRequirementLineId ? sheet.fabric.materialRequirementLineId.toString() : null,
@@ -84,6 +86,12 @@ function enrichCostSheet(sheet, user) {
     fabricValue: fabricValue(sheet), rawMaterialTotal: rawMaterialTotal(sheet), labourTotal: labourTotal(sheet),
     totalLabourAndRawMaterial: totalLabourAndRawMaterial(sheet),
     overheadValue: overheadValue(sheet), rejectionValue: rejectionValue(sheet),
+    // The manufacturer's own margin — content, not master-only (unlike
+    // marginPct/tradioFeePct below). Visible to the owning manufacturer and
+    // admin alike; admin needs baseCost/mfrSellPrice to know what Tradio's
+    // own margin/fee are actually computed on top of.
+    baseCost: baseCost(sheet), mfrMarginPct: sheet.mfrMarginPct ?? null,
+    mfrMarginValue: mfrMarginValue(sheet), mfrSellPrice: mfrSellPrice(sheet),
     actualFabricConsumption: sheet.actualFabricConsumption ?? null,
     actualLabourCost: sheet.actualLabourCost ?? null,
     actualRejectionValue: sheet.actualRejectionValue ?? null,
@@ -183,7 +191,7 @@ router.get('/cost-sheets/:id', requireAuth, async (req, res) => {
 router.post('/cost-sheets', requireAuth, async (req, res) => {
   try {
     const { scopeType, orderId, mfrProjectId, mfrId, styleRef, fabricSource, currency,
-      fabric, process: processLines, trims, labelsPackaging, extraLines, labour, overheadPct, rejectionPct } = req.body
+      fabric, process: processLines, trims, labelsPackaging, extraLines, labour, overheadPct, rejectionPct, mfrMarginPct } = req.body
 
     try {
       await assertScopeShape(scopeType, orderId, mfrProjectId, req.user)
@@ -221,10 +229,13 @@ router.post('/cost-sheets', requireAuth, async (req, res) => {
     }
     if (currency !== undefined) sheet.currency = currency
     if (fabric !== undefined) {
+      if (fabric.wastagePct != null && Number(fabric.wastagePct) < 0)
+        return res.status(400).json({ error: 'Wastage % must be a non-negative number' })
       sheet.fabric = {
         name: fabric.name || '', unit: fabric.unit || '',
         consumption: fabric.consumption != null ? Number(fabric.consumption) : null,
         rate: fabric.rate != null ? Number(fabric.rate) : null,
+        wastagePct: fabric.wastagePct != null ? Number(fabric.wastagePct) : 0,
         supplier: fabric.supplier || '',
         materialRequirementId: fabric.materialRequirementId || sheet.fabric?.materialRequirementId || null,
         materialRequirementLineId: fabric.materialRequirementLineId || sheet.fabric?.materialRequirementLineId || null,
@@ -246,6 +257,7 @@ router.post('/cost-sheets', requireAuth, async (req, res) => {
     }
     if (overheadPct !== undefined) sheet.overheadPct = Number(overheadPct)
     if (rejectionPct !== undefined) sheet.rejectionPct = Number(rejectionPct)
+    if (mfrMarginPct !== undefined) sheet.mfrMarginPct = mfrMarginPct === null || mfrMarginPct === '' ? null : Number(mfrMarginPct)
 
     await sheet.save()
     await AuditLog.create({ byUser: req.user.id, action: 'Cost Sheet Saved', detail: `${orderId || mfrProjectId} (${sheet.mfrId})` })
@@ -312,6 +324,7 @@ router.post('/cost-sheets/:id/duplicate', requireAuth, async (req, res) => {
       fabric: {
         name: source.fabric?.name || '', unit: source.fabric?.unit || '',
         consumption: source.fabric?.consumption ?? null, rate: source.fabric?.rate ?? null,
+        wastagePct: source.fabric?.wastagePct || 0,
         supplier: source.fabric?.supplier || '',
         // Provenance does NOT carry over — a different scope has a different
         // (or no) MaterialRequirement, the old join key would resolve wrong.
@@ -319,8 +332,11 @@ router.post('/cost-sheets/:id/duplicate', requireAuth, async (req, res) => {
       },
       process: source.process, trims: source.trims, labelsPackaging: source.labelsPackaging, extraLines: source.extraLines,
       labour: source.labour, overheadPct: source.overheadPct, rejectionPct: source.rejectionPct,
-      // status defaults to 'draft'; marginPct/tradioFeePct/finalNegotiatedPrice/
-      // negotiatedDiscountPct all default to null — never copied from source.
+      // mfrMarginPct is content, not master-only (same category as overheadPct/
+      // rejectionPct above) — it carries over. status defaults to 'draft';
+      // marginPct/tradioFeePct/finalNegotiatedPrice/negotiatedDiscountPct (the
+      // MASTER-only Tradio block) all default to null — never copied from source.
+      mfrMarginPct: source.mfrMarginPct ?? null,
     })
     await dup.save()
     await AuditLog.create({ byUser: req.user.id, action: 'Cost Sheet Duplicated', detail: `${req.params.id} -> ${targetOrderId || targetMfrProjectId} (${dup.mfrId})` })
@@ -522,6 +538,7 @@ router.get('/cost-sheets/:id/export.xlsx', requireAuth, async (req, res) => {
       ws.addRow([])
       addRow('RAW MATERIAL', '', { section: true })
       addRow('Fabric', data.fabricValue?.toFixed(2) ?? '0.00')
+      if (data.fabric?.wastagePct > 0) ws.addRow([`  (includes +${data.fabric.wastagePct}% wastage)`, ''])
       const lineLabel = l => `  ${l.label}${l.supplier ? ` — ${l.supplier}` : ''}`
       for (const l of data.process || []) ws.addRow([lineLabel(l), l.value])
       for (const l of data.trims || []) ws.addRow([lineLabel(l), l.value])
@@ -539,8 +556,13 @@ router.get('/cost-sheets/:id/export.xlsx', requireAuth, async (req, res) => {
       addRow('Total Labour & Raw Material', data.totalLabourAndRawMaterial?.toFixed(2), { bold: true })
       ws.addRow([`Overhead @${data.overheadPct}%`, data.overheadValue?.toFixed(2)])
       ws.addRow([`Rejection @${data.rejectionPct}%`, data.rejectionValue?.toFixed(2)])
+      addRow('Your Base Cost', data.baseCost?.toFixed(2), { bold: true })
+      if (data.mfrMarginPct != null) {
+        ws.addRow([`Your Margin @${data.mfrMarginPct}%`, data.mfrMarginValue?.toFixed(2) ?? '—'])
+        addRow('Your Price', data.mfrSellPrice?.toFixed(2) ?? '—', { bold: true })
+      }
 
-      // Margin/fee/price — internal view only. Absent entirely from `data` for
+      // Tradio's margin/fee/price — internal view only. Absent entirely from `data` for
       // a manufacturer viewer, so this block simply never executes for them —
       // no separate check needed here, enrichCostSheet already decided it.
       if (data.marginPct !== undefined) {

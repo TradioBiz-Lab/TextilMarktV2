@@ -535,7 +535,7 @@ describe('Phase 2 — Excel export never shows more than the on-screen view', ()
     assert.ok(!/margin/i.test(allText), 'no margin row at all in a buyer export')
   })
 
-  test('manufacturer export contains their own cost detail but never Price/Margin/Tradio fee', async () => {
+  test('manufacturer export contains their own cost detail but never Tradio\'s Price/Margin/Tradio fee', async () => {
     const { mfrA, id } = await fullyApprovedSheet()
     const res = await fetch(`${baseUrl}/api/cost-sheets/${id}/export.xlsx`, { headers: { Authorization: `Bearer ${tokenFor(mfrA)}` } })
     assert.equal(res.status, 200)
@@ -545,9 +545,42 @@ describe('Phase 2 — Excel export never shows more than the on-screen view', ()
     const ws = wb.getWorksheet('Cost Sheet')
     const allText = ws.getSheetValues().flat().filter(Boolean).join(' | ')
     assert.ok(allText.includes('Cutting & Threads'), 'manufacturer sees their own labour detail')
-    assert.ok(!/margin/i.test(allText))
+    // Precise Tradio-only terms — NOT a blanket "margin" ban, since the
+    // manufacturer's OWN margin (Phase 3, mfrMarginPct) is legitimate content
+    // they authored and are allowed to see in their own export.
+    assert.ok(!/margin \(factory\)/i.test(allText), 'Tradio\'s "Margin (Factory)" row must never appear')
+    assert.ok(!/commercial \(internal only\)/i.test(allText), 'the internal-only section header must never appear')
     assert.ok(!/tradio fee/i.test(allText))
     assert.ok(!allText.includes('555'), 'the negotiated price must not leak into the manufacturer export either')
+  })
+
+  test('manufacturer export shows their OWN margin when set, still never Tradio\'s', async () => {
+    // mfrMarginPct is content — locked after submit, same as fabric/labour —
+    // so it must be set as part of authoring, before submit/approve, not after.
+    const arranged = await arrangeSplit()
+    const { mfrA, masterApi } = arranged
+    const create = await as(mfrA).post('/api/cost-sheets', {
+      scopeType: 'tradio_order', orderId: ORDER_ID, fabricSource: 'tradio',
+      fabric: { name: 'Cotton', unit: 'm', consumption: 1.5, rate: 200 },
+      labour: { cuttingThreads: 14, making: 60, finishingPacking: 12 },
+      mfrMarginPct: 15,
+    })
+    const id = create.body.id
+    await as(mfrA).post(`/api/cost-sheets/${id}/submit`, {})
+    await masterApi.post(`/api/cost-sheets/${id}/margin`, { marginPct: 20, tradioFeePct: 10, finalNegotiatedPrice: 555 })
+    await masterApi.post(`/api/cost-sheets/${id}/approve`, {})
+
+    const res = await fetch(`${baseUrl}/api/cost-sheets/${id}/export.xlsx`, { headers: { Authorization: `Bearer ${tokenFor(mfrA)}` } })
+    assert.equal(res.status, 200)
+    const buf = Buffer.from(await res.arrayBuffer())
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(buf)
+    const ws = wb.getWorksheet('Cost Sheet')
+    const allText = ws.getSheetValues().flat().filter(Boolean).join(' | ')
+    assert.ok(/your margin @15%/i.test(allText), 'the manufacturer\'s own margin row must appear — they authored it')
+    assert.ok(/your price/i.test(allText))
+    assert.ok(!/margin \(factory\)/i.test(allText), 'still never Tradio\'s own margin row')
+    assert.ok(!allText.includes('555'), 'the negotiated price must still never leak')
   })
 
   test('?view=internal is rejected for anyone but admin, even the sheet\'s own manufacturer', async () => {

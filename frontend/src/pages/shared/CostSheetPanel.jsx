@@ -3,6 +3,7 @@ import { T } from '../../constants.js'
 import { Card, Btn, Input, FlexRow, Badge, useToast, LoadingScreen } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { costSheetsApi } from '../../api.js'
+import * as costMath from '../../lib/costMath.js'
 
 // Renders as ONE cost sheet — one (order|project, manufacturer) pair. Role-
 // conditional by construction (not two components): manufacturer sees their
@@ -54,11 +55,12 @@ export function CostSheetPanel({ scopeType, orderId, mfrProjectId, mfrId, orderQ
     // throws the moment an onChange spreads a null draft.
     setDraft({
       fabricSource: sheet?.fabricSource || 'tradio',
-      fabric: sheet?.fabric || { name: '', unit: '', consumption: '', rate: '' },
+      fabric: sheet?.fabric || { name: '', unit: '', consumption: '', rate: '', wastagePct: 0 },
       process: sheet?.process || [], trims: sheet?.trims || [], labelsPackaging: sheet?.labelsPackaging || [],
       extraLines: sheet?.extraLines || [],
       labour: sheet?.labour || { cuttingThreads: 0, making: 0, finishingPacking: 0 },
       overheadPct: sheet?.overheadPct ?? 5, rejectionPct: sheet?.rejectionPct ?? 3,
+      mfrMarginPct: sheet?.mfrMarginPct ?? '',
     })
     setMarginDraft({ marginPct: sheet?.marginPct ?? '', tradioFeePct: sheet?.tradioFeePct ?? 10, finalNegotiatedPrice: sheet?.finalNegotiatedPrice ?? '', negotiatedDiscountPct: sheet?.negotiatedDiscountPct ?? '' })
     setActualsDraft({ actualFabricConsumption: sheet?.actualFabricConsumption ?? '', actualLabourCost: sheet?.actualLabourCost ?? '', actualRejectionValue: sheet?.actualRejectionValue ?? '' })
@@ -82,7 +84,13 @@ export function CostSheetPanel({ scopeType, orderId, mfrProjectId, mfrId, orderQ
       const body = {
         scopeType, ...(scopeType === 'tradio_order' ? { orderId } : { mfrProjectId }),
         mfrId, ...draft,
-        fabric: { ...draft.fabric, consumption: draft.fabric.consumption === '' ? null : Number(draft.fabric.consumption), rate: draft.fabric.rate === '' ? null : Number(draft.fabric.rate) },
+        fabric: {
+          ...draft.fabric,
+          consumption: draft.fabric.consumption === '' ? null : Number(draft.fabric.consumption),
+          rate: draft.fabric.rate === '' ? null : Number(draft.fabric.rate),
+          wastagePct: draft.fabric.wastagePct === '' || draft.fabric.wastagePct == null ? 0 : Number(draft.fabric.wastagePct),
+        },
+        mfrMarginPct: draft.mfrMarginPct === '' ? null : Number(draft.mfrMarginPct),
       }
       const saved = await saveCostSheet(body)
       setSheet(saved)
@@ -102,18 +110,42 @@ export function CostSheetPanel({ scopeType, orderId, mfrProjectId, mfrId, orderQ
     setBusy(true)
     try {
       const req = await getMaterialRequirement(scopeType === 'tradio_order' ? { orderId } : { mfrProjectId })
-      const fabricLine = (req.lines || []).find(l => l.category === 'fabric')
-      if (!fabricLine) { toast('No fabric line found in the material requirement yet', 'error'); return }
-      const perUnit = orderQty ? fabricLine.requiredQty / orderQty : fabricLine.requiredQty
-      setDraft(d => ({
-        ...d,
-        fabric: {
-          ...d.fabric, name: fabricLine.name, unit: fabricLine.unit, supplier: fabricLine.supplier || '',
-          consumption: Number(perUnit.toFixed(4)),
-          materialRequirementId: req.id, materialRequirementLineId: fabricLine.id,
-        },
-      }))
-      toast('Pulled fabric line from Materials Requirement', 'success')
+      const lines = req.lines || []
+      const fabricLine = lines.find(l => l.category === 'fabric' || l.category === 'fabric_primary')
+      const trimLines = lines.filter(l => l.category === 'trim')
+      const accessoryLines = lines.filter(l => l.category === 'accessory')
+
+      if (!fabricLine && trimLines.length === 0 && accessoryLines.length === 0) {
+        toast('No fabric, trim, or accessory lines found in the material requirement yet', 'error'); return
+      }
+
+      setDraft(d => {
+        let next = { ...d }
+        if (fabricLine) {
+          const perUnit = orderQty ? fabricLine.requiredQty / orderQty : fabricLine.requiredQty
+          next.fabric = {
+            ...d.fabric, name: fabricLine.name, unit: fabricLine.unit, supplier: fabricLine.supplier || '',
+            consumption: Number(perUnit.toFixed(4)), wastagePct: fabricLine.wastagePct || d.fabric.wastagePct || 0,
+            materialRequirementId: req.id, materialRequirementLineId: fabricLine.id,
+          }
+        }
+        if (trimLines.length > 0) {
+          const existingLabels = new Set((d.trims || []).map(l => l.label))
+          const newTrims = trimLines.filter(l => !existingLabels.has(l.name)).map(l => ({
+            label: l.name, supplier: l.supplier || '', value: (l.rate && l.requiredQty) ? l.rate * l.requiredQty : 0,
+          }))
+          next.trims = [...(d.trims || []), ...newTrims]
+        }
+        if (accessoryLines.length > 0) {
+          const existingLabels = new Set((d.extraLines || []).map(l => l.label))
+          const newExtra = accessoryLines.filter(l => !existingLabels.has(l.name)).map(l => ({
+            group: 'material', label: l.name, supplier: l.supplier || '', value: (l.rate && l.requiredQty) ? l.rate * l.requiredQty : 0,
+          }))
+          next.extraLines = [...(d.extraLines || []), ...newExtra]
+        }
+        return next
+      })
+      toast('Pulled from Materials Requirement — fabric, trims, and accessories', 'success')
     } catch (err) { toast(err.message || 'Pull failed', 'error') } finally { setBusy(false) }
   }
 
@@ -178,14 +210,15 @@ export function CostSheetPanel({ scopeType, orderId, mfrProjectId, mfrId, orderQ
             title="Fabric"
             action={canEditContent && <Btn size="sm" variant="secondary" disabled={busy} onClick={handlePullFromRequirement}>⤓ Pull from Requirement</Btn>}
             note={draft?.fabric.materialRequirementLineId ? 'Linked to a requirement line' : null}
-            columns={['Name', 'Consumption/unit', 'Rate', 'Supplier', 'Value']}
+            columns={['Name', 'Consumption/unit', 'Wastage %', 'Rate', 'Supplier', 'Value']}
           >
             <tr>
               <td style={tdStyle}><input disabled={!canEditContent} value={draft?.fabric.name || ''} onChange={e => setDraft(d => ({ ...d, fabric: { ...d.fabric, name: e.target.value } }))} style={cellInputStyle} /></td>
               <td style={tdStyle}><input type="number" disabled={!canEditContent} value={draft?.fabric.consumption ?? ''} onChange={e => setDraft(d => ({ ...d, fabric: { ...d.fabric, consumption: e.target.value } }))} style={cellInputStyle} /></td>
+              <td style={tdStyle}><input type="number" min="0" disabled={!canEditContent} value={draft?.fabric.wastagePct ?? ''} onChange={e => setDraft(d => ({ ...d, fabric: { ...d.fabric, wastagePct: e.target.value } }))} style={cellInputStyle} /></td>
               <td style={tdStyle}><input type="number" disabled={!canEditContent} value={draft?.fabric.rate ?? ''} onChange={e => setDraft(d => ({ ...d, fabric: { ...d.fabric, rate: e.target.value } }))} style={cellInputStyle} /></td>
               <td style={tdStyle}><input disabled={!canEditContent} value={draft?.fabric.supplier || ''} onChange={e => setDraft(d => ({ ...d, fabric: { ...d.fabric, supplier: e.target.value } }))} style={cellInputStyle} /></td>
-              <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 600 }}><Mono>{(sheet?.fabricValue ?? 0).toFixed(2)}</Mono></td>
+              <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 600 }}><Mono>{costMath.fabricValue(draft || {}).toFixed(2)}</Mono></td>
             </tr>
           </SectionTable>
 
@@ -213,27 +246,59 @@ export function CostSheetPanel({ scopeType, orderId, mfrProjectId, mfrId, orderQ
             </tr>
           </SectionTable>
 
-          {sheet && (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 12 }}>
-              <tbody>
-                <tr style={{ borderTop: `2px solid ${T.border}`, fontWeight: 700 }}>
-                  <td style={tdStyle}>Raw Material Total</td><td style={{ ...tdStyle, textAlign: 'right' }}><Mono>{sheet.rawMaterialTotal?.toFixed(2)}</Mono></td>
-                </tr>
-                <tr style={{ fontWeight: 700 }}>
-                  <td style={tdStyle}>Labour Total</td><td style={{ ...tdStyle, textAlign: 'right' }}><Mono>{sheet.labourTotal?.toFixed(2)}</Mono></td>
-                </tr>
-                <tr style={{ borderTop: `1px solid ${T.border}`, fontWeight: 700 }}>
-                  <td style={tdStyle}>Total Labour &amp; Raw Material</td><td style={{ ...tdStyle, textAlign: 'right' }}><Mono>{sheet.totalLabourAndRawMaterial?.toFixed(2)}</Mono></td>
-                </tr>
-                <tr><td style={tdStyle}>Overhead @{sheet.overheadPct}%</td><td style={{ ...tdStyle, textAlign: 'right' }}><Mono>{sheet.overheadValue?.toFixed(2)}</Mono></td></tr>
-                <tr><td style={tdStyle}>Rejection @{sheet.rejectionPct}%</td><td style={{ ...tdStyle, textAlign: 'right' }}><Mono>{sheet.rejectionValue?.toFixed(2)}</Mono></td></tr>
-                {sheet.price != null && (
-                  <tr style={{ borderTop: `2px solid ${T.border}`, fontWeight: 800 }}>
-                    <td style={tdStyle}>Price (internal)</td><td style={{ ...tdStyle, textAlign: 'right' }}><Mono>{sheet.price?.toFixed(2)}</Mono></td>
+          {draft && (() => {
+            // Live-computed from the in-progress draft on every keystroke —
+            // not just after Save. Mirrors backend/src/models/CostSheet.js
+            // via frontend/src/lib/costMath.js; see that file's header for
+            // why this duplication is deliberate.
+            const rawMaterialTotal = costMath.rawMaterialTotal(draft)
+            const labourTotal = costMath.labourTotal(draft)
+            const totalLabourAndRawMaterial = costMath.totalLabourAndRawMaterial(draft)
+            const overheadValue = costMath.overheadValue(draft)
+            const rejectionValue = costMath.rejectionValue(draft)
+            const baseCostVal = costMath.baseCost(draft)
+            const mfrMarginValueVal = costMath.mfrMarginValue(draft)
+            const mfrSellPriceVal = costMath.mfrSellPrice(draft)
+            return (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 12 }}>
+                <tbody>
+                  <tr style={{ borderTop: `2px solid ${T.border}`, fontWeight: 700 }}>
+                    <td style={tdStyle}>Raw Material Total</td><td style={{ ...tdStyle, textAlign: 'right' }}><Mono>{rawMaterialTotal.toFixed(2)}</Mono></td>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                  <tr style={{ fontWeight: 700 }}>
+                    <td style={tdStyle}>Labour Total</td><td style={{ ...tdStyle, textAlign: 'right' }}><Mono>{labourTotal.toFixed(2)}</Mono></td>
+                  </tr>
+                  <tr style={{ borderTop: `1px solid ${T.border}`, fontWeight: 700 }}>
+                    <td style={tdStyle}>Total Labour &amp; Raw Material</td><td style={{ ...tdStyle, textAlign: 'right' }}><Mono>{totalLabourAndRawMaterial.toFixed(2)}</Mono></td>
+                  </tr>
+                  <tr><td style={tdStyle}>Overhead @{draft.overheadPct}%</td><td style={{ ...tdStyle, textAlign: 'right' }}><Mono>{overheadValue.toFixed(2)}</Mono></td></tr>
+                  <tr><td style={tdStyle}>Rejection @{draft.rejectionPct}%</td><td style={{ ...tdStyle, textAlign: 'right' }}><Mono>{rejectionValue.toFixed(2)}</Mono></td></tr>
+                  <tr style={{ borderTop: `2px solid ${T.border}`, fontWeight: 800 }}>
+                    <td style={tdStyle}>Your Base Cost</td><td style={{ ...tdStyle, textAlign: 'right' }}><Mono>{baseCostVal.toFixed(2)}</Mono></td>
+                  </tr>
+                  {mfrMarginValueVal != null && (
+                    <>
+                      <tr><td style={tdStyle}>Your Margin @{draft.mfrMarginPct}%</td><td style={{ ...tdStyle, textAlign: 'right' }}><Mono>{mfrMarginValueVal.toFixed(2)}</Mono></td></tr>
+                      <tr style={{ fontWeight: 800 }}>
+                        <td style={tdStyle}>Your Price</td><td style={{ ...tdStyle, textAlign: 'right' }}><Mono>{mfrSellPriceVal.toFixed(2)}</Mono></td>
+                      </tr>
+                    </>
+                  )}
+                  {sheet?.price != null && (
+                    <tr style={{ borderTop: `2px solid ${T.border}`, fontWeight: 800 }}>
+                      <td style={tdStyle}>Price (internal, last saved)</td><td style={{ ...tdStyle, textAlign: 'right' }}><Mono>{sheet.price?.toFixed(2)}</Mono></td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )
+          })()}
+
+          {(canEditContent) && (
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 11, fontWeight: 700, color: T.textMuted }}>YOUR MARGIN (optional)</label>
+              <Input type="number" min="0" value={draft?.mfrMarginPct ?? ''} onChange={e => setDraft(d => ({ ...d, mfrMarginPct: e.target.value }))} placeholder="e.g. 15" />
+            </div>
           )}
 
           {canEditContent && (
