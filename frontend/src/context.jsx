@@ -688,6 +688,7 @@ export function AppProvider({ children }) {
   const createMfrProject = useCallback((data) => mfrProjectsApi.create(data), [])
   const updateMfrProject = useCallback((id, data) => mfrProjectsApi.update(id, data), [])
   const deleteMfrProject = useCallback((id) => mfrProjectsApi.delete(id), [])
+  const bulkCreateMfrProjects = useCallback((mfrMasterProjectId, rows) => mfrProjectsApi.bulkCreate(mfrMasterProjectId, rows), [])
 
   const listInventory = useCallback(() => inventoryApi.list(), [])
 
@@ -713,7 +714,7 @@ export function AppProvider({ children }) {
       listCostSheets, getCostSheet, saveCostSheet, setCostSheetMargin, saveCostSheetActuals,
       submitCostSheet, withdrawCostSheet, approveCostSheet, duplicateCostSheet,
       listMfrMasterProjects, createMfrMasterProject, deleteMfrMasterProject,
-      listMfrProjects, createMfrProject, updateMfrProject, deleteMfrProject,
+      listMfrProjects, createMfrProject, updateMfrProject, deleteMfrProject, bulkCreateMfrProjects,
       listInventory,
     }}>
       {children}

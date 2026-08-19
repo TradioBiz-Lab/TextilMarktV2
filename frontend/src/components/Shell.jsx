@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot, Boxes, Briefcase, Calculator, Warehouse } from 'lucide-react'
+import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot, Boxes, Briefcase, Calculator, Warehouse, PlusCircle } from 'lucide-react'
 import { T } from '../constants.js'
 import { Btn, RibbonBanner } from './ui.jsx'
 import { NotifPanel } from './NotifPanel.jsx'
@@ -79,6 +79,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
     ],
     manufacturer: [
       { id: 'dashboard', icon: Home, label: 'Dashboard' },
+      { id: 'order_wizard', icon: PlusCircle, label: 'New Project' },
       { id: 'action_items', icon: ListChecks, label: 'Action Items' },
       { id: 'kriyaa', icon: Bot, label: 'Kriyaa' },
       { id: 'materials', icon: Boxes, label: 'Materials' },
@@ -90,6 +91,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
     ],
     admin: [
       { id: 'dashboard', icon: Home, label: 'Dashboard' },
+      { id: 'order_wizard', icon: PlusCircle, label: 'New Order' },
       { id: 'action_items', icon: ListChecks, label: 'Action Items' },
       { id: 'kriyaa',    icon: Bot, label: 'Kriyaa' },
       { id: 'orders',    icon: Package, label: 'Orders' },

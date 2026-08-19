@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import Papa from 'papaparse'
-import { T } from '../../constants.js'
+import { T, DEFAULT_STAGE_NAMES } from '../../constants.js'
 import { Btn, FlexRow, EmptyState } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
@@ -99,6 +99,23 @@ function validateRow(row, mfrUsers, responsibleUsers) {
   return { errors, status: errors.length ? 'error' : 'valid', resolvedAssignments, filledStages }
 }
 
+let rowSeq = 0
+
+// A blank row a user can fill in by hand, with no CSV involved. Pre-seeded with
+// one default stage dated 'NA'/'NA' — real TNA dates get set later, in the
+// wizard's own TNA step (Step 6), so a manually-added row doesn't force typing
+// 20 stage rows just to become valid.
+function blankRow() {
+  return {
+    rowIndex: `manual-${++rowSeq}`,
+    product: '', category: '', season: '', totalQty: '', delivery: '',
+    assignments: [{ code: '', qty: '' }],
+    stages: [{ name: DEFAULT_STAGE_NAMES[0], startDate: 'NA', endDate: 'NA', responsibleEmail: '', description: '', targetQty: '' }],
+    orderId: '',
+    colourways: '', imageUrl: '',
+  }
+}
+
 export function BulkUploadCsvPanel({ masterOrder, onDone }) {
   const { users, bulkCreateOrders } = useApp()
   const mfrUsers = users.filter(u => u.role === 'manufacturer' && u.isActive)
@@ -191,7 +208,7 @@ export function BulkUploadCsvPanel({ masterOrder, onDone }) {
           </div>
         )}
         <FlexRow justify="flex-end">
-          <Btn onClick={onDone}>Done</Btn>
+          <Btn onClick={() => onDone(results)}>Done</Btn>
         </FlexRow>
       </div>
     )
@@ -213,6 +230,14 @@ export function BulkUploadCsvPanel({ masterOrder, onDone }) {
           {rows.length > 0 && <span style={{ fontSize: 12, color: T.textMuted }}>{validCount} valid · {rows.length - validCount} with errors</span>}
         </FlexRow>
       </div>
+
+      <FlexRow justify="flex-start">
+        <Btn variant="secondary" onClick={() => {
+          const row = blankRow()
+          setRows(prev => [...prev, row])
+          setExpandedRow(row.rowIndex)
+        }}>+ Add Row Manually</Btn>
+      </FlexRow>
 
       {parseErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}>⚠ {parseErr}</div>}
 

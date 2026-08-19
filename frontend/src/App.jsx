@@ -13,6 +13,7 @@ import { MfrMaterials } from './pages/manufacturer/MfrMaterials.jsx'
 import { MfrCosting } from './pages/manufacturer/MfrCosting.jsx'
 import { MfrProjects } from './pages/manufacturer/MfrProjects.jsx'
 import { AdminDashboard } from './pages/admin/AdminDashboard.jsx'
+import { OrderWizard } from './pages/shared/wizard/OrderWizard.jsx'
 import { AdminOrders } from './pages/admin/AdminOrders.jsx'
 import { AdminMaterials } from './pages/admin/AdminMaterials.jsx'
 import { AdminCosting } from './pages/admin/AdminCosting.jsx'
@@ -128,20 +129,22 @@ function Inner() {
     }
     if (user.role === 'manufacturer') {
       if (view === 'dashboard') return <MfrDashboard onOpen={openOrder} />
+      if (view === 'order_wizard') return <OrderWizard onNavigate={navTo} onOpenOrder={openOrder} />
       if (view === 'order_detail' && selOid) return <MfrOrderDetail orderId={selOid} onBack={() => navTo('dashboard')} />
       if (view === 'certs') return <MfrCerts />
       if (view === 'kriyaa') return <KriyaaPage />
       if (view === 'materials') return <MfrMaterials />
       if (view === 'costing') return <MfrCosting />
       if (view === 'inventory') return <InventoryPage />
-      if (view === 'projects') return <MfrProjects />
+      if (view === 'projects') return <MfrProjects onNavigate={navTo} />
       // Manufacturers have no general document repository — the Wiki (Tech
       // Packs/SOPs/Inspection Forms) is their entire "Documents" experience today.
       if (view === 'documents') return <WikiPage />
     }
     if (user.role === 'admin') {
       if (view === 'dashboard') return <AdminDashboard onNavigate={navTo} onOpen={openOrder} />
-      if (view === 'orders') return <AdminOrders onOpen={openOrder} initialStatus={ordersStatus} />
+      if (view === 'order_wizard') return <OrderWizard onNavigate={navTo} onOpenOrder={openOrder} />
+      if (view === 'orders') return <AdminOrders onOpen={openOrder} onNavigate={navTo} initialStatus={ordersStatus} />
       if (view === 'materials') return <AdminMaterials />
       if (view === 'costing') return <AdminCosting />
       if (view === 'inventory') return <InventoryPage />

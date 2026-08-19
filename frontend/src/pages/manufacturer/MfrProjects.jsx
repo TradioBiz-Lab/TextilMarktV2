@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { T } from '../../constants.js'
-import { PageHeader, Modal, Input, Btn, Card, Badge, FlexRow, EmptyState, LoadingScreen, useToast } from '../../components/ui.jsx'
+import { PageHeader, Input, Btn, Card, Badge, FlexRow, EmptyState, LoadingScreen, useToast } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { CostSheetPanel } from '../shared/CostSheetPanel.jsx'
 
@@ -9,10 +9,13 @@ import { CostSheetPanel } from '../shared/CostSheetPanel.jsx'
 // (owner-only, zero admin override, per the plan's §1f privacy boundary) and
 // margin-free. A project's material requirement is self-authored inline here
 // (no push-to-stage mechanic — there's no TNA/stage system for these).
-export function MfrProjects() {
+//
+// Creation lives in the Order/Project Setup Wizard ('order_wizard' view) —
+// this page is list + detail only; onNavigate opens the wizard.
+export function MfrProjects({ onNavigate }) {
   const {
-    listMfrMasterProjects, createMfrMasterProject, deleteMfrMasterProject,
-    listMfrProjects, createMfrProject, deleteMfrProject,
+    listMfrMasterProjects, deleteMfrMasterProject,
+    listMfrProjects, deleteMfrProject,
     getMaterialRequirement, addRequirementLine, updateRequirementLine, removeRequirementLine,
   } = useApp()
   const toast = useToast()
@@ -20,11 +23,6 @@ export function MfrProjects() {
   const [masters, setMasters] = useState(null)
   const [projectsByMaster, setProjectsByMaster] = useState({}) // masterId|'_standalone' -> array
   const [selected, setSelected] = useState(null) // project object
-  const [showNewMaster, setShowNewMaster] = useState(false)
-  const [showNewProject, setShowNewProject] = useState(null) // mfrMasterProjectId or 'standalone' or null
-  const [masterForm, setMasterForm] = useState({ buyerName: '', season: '', notes: '' })
-  const [projectForm, setProjectForm] = useState({ styleName: '', buyerName: '', category: '', season: '', totalQty: '', delivery: '', colourways: '', notes: '' })
-  const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -43,37 +41,6 @@ export function MfrProjects() {
 
   useEffect(() => { load() }, [load])
 
-  async function submitMaster() {
-    if (!masterForm.buyerName.trim()) { toast('Buyer name is required', 'error'); return }
-    setBusy(true)
-    try {
-      await createMfrMasterProject(masterForm)
-      setShowNewMaster(false)
-      setMasterForm({ buyerName: '', season: '', notes: '' })
-      await load()
-      toast('Master project created', 'success')
-    } catch (err) { toast(err.message || 'Failed to create', 'error') } finally { setBusy(false) }
-  }
-
-  async function submitProject() {
-    if (!projectForm.styleName.trim()) { toast('Style name is required', 'error'); return }
-    setBusy(true)
-    try {
-      const colourways = projectForm.colourways.split(',').map(s => s.trim()).filter(Boolean).map(name => ({ name, code: '' }))
-      await createMfrProject({
-        ...projectForm,
-        mfrMasterProjectId: showNewProject === 'standalone' ? null : showNewProject,
-        totalQty: projectForm.totalQty ? Number(projectForm.totalQty) : 0,
-        delivery: projectForm.delivery || null,
-        colourways,
-      })
-      setShowNewProject(null)
-      setProjectForm({ styleName: '', buyerName: '', category: '', season: '', totalQty: '', delivery: '', colourways: '', notes: '' })
-      await load()
-      toast('Style added', 'success')
-    } catch (err) { toast(err.message || 'Failed to create', 'error') } finally { setBusy(false) }
-  }
-
   if (masters === null) return <LoadingScreen />
 
   if (selected) {
@@ -84,51 +51,11 @@ export function MfrProjects() {
 
   return (
     <div>
-      {showNewMaster && (
-        <Modal title="New Master Project" onClose={() => setShowNewMaster(false)}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <Input label="Buyer / Client Name" value={masterForm.buyerName} onChange={e => setMasterForm(f => ({ ...f, buyerName: e.target.value }))} />
-            <Input label="Season" value={masterForm.season} onChange={e => setMasterForm(f => ({ ...f, season: e.target.value }))} />
-            <Input label="Notes" value={masterForm.notes} onChange={e => setMasterForm(f => ({ ...f, notes: e.target.value }))} />
-            <FlexRow justify="flex-end" gap={8}>
-              <Btn variant="secondary" onClick={() => setShowNewMaster(false)}>Cancel</Btn>
-              <Btn disabled={busy} onClick={submitMaster}>Create</Btn>
-            </FlexRow>
-          </div>
-        </Modal>
-      )}
-
-      {showNewProject && (
-        <Modal title="Add Style" onClose={() => setShowNewProject(null)}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <Input label="Style Name" value={projectForm.styleName} onChange={e => setProjectForm(f => ({ ...f, styleName: e.target.value }))} />
-            <Input label="Buyer / Client Name" value={projectForm.buyerName} onChange={e => setProjectForm(f => ({ ...f, buyerName: e.target.value }))} />
-            <div className="form-grid-2">
-              <Input label="Category" value={projectForm.category} onChange={e => setProjectForm(f => ({ ...f, category: e.target.value }))} />
-              <Input label="Season" value={projectForm.season} onChange={e => setProjectForm(f => ({ ...f, season: e.target.value }))} />
-            </div>
-            <div className="form-grid-2">
-              <Input label="Total Qty" type="number" value={projectForm.totalQty} onChange={e => setProjectForm(f => ({ ...f, totalQty: e.target.value }))} />
-              <Input label="Delivery Date" type="date" value={projectForm.delivery} onChange={e => setProjectForm(f => ({ ...f, delivery: e.target.value }))} />
-            </div>
-            <Input label="Colourways (comma-separated)" value={projectForm.colourways} onChange={e => setProjectForm(f => ({ ...f, colourways: e.target.value }))} placeholder="Black, Navy, Charcoal" />
-            <Input label="Notes" value={projectForm.notes} onChange={e => setProjectForm(f => ({ ...f, notes: e.target.value }))} />
-            <FlexRow justify="flex-end" gap={8}>
-              <Btn variant="secondary" onClick={() => setShowNewProject(null)}>Cancel</Btn>
-              <Btn disabled={busy} onClick={submitProject}>Create</Btn>
-            </FlexRow>
-          </div>
-        </Modal>
-      )}
-
       <PageHeader title="My Projects" subtitle="Materials + costing for your own business — private, never visible to Tradio"
-        action={<FlexRow gap={8}>
-          <Btn variant="secondary" onClick={() => setShowNewProject('standalone')} icon="✚">Standalone Style</Btn>
-          <Btn onClick={() => setShowNewMaster(true)} icon="✚">New Master Project</Btn>
-        </FlexRow>} />
+        action={<Btn onClick={() => onNavigate('order_wizard')} icon="✚">New Project</Btn>} />
 
       {masters.length === 0 && (projectsByMaster._standalone || []).length === 0 && (
-        <Card><EmptyState icon="🗂" title="No projects yet" subtitle="Create a master project to group styles for one buyer, or add a standalone style." /></Card>
+        <Card><EmptyState icon="🗂" title="No projects yet" subtitle="Use New Project to set up a master project and add styles." /></Card>
       )}
 
       {masters.map(mp => (
@@ -138,10 +65,7 @@ export function MfrProjects() {
               <div style={{ fontWeight: 700, fontSize: 14 }}>{mp.buyerName}</div>
               <div style={{ fontSize: 12, color: T.textMuted }}>{mp.season || '—'}</div>
             </div>
-            <FlexRow gap={6}>
-              <Btn size="sm" variant="secondary" onClick={() => setShowNewProject(mp.id)}>+ Add Style</Btn>
-              <Btn size="sm" variant="secondary" onClick={async () => { await deleteMfrMasterProject(mp.id); await load() }}>Delete</Btn>
-            </FlexRow>
+            <Btn size="sm" variant="secondary" onClick={async () => { await deleteMfrMasterProject(mp.id); await load() }}>Delete</Btn>
           </FlexRow>
           {(projectsByMaster[mp.id] || []).length === 0
             ? <div style={{ fontSize: 12, color: T.textMuted }}>No styles yet.</div>

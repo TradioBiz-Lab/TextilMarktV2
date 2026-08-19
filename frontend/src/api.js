@@ -214,6 +214,7 @@ export const mfrProjectsApi = {
   create: data => api.post('/mfr-projects', data),
   update: (id, data) => api.post(`/mfr-projects/${id}`, data),
   delete: id => api.post(`/mfr-projects/${id}/delete`),
+  bulkCreate: (mfrMasterProjectId, rows) => api.post('/mfr-projects/bulk', { mfrMasterProjectId, rows }),
 }
 
 export default api

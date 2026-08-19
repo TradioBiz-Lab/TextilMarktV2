@@ -55,11 +55,23 @@ export const DOC_TYPES = [
   { v: 'wiki_inspection_form', l: 'Inspection / Testing Form' },
   { v: 'wiki_fit_comments', l: 'Fit Comments' },
   { v: 'wiki_photos', l: 'Photos (lab dip / approval)' },
+  // Order Setup Wizard — Documents step. fit_comments here is order/project-
+  // scoped reference material, distinct from the company/buyer-wide
+  // wiki_fit_comments above. pattern is link-only — see PATTERN_DOC_TYPES.
+  { v: 'measurement_sheet', l: 'Measurement Sheet' },
+  { v: 'pattern', l: 'Pattern (incl. DXF)' },
+  { v: 'fit_comments', l: 'Fit Comments' },
+  { v: 'sop', l: 'SOP' },
 ]
 
 // Single source of truth for the Wiki's "Files" tab category filter — the three
 // link-only Document types above.
 export const WIKI_DOC_TYPES = DOC_TYPES.filter(d => d.v.startsWith('wiki_'))
+
+// Link-only document types — the upload UI must skip inline file mode for
+// these (DXF/pattern files have no reliable mime signature to sniff safely;
+// see PATTERN_LINK_ONLY_TYPES' comment in backend/src/models/Document.js).
+export const PATTERN_LINK_ONLY_TYPES = ['pattern']
 
 // Wiki "Pages" tab — Tech Pack/SOP content authored as in-app Markdown pages
 // (WikiPage model), not file uploads.
@@ -102,6 +114,7 @@ export const DOC_ICONS = {
   packing_qc: '📦', dispatch_docs: '🚚',
   mfr_profile: '🏭',
   wiki_inspection_form: '🔍', wiki_fit_comments: '📝', wiki_photos: '📷',
+  measurement_sheet: '📏', pattern: '📐', fit_comments: '📝', sop: '📘',
 }
 
 export const CATEGORIES = ['TSHRT', 'JEANS', 'BEDSH', 'SHIRT', 'DRESS', 'JACKET', 'POLO', 'SHORTS', 'HOODIE']
