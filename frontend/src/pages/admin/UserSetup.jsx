@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Crown, Check, AlertTriangle, Plus, Search, KeyRound, Pencil, Users } from 'lucide-react'
 import { T } from '../../constants.js'
 import { Modal, Input, Select, Btn, Card, Alert, EmptyState, FlexRow, PageHeader, RoleBadge, Mono, LoadingScreen, FileUpload, useToast, fileUploadPayload } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -120,7 +121,7 @@ export function UserSetup() {
     <div>
       {showC && (
         <Modal title="Create New User" subtitle="User must change password on first login" onClose={() => { setShowC(false); setErrors({}); setProfileFile(null); setProfileFileErr('') }} size="lg">
-          <div style={{ marginBottom: 14 }}><Alert type="success">👑 Master Admin privilege — only you can create platform users.</Alert></div>
+          <div style={{ marginBottom: 14 }}><Alert type="success"><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Crown size={13} /> Master Admin privilege — only you can create platform users.</span></Alert></div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div className="form-grid-2">
               <Input label="Full Name *" value={f.name} onChange={e => { setF({ ...f, name: e.target.value }); setErrors({ ...errors, name: '' }) }} error={errors.name} placeholder="Jane Smith" />
@@ -163,7 +164,7 @@ export function UserSetup() {
             {f.role === 'admin' && f.adminType === 'master' && <Alert type="warning">You are creating another Master Admin. They will have full user management access.</Alert>}
             <FlexRow justify="flex-end" gap={8} style={{ marginTop: 4 }}>
               <Btn variant="secondary" onClick={() => { setShowC(false); setErrors({}) }}>Cancel</Btn>
-              <Btn onClick={create} disabled={saving} icon="✓">Create User</Btn>
+              <Btn onClick={create} disabled={saving} icon={<Check size={13} strokeWidth={3} />}>Create User</Btn>
             </FlexRow>
           </div>
         </Modal>
@@ -185,18 +186,18 @@ export function UserSetup() {
             <Input label="Contact Person Name *" value={ef.name} onChange={e => { setEf({ ...ef, name: e.target.value }); setEditErrors({ ...editErrors, name: '' }) }} error={editErrors.name} placeholder="Jane Smith" />
             <Input label="Email Address *" type="email" value={ef.email} onChange={e => { setEf({ ...ef, email: e.target.value }); setEditErrors({ ...editErrors, email: '' }) }} error={editErrors.email} placeholder="jane@company.com" />
             <Input label="Phone Number" value={ef.phone} onChange={e => setEf({ ...ef, phone: e.target.value })} placeholder="+91-9876540000" />
-            {editErrors._ && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500 }}>⚠ {editErrors._}</div>}
+            {editErrors._ && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={12} /> {editErrors._}</div>}
             <FlexRow justify="flex-end" gap={8} style={{ marginTop: 4 }}>
               <Btn variant="secondary" onClick={() => setEditUser(null)}>Cancel</Btn>
-              <Btn onClick={saveEdit} disabled={editSaving} icon="✓">{editSaving ? 'Saving…' : 'Save Changes'}</Btn>
+              <Btn onClick={saveEdit} disabled={editSaving} icon={<Check size={13} strokeWidth={3} />}>{editSaving ? 'Saving…' : 'Save Changes'}</Btn>
             </FlexRow>
           </div>
         </Modal>
       )}
       <PageHeader
         title="User Setup"
-        subtitle={<span style={{ color: T.master, fontWeight: 600 }}>👑 Master Admin exclusive — manage all platform accounts</span>}
-        action={<Btn onClick={() => setShowC(true)} icon="➕">Create User</Btn>}
+        subtitle={<span style={{ color: T.master, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Crown size={13} /> Master Admin exclusive — manage all platform accounts</span>}
+        action={<Btn onClick={() => setShowC(true)} icon={<Plus size={13} />}>Create User</Btn>}
       />
       <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${T.border}`, marginBottom: 14 }}>
         {tabs.map(t => (
@@ -206,8 +207,11 @@ export function UserSetup() {
           </button>
         ))}
       </div>
-      <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔍  Search users by name, email, or company…"
-        style={{ width: '100%', maxWidth: 380, border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 12px', fontSize: 13, color: T.text, background: '#f8fafc', fontFamily: 'inherit', marginBottom: 14 }} />
+      <div style={{ position: 'relative', maxWidth: 380, marginBottom: 14 }}>
+        <Search size={13} color={T.textLight} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search users by name, email, or company…"
+          style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 12px 7px 32px', fontSize: 13, color: T.text, background: '#f8fafc', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+      </div>
       <Card pad={false}>
         <div className="table-scroll">
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
@@ -225,7 +229,7 @@ export function UserSetup() {
                     <FlexRow gap={10}>
                       <div style={{ width: 34, height: 34, borderRadius: '50%', background: u.role === 'admin' ? T.masterBg : u.role === 'buyer' ? '#dbeafe' : '#fef9c3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: u.role === 'admin' ? T.master : u.role === 'buyer' ? T.info : '#92400e', flexShrink: 0 }}>{u.name[0]}</div>
                       <div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{u.name}{u.adminType === 'master' && ' 👑'}</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: T.text, display: 'flex', alignItems: 'center', gap: 5 }}>{u.name}{u.adminType === 'master' && <Crown size={12} color={T.master} />}</div>
                         <div style={{ fontSize: 10, color: T.textLight }}>Created {fmtDate(u.createdAt)}</div>
                       </div>
                     </FlexRow>
@@ -237,7 +241,7 @@ export function UserSetup() {
                   <td style={{ padding: '12px 18px' }}>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                       <span style={{ padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: u.isActive ? T.successBg : '#f1f5f9', color: u.isActive ? T.success : T.textMuted }}>{u.isActive ? '● Active' : '○ Inactive'}</span>
-                      {u.mustChangePw && <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 10, fontWeight: 700, background: T.warningBg, color: T.warning }}>🔑 Pending</span>}
+                      {u.mustChangePw && <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 10, fontWeight: 700, background: T.warningBg, color: T.warning, display: 'inline-flex', alignItems: 'center', gap: 3 }}><KeyRound size={9} /> Pending</span>}
                     </div>
                   </td>
                   <td style={{ padding: '12px 18px' }}>
@@ -247,7 +251,7 @@ export function UserSetup() {
                       <FlexRow gap={6} style={{ flexWrap: 'nowrap' }}>
                         <button onClick={() => openEdit(u)}
                           style={{ padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: T.primaryLight, color: T.primary, border: 'none', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-                          ✏️ Edit
+                          <Pencil size={11} style={{ marginRight: 4, verticalAlign: -1 }} />Edit
                         </button>
                         <button onClick={async () => {
                             try { await toggleUser(u.id); toast(`${u.name} ${u.isActive ? 'deactivated' : 'activated'}`, 'success') }
@@ -271,7 +275,7 @@ export function UserSetup() {
                   </td>
                 </tr>
               ))}
-              {filtered.length === 0 && <tr><td colSpan={7}><EmptyState icon="👥" title="No users found" desc="Create your first user above" /></td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={7}><EmptyState icon={<Users size={26} color={T.textLight} />} title="No users found" desc="Create your first user above" /></td></tr>}
             </tbody>
           </table>
         </div>
