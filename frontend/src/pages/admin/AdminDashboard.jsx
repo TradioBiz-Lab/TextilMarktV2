@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { ShoppingBag, Factory, Package, Siren, Target, Check, ClipboardList, Megaphone, ChevronRight } from 'lucide-react'
 import { T, ST, isExpiringSoon, isExpired, getToday, dayNumber } from '../../constants.js'
 import { StatCard, Card, Grid, EmptyState, Mono, PageHeader, Badge, Btn, FlexRow, Modal, Select, Textarea, Input, Alert, LoadingScreen, DocCard } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -56,9 +57,9 @@ function SectionHeader({ icon, label, count, open, onToggle }) {
   return (
     <button onClick={onToggle}
       style={{ width: '100%', border: 'none', cursor: 'pointer', padding: '14px 18px', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 10, background: '#fff', textAlign: 'left' }}>
-      <span style={{ fontSize: 14, fontWeight: 700, color: T.text, flex: 1 }}>{icon} {label}</span>
+      <span style={{ fontSize: 14, fontWeight: 700, color: T.text, flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>{icon} {label}</span>
       {count != null && <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, background: '#f1f5f9', border: `1px solid ${T.border}`, borderRadius: 10, padding: '2px 9px' }}>{count}</span>}
-      <span style={{ fontSize: 14, color: T.textMuted, transition: 'transform 0.2s', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', flexShrink: 0 }}>›</span>
+      <span style={{ color: T.textMuted, transition: 'transform 0.2s', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', flexShrink: 0, display: 'flex' }}><ChevronRight size={14} /></span>
     </button>
   )
 }
@@ -229,18 +230,18 @@ export function AdminDashboard({ onNavigate, onOpen }) {
 
       {/* ── Stat Cards ── */}
       <Grid cols={4} style={{ marginBottom: 22 }}>
-        <StatCard label="Active Buyers" value={buyers.length} icon="🛍" bg="#dbeafe" />
-        <StatCard label="Manufacturers" value={mfrs.length} icon="🏭" bg="#fef9c3" />
-        <StatCard label="Total Orders" value={allTxns.length} icon="📦" bg={T.primaryLight} />
-        <StatCard label="Active Alerts" value={delayed.length + expDocs.length} icon="🚨" bg={T.dangerBg} />
+        <StatCard label="Active Buyers" value={buyers.length} icon={<ShoppingBag size={19} color="#1d4ed8" />} bg="#dbeafe" />
+        <StatCard label="Manufacturers" value={mfrs.length} icon={<Factory size={19} color="#92400e" />} bg="#fef9c3" />
+        <StatCard label="Total Orders" value={allTxns.length} icon={<Package size={19} color={T.primaryDark} />} bg={T.primaryLight} />
+        <StatCard label="Active Alerts" value={delayed.length + expDocs.length} icon={<Siren size={19} color={T.danger} />} bg={T.dangerBg} />
       </Grid>
 
       {/* ── Orders by Status — one overall status per Master Order, not a per-item breakdown ── */}
       <Card pad={false} style={{ marginBottom: 14 }}>
-        <SectionHeader icon="📦" label="Orders by Status" count={null} open={openSections.orders} onToggle={() => toggleSection('orders')} />
+        <SectionHeader icon={<Package size={15} />} label="Orders by Status" count={null} open={openSections.orders} onToggle={() => toggleSection('orders')} />
         {openSections.orders && (
           <div style={{ padding: '0 18px 18px' }}>
-            {ordersByMO.length === 0 ? <EmptyState icon="📦" title="No orders yet" desc="" /> : (
+            {ordersByMO.length === 0 ? <EmptyState icon={<Package size={26} color={T.textLight} />} title="No orders yet" desc="" /> : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {ordersByMO.map(group => {
                   const groupTxns = flattenTxns(group.orders)
@@ -274,11 +275,11 @@ export function AdminDashboard({ onNavigate, onOpen }) {
       {/* ── Action Items Summary ── */}
       <Card style={{ marginBottom: 14 }}>
         <FlexRow justify="space-between" style={{ marginBottom: 14 }}>
-          <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>🎯 My Action Items</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: T.text, display: 'flex', alignItems: 'center', gap: 7 }}><Target size={15} /> My Action Items</span>
           <Btn size="sm" variant="secondary" onClick={() => onNavigate && onNavigate('action_items')}>Open Action Items →</Btn>
         </FlexRow>
         {combinedOpen.length === 0 ? (
-          <EmptyState icon="✅" title="All caught up" desc="No open action items assigned to you" />
+          <EmptyState icon={<Check size={26} color={T.success} strokeWidth={2.5} />} title="All caught up" desc="No open action items assigned to you" />
         ) : (
           <>
             <FlexRow gap={10} style={{ marginBottom: 14, flexWrap: 'wrap' }}>
@@ -306,11 +307,11 @@ export function AdminDashboard({ onNavigate, onOpen }) {
 
       {/* ── Buyer Requests ── */}
       <Card pad={false} style={{ marginBottom: 14 }}>
-        <SectionHeader icon="📋" label="Buyer Requests" count={buyerRequests.length} open={openSections.requests} onToggle={() => toggleSection('requests')} />
+        <SectionHeader icon={<ClipboardList size={15} />} label="Buyer Requests" count={buyerRequests.length} open={openSections.requests} onToggle={() => toggleSection('requests')} />
         {openSections.requests && (
           <div style={{ padding: '0 18px 18px' }}>
             {buyerRequests.length === 0 ? (
-              <EmptyState icon="📋" title="No buyer requests yet" desc="Buyer-submitted RFQs, Tech Packs, and Buyer Orders will appear here" />
+              <EmptyState icon={<ClipboardList size={26} color={T.textLight} />} title="No buyer requests yet" desc="Buyer-submitted RFQs, Tech Packs, and Buyer Orders will appear here" />
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                 {buyerRequests.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} />)}
@@ -322,7 +323,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
 
       {/* ── Active Alerts ── */}
       <Card pad={false} style={{ marginBottom: 14 }}>
-        <SectionHeader icon="🚨" label="Alerts" count={delayed.length + expDocs.length} open={openSections.alerts} onToggle={() => toggleSection('alerts')} />
+        <SectionHeader icon={<Siren size={15} />} label="Alerts" count={delayed.length + expDocs.length} open={openSections.alerts} onToggle={() => toggleSection('alerts')} />
         {openSections.alerts && (
           <div style={{ padding: '0 18px 18px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -338,7 +339,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
                   <div style={{ fontSize: 11, color: '#92400e' }}>{isExpired(d.expiryDate) ? 'Expired' : 'Expiring soon'} — {d.expiryDate}</div>
                 </div>
               ))}
-              {delayed.length === 0 && expDocs.length === 0 && <EmptyState icon="✅" title="No active alerts" desc="All orders and documents are in good standing" />}
+              {delayed.length === 0 && expDocs.length === 0 && <EmptyState icon={<Check size={26} color={T.success} strokeWidth={2.5} />} title="No active alerts" desc="All orders and documents are in good standing" />}
             </div>
           </div>
         )}
@@ -346,16 +347,16 @@ export function AdminDashboard({ onNavigate, onOpen }) {
 
       {/* ── Ribbon Notifications ── */}
       <Card pad={false} style={{ marginBottom: 14 }}>
-        <SectionHeader icon="📢" label="Ribbons" count={allRibbons.length} open={openSections.ribbons} onToggle={() => toggleSection('ribbons')} />
+        <SectionHeader icon={<Megaphone size={15} />} label="Ribbons" count={allRibbons.length} open={openSections.ribbons} onToggle={() => toggleSection('ribbons')} />
         {openSections.ribbons && (
           <div style={{ padding: '0 18px 18px' }}>
             <FlexRow justify="flex-end" style={{ marginBottom: 14 }}>
-              <Btn onClick={() => setShowRibbon(true)} icon="📢" size="sm">Publish Ribbon</Btn>
+              <Btn onClick={() => setShowRibbon(true)} icon={<Megaphone size={13} />} size="sm">Publish Ribbon</Btn>
             </FlexRow>
             {!ribbonsLoaded ? (
               <div style={{ padding: 24, textAlign: 'center', color: T.textMuted, fontSize: 13 }}>Loading ribbons…</div>
             ) : allRibbons.length === 0 ? (
-              <EmptyState icon="📢" title="No ribbons published" desc="Publish a ribbon notification to display a banner to your users" />
+              <EmptyState icon={<Megaphone size={26} color={T.textLight} />} title="No ribbons published" desc="Publish a ribbon notification to display a banner to your users" />
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {allRibbons.map(r => {
