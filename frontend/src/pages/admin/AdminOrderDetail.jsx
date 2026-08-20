@@ -456,11 +456,18 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   }
 
   // ── Stage Doc Upload ──
+  // Document Name defaults to the stage's own name (e.g. "Lab Dip Approval")
+  // rather than starting blank — before this, whatever the uploader typed
+  // showed up as the evidence name, which drifted into inconsistent/"random"
+  // names across otherwise-identical stages. Still freely editable.
+  const stageNameFor = (mfrId, stageIdx) =>
+    order.assignments.find(a => String(a.mid) === String(mfrId))?.stages?.[stageIdx]?.name || `Stage ${stageIdx + 1}`
+
   const openStageDocUpload = (mfrId, stageIdx) => {
     const types = STAGE_DOC_MAP[stageIdx] || []
     setSdMfrId(mfrId)
     setSdStageIdx(stageIdx)
-    setSdItems([{ type: types[0]?.v || '', name: '', file: null, notes: '', fileErr: '' }])
+    setSdItems([{ type: types[0]?.v || '', name: stageNameFor(mfrId, stageIdx), file: null, notes: '', fileErr: '' }])
     setSdErr('')
     setShowStageDocs(true)
   }
@@ -469,7 +476,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
 
   const addSdItem = () => {
     const types = STAGE_DOC_MAP[sdStageIdx] || []
-    setSdItems(prev => [...prev, { type: types[0]?.v || '', name: '', file: null, notes: '', fileErr: '' }])
+    setSdItems(prev => [...prev, { type: types[0]?.v || '', name: stageNameFor(sdMfrId, sdStageIdx), file: null, notes: '', fileErr: '' }])
   }
 
   const removeSdItem = (idx) => setSdItems(prev => prev.filter((_, i) => i !== idx))

@@ -86,9 +86,11 @@ function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrder }) {
   const uploadedStageDocs = (docs || []).filter(d =>
     d.orderId === orderId && d.stageIndex === stageIndex && d.materialLineIndex == null && String(d.mfrId || '') === String(mfrId))
 
+  // Document Name defaults to the stage's own name (e.g. "Lab Dip Approval")
+  // rather than starting blank — see matching comment in AdminOrderDetail.jsx.
   const openStageDocUpload = () => {
     const types = STAGE_DOC_MAP[stageIndex] || []
-    setSdItems([{ type: types[0]?.v || '', name: '', file: null, notes: '', fileErr: '' }])
+    setSdItems([{ type: types[0]?.v || '', name: stage?.name || `Stage ${stageIndex + 1}`, file: null, notes: '', fileErr: '' }])
     setSdErr('')
     setShowStageDocs(true)
   }
@@ -97,7 +99,7 @@ function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrder }) {
 
   const addSdItem = () => {
     const types = STAGE_DOC_MAP[stageIndex] || []
-    setSdItems(prev => [...prev, { type: types[0]?.v || '', name: '', file: null, notes: '', fileErr: '' }])
+    setSdItems(prev => [...prev, { type: types[0]?.v || '', name: stage?.name || `Stage ${stageIndex + 1}`, file: null, notes: '', fileErr: '' }])
   }
 
   const removeSdItem = (idx) => setSdItems(prev => prev.filter((_, i) => i !== idx))
