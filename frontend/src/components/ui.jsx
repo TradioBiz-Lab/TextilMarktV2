@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react'
-import { T, ST, DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired } from '../constants.js'
+import { T, ST, DOC_TYPES, STAGE_DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired } from '../constants.js'
 import { useApp } from '../context.jsx'
 import * as pdfjsLib from 'pdfjs-dist'
 // Imported as a Vite worker (not `?url`) so the build emits a plain .js chunk —
@@ -570,7 +570,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
     : null
   const exp = isExpiringSoon(doc.expiryDate), expd = isExpired(doc.expiryDate)
   const icon = DOC_ICONS[doc.type] || '📄'
-  const typLabel = DOC_TYPES.find(d => d.v === doc.type)?.l || doc.type
+  const typLabel = DOC_TYPES.find(d => d.v === doc.type)?.l || STAGE_DOC_TYPES.find(d => d.v === doc.type)?.l || doc.type
   const [fileData, setFileData] = useState(null)
   const [fetching, setFetching] = useState(false)
   const [viewerBlob, setViewerBlob] = useState(null) // { url, mimeType, revoke }

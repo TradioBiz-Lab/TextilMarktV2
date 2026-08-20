@@ -83,7 +83,7 @@ export const DOC_ICONS = {
   // Stage evidence docs
   material_po: '📦', knitting_grn: '🧶', knitting_qc: '✅',
   dyeing_grn: '🎨', dyeing_qc: '✅', processing_grn: '⚙️', processing_qc: '✅',
-  cutting_qc: '✂️', stitching_qc: '🪡', final_qc: '🏆',
+  cutting_qc: '✂️', stitching_qc: '🧵', final_qc: '🏆',
   packing_qc: '📦', dispatch_docs: '🚚',
   mfr_profile: '🏭',
 }
