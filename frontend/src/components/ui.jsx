@@ -584,8 +584,8 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
         <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
           {viewerBlob && (
             <button onClick={download}
-              style={{ background: '#1e293b', border: '1px solid #334155', color: '#e2e8f0', borderRadius: 7, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-              ⬇ Download
+              style={{ background: '#1e293b', border: '1px solid #334155', color: '#e2e8f0', borderRadius: 7, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Download size={14} /> Download
             </button>
           )}
           <button onClick={closeViewer}

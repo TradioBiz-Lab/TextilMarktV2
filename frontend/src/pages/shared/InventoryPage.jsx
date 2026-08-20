@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Archive } from 'lucide-react'
 import { T } from '../../constants.js'
 import { PageHeader, Card, EmptyState, LoadingScreen, useToast } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -40,7 +41,7 @@ export function InventoryPage() {
       <Card pad={false}>
         <div style={{ padding: '16px 18px' }}>
           {rows.length === 0
-            ? <EmptyState icon="🗄" title="No stock movements yet" subtitle="Receiving materials or capturing production actuals will populate this view." />
+            ? <EmptyState icon={<Archive size={26} color={T.textLight} />} title="No stock movements yet" subtitle="Receiving materials or capturing production actuals will populate this view." />
             : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>

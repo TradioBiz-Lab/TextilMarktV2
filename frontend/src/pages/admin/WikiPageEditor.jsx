@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { FileText } from 'lucide-react'
 import { T, WIKI_PAGE_CATEGORIES } from '../../constants.js'
 import { Modal, Select, Input, Btn, FlexRow, useToast } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -92,8 +93,8 @@ export function WikiPageEditor({ page, onClose, onSaved }) {
               <span style={{ fontSize: 11, color: T.textLight }}>or start from a file:</span>
               <input ref={fileInputRef} type="file" accept=".docx,.pdf" onChange={handleImportFile} style={{ display: 'none' }} />
               <button type="button" onClick={() => fileInputRef.current?.click()} disabled={importing}
-                style={{ background: '#f1f5f9', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: importing ? 'default' : 'pointer', color: T.textMuted, fontFamily: 'inherit', opacity: importing ? 0.6 : 1 }}>
-                {importing ? 'Importing…' : '📄 Import from Word/PDF'}
+                style={{ background: '#f1f5f9', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: importing ? 'default' : 'pointer', color: T.textMuted, fontFamily: 'inherit', opacity: importing ? 0.6 : 1, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                {importing ? 'Importing…' : <><FileText size={12} /> Import from Word/PDF</>}
               </button>
             </FlexRow>
           </FlexRow>

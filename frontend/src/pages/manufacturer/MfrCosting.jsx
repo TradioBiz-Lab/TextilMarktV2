@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { Calculator } from 'lucide-react'
 import { T } from '../../constants.js'
 import { PageHeader, Card, EmptyState, LoadingScreen } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -30,7 +31,7 @@ export function MfrCosting() {
       </Card>
 
       {!selected
-        ? <Card><EmptyState icon="🧮" title="Pick an order" subtitle="Select one of your assignments above to open its cost sheet." /></Card>
+        ? <Card><EmptyState icon={<Calculator size={26} color={T.textLight} />} title="Pick an order" subtitle="Select one of your assignments above to open its cost sheet." /></Card>
         : <CostSheetPanel scopeType="tradio_order" orderId={selected.id} mfrId={currentUser.id} orderQty={selected.totalQty} styleLabel="My Cost Sheet" />}
     </div>
   )

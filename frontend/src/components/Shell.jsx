@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot, Boxes, Briefcase, Calculator, Warehouse, PlusCircle } from 'lucide-react'
+import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot, Boxes, Briefcase, Calculator, Warehouse, PlusCircle, Hexagon } from 'lucide-react'
 import { T } from '../constants.js'
 import { Btn, RibbonBanner } from './ui.jsx'
 import { NotifPanel } from './NotifPanel.jsx'
@@ -131,7 +131,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
       <aside className={`shell-sidebar${sidebarOpen ? ' open' : ''}${sidebarCollapsed ? ' collapsed' : ''}`} style={{ background: T.sidebarGradient, display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: sidebarCollapsed ? '20px 8px 16px' : '20px 16px 16px', borderBottom: `1px solid ${T.sidebarBorder}` }}>
           {sidebarCollapsed
-            ? <div style={{ display: 'flex', justifyContent: 'center' }}><span style={{ fontSize: 16, fontWeight: 800, color: roleColor, letterSpacing: '-0.02em' }}>⬡</span></div>
+            ? <div style={{ display: 'flex', justifyContent: 'center', color: roleColor }}><Hexagon size={18} strokeWidth={2.5} /></div>
             : <div style={{ fontSize: 20, fontWeight: 800, color: roleColor, textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'center', lineHeight: 1.2 }}>{roleLabel}</div>
           }
         </div>

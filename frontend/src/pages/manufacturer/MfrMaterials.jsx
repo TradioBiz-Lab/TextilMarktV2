@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { Package } from 'lucide-react'
 import { T } from '../../constants.js'
 import { PageHeader, Card, Btn, Badge, EmptyState, LoadingScreen, FlexRow, useToast } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -82,7 +83,7 @@ export function MfrMaterials() {
       <Card pad={false}>
         <div style={{ padding: '16px 18px' }}>
           {materialRows.length === 0
-            ? <EmptyState icon="📦" title="No materials yet" subtitle="Materials pushed to your stages by Tradio admin will appear here." />
+            ? <EmptyState icon={<Package size={26} color={T.textLight} />} title="No materials yet" subtitle="Materials pushed to your stages by Tradio admin will appear here." />
             : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>

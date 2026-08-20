@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Calculator } from 'lucide-react'
 import { T } from '../../constants.js'
 import { PageHeader, Card, LoadingScreen, EmptyState } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -28,7 +29,7 @@ export function AdminCosting() {
       </Card>
 
       {!selected
-        ? <Card><EmptyState icon="🧮" title="Pick an order" subtitle="Select an order above to view or author its cost sheets." /></Card>
+        ? <Card><EmptyState icon={<Calculator size={26} color={T.textLight} />} title="Pick an order" subtitle="Select an order above to view or author its cost sheets." /></Card>
         : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             {(selected.assignments || []).map(a => (

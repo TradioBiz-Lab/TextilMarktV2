@@ -1,5 +1,5 @@
 import { useState, Fragment } from 'react'
-import { AlertTriangle, MessageCircle, BarChart3, ClipboardList, Image as ImageIcon, Shield, Package, Eye, Check } from 'lucide-react'
+import { AlertTriangle, MessageCircle, BarChart3, ClipboardList, Image as ImageIcon, Shield, Package, Eye, Check, Download } from 'lucide-react'
 import {
   T, isExpiringSoon, isExpired,
   stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone,
@@ -142,7 +142,7 @@ export function BuyerOrderDetail({ orderId, onBack, initialMid }) {
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {viewerBlob && (
             <button onClick={() => { const a = document.createElement('a'); a.href = viewerBlob.url; a.download = viewerName; a.click() }}
-              style={{ background: '#1e293b', border: '1px solid #334155', color: '#e2e8f0', borderRadius: 7, padding: '0 12px', height: 32, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>⬇ Download</button>
+              style={{ background: '#1e293b', border: '1px solid #334155', color: '#e2e8f0', borderRadius: 7, padding: '0 12px', height: 32, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6 }}><Download size={13} /> Download</button>
           )}
           <button onClick={closeViewer}
             style={{ background: '#ef4444', border: 'none', color: '#fff', borderRadius: 7, width: 32, height: 32, fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}>×</button>
