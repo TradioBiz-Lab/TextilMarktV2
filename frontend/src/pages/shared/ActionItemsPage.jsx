@@ -1,4 +1,5 @@
 import { useMemo, useState, Fragment } from 'react'
+import { AlertTriangle, Plus, RotateCw, Ban, CircleDot, CalendarClock, Search, User, Building2, Package, MessageCircle, Check, ChevronUp, ChevronDown } from 'lucide-react'
 import {
   T, dayNumber, getToday, fmtN,
   stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, inFlightStages,
@@ -274,7 +275,7 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
   }
 
   if (loading) return <LoadingScreen />
-  if (loadError) return <Card><EmptyState icon="⚠️" title="Could not load" desc="Check your connection and refresh." /></Card>
+  if (loadError) return <Card><EmptyState icon={<AlertTriangle size={26} color={T.textLight} />} title="Could not load" desc="Check your connection and refresh." /></Card>
 
   return (
     <div>
@@ -283,7 +284,7 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
         subtitle="Every open step by line item — update the status and leave today's note, all in one place"
         action={
           <FlexRow gap={8}>
-            {isAdmin && <Btn variant="secondary" onClick={() => setShowCreate(true)} icon="➕">New Action Item</Btn>}
+            {isAdmin && <Btn variant="secondary" onClick={() => setShowCreate(true)} icon={<Plus size={13} />}>New Action Item</Btn>}
             <Btn onClick={saveAll} disabled={saving || dirtyKeys.length === 0}>
               {saving ? 'Saving…' : dirtyKeys.length ? `Save ${dirtyKeys.length} change${dirtyKeys.length !== 1 ? 's' : ''}` : 'Save'}
             </Btn>
@@ -292,24 +293,27 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
       />
 
       <div className="grid-responsive-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 14 }}>
-        <StatCard icon="🔄" label="Open items" value={stats.open} color={T.primary} />
-        <StatCard icon="⛔" label="Blocked" value={stats.blocked} color={T.danger} />
-        <StatCard icon="🔴" label="Past deadline" value={stats.overdue} color={T.danger} />
-        <StatCard icon="📅" label="Due today" value={stats.dueToday} color={T.warning} />
+        <StatCard icon={<RotateCw size={19} color={T.primary} />} label="Open items" value={stats.open} color={T.primary} />
+        <StatCard icon={<Ban size={19} color={T.danger} />} label="Blocked" value={stats.blocked} color={T.danger} />
+        <StatCard icon={<CircleDot size={19} color={T.danger} />} label="Past deadline" value={stats.overdue} color={T.danger} />
+        <StatCard icon={<CalendarClock size={19} color={T.warning} />} label="Due today" value={stats.dueToday} color={T.warning} />
       </div>
 
       <FlexRow gap={8} style={{ marginBottom: 8, flexWrap: 'wrap' }}>
-        <input
-          value={q} onChange={e => setQ(e.target.value)}
-          placeholder="🔍  Search style, step, owner, order ID, or customer…"
-          style={{ flex: 1, minWidth: 220, border: `1px solid ${T.border}`, borderRadius: 9, padding: '9px 14px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit', boxSizing: 'border-box' }}
-        />
+        <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+          <Search size={14} color={T.textLight} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+          <input
+            value={q} onChange={e => setQ(e.target.value)}
+            placeholder="Search style, step, owner, order ID, or customer…"
+            style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 9, padding: '9px 14px 9px 34px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit', boxSizing: 'border-box' }}
+          />
+        </div>
         <select value={windowDays} onChange={e => setWindowDays(Number(e.target.value))}
           style={{ border: `1px solid ${T.border}`, borderRadius: 9, padding: '9px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit', cursor: 'pointer' }}>
           {WINDOWS.map(w => <option key={w.days} value={w.days}>{w.label}</option>)}
         </select>
-        <Btn variant={includeOverdue ? 'primary' : 'secondary'} onClick={() => setIncludeOverdue(v => !v)}>🔴 Past deadline</Btn>
-        <Btn variant={onlyMine ? 'primary' : 'secondary'} onClick={() => setOnlyMine(v => !v)}>👤 Mine only</Btn>
+        <Btn variant={includeOverdue ? 'primary' : 'secondary'} onClick={() => setIncludeOverdue(v => !v)} icon={<CircleDot size={13} />}>Past deadline</Btn>
+        <Btn variant={onlyMine ? 'primary' : 'secondary'} onClick={() => setOnlyMine(v => !v)} icon={<User size={13} />}>Mine only</Btn>
       </FlexRow>
 
       {/* Whose action it is — Tradio, the factory, or the customer. A third of a
@@ -329,7 +333,7 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
 
       {groups.length === 0 ? (
         <Card>
-          <EmptyState icon="✅"
+          <EmptyState icon={<Check size={26} color={T.success} strokeWidth={2.5} />}
             title={q || onlyMine || owner !== 'all' ? 'Nothing matches' : 'Nothing needs an update'}
             desc={q || onlyMine || owner !== 'all' ? 'Try widening the search, owner, or date range.' : 'No steps are open, blocked, or due in this window.'} />
         </Card>
@@ -339,8 +343,8 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
           <Card key={g.key} pad={false} style={{ marginBottom: 14 }}>
             <FlexRow gap={10} onClick={() => setCollapsed(p => ({ ...p, [g.key]: open }))}
               style={{ padding: '11px 16px', background: '#eef2f7', borderRadius: '12px 12px 0 0', cursor: 'pointer' }}>
-              <span style={{ fontSize: 11, color: T.textMuted, transform: open ? 'none' : 'rotate(-90deg)', display: 'inline-block' }}>▾</span>
-              <span style={{ fontSize: 14, fontWeight: 800, color: T.text }}>🏢 {g.buyerCompany}</span>
+              <span style={{ color: T.textMuted, transform: open ? 'none' : 'rotate(-90deg)', display: 'inline-flex' }}><ChevronDown size={13} /></span>
+              <span style={{ fontSize: 14, fontWeight: 800, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Building2 size={14} /> {g.buyerCompany}</span>
               <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{g.openCount} open</span>
             </FlexRow>
 
@@ -353,8 +357,8 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
                     <div style={{ padding: '9px 13px', background: '#f8fafc', borderBottom: `1px solid ${T.border}` }}>
                       <FlexRow gap={10} style={{ flexWrap: 'wrap' }}>
                         <span onClick={() => onOpen?.(line.order.id, line.asgn.mid)}
-                          style={{ fontSize: 13, fontWeight: 700, color: T.text, cursor: 'pointer' }}>
-                          📦 {line.order.product}
+                          style={{ fontSize: 13, fontWeight: 700, color: T.text, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                          <Package size={13} /> {line.order.product}
                         </span>
                         <Mono style={{ fontSize: 10 }}>{line.order.id}</Mono>
                         {line.mo && <span style={{ fontSize: 10, color: T.textLight }}>{line.mo.orderName}</span>}
@@ -366,14 +370,14 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
                         </span>
                         {line.overrun != null && (
                           <span title="The last planned step finishes after the promised delivery date"
-                            style={{ fontSize: 10, fontWeight: 800, color: '#b91c1c', background: '#fee2e2', padding: '2px 7px', borderRadius: 4, whiteSpace: 'nowrap' }}>
-                            ⚠ plan overruns delivery by {line.overrun}d
+                            style={{ fontSize: 10, fontWeight: 800, color: '#b91c1c', background: '#fee2e2', padding: '2px 7px', borderRadius: 4, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                            <AlertTriangle size={9} /> plan overruns delivery by {line.overrun}d
                           </span>
                         )}
                       </FlexRow>
                       {line.order.callout && (
-                        <div style={{ fontSize: 11, color: '#b45309', background: '#fef3c7', borderRadius: 5, padding: '4px 8px', marginTop: 6 }}>
-                          ⚠ {line.order.callout}
+                        <div style={{ fontSize: 11, color: '#b45309', background: '#fef3c7', borderRadius: 5, padding: '4px 8px', marginTop: 6, display: 'flex', alignItems: 'flex-start', gap: 5 }}>
+                          <AlertTriangle size={11} style={{ flexShrink: 0, marginTop: 1 }} /> {line.order.callout}
                         </div>
                       )}
                     </div>
@@ -411,8 +415,8 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
                                   {last && (
                                     <div onClick={() => setOpenThread(threadOpen ? null : r.key)}
                                       title="Show all updates"
-                                      style={{ fontSize: 9, color: T.textLight, marginTop: 3, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}>
-                                      💬 {last.text}
+                                      style={{ fontSize: 9, color: T.textLight, marginTop: 3, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
+                                      <MessageCircle size={9} style={{ flexShrink: 0 }} /> {last.text}
                                     </div>
                                   )}
                                 </td>
@@ -459,8 +463,8 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
                                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
                                   <button onClick={() => setOpenThread(threadOpen ? null : r.key)}
                                     title={thread.length ? `${thread.length} update${thread.length !== 1 ? 's' : ''}` : 'No updates yet'}
-                                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: thread.length ? T.primary : T.textLight, fontWeight: 700, fontFamily: 'inherit', padding: 2 }}>
-                                    💬 {thread.length} {threadOpen ? '▴' : '▾'}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: thread.length ? T.primary : T.textLight, fontWeight: 700, fontFamily: 'inherit', padding: 2, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                    <MessageCircle size={11} /> {thread.length} {threadOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
                                   </button>
                                 </td>
                               </tr>
@@ -513,10 +517,10 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
                                 setBusy(true)
                                 try { await updateActionItem(it.id, { status: 'done' }); toast('Marked done', 'success') }
                                 catch (err) { toast(err?.message || 'Failed', 'error') } finally { setBusy(false) }
-                              }}>✓ Done</Btn>
+                              }} icon={<Check size={12} strokeWidth={3} />}>Done</Btn>
                             </FlexRow>
                             {(it.updates || []).slice(-1).map((u, ui) => (
-                              <div key={ui} style={{ fontSize: 10, color: T.textLight, marginTop: 4 }}>💬 {u.text} — {u.byUserName}</div>
+                              <div key={ui} style={{ fontSize: 10, color: T.textLight, marginTop: 4, display: 'flex', alignItems: 'flex-start', gap: 3 }}><MessageCircle size={9} style={{ flexShrink: 0, marginTop: 1 }} /> {u.text} — {u.byUserName}</div>
                             ))}
                             <FlexRow gap={6} style={{ marginTop: 6 }}>
                               <input value={customDrafts[it.id] || ''} onChange={ev => setCustomDrafts(d => ({ ...d, [it.id]: ev.target.value }))}

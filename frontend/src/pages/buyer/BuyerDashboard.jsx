@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { AlertTriangle, Folder, Check, Ban, ClipboardList, CheckCircle2, ShieldAlert, List, LayoutGrid, Package, Siren, X, Shield, ChevronDown, Search, ChevronRight } from 'lucide-react'
 import { T, ORDER_STATUSES, getToday, isExpiringSoon, isExpired, cellState, CELL_STATE, buildMatrixSpine, stagePct } from '../../constants.js'
 import { Badge, Card, EmptyState, Mono, Btn, LoadingScreen, MfrProfileLink, ProductThumb } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -59,12 +60,12 @@ function EscalateModal({ order, onClose, onSuccess }) {
       <div style={{ background: T.surface, borderRadius: 14, width: 480, maxWidth: '92vw', boxShadow: '0 24px 60px rgba(0,0,0,0.18)' }}>
         <div style={{ padding: '20px 24px', borderBottom: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>🚨 Escalate Order</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: T.text, display: 'flex', alignItems: 'center', gap: 7 }}><Siren size={16} color={T.danger} /> Escalate Order</div>
             <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>
               <Mono style={{ fontSize: 12 }}>{order.id}</Mono> · {order.product}
             </div>
           </div>
-          <button onClick={onClose} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 28, height: 28, borderRadius: 6, fontSize: 16, color: T.textMuted, marginTop: 1 }}>×</button>
+          <button onClick={onClose} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 28, height: 28, borderRadius: 6, color: T.textMuted, marginTop: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={15} /></button>
         </div>
         <div style={{ padding: '20px 24px' }}>
           <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 12, lineHeight: 1.6 }}>
@@ -87,8 +88,9 @@ function EscalateModal({ order, onClose, onSuccess }) {
               onClick={submit}
               disabled={loading || !reason.trim()}
               style={{ background: '#dc2626', color: '#fff', border: 'none' }}
+              icon={!loading && <Siren size={13} />}
             >
-              {loading ? 'Sending…' : '🚨 Escalate to Admin'}
+              {loading ? 'Sending…' : 'Escalate to Admin'}
             </Btn>
           </div>
         </div>
@@ -122,8 +124,8 @@ function BuyerMatrixView({ groups, collapsedGroups, toggleGroup, onOpen }) {
           <div key={g.moId} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, overflow: 'hidden' }}>
             <div onClick={() => toggleGroup(g.moId)}
               style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 18px', background: '#f1f5f9', cursor: 'pointer', userSelect: 'none' }}>
-              <span style={{ fontSize: 11, color: T.textMuted, transition: 'transform 0.15s', transform: collapsed ? 'rotate(-90deg)' : 'none' }}>▾</span>
-              <span style={{ fontSize: 13, fontWeight: 800, color: T.text }}>📁 {groupLabel}</span>
+              <span style={{ color: T.textMuted, transition: 'transform 0.15s', transform: collapsed ? 'rotate(-90deg)' : 'none', display: 'inline-flex' }}><ChevronDown size={13} /></span>
+              <span style={{ fontSize: 13, fontWeight: 800, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Folder size={13} /> {groupLabel}</span>
               {g.mo?.season && <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', background: '#dbeafe', padding: '2px 7px', borderRadius: 4 }}>{g.mo.season}</span>}
               <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{entries.length} style{entries.length !== 1 ? 's' : ''} · {spine.length} steps</span>
             </div>
@@ -172,8 +174,8 @@ function BuyerMatrixView({ groups, collapsedGroups, toggleGroup, onOpen }) {
                                   <span style={{ fontSize: 11, color: '#cbd5e1' }}>NA</span>
                                 ) : (
                                   <div style={{ background: st.bg, borderRadius: 5, padding: '4px 7px' }}>
-                                    <span style={{ fontSize: 12, fontWeight: 800, color: st.fg, whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono',monospace" }}>
-                                      {state === 'done' ? '✓ ' : state === 'blocked' ? '⛔ ' : state === 'overdue' ? '! ' : ''}{fmtStageDate(state === 'done' ? stage.actualEnd : stage.eta)}
+                                    <span style={{ fontSize: 12, fontWeight: 800, color: st.fg, whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono',monospace", display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                      {state === 'done' ? <Check size={11} strokeWidth={3} /> : state === 'blocked' ? <Ban size={11} /> : state === 'overdue' ? <AlertTriangle size={11} /> : null}{fmtStageDate(state === 'done' ? stage.actualEnd : stage.eta)}
                                     </span>
                                     <div style={{ fontSize: 9, color: st.fg, opacity: 0.75, marginTop: 1 }}>
                                       {stagePct(stage)}%
@@ -294,7 +296,7 @@ export function BuyerDashboard({ onOpen, onSubmitReq }) {
 
   if (loadError) return (
     <Card>
-      <EmptyState icon="⚠️" title="Could not load orders" desc="Check your connection and refresh the page. If the problem persists, contact support." />
+      <EmptyState icon={<AlertTriangle size={26} color={T.textLight} />} title="Could not load orders" desc="Check your connection and refresh the page. If the problem persists, contact support." />
     </Card>
   )
 
@@ -324,7 +326,7 @@ export function BuyerDashboard({ onOpen, onSubmitReq }) {
         <div style={{ position: 'absolute', top: -30, right: -30, width: 140, height: 140, borderRadius: '50%', background: 'rgba(255,255,255,0.04)' }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, zIndex: 1 }}>
           <div style={{ width: 42, height: 42, borderRadius: 10, background: 'rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ fontSize: 22, lineHeight: 1 }}>📋</span>
+            <ClipboardList size={21} color="#fff" />
           </div>
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>Submit a New Requirement</div>
@@ -379,7 +381,7 @@ export function BuyerDashboard({ onOpen, onSubmitReq }) {
           <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 16 }}>Alerts & Compliance</div>
           {atRiskCount === 0 && stats.certsExpired === 0 && stats.certsExpiring === 0 ? (
             <div style={{ textAlign: 'center', padding: '20px 0' }}>
-              <span style={{ fontSize: 28 }}>✅</span>
+              <CheckCircle2 size={28} color={T.success} />
               <div style={{ fontSize: 14, fontWeight: 700, color: T.success, marginTop: 8 }}>All Clear</div>
               <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>No alerts or compliance issues</div>
             </div>
@@ -387,7 +389,7 @@ export function BuyerDashboard({ onOpen, onSubmitReq }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {stats.overdue > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#fef2f2', borderRadius: 8, padding: '10px 14px' }}>
-                  <span style={{ fontSize: 16 }}>🚨</span>
+                  <Siren size={16} color="#b91c1c" />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: '#b91c1c' }}>{stats.overdue} order{stats.overdue > 1 ? 's' : ''} overdue</div>
                     <div style={{ fontSize: 11, color: T.textMuted }}>Past delivery date — escalate or follow up</div>
@@ -396,7 +398,7 @@ export function BuyerDashboard({ onOpen, onSubmitReq }) {
               )}
               {stats.delayed > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#fef2f2', borderRadius: 8, padding: '10px 14px' }}>
-                  <span style={{ fontSize: 16 }}>⚠️</span>
+                  <AlertTriangle size={16} color={T.danger} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: T.danger }}>{stats.delayed} order{stats.delayed > 1 ? 's' : ''} delayed</div>
                     <div style={{ fontSize: 11, color: T.textMuted }}>Behind schedule — review progress</div>
@@ -405,7 +407,7 @@ export function BuyerDashboard({ onOpen, onSubmitReq }) {
               )}
               {stats.certsExpired > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#fef2f2', borderRadius: 8, padding: '10px 14px' }}>
-                  <span style={{ fontSize: 16 }}>🛡</span>
+                  <Shield size={16} color={T.danger} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: T.danger }}>{stats.certsExpired} cert{stats.certsExpired > 1 ? 's' : ''} expired</div>
                     <div style={{ fontSize: 11, color: T.textMuted }}>Contact manufacturer to renew</div>
@@ -437,19 +439,20 @@ export function BuyerDashboard({ onOpen, onSubmitReq }) {
         {/* List = one row per order. Matrix = styles across the top, TNA steps
             down the side, for "where does the whole book stand" at a glance. */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-          {[['list', '☰ List'], ['matrix', '▦ Matrix']].map(([id, label]) => (
+          {[['list', 'List', List], ['matrix', 'Matrix', LayoutGrid]].map(([id, label, Icon]) => (
             <button key={id} onClick={() => setViewMode(id)}
               style={{ fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
                 border: `1px solid ${viewMode === id ? T.primary : T.border}`,
                 background: viewMode === id ? T.primaryLight : T.surface,
-                color: viewMode === id ? T.primaryDark : T.textMuted }}>
-              {label}
+                color: viewMode === id ? T.primaryDark : T.textMuted,
+                display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Icon size={13} /> {label}
             </button>
           ))}
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <div style={{ position: 'relative', flex: 1 }}>
-            <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: T.textLight, pointerEvents: 'none', zIndex: 1 }}>🔍</span>
+            <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: T.textLight, pointerEvents: 'none', zIndex: 1, display: 'flex' }}><Search size={14} /></span>
             <input
               value={q}
               onChange={e => { setQ(e.target.value); setShowSugg(true) }}
@@ -490,7 +493,7 @@ export function BuyerDashboard({ onOpen, onSubmitReq }) {
       {filtered.length === 0 ? (
         <Card>
           <EmptyState
-            icon="📦"
+            icon={<Package size={26} color={T.textLight} />}
             title={q || sf !== 'All' ? 'No matching orders' : 'No orders yet'}
             desc={q || sf !== 'All' ? 'Try adjusting your search or filter' : 'Orders assigned to you will appear here'}
           />
@@ -505,8 +508,8 @@ export function BuyerDashboard({ onOpen, onSubmitReq }) {
             const GroupHeader = (
               <div onClick={() => toggleGroup(g.moId)}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 18px', background: '#f1f5f9', borderRadius: collapsed ? 10 : '10px 10px 0 0', cursor: 'pointer', userSelect: 'none' }}>
-                <span style={{ fontSize: 11, color: T.textMuted, transition: 'transform 0.15s', transform: collapsed ? 'rotate(-90deg)' : 'none' }}>▾</span>
-                <span style={{ fontSize: 13, fontWeight: 800, color: T.text }}>📁 {groupLabel}</span>
+                <span style={{ color: T.textMuted, transition: 'transform 0.15s', transform: collapsed ? 'rotate(-90deg)' : 'none', display: 'inline-flex' }}><ChevronDown size={13} /></span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Folder size={13} /> {groupLabel}</span>
                 {g.mo?.season && <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', background: '#dbeafe', padding: '2px 7px', borderRadius: 4 }}>{g.mo.season}</span>}
                 <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{g.txns.length} order{g.txns.length !== 1 ? 's' : ''}</span>
               </div>
@@ -555,14 +558,14 @@ export function BuyerDashboard({ onOpen, onSubmitReq }) {
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
                             {escalatedIds.has(o.id) ? (
-                              <span style={{ fontSize: 11, fontWeight: 700, color: T.success, background: T.successBg, border: `1px solid ${T.successBorder}`, borderRadius: 6, padding: '3px 8px' }}>✓ Escalated</span>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: T.success, background: T.successBg, border: `1px solid ${T.successBorder}`, borderRadius: 6, padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Check size={11} strokeWidth={3} /> Escalated</span>
                             ) : rowStatus !== 'Delivered' && (
                               <button onClick={e => { e.stopPropagation(); setEscalateOrder(o) }}
-                                style={{ background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, color: T.danger, borderRadius: 6, padding: '3px 9px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-                                🚨 Escalate
+                                style={{ background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, color: T.danger, borderRadius: 6, padding: '3px 9px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <Siren size={11} /> Escalate
                               </button>
                             )}
-                            <span style={{ color: T.textLight, fontSize: 16 }}>›</span>
+                            <ChevronRight size={15} color={T.textLight} />
                           </div>
                         </div>
                       )
@@ -600,12 +603,12 @@ export function BuyerDashboard({ onOpen, onSubmitReq }) {
                           <span style={{ fontSize: 12, color: overdue ? T.danger : T.textMuted, fontWeight: overdue ? 700 : 400 }}>Due {fmtDate(o.delivery)}</span>
                           {rowStatus !== 'Delivered' && !escalatedIds.has(o.id) && (
                             <button onClick={e => { e.stopPropagation(); setEscalateOrder(o) }}
-                              style={{ background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, color: T.danger, borderRadius: 6, padding: '3px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                              🚨 Escalate
+                              style={{ background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, color: T.danger, borderRadius: 6, padding: '3px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <Siren size={11} /> Escalate
                             </button>
                           )}
                           {escalatedIds.has(o.id) && (
-                            <span style={{ fontSize: 11, fontWeight: 700, color: T.success }}>✓ Escalated</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: T.success, display: 'inline-flex', alignItems: 'center', gap: 4 }}><Check size={11} strokeWidth={3} /> Escalated</span>
                           )}
                         </div>
                       </div>
