@@ -370,6 +370,20 @@ export function AppProvider({ children }) {
     return doc
   }, [orders, users, currentUser, addAudit, pushNotif])
 
+  const updateDoc = useCallback(async (id, data) => {
+    const doc = await documentsApi.update(id, data)
+    setDocs(p => p.map(d => d.id === id ? doc : d))
+    await addAudit('Document Updated', `${doc.name} (${doc.type})`)
+    return doc
+  }, [addAudit])
+
+  const deleteDoc = useCallback(async (id) => {
+    const target = docs.find(d => d.id === id)
+    await documentsApi.remove(id)
+    setDocs(p => p.filter(d => d.id !== id))
+    await addAudit('Document Deleted', target ? `${target.name} (${target.type})` : id)
+  }, [docs, addAudit])
+
   const createMasterOrder = useCallback(async (data) => {
     const mo = await masterOrdersApi.create(data)
     setMasterOrders(p => [mo, ...p])
@@ -597,7 +611,7 @@ export function AppProvider({ children }) {
       login, logout,
       updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial, bulkUploadMaterials,
       bulkUpdateStages, addStageItem, updateStageItem, removeStageItem,
-      updateAssignment, uploadDoc, createOrder, bulkCreateOrders, createMasterOrder, deleteMasterOrder,
+      updateAssignment, uploadDoc, updateDoc, deleteDoc, createOrder, bulkCreateOrders, createMasterOrder, deleteMasterOrder,
       editOrder, deleteOrder,
       createUser, updateUser, toggleUser, resetUserPw,
       markAllRead, markOneRead, getDocData, addAudit, pushNotif,

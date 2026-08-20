@@ -112,6 +112,8 @@ export const documentsApi = {
   list: () => api.get('/documents'),
   getData: id => api.get(`/documents/${id}/data`),
   upload: data => api.post('/documents', data),
+  update: (id, data) => api.post(`/documents/${id}`, data),
+  remove: id => api.post(`/documents/${id}/delete`),
   checkCertExpiry: () => api.post('/documents/cert-expiry-check'),
 }
 

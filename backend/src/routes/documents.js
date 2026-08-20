@@ -13,6 +13,41 @@ const uploadLimiter = rateLimit({
 })
 
 const CERT_TYPES = ['compliance_cert', 'factory_audit', 'chemical_cert', 'environmental_cert', 'insurance']
+const ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg']
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+
+// Shared by create (POST /) and edit (POST /:id) — validates an inline base64
+// data URL the same way in both places, since this is the XSS-relevant check
+// (rejects arbitrary `data:text/html,...` payloads that would render in the
+// document viewer). Returns an error string, or null if valid.
+function validateFilePayload(dataUrl, mimeType, fileSize) {
+  if (typeof dataUrl !== 'string') return 'Invalid file payload'
+  const dataUrlMatch = /^data:([^;,]+);base64,/i.exec(dataUrl)
+  if (!dataUrlMatch) return 'Invalid file payload — must be a base64 data URL'
+  const embeddedMime = dataUrlMatch[1].toLowerCase()
+  if (!ALLOWED_MIME.includes(embeddedMime)) return 'Only PDF, JPG, PNG files are allowed'
+  if (mimeType && !ALLOWED_MIME.includes(mimeType)) return 'Only PDF, JPG, PNG files are allowed'
+  if (mimeType && mimeType.toLowerCase() !== embeddedMime) return 'File payload does not match declared mime type'
+  if (fileSize && fileSize > MAX_FILE_SIZE) return 'File exceeds 10MB limit'
+  if (Buffer.byteLength(dataUrl, 'utf8') > MAX_FILE_SIZE * 1.4) return 'File payload too large'
+  return null
+}
+
+// Returns { url } on success or { error } on failure.
+function validateExternalUrl(externalUrl) {
+  if (typeof externalUrl !== 'string') return { error: 'Invalid link' }
+  const trimmed = externalUrl.trim()
+  if (trimmed.length > 2000) return { error: 'Link too long (max 2000 chars)' }
+  try {
+    const u = new URL(trimmed)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+      return { error: 'Link must be an http:// or https:// URL' }
+    }
+    return { url: u.toString() }
+  } catch {
+    return { error: 'Invalid link — must be a valid URL' }
+  }
+}
 
 async function assertDocAccess(user, { orderId, mfrId, type }) {
   if (user.role === 'buyer') {
@@ -325,42 +360,15 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
 
     let normalizedUrl = null
     if (hasUrl) {
-      if (typeof externalUrl !== 'string') return res.status(400).json({ error: 'Invalid link' })
-      const trimmed = externalUrl.trim()
-      if (trimmed.length > 2000) return res.status(400).json({ error: 'Link too long (max 2000 chars)' })
-      try {
-        const u = new URL(trimmed)
-        if (u.protocol !== 'http:' && u.protocol !== 'https:') {
-          return res.status(400).json({ error: 'Link must be an http:// or https:// URL' })
-        }
-        normalizedUrl = u.toString()
-      } catch {
-        return res.status(400).json({ error: 'Invalid link — must be a valid URL' })
-      }
+      const r = validateExternalUrl(externalUrl)
+      if (r.error) return res.status(400).json({ error: r.error })
+      normalizedUrl = r.url
     }
 
     // Inline-file checks (skipped when uploading via link)
     if (hasFile) {
-      const ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg']
-      const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
-      if (typeof dataUrl !== 'string')
-        return res.status(400).json({ error: 'Invalid file payload' })
-      // Validate the data URL itself — prevents storing arbitrary `data:text/html,...`
-      // strings that would later render as XSS in the document viewer.
-      const dataUrlMatch = /^data:([^;,]+);base64,/i.exec(dataUrl)
-      if (!dataUrlMatch)
-        return res.status(400).json({ error: 'Invalid file payload — must be a base64 data URL' })
-      const embeddedMime = dataUrlMatch[1].toLowerCase()
-      if (!ALLOWED_MIME.includes(embeddedMime))
-        return res.status(400).json({ error: 'Only PDF, JPG, PNG files are allowed' })
-      if (mimeType && !ALLOWED_MIME.includes(mimeType))
-        return res.status(400).json({ error: 'Only PDF, JPG, PNG files are allowed' })
-      if (mimeType && mimeType.toLowerCase() !== embeddedMime)
-        return res.status(400).json({ error: 'File payload does not match declared mime type' })
-      if (fileSize && fileSize > MAX_FILE_SIZE)
-        return res.status(400).json({ error: 'File exceeds 10MB limit' })
-      if (Buffer.byteLength(dataUrl, 'utf8') > MAX_FILE_SIZE * 1.4)
-        return res.status(400).json({ error: 'File payload too large' })
+      const err = validateFilePayload(dataUrl, mimeType, fileSize)
+      if (err) return res.status(400).json({ error: err })
     }
 
     try {
@@ -408,6 +416,116 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
     })
 
     res.status(201).json(mapDoc(doc.toObject(), false))
+  } catch (err) {
+    console.error('[documents]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/documents/:id  (edit — name/notes/issuer/dates, and optionally replace the file/link)
+router.post('/:id', requireAuth, uploadLimiter, async (req, res) => {
+  try {
+    const doc = await Document.findById(req.params.id)
+    if (!doc || !doc.isActive) return res.status(404).json({ error: 'Document not found' })
+
+    const isOwner = doc.uploadedBy && doc.uploadedBy.toString() === req.user.id
+    if (req.user.role !== 'admin' && !isOwner)
+      return res.status(403).json({ error: 'You can only edit your own documents' })
+
+    const { name, notes, issuer, issueDate, expiryDate, dataUrl, externalUrl, fileName, fileSize, mimeType, removeFile } = req.body
+
+    if (name != null) {
+      if (typeof name !== 'string' || !name.trim()) return res.status(400).json({ error: 'name required' })
+      if (name.length > 300) return res.status(400).json({ error: 'Input too long' })
+      doc.name = name.trim()
+    }
+    if (issuer != null) {
+      if (typeof issuer !== 'string' || issuer.length > 200)
+        return res.status(400).json({ error: 'Issuer name too long (max 200 chars)' })
+      doc.issuer = issuer || null
+    }
+    if (notes != null) {
+      if (typeof notes !== 'string') return res.status(400).json({ error: 'Invalid notes' })
+      const trimmedNotes = notes.trim()
+      if (trimmedNotes.length > 5000) return res.status(400).json({ error: 'Notes too long (max 5000 chars)' })
+      doc.notes = trimmedNotes || null
+    }
+    if (issueDate != null) doc.issueDate = issueDate ? new Date(issueDate) : new Date()
+    if (expiryDate !== undefined) doc.expiryDate = expiryDate ? new Date(expiryDate) : null
+    if (doc.expiryDate && doc.issueDate && doc.expiryDate < doc.issueDate)
+      return res.status(400).json({ error: 'Expiry date cannot be before issue date' })
+
+    const hasFile = !!dataUrl
+    const hasUrl  = !!externalUrl
+    if (hasFile && hasUrl) return res.status(400).json({ error: 'Provide either a file OR a link, not both' })
+
+    if (hasFile) {
+      const err = validateFilePayload(dataUrl, mimeType, fileSize)
+      if (err) return res.status(400).json({ error: err })
+      if (fileName && typeof fileName === 'string' && fileName.length > 500)
+        return res.status(400).json({ error: 'File name too long (max 500 chars)' })
+      doc.dataUrl = dataUrl
+      doc.fileName = fileName || null
+      doc.fileSize = fileSize || null
+      doc.mimeType = mimeType || null
+      doc.externalUrl = null
+    } else if (hasUrl) {
+      const r = validateExternalUrl(externalUrl)
+      if (r.error) return res.status(400).json({ error: r.error })
+      doc.externalUrl = r.url
+      doc.dataUrl = null
+      doc.fileName = null
+      doc.fileSize = null
+      doc.mimeType = null
+    } else if (removeFile) {
+      const isStage = doc.stageIndex != null
+      if (!(isStage && doc.notes))
+        return res.status(400).json({ error: 'Cannot remove the file/link — a file, link, or stage-evidence notes are required' })
+      doc.dataUrl = null; doc.externalUrl = null; doc.fileName = null; doc.fileSize = null; doc.mimeType = null
+    } else {
+      // No file/link change requested — the doc must still satisfy the invariant
+      // as it stands (guards against e.g. clearing notes on a text-only stage doc).
+      const isStage = doc.stageIndex != null
+      if (!doc.dataUrl && !doc.externalUrl && !(isStage && doc.notes))
+        return res.status(400).json({ error: 'Either a file, a drive link, or stage-evidence notes are required' })
+    }
+
+    doc.version = (doc.version || 1) + 1
+    await doc.save()
+
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Document Updated',
+      detail: `${doc.name} (${doc.type})${doc.orderId ? ' — order ' + doc.orderId : ''}`,
+    })
+
+    res.json(mapDoc(doc.toObject(), false))
+  } catch (err) {
+    console.error('[documents]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/documents/:id/delete  (soft delete)
+router.post('/:id/delete', requireAuth, async (req, res) => {
+  try {
+    const doc = await Document.findById(req.params.id)
+    if (!doc || !doc.isActive) return res.status(404).json({ error: 'Document not found' })
+
+    const isOwner = doc.uploadedBy && doc.uploadedBy.toString() === req.user.id
+    if (req.user.role !== 'admin' && !isOwner)
+      return res.status(403).json({ error: 'You can only delete your own documents' })
+
+    doc.isActive = false
+    await doc.save()
+
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Document Deleted',
+      detail: `${doc.name} (${doc.type})${doc.orderId ? ' — order ' + doc.orderId : ''}`,
+    })
+
+    res.json({ ok: true })
   } catch (err) {
     console.error('[documents]', err)
     res.status(500).json({ error: 'Server error' })

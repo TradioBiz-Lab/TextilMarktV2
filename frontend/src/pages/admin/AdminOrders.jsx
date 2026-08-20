@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import {
-  T, CATEGORIES, SEASONS, DEFAULT_STAGE_NAMES, ORDER_STATUSES,
+  T, CATEGORIES, SEASONS, DEFAULT_STAGE_NAMES, ORDER_STATUSES, STAGE_DOC_MAP,
   isStageDone, stageIsOverdue, stageStatusOf, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct,
   STAGE_STATUS_LABELS, CELL_STATE, cellState, buildMatrixSpine,
 } from '../../constants.js'
-import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, FileUpload, LoadingScreen, useToast, fileUploadPayload, ProductThumb, Modal, SectionLabel, Textarea } from '../../components/ui.jsx'
+import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, FileUpload, LoadingScreen, useToast, fileUploadPayload, ProductThumb, Modal, SectionLabel, Textarea, DocCard } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
@@ -51,11 +51,12 @@ function fmtDateTime(d) {
 // A focused stage-update modal that lives ON the Order Management page — no
 // navigation to Order Detail. Clicking a matrix date cell (or, later, any
 // other quick-action entry point) opens this in place, so saving an edit
-// leaves you exactly where you were. A subset of the full Order Detail modal
-// — description, progress, updates, materials — not evidence upload, which
-// stays full-order-detail-only ("Open full order" reaches it).
+// leaves you exactly where you were. Mirrors the full Order Detail modal's
+// sections (description, progress, updates, materials, evidence) so the two
+// don't drift apart — "Open full order" is for order-wide context, not to
+// reach functionality missing here.
 function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrder }) {
-  const { currentUser, orders, updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial, refreshOrders } = useApp()
+  const { currentUser, orders, docs, users, updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial, refreshOrders, uploadDoc, getDocData } = useApp()
   const toast = useToast()
   const order = (orders || []).find(o => o.id === orderId)
   const asgn = order?.assignments.find(a => String(a.mid) === String(mfrId))
@@ -76,6 +77,57 @@ function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrder }) {
   const [matDraft, setMatDraft] = useState({ name: '', requiredQty: '' })
   const [saving, setSaving] = useState(false)
   const [savingEta, setSavingEta] = useState(false)
+
+  // ── Stage evidence — same shape as AdminOrderDetail's Update Stage modal ──
+  const [showStageDocs, setShowStageDocs] = useState(false)
+  const [sdItems, setSdItems] = useState([{ type: '', name: '', file: null, notes: '', fileErr: '' }])
+  const [sdErr, setSdErr] = useState('')
+
+  const uploadedStageDocs = (docs || []).filter(d =>
+    d.orderId === orderId && d.stageIndex === stageIndex && d.materialLineIndex == null && String(d.mfrId || '') === String(mfrId))
+
+  const openStageDocUpload = () => {
+    const types = STAGE_DOC_MAP[stageIndex] || []
+    setSdItems([{ type: types[0]?.v || '', name: '', file: null, notes: '', fileErr: '' }])
+    setSdErr('')
+    setShowStageDocs(true)
+  }
+
+  const updateSdItem = (idx, patch) => setSdItems(prev => prev.map((item, i) => i === idx ? { ...item, ...patch } : item))
+
+  const addSdItem = () => {
+    const types = STAGE_DOC_MAP[stageIndex] || []
+    setSdItems(prev => [...prev, { type: types[0]?.v || '', name: '', file: null, notes: '', fileErr: '' }])
+  }
+
+  const removeSdItem = (idx) => setSdItems(prev => prev.filter((_, i) => i !== idx))
+
+  const submitStageDoc = async () => {
+    // Stage evidence: file OR notes is sufficient (managed via SOP)
+    let hasErr = false
+    setSdItems(prev => prev.map(item => {
+      if (!item.name.trim()) { hasErr = true; return { ...item, fileErr: 'Enter a document name.' } }
+      if (!item.file && !item.notes?.trim()) { hasErr = true; return { ...item, fileErr: 'Attach a file or add notes.' } }
+      return { ...item, fileErr: '' }
+    }))
+    if (hasErr) return
+    setSaving(true)
+    try {
+      for (const item of sdItems) {
+        await uploadDoc({
+          type: item.type, name: item.name.trim(), issuer: null,
+          issueDate: new Date().toISOString().slice(0, 10), expiryDate: null,
+          orderId, mfrId, stageIndex,
+          notes: item.notes?.trim() || null,
+          ...fileUploadPayload(item.file),
+        })
+      }
+      toast(`${sdItems.length} stage evidence entr${sdItems.length > 1 ? 'ies' : 'y'} saved`, 'success')
+      setShowStageDocs(false)
+    } catch {
+      toast('Failed to save stage evidence', 'error')
+    } finally { setSaving(false) }
+  }
 
   // Keep the form in step once a save round-trips fresh data back.
   useEffect(() => {
@@ -174,6 +226,7 @@ function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrder }) {
   }
 
   return (
+    <>
     <Modal title={stage.name} subtitle={`${order.product} · ${asgn.mfrCompany || 'Manufacturer'}`} size="lg" onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div>
@@ -327,12 +380,64 @@ function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrder }) {
           </FlexRow>
         </div>
 
+        <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
+          <SectionLabel>Evidence</SectionLabel>
+          {uploadedStageDocs.length === 0 && <div style={{ fontSize: 11, color: T.textLight, marginBottom: 8 }}>No evidence uploaded yet.</div>}
+          {uploadedStageDocs.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              {uploadedStageDocs.map(d => (
+                <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} stageName={stage?.name} />
+              ))}
+            </div>
+          )}
+          <Btn size="sm" variant="outline" onClick={openStageDocUpload}>
+            📎 Upload Evidence
+          </Btn>
+        </div>
+
         <FlexRow justify="flex-end" gap={8}>
           <Btn variant="ghost" onClick={() => { onClose(); onOpenOrder(orderId, mfrId) }}>Open full order →</Btn>
           <Btn variant="secondary" onClick={onClose}>Close</Btn>
         </FlexRow>
       </div>
     </Modal>
+
+    {showStageDocs && (
+      <Modal title="Upload Stage Evidence" subtitle={`${stage?.name || `Stage ${stageIndex + 1}`} — Evidence Documents`} onClose={() => setShowStageDocs(false)} size="lg">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ fontSize: 12, color: T.textMuted, background: '#f0f7ff', border: `1px solid #dbeafe`, borderRadius: 8, padding: '8px 12px' }}>
+            Linked to the {stage?.name || `Stage ${stageIndex + 1}`} stage. Attach a file/link, or add SOP notes only — either is sufficient.
+          </div>
+          {sdItems.map((item, idx) => (
+            <div key={idx} style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 16px', background: '#f8fafc', position: 'relative' }}>
+              {sdItems.length > 1 && (
+                <button onClick={() => removeSdItem(idx)} style={{ position: 'absolute', top: 10, right: 10, background: '#fee2e2', border: 'none', borderRadius: 6, cursor: 'pointer', width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: T.danger }}>×</button>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <Input label="Document Name *" value={item.name} onChange={e => updateSdItem(idx, { name: e.target.value, fileErr: '' })} placeholder={`e.g. ${stage?.name || `Stage ${stageIndex + 1}`} GRN - Batch ${idx + 1}`} />
+                <FileUpload file={item.file} onFile={f => updateSdItem(idx, { file: f, fileErr: '' })} error={item.fileErr} onError={err => updateSdItem(idx, { fileErr: err })} />
+                <Textarea
+                  label="Notes (optional — text evidence)"
+                  value={item.notes}
+                  onChange={e => updateSdItem(idx, { notes: e.target.value, fileErr: '' })}
+                  placeholder="Add SOP context, observations, or text-only stage evidence…"
+                  rows={3}
+                />
+              </div>
+            </div>
+          ))}
+          {sdErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500 }}>⚠ {sdErr}</div>}
+          <FlexRow justify="space-between" gap={8}>
+            <Btn variant="secondary" size="sm" onClick={addSdItem}>+ Add Another Document</Btn>
+            <FlexRow gap={8}>
+              <Btn variant="secondary" onClick={() => setShowStageDocs(false)}>Cancel</Btn>
+              <Btn disabled={saving} onClick={submitStageDoc}>{saving ? 'Uploading…' : `Upload ${sdItems.length > 1 ? `${sdItems.length} Documents` : 'Evidence'}`}</Btn>
+            </FlexRow>
+          </FlexRow>
+        </div>
+      </Modal>
+    )}
+    </>
   )
 }
 

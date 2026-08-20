@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react'
 import { T, ST, DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired } from '../constants.js'
+import { useApp } from '../context.jsx'
 import * as pdfjsLib from 'pdfjs-dist'
 // Imported as a Vite worker (not `?url`) so the build emits a plain .js chunk —
 // Zoho Catalyst Slate serves .mjs assets as application/octet-stream with
@@ -468,7 +469,97 @@ const fmtShort = d => {
   return `${dd}-${mm}-${yyyy}`
 }
 
+// Inline edit form for a document — name, notes (stage-evidence text), and an
+// optional file/link replacement. Shared by both DocCard layouts (stage evidence
+// and regular doc) so editing behaves identically everywhere a document appears.
+function DocEditModal({ doc, onClose, onSaved }) {
+  const { updateDoc } = useApp()
+  const toast = useToast()
+  const isStageDoc = doc.stageIndex != null
+  const [name, setName] = useState(doc.name || '')
+  const [notes, setNotes] = useState(doc.notes || '')
+  const [replacing, setReplacing] = useState(false)
+  const [newFile, setNewFile] = useState(null)
+  const [fileErr, setFileErr] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  const currentFileLabel = doc.externalUrl ? `🔗 ${doc.externalUrl}` : (doc.fileName || doc.name)
+
+  const save = async () => {
+    if (!name.trim()) { setErr('Document name is required.'); return }
+    setErr('')
+    setSaving(true)
+    try {
+      const payload = { name: name.trim(), notes: isStageDoc ? (notes.trim() || null) : undefined }
+      if (replacing && newFile) Object.assign(payload, fileUploadPayload(newFile))
+      const updated = await updateDoc(doc.id, payload)
+      toast('Document updated', 'success')
+      onSaved?.(updated)
+      onClose()
+    } catch (e) {
+      setErr(e?.message || 'Failed to update document')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <Modal title="Edit Evidence" subtitle={doc.name} onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <Input label="Document Name *" value={name} onChange={e => setName(e.target.value)} />
+        {isStageDoc && (
+          <Textarea label="Notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="SOP context, observations, or text-only stage evidence…" rows={3} />
+        )}
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>File</div>
+          {!replacing ? (
+            <FlexRow gap={8} style={{ alignItems: 'center' }}>
+              <div style={{ flex: 1, fontSize: 12, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentFileLabel || '—'}</div>
+              <Btn size="sm" variant="secondary" onClick={() => setReplacing(true)}>Replace</Btn>
+            </FlexRow>
+          ) : (
+            <>
+              <FileUpload file={newFile} onFile={f => { setNewFile(f); setFileErr('') }} error={fileErr} onError={setFileErr} />
+              <div style={{ marginTop: 6 }}>
+                <Btn size="sm" variant="ghost" onClick={() => { setReplacing(false); setNewFile(null); setFileErr('') }}>Cancel replace — keep current file</Btn>
+              </div>
+            </>
+          )}
+        </div>
+        {err && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500 }}>⚠ {err}</div>}
+        <FlexRow justify="flex-end" gap={8}>
+          <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
+          <Btn disabled={saving || (replacing && !newFile)} onClick={save}>{saving ? 'Saving…' : 'Save Changes'}</Btn>
+        </FlexRow>
+      </div>
+    </Modal>
+  )
+}
+
 export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
+  const { currentUser, deleteDoc } = useApp()
+  const toast = useToast()
+  const [showEdit, setShowEdit] = useState(false)
+  const canManage = !!currentUser && (currentUser.role === 'admin' || String(doc.uploadedBy) === String(currentUser.id))
+
+  const handleDelete = async (e) => {
+    e.stopPropagation()
+    if (!window.confirm(`Delete "${doc.name}"? This cannot be undone.`)) return
+    try {
+      await deleteDoc(doc.id)
+      toast('Document deleted', 'success')
+    } catch (err) {
+      toast(err?.message || 'Failed to delete document', 'error')
+    }
+  }
+
+  const manageButtons = canManage && (
+    <>
+      <Btn size="sm" variant="secondary" onClick={e => { e.stopPropagation(); setShowEdit(true) }}>✎ Edit</Btn>
+      <Btn size="sm" variant="danger" onClick={handleDelete}>🗑 Delete</Btn>
+    </>
+  )
+  const editModal = showEdit && <DocEditModal doc={doc} onClose={() => setShowEdit(false)} />
+
   // Prefer server-populated name; fall back to local user lookup for admin context
   const localUploader = users?.find(u => u.id === doc.uploadedBy)
   const uploaderName = doc.uploadedByName || localUploader?.name || null
@@ -599,6 +690,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
     return (
       <>
         {viewer}
+        {editModal}
         <div style={{ background: T.surface, borderRadius: 10, border: `1px solid ${T.border}`, marginBottom: 8, overflow: 'hidden' }}>
           {/* Stage header bar */}
           <div style={{ background: '#f0f7ff', borderBottom: `1px solid #dbeafe`, padding: '6px 14px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -624,16 +716,19 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
                 )}
               </div>
             </div>
-            {hasFile ? (
-              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                <Btn size="sm" variant="secondary" onClick={openFile} disabled={fetching}>{hasExternal ? '🔗 Open Link' : '👁 View'}</Btn>
-                {!hasExternal && <Btn size="sm" variant="secondary" onClick={download} disabled={fetching}>⬇ Download</Btn>}
-              </div>
-            ) : hasNotes ? (
-              <span style={{ fontSize: 10, fontWeight: 800, color: '#1d4ed8', background: '#dbeafe', padding: '3px 8px', borderRadius: 10, flexShrink: 0, letterSpacing: '0.04em' }}>TEXT</span>
-            ) : (
-              <span style={{ fontSize: 11, color: T.textLight, fontStyle: 'italic', flexShrink: 0 }}>Seed data</span>
-            )}
+            <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+              {hasFile ? (
+                <>
+                  <Btn size="sm" variant="secondary" onClick={openFile} disabled={fetching}>{hasExternal ? '🔗 Open Link' : '👁 View'}</Btn>
+                  {!hasExternal && <Btn size="sm" variant="secondary" onClick={download} disabled={fetching}>⬇ Download</Btn>}
+                </>
+              ) : hasNotes ? (
+                <span style={{ fontSize: 10, fontWeight: 800, color: '#1d4ed8', background: '#dbeafe', padding: '3px 8px', borderRadius: 10, letterSpacing: '0.04em' }}>TEXT</span>
+              ) : (
+                <span style={{ fontSize: 11, color: T.textLight, fontStyle: 'italic' }}>Seed data</span>
+              )}
+              {manageButtons}
+            </div>
           </div>
           {/* Notes block — visible inline for SOP-managed text evidence */}
           {hasNotes && (
@@ -651,6 +746,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
   return (
     <>
       {viewer}
+      {editModal}
       <div style={{ background: T.surface, borderRadius: 10, border: `1px solid ${exp || expd ? T.warningBorder : T.border}`, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
         <div style={{ fontSize: 22, flexShrink: 0 }}>{icon}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -674,14 +770,17 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
             <div style={{ fontSize: 10, color: T.textLight }}>Exp: {fmtShort(doc.expiryDate)}</div>
           </div>
         )}
-        {hasFile ? (
-          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-            <Btn size="sm" variant="secondary" onClick={openFile} disabled={fetching}>{hasExternal ? '🔗 Open Link' : '👁 View'}</Btn>
-            {!hasExternal && <Btn size="sm" variant="secondary" onClick={download} disabled={fetching}>⬇ Download</Btn>}
-          </div>
-        ) : (
-          <span style={{ fontSize: 11, color: T.textLight, fontStyle: 'italic', flexShrink: 0 }}>Seed data</span>
-        )}
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+          {hasFile ? (
+            <>
+              <Btn size="sm" variant="secondary" onClick={openFile} disabled={fetching}>{hasExternal ? '🔗 Open Link' : '👁 View'}</Btn>
+              {!hasExternal && <Btn size="sm" variant="secondary" onClick={download} disabled={fetching}>⬇ Download</Btn>}
+            </>
+          ) : (
+            <span style={{ fontSize: 11, color: T.textLight, fontStyle: 'italic' }}>Seed data</span>
+          )}
+          {manageButtons}
+        </div>
       </div>
     </>
   )

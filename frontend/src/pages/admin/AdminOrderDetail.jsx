@@ -913,22 +913,9 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                 <SectionLabel>Evidence</SectionLabel>
                 {uploadedStageDocs.length === 0 && <div style={{ fontSize: 11, color: T.textLight, marginBottom: 8 }}>No evidence uploaded yet.</div>}
                 {uploadedStageDocs.length > 0 && (
-                  <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+                  <div style={{ marginBottom: 8 }}>
                     {uploadedStageDocs.map(d => (
-                      <span key={d.id} onClick={async () => {
-                        try {
-                          setViewerName(d.name)
-                          setViewerLoading(true)
-                          setViewerBlob(null)
-                          const data = await getDocData(d.id)
-                          if (!data?.dataUrl) { setViewerLoading(false); return }
-                          const blob = dataUrlToBlobUrl(data.dataUrl)
-                          if (!blob) { setViewerLoading(false); return }
-                          setViewerBlob(blob)
-                        } catch { setViewerLoading(false) }
-                      }} style={{ fontSize: 10, background: T.primaryLight, color: T.primaryDark, padding: '2px 8px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${T.warningBorder}` }}>
-                        {DOC_ICONS[d.type] || '📄'} {d.name}
-                      </span>
+                      <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} stageName={usStageData?.name} />
                     ))}
                   </div>
                 )}
