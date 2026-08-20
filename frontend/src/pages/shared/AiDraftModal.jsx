@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { FileText, SearchX, AlertTriangle } from 'lucide-react'
 import { T, REQUIREMENT_CATEGORY_LABEL } from '../../constants.js'
 import { Card, Btn, FlexRow, useToast, LoadingScreen, EmptyState, Modal } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -58,7 +59,7 @@ export function AiDraftModal({ scopeType, orderId, mfrProjectId, candidateDocs, 
       {!draftLines ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {candidateDocs.length === 0
-            ? <EmptyState icon="📄" title="No eligible documents" subtitle="Upload a PDF or image tech pack first (link-only documents can't be used for AI drafting)." />
+            ? <EmptyState icon={<FileText size={26} color={T.textLight} />} title="No eligible documents" subtitle="Upload a PDF or image tech pack first (link-only documents can't be used for AI drafting)." />
             : candidateDocs.map(d => (
               <label key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
                 <input type="checkbox" checked={selectedDocIds.includes(d.id)}
@@ -73,7 +74,7 @@ export function AiDraftModal({ scopeType, orderId, mfrProjectId, candidateDocs, 
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {draftLines.length === 0
-            ? <EmptyState icon="🤷" title="Nothing extracted" subtitle="Try a different document, or add lines manually." />
+            ? <EmptyState icon={<SearchX size={26} color={T.textLight} />} title="Nothing extracted" subtitle="Try a different document, or add lines manually." />
             : draftLines.map((l, i) => (
               <div key={i} style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: 10, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                 <input type="checkbox" checked={accepted.has(i)} style={{ marginTop: 3 }}
@@ -84,8 +85,8 @@ export function AiDraftModal({ scopeType, orderId, mfrProjectId, candidateDocs, 
                     {l.requiredQty != null && <span style={{ color: T.textMuted, fontSize: 12, marginLeft: 8 }}>{l.requiredQty} {l.unit}</span>}
                     {l.colourway && <span style={{ color: T.textMuted, fontSize: 12, marginLeft: 8 }}>· {l.colourway}</span>}
                   </div>
-                  {l.note && <div style={{ fontSize: 11, color: T.warning, marginTop: 3 }}>⚠ {l.note}</div>}
-                  {l.requiredQty == null && <div style={{ fontSize: 11, color: T.warning, marginTop: 3 }}>⚠ Quantity not stated in the document — fill it in before saving, or edit after.</div>}
+                  {l.note && <div style={{ fontSize: 11, color: T.warning, marginTop: 3, display: 'flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={12} /> {l.note}</div>}
+                  {l.requiredQty == null && <div style={{ fontSize: 11, color: T.warning, marginTop: 3, display: 'flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={12} /> Quantity not stated in the document — fill it in before saving, or edit after.</div>}
                 </div>
               </div>
             ))}

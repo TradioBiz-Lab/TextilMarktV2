@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { X, AlertTriangle } from 'lucide-react'
 import { T } from '../../constants.js'
 import { Btn, Card, Badge, FlexRow, EmptyState, Input, useToast } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -64,7 +65,7 @@ export function MfrProjectStages({ project, onUpdated }) {
             </select>
             <Input type="date" value={row.startDate} onChange={e => updateSeedRow(i, { startDate: e.target.value })} style={{ flex: 1 }} />
             <Input type="date" value={row.eta} onChange={e => updateSeedRow(i, { eta: e.target.value })} style={{ flex: 1 }} />
-            <Btn size="sm" variant="secondary" onClick={() => removeSeedRow(i)}>✕</Btn>
+            <Btn size="sm" variant="secondary" onClick={() => removeSeedRow(i)}><X size={13} /></Btn>
           </FlexRow>
         ))}
         <FlexRow gap={8} style={{ marginTop: 8 }}>
@@ -87,7 +88,7 @@ export function MfrProjectStages({ project, onUpdated }) {
                 {' · '}{s.startDate || 'NA'} → {s.eta || 'NA'}
                 {s.etaVarianceDays > 0 && <span style={{ color: T.danger, marginLeft: 6 }}>+{s.etaVarianceDays}d</span>}
                 {s.etaVarianceDays < 0 && <span style={{ color: T.success, marginLeft: 6 }}>{s.etaVarianceDays}d</span>}
-                {s.blocked && <span style={{ color: T.danger, marginLeft: 6 }}>⚠ Blocked</span>}
+                {s.blocked && <span style={{ color: T.danger, marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 3 }}><AlertTriangle size={11} /> Blocked</span>}
               </div>
             </div>
             <FlexRow gap={8}>
@@ -175,7 +176,7 @@ function StageItems({ stage, busy, onAdd, onUpdate, onRemove }) {
             <Btn size="sm" variant="secondary" disabled={busy} onClick={() => onUpdate(li, { status: it.status === 'done' ? 'pending' : 'done' })}>
               {it.status === 'done' ? 'Reopen' : 'Mark Done'}
             </Btn>
-            <Btn size="sm" variant="secondary" disabled={busy} onClick={() => onRemove(li)}>✕</Btn>
+            <Btn size="sm" variant="secondary" disabled={busy} onClick={() => onRemove(li)}><X size={13} /></Btn>
           </FlexRow>
         </FlexRow>
       ))}
@@ -202,7 +203,7 @@ function StageMaterials({ stage, busy, onAdd, onUpdate, onRemove }) {
               <option value="ordered">Ordered</option>
               <option value="received">Received</option>
             </select>
-            <Btn size="sm" variant="secondary" disabled={busy} onClick={() => onRemove(li)}>✕</Btn>
+            <Btn size="sm" variant="secondary" disabled={busy} onClick={() => onRemove(li)}><X size={13} /></Btn>
           </FlexRow>
         </FlexRow>
       ))}
