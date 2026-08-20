@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Package } from 'lucide-react'
 import { T } from '../../constants.js'
 import { PageHeader, Card, Btn, Modal, LoadingScreen, EmptyState } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -27,7 +28,7 @@ export function AdminMaterials() {
       )}
 
       <PageHeader title="Materials" subtitle="Fabric, trims and accessory planning — push lines onto an order's stages"
-        action={<Btn variant="secondary" onClick={() => setShowBulk(true)} icon="📦">Bulk Upload</Btn>} />
+        action={<Btn variant="secondary" onClick={() => setShowBulk(true)} icon={<Package size={16} />}>Bulk Upload</Btn>} />
       <Card style={{ marginBottom: 16 }}>
         <label style={{ fontSize: 11, fontWeight: 700, color: T.textMuted }}>ORDER</label>
         <select value={selectedId} onChange={e => setSelectedId(e.target.value)}
@@ -38,7 +39,7 @@ export function AdminMaterials() {
       </Card>
 
       {!selected
-        ? <Card><EmptyState icon="📦" title="Pick an order" subtitle="Select an order above to plan its material requirements." /></Card>
+        ? <Card><EmptyState icon={<Package size={26} color={T.textLight} />} title="Pick an order" subtitle="Select an order above to plan its material requirements." /></Card>
         : <MaterialRequirementsPanel key={selected.id} order={selected} />}
     </div>
   )

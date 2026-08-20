@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { CheckCircle2, AlertTriangle } from 'lucide-react'
 import { AppProvider, useApp } from './context.jsx'
 import { Shell } from './components/Shell.jsx'
 import { LoginPage } from './pages/LoginPage.jsx'
@@ -65,13 +66,13 @@ function ForceChangePassword() {
         <div style={{ fontSize: 20, fontWeight: 800, color: T.text, marginBottom: 6 }}>Set your password</div>
         <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 24 }}>You must change your temporary password before continuing.</div>
         {ok ? (
-          <div style={{ color: T.success, fontWeight: 600, textAlign: 'center', padding: '16px 0' }}>✓ Password changed — redirecting to login…</div>
+          <div style={{ color: T.success, fontWeight: 600, textAlign: 'center', padding: '16px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><CheckCircle2 size={16} /> Password changed — redirecting to login…</div>
         ) : (
           <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <Input label="Current (temporary) password" type="password" value={cur} onChange={e => { setCur(e.target.value); setErr('') }} required />
             <Input label="New password" type="password" value={nw} onChange={e => { setNw(e.target.value); setErr('') }} required />
             <Input label="Confirm new password" type="password" value={conf} onChange={e => { setConf(e.target.value); setErr('') }} required />
-            {err && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500 }}>⚠ {err}</div>}
+            {err && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={13} /> {err}</div>}
             <Btn type="submit" block disabled={busy}>{busy ? 'Saving…' : 'Set Password'}</Btn>
             <button type="button" onClick={logout} style={{ background: 'none', border: 'none', fontSize: 12, color: T.textLight, cursor: 'pointer', fontFamily: 'inherit' }}>Sign out instead</button>
           </form>
