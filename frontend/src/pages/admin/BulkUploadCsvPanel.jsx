@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import Papa from 'papaparse'
+import { FileText, Download, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { T, DEFAULT_STAGE_NAMES } from '../../constants.js'
 import { Btn, FlexRow, EmptyState } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -219,14 +220,14 @@ export function BulkUploadCsvPanel({ masterOrder, onDone }) {
       <div>
         <div onClick={() => fileInputRef.current?.click()}
           style={{ border: `2px dashed ${T.border}`, borderRadius: 10, padding: '24px', textAlign: 'center', cursor: 'pointer', background: '#fafbff' }}>
-          <div style={{ fontSize: 26, marginBottom: 6 }}>📄</div>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6, color: T.textLight }}><FileText size={26} /></div>
           <div style={{ fontWeight: 600, color: T.textMuted }}>Click to upload a CSV, or drag & drop</div>
           {fileName && <div style={{ fontSize: 12, color: T.primary, marginTop: 6, fontWeight: 600 }}>{fileName} — {rows.length} row{rows.length !== 1 ? 's' : ''} parsed</div>}
         </div>
         <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }}
           onChange={e => e.target.files[0] && handleFile(e.target.files[0])} />
         <FlexRow justify="space-between" style={{ marginTop: 8 }}>
-          <a href="/templates/tna-bulk-upload-template.csv" download style={{ fontSize: 12, color: T.primary, fontWeight: 600 }}>⬇ Download CSV Template</a>
+          <a href="/templates/tna-bulk-upload-template.csv" download style={{ fontSize: 12, color: T.primary, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Download size={13} /> Download CSV Template</a>
           {rows.length > 0 && <span style={{ fontSize: 12, color: T.textMuted }}>{validCount} valid · {rows.length - validCount} with errors</span>}
         </FlexRow>
       </div>
@@ -239,10 +240,10 @@ export function BulkUploadCsvPanel({ masterOrder, onDone }) {
         }}>+ Add Row Manually</Btn>
       </FlexRow>
 
-      {parseErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}>⚠ {parseErr}</div>}
+      {parseErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 6 }}><AlertTriangle size={14} /> {parseErr}</div>}
 
       {rows.length === 0 && !parseErr && (
-        <EmptyState icon="📄" title="No CSV uploaded yet" desc="Download the template, fill in your products, and upload it here" />
+        <EmptyState icon={<FileText size={26} color={T.textLight} />} title="No CSV uploaded yet" desc="Download the template, fill in your products, and upload it here" />
       )}
 
       {rows.length > 0 && (
@@ -268,8 +269,8 @@ export function BulkUploadCsvPanel({ masterOrder, onDone }) {
                     <td style={{ padding: '9px 12px', fontSize: 12, color: T.textMuted }}>{row.stages.length}</td>
                     <td style={{ padding: '9px 12px' }}>
                       {v.status === 'valid'
-                        ? <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: T.successBg, color: T.success, border: `1px solid ${T.successBorder}` }}>✓ Valid</span>
-                        : <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: T.dangerBg, color: T.danger, border: `1px solid ${T.dangerBorder}` }}>⚠ {v.errors.length} issue{v.errors.length !== 1 ? 's' : ''}</span>}
+                        ? <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: T.successBg, color: T.success, border: `1px solid ${T.successBorder}`, display: 'inline-flex', alignItems: 'center', gap: 4 }}><CheckCircle2 size={11} /> Valid</span>
+                        : <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: T.dangerBg, color: T.danger, border: `1px solid ${T.dangerBorder}`, display: 'inline-flex', alignItems: 'center', gap: 4 }}><AlertTriangle size={11} /> {v.errors.length} issue{v.errors.length !== 1 ? 's' : ''}</span>}
                     </td>
                   </tr>
                 )
@@ -279,7 +280,7 @@ export function BulkUploadCsvPanel({ masterOrder, onDone }) {
                     <td colSpan={6} style={{ padding: '14px 16px', background: '#fafbfc' }}>
                       {v.errors.length > 0 && (
                         <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 3 }}>
-                          {v.errors.map((e, i) => <div key={i} style={{ fontSize: 12, color: T.danger }}>⚠ {e}</div>)}
+                          {v.errors.map((e, i) => <div key={i} style={{ fontSize: 12, color: T.danger, display: 'flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={12} /> {e}</div>)}
                         </div>
                       )}
                       <div className="form-grid-3" style={{ marginBottom: 10 }}>
