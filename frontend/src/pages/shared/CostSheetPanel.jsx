@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { AlertTriangle, Download, X } from 'lucide-react'
 import { T } from '../../constants.js'
 import { Card, Btn, Input, FlexRow, Badge, useToast, LoadingScreen } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -184,9 +185,10 @@ export function CostSheetPanel({ scopeType, orderId, mfrProjectId, mfrId, orderQ
       </FlexRow>
 
       {sheet?.consumptionWarning && (
-        <div style={{ background: T.warningBg, border: `1px solid ${T.warningBorder}`, borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: T.warning }}>
-          ⚠ Fabric consumption is {sheet.consumptionWarning.pctDiff > 0 ? '+' : ''}{sheet.consumptionWarning.pctDiff}% vs. the material requirement plan
-          ({sheet.consumptionWarning.requiredPerUnit.toFixed(2)}/unit planned).
+        <div style={{ background: T.warningBg, border: `1px solid ${T.warningBorder}`, borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: T.warning, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+          <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>Fabric consumption is {sheet.consumptionWarning.pctDiff > 0 ? '+' : ''}{sheet.consumptionWarning.pctDiff}% vs. the material requirement plan
+          ({sheet.consumptionWarning.requiredPerUnit.toFixed(2)}/unit planned).</span>
         </div>
       )}
 
@@ -355,7 +357,7 @@ export function CostSheetPanel({ scopeType, orderId, mfrProjectId, mfrId, orderQ
             )}
             {sheet && (
               <a href={costSheetsApi.exportUrl(sheet.id, isMaster)} target="_blank" rel="noreferrer">
-                <Btn size="sm" variant="secondary">⬇ Download Excel</Btn>
+                <Btn size="sm" variant="secondary" icon={<Download size={14} />}>Download Excel</Btn>
               </a>
             )}
             {sheet && (isOwner || isMaster) && (
@@ -469,7 +471,7 @@ function DetailTable({ title, lines, onChange, disabled, withGroup }) {
                 <td style={{ ...tdStyle, width: 110 }}><input type="number" disabled={disabled} value={l.value ?? 0} onChange={e => updateLine(i, { value: Number(e.target.value) })} style={cellInputStyle} /></td>
                 {!disabled && (
                   <td style={tdStyle}>
-                    <button type="button" onClick={() => removeLine(i)} style={{ border: 'none', background: 'transparent', color: T.danger, cursor: 'pointer', fontSize: 13, padding: '0 4px' }}>✕</button>
+                    <button type="button" onClick={() => removeLine(i)} style={{ border: 'none', background: 'transparent', color: T.danger, cursor: 'pointer', display: 'flex', padding: '0 4px' }}><X size={13} /></button>
                   </td>
                 )}
               </tr>
