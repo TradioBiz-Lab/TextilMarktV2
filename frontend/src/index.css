@@ -1,15 +1,42 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body, #root { height: 100%; overflow: hidden; }
-body { font-family: 'Inter', system-ui, sans-serif; background: #F8FAFC; color: #0f172a; -webkit-font-smoothing: antialiased; }
+/* #F7F8FA/#12141A — kept literally identical to constants.js's T.bg/T.text.
+   Two hardcoded copies, not one shared source; if either changes, update both. */
+body { font-family: 'Inter', system-ui, sans-serif; background: #F7F8FA; color: #12141A; -webkit-font-smoothing: antialiased; }
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 input, select, textarea, button { font-family: 'Inter', system-ui, sans-serif; }
 input:focus, select:focus, textarea:focus { outline: none; box-shadow: 0 0 0 3px rgba(249,115,22,0.15); border-color: #f97316 !important; }
+/* Buttons/links/custom controls get NO focus indicator without this — the
+   button:focus reset below had nothing put back in its place, so every
+   sidebar nav item, every Btn, was invisible to keyboard navigation.
+   :focus-visible (not :focus) keeps it silent for a mouse click, exactly
+   like the browser's own default behavior. outline, not box-shadow —
+   Btn/Card set boxShadow unconditionally inline, which would silently
+   clobber a CSS-level box-shadow ring the same way it already clobbers
+   grid-template-columns elsewhere in this file (see .grid-responsive-*). */
 button:focus { outline: none; }
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid #f97316;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 a { color: #f97316; text-decoration: none; }
 table { border-collapse: collapse; width: 100%; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 
 /* ── Responsive utilities ── */
 
@@ -161,6 +188,13 @@ table { border-collapse: collapse; width: 100%; }
 
   /* Hide collapse on mobile */
   .sidebar-collapse-btn { display: none !important; }
+
+  /* Nav rows measured at 35px tall — under the 44px touch-target guideline.
+     !important is deliberate: the row's own padding is set inline (it also
+     carries collapsed-state horizontal padding, genuinely dynamic per JS
+     state), and only an !important CSS rule can override an inline style at
+     any specificity. Desktop density is untouched — mobile only. */
+  .sidebar-nav-item { padding-top: 13px !important; padding-bottom: 13px !important; }
   .shell-sidebar.collapsed { width: 214px; }
 
   /* Show hamburger */

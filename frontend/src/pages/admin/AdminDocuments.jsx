@@ -20,7 +20,11 @@ export function AdminDocuments() {
   const [filt, setFilt] = useState('all')
   const [certTab, setCertTab] = useState('all')
   const [mode, setMode] = useState('docs') // 'docs' | 'certs'
-  const [openGroups, setOpenGroups] = useState(new Set())
+  // Buyer Docs is a single, always-relevant triage queue (not one group per
+  // order), so — unlike the per-order groups below it — opening it by default
+  // never scales badly with account size. Order groups and General Documents
+  // stay collapsed on purpose: real accounts can have many orders.
+  const [openGroups, setOpenGroups] = useState(new Set(['__buyer_docs__']))
   const toggleGroup = id => setOpenGroups(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   const [uf, setUf] = useState({ type: 'PO', name: '', issuer: 'Tradio', issueDate: new Date().toISOString().slice(0, 10), expiryDate: '', orderId: '', mfrId: null, buyerId: '' })
   const [fileData, setFileData] = useState(null)

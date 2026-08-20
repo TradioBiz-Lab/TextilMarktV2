@@ -7,7 +7,7 @@ import {
 } from '../../constants.js'
 import {
   Btn, Card, EmptyState, FlexRow, LoadingScreen, Modal, Mono, PageHeader,
-  Select, Input, Textarea, StatCard, useToast,
+  Select, Input, Textarea, StatCard, useToast, activateOnKey,
 } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
@@ -356,7 +356,7 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
                         exactly the two per-style columns from the update sheet. */}
                     <div style={{ padding: '9px 13px', background: '#f8fafc', borderBottom: `1px solid ${T.border}` }}>
                       <FlexRow gap={10} style={{ flexWrap: 'wrap' }}>
-                        <span onClick={() => onOpen?.(line.order.id, line.asgn.mid)}
+                        <span onClick={() => onOpen?.(line.order.id, line.asgn.mid)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => onOpen?.(line.order.id, line.asgn.mid))}
                           style={{ fontSize: 13, fontWeight: 700, color: T.text, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                           <Package size={13} /> {line.order.product}
                         </span>
@@ -413,7 +413,7 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
                                       <span style={{ fontSize: 9, fontWeight: 700, color: T.textMuted }}>{r.stage.itemsDone}/{r.stage.itemsTotal} items</span>}
                                   </FlexRow>
                                   {last && (
-                                    <div onClick={() => setOpenThread(threadOpen ? null : r.key)}
+                                    <div onClick={() => setOpenThread(threadOpen ? null : r.key)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setOpenThread(threadOpen ? null : r.key))}
                                       title="Show all updates"
                                       style={{ fontSize: 9, color: T.textLight, marginTop: 3, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
                                       <MessageCircle size={9} style={{ flexShrink: 0 }} /> {last.text}

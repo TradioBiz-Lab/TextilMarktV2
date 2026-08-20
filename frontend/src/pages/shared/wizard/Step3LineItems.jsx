@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ArrowLeft } from 'lucide-react'
 import { T, SEASONS, CATEGORIES } from '../../../constants.js'
 import { Card, Btn, Input, Select, FlexRow, useToast, Alert, FileUpload, fileUploadPayload } from '../../../components/ui.jsx'
 import { useApp } from '../../../context.jsx'
@@ -94,7 +95,7 @@ function MfrLineItemsForm({ wizardState, patchState, onNext, onBack }) {
       {err && <div style={{ marginTop: 16 }}><Alert type="danger">{err}</Alert></div>}
 
       <FlexRow justify="space-between" style={{ marginTop: 24 }}>
-        <Btn variant="secondary" size="lg" onClick={onBack}>← Back</Btn>
+        <Btn variant="secondary" size="lg" onClick={onBack} icon={<ArrowLeft size={16} />}>Back</Btn>
         <Btn size="lg" onClick={submit} disabled={saving}>{saving ? 'Creating…' : 'Next: Materials & Costing →'}</Btn>
       </FlexRow>
     </>

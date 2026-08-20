@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
-import { BarChart3, Plus, List, LayoutGrid, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown } from 'lucide-react'
+import { BarChart3, Plus, List, LayoutGrid, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react'
 import {
   T, ORDER_STATUSES,
   isStageDone, stageIsOverdue, stageStatusOf, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct,
   STAGE_STATUS_LABELS, CELL_STATE, cellState, buildMatrixSpine,
 } from '../../constants.js'
-import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, LoadingScreen, useToast, ProductThumb, Modal, SectionLabel, Textarea } from '../../components/ui.jsx'
+import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, LoadingScreen, useToast, ProductThumb, Modal, SectionLabel, Textarea, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
@@ -327,7 +327,7 @@ function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrder }) {
         </div>
 
         <FlexRow justify="flex-end" gap={8}>
-          <Btn variant="ghost" onClick={() => { onClose(); onOpenOrder(orderId, mfrId) }}>Open full order →</Btn>
+          <Btn variant="ghost" onClick={() => { onClose(); onOpenOrder(orderId, mfrId) }}>Open full order <ArrowRight size={13} style={{ marginLeft: -2 }} /></Btn>
           <Btn variant="secondary" onClick={onClose}>Close</Btn>
         </FlexRow>
       </div>
@@ -579,14 +579,14 @@ export function AdminOrders({ onOpen, onNavigate, initialStatus }) {
                   { key: 'delivery', label: 'Delivery', sortable: true },
                   { key: 'action', label: '' },
                 ].map(h => (
-                  <th key={h.key} onClick={h.sortable ? () => toggleSort(h.key) : undefined}
+                  <th key={h.key} onClick={h.sortable ? () => toggleSort(h.key) : undefined} role={h.sortable ? 'button' : undefined} tabIndex={h.sortable ? 0 : undefined} onKeyDown={h.sortable ? activateOnKey(() => toggleSort(h.key)) : undefined}
                     style={{ padding: '10px 16px', textAlign: 'left', fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.07em', whiteSpace: 'nowrap', cursor: h.sortable ? 'pointer' : 'default', userSelect: h.sortable ? 'none' : undefined }}>
                     {h.sortable ? (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 6, background: sortCol === h.key ? T.primaryLight : '#f1f5f9', color: sortCol === h.key ? T.primaryDark : T.textMuted, border: `1px solid ${sortCol === h.key ? '#fed7aa' : T.border}`, transition: 'all 0.15s' }}>
                         {h.label}
-                        <span style={{ display: 'inline-flex', flexDirection: 'column', lineHeight: 1, fontSize: 8, gap: 0 }}>
-                          <span style={{ color: sortCol === h.key && sortDir === 'asc' ? T.primaryDark : '#cbd5e1' }}>▲</span>
-                          <span style={{ color: sortCol === h.key && sortDir === 'desc' ? T.primaryDark : '#cbd5e1' }}>▼</span>
+                        <span style={{ display: 'inline-flex', flexDirection: 'column', lineHeight: 0, gap: 0, marginLeft: -2 }}>
+                          <ChevronUp size={11} color={sortCol === h.key && sortDir === 'asc' ? T.primaryDark : '#cbd5e1'} style={{ marginBottom: -3 }} />
+                          <ChevronDown size={11} color={sortCol === h.key && sortDir === 'desc' ? T.primaryDark : '#cbd5e1'} />
                         </span>
                       </span>
                     ) : h.label}
@@ -602,7 +602,7 @@ export function AdminOrders({ onOpen, onNavigate, initialStatus }) {
                   <tr key={`sp-${g.moId}`} aria-hidden="true"><td colSpan={8} style={{ padding: 0, height: 12, border: 'none', background: T.bg }} /></tr>
                 ) : null
                 const headerRow = (
-                  <tr key={`h-${g.moId}`} onClick={() => toggleGroup(g.moId)} style={{ cursor: 'pointer', background: '#f1f5f9' }}>
+                  <tr key={`h-${g.moId}`} onClick={() => toggleGroup(g.moId)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => toggleGroup(g.moId))} style={{ cursor: 'pointer', background: '#f1f5f9' }}>
                     <td colSpan={8} style={{ padding: '10px 16px' }}>
                       <FlexRow gap={10}>
                         <span style={{ color: T.textMuted, transition: 'transform 0.15s', transform: collapsed ? 'rotate(-90deg)' : 'none', display: 'inline-flex' }}><ChevronDown size={13} /></span>
@@ -621,7 +621,7 @@ export function AdminOrders({ onOpen, onNavigate, initialStatus }) {
                   return visibleAsgns.map((a, ai) => (
                     <tr key={`${o.id}-${ai}`}
                       style={{ borderTop: `1px solid ${T.border}`, cursor: 'pointer' }}
-                      onClick={() => onOpen(o.id, a?.mid)}
+                      onClick={() => onOpen(o.id, a?.mid)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => onOpen(o.id, a?.mid))}
                       onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                     >
@@ -654,7 +654,7 @@ export function AdminOrders({ onOpen, onNavigate, initialStatus }) {
                       </td>
                       <td style={{ padding: '11px 16px' }}>
                         <FlexRow gap={6}>
-                          <Btn size="sm" onClick={(e) => { e.stopPropagation(); onOpen(o.id, a?.mid) }}>Manage →</Btn>
+                          <Btn size="sm" onClick={(e) => { e.stopPropagation(); onOpen(o.id, a?.mid) }}>Manage <ArrowRight size={12} style={{ marginLeft: -2 }} /></Btn>
                           <Btn size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); setEditTarget(o) }}>Edit</Btn>
                           <button
                             onClick={(e) => { e.stopPropagation(); setDeleteTarget(o) }}
@@ -715,7 +715,7 @@ export function AdminOrders({ onOpen, onNavigate, initialStatus }) {
                               Step
                             </th>
                             {entries.map(({ order, asgn }) => (
-                              <th key={`${order.id}-${asgn.mid}`} onClick={() => onOpen(order.id, asgn.mid)}
+                              <th key={`${order.id}-${asgn.mid}`} onClick={() => onOpen(order.id, asgn.mid)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => onOpen(order.id, asgn.mid))}
                                 title={`${order.product} — ${order.id}`}
                                 style={{ padding: '9px 10px', textAlign: 'left', minWidth: 150, cursor: 'pointer', borderLeft: `1px solid ${T.border}` }}>
                                 <FlexRow gap={6}>
@@ -766,7 +766,7 @@ export function AdminOrders({ onOpen, onNavigate, initialStatus }) {
                                     stage.blockedReason ? `Blocked: ${stage.blockedReason}` : null,
                                   ].filter(Boolean) : null
                                   return (
-                                    <td key={`${order.id}-${asgn.mid}`} onClick={() => stage && setQuickStage({ orderId: order.id, mfrId: asgn.mid, stageIndex: stageIdx })}
+                                    <td key={`${order.id}-${asgn.mid}`} onClick={() => stage && setQuickStage({ orderId: order.id, mfrId: asgn.mid, stageIndex: stageIdx })} role={stage ? 'button' : undefined} tabIndex={stage ? 0 : undefined} onKeyDown={stage ? activateOnKey(() => setQuickStage({ orderId: order.id, mfrId: asgn.mid, stageIndex: stageIdx })) : undefined}
                                       onMouseEnter={e => tipLines && showMatrixTip(e.clientX, e.clientY, tipLines)}
                                       onMouseMove={e => tipLines && setMatrixTip(tip => tip && { ...tip, x: e.clientX, y: e.clientY })}
                                       onMouseLeave={hideMatrixTip}

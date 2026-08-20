@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { ShoppingBag, Factory, Package, Siren, Target, Check, ClipboardList, Megaphone, ChevronRight } from 'lucide-react'
+import { ShoppingBag, Factory, Package, Siren, Target, Check, ClipboardList, Megaphone, ChevronRight, ArrowRight } from 'lucide-react'
 import { T, ST, isExpiringSoon, isExpired, getToday, dayNumber } from '../../constants.js'
-import { StatCard, Card, Grid, EmptyState, Mono, PageHeader, Badge, Btn, FlexRow, Modal, Select, Textarea, Input, Alert, LoadingScreen, DocCard } from '../../components/ui.jsx'
+import { StatCard, Card, Grid, EmptyState, Mono, PageHeader, Badge, Btn, FlexRow, Modal, Select, Textarea, Input, Alert, LoadingScreen, DocCard, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
 const fmtDate = d => {
@@ -260,7 +260,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
                   const st = ST[overallStatus] || { bg: '#f1f5f9', c: '#475569' }
                   return (
                     <div key={group.key}
-                      onClick={() => onNavigate && onNavigate('orders')}
+                      onClick={() => onNavigate && onNavigate('orders')} role="button" tabIndex={0} onKeyDown={activateOnKey(() => onNavigate && onNavigate('orders'))}
                       style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: '12px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, transition: 'all 0.15s', background: T.surface }}
                       onMouseEnter={e => { e.currentTarget.style.background = st.bg; e.currentTarget.style.borderColor = st.c + '55' }}
                       onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.borderColor = T.border }}
@@ -281,7 +281,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
       <Card style={{ marginBottom: 14 }}>
         <FlexRow justify="space-between" style={{ marginBottom: 14 }}>
           <span style={{ fontSize: 14, fontWeight: 700, color: T.text, display: 'flex', alignItems: 'center', gap: 7 }}><Target size={15} /> My Action Items</span>
-          <Btn size="sm" variant="secondary" onClick={() => onNavigate && onNavigate('action_items')}>Open Action Items →</Btn>
+          <Btn size="sm" variant="secondary" onClick={() => onNavigate && onNavigate('action_items')}>Open Action Items <ArrowRight size={13} style={{ marginLeft: -2 }} /></Btn>
         </FlexRow>
         {combinedOpen.length === 0 ? (
           <EmptyState icon={<Check size={26} color={T.success} strokeWidth={2.5} />} compact title="All caught up" desc="No open action items assigned to you" />
@@ -297,6 +297,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
                 const overdue = item.eta && dayNumber(item.eta) - todayNum < 0
                 return (
                   <div key={item.id} onClick={() => item._kind === 'stage' ? (onOpen && onOpen(item.orderId)) : (onNavigate && onNavigate('action_items'))}
+                    role="button" tabIndex={0} onKeyDown={activateOnKey(() => item._kind === 'stage' ? (onOpen && onOpen(item.orderId)) : (onNavigate && onNavigate('action_items')))}
                     style={{ border: `1px solid ${overdue ? T.dangerBorder : T.border}`, borderRadius: 8, padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, background: overdue ? T.dangerBg : '#fafbfc' }}>
                     {item._kind === 'stage' && <span style={{ fontSize: 9, fontWeight: 800, color: T.primaryDark, background: T.primaryLight, padding: '1px 6px', borderRadius: 4 }}>TNA</span>}
                     <span style={{ fontSize: 12, fontWeight: 600, color: T.text, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</span>

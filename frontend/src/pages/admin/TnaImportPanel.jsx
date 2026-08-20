@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from 'react'
 import Papa from 'papaparse'
-import { FileText, BarChart3 } from 'lucide-react'
+import { FileText, BarChart3, ArrowRight } from 'lucide-react'
 import { T } from '../../constants.js'
 import { Btn, FlexRow, EmptyState } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -223,7 +223,7 @@ export function TnaImportPanel({ onClose }) {
                 <FlexRow gap={8} style={{ marginBottom: c.changes.length || c.skipped.length ? 8 : 0 }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{c.product}</span>
                   {c.order
-                    ? <span style={{ fontSize: 10, color: T.textMuted, fontFamily: "'JetBrains Mono',monospace" }}>→ {c.order.id}</span>
+                    ? <span style={{ fontSize: 10, color: T.textMuted, fontFamily: "'JetBrains Mono',monospace", display: 'inline-flex', alignItems: 'center', gap: 3 }}><ArrowRight size={9} /> {c.order.id}</span>
                     : <span style={{ fontSize: 11, color: T.danger }}>{c.error}</span>}
                   <span style={{ marginLeft: 'auto', fontSize: 11, color: T.textMuted }}>
                     {c.changes.length} change{c.changes.length !== 1 ? 's' : ''}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, FolderOpen, Bot } from 'lucide-react'
+import { Plus, FolderOpen, Bot, ArrowLeft } from 'lucide-react'
 import { T, REQUIREMENT_CATEGORIES, REQUIREMENT_CATEGORY_LABEL } from '../../constants.js'
-import { PageHeader, Input, Btn, Card, Badge, FlexRow, EmptyState, LoadingScreen, useToast, SupplierCombobox, Modal, Tabs } from '../../components/ui.jsx'
+import { PageHeader, Input, Btn, Card, Badge, FlexRow, EmptyState, LoadingScreen, useToast, SupplierCombobox, Modal, Tabs, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { CostSheetPanel } from '../shared/CostSheetPanel.jsx'
 import { AiDraftModal } from '../shared/AiDraftModal.jsx'
@@ -89,7 +89,7 @@ export function MfrProjects({ onNavigate }) {
 function ProjectRow({ p, onOpen, onDelete }) {
   return (
     <FlexRow style={{ justifyContent: 'space-between', padding: '8px 0', borderTop: `1px solid ${T.border}` }}>
-      <div style={{ cursor: 'pointer' }} onClick={onOpen}>
+      <div style={{ cursor: 'pointer' }} onClick={onOpen} role="button" tabIndex={0} onKeyDown={activateOnKey(onOpen)}>
         <div style={{ fontWeight: 600, fontSize: 13 }}>{p.styleName}</div>
         <div style={{ fontSize: 11, color: T.textMuted }}>{p.category || '—'} · {p.totalQty?.toLocaleString() || 0} pcs</div>
       </div>
@@ -205,7 +205,7 @@ function ProjectDetail({ project: initialProject, onBack, getMaterialRequirement
       )}
 
       <FlexRow style={{ marginBottom: 12 }}>
-        <Btn size="sm" variant="secondary" onClick={onBack}>← Back</Btn>
+        <Btn size="sm" variant="secondary" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
       </FlexRow>
       <PageHeader title={project.styleName} subtitle={`${project.buyerName || 'No buyer set'} · ${project.category || '—'}`}
         action={<FlexRow gap={8}>

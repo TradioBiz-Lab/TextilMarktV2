@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Check } from 'lucide-react'
 import { T } from '../../../constants.js'
+import { activateOnKey } from '../../../components/ui.jsx'
 import { useApp } from '../../../context.jsx'
 import { Step1MasterOrder } from './Step1MasterOrder.jsx'
 import { Step2Documents } from './Step2Documents.jsx'
@@ -71,7 +72,7 @@ export function OrderWizard({ onNavigate, onOpenOrder }) {
             const done = step > s.n
             const active = step === s.n
             return (
-              <div key={s.n} onClick={() => { if (reached) goTo(s.n) }}
+              <div key={s.n} onClick={() => { if (reached) goTo(s.n) }} role={reached ? 'button' : undefined} tabIndex={reached ? 0 : undefined} onKeyDown={reached ? activateOnKey(() => goTo(s.n)) : undefined}
                 style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: reached ? 'pointer' : 'default' }}>
                 {done ? (
                   <span style={{ width: 14, height: 14, borderRadius: '50%', background: T.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>

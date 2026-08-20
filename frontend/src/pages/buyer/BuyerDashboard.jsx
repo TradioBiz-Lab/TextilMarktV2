@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { AlertTriangle, Folder, Check, Ban, ClipboardList, CheckCircle2, ShieldAlert, List, LayoutGrid, Package, Siren, X, Shield, ChevronDown, Search, ChevronRight } from 'lucide-react'
 import { T, ORDER_STATUSES, getToday, isExpiringSoon, isExpired, cellState, CELL_STATE, buildMatrixSpine, stagePct } from '../../constants.js'
-import { Badge, Card, EmptyState, Mono, Btn, LoadingScreen, MfrProfileLink, ProductThumb } from '../../components/ui.jsx'
+import { Badge, Card, EmptyState, Mono, Btn, LoadingScreen, MfrProfileLink, ProductThumb, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { ordersApi } from '../../api.js'
 
@@ -122,7 +122,7 @@ function BuyerMatrixView({ groups, collapsedGroups, toggleGroup, onOpen }) {
         const groupLabel = g.mo?.orderName || (g.moId === '__none__' ? 'Other Orders' : g.moId)
         return (
           <div key={g.moId} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, overflow: 'hidden' }}>
-            <div onClick={() => toggleGroup(g.moId)}
+            <div onClick={() => toggleGroup(g.moId)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => toggleGroup(g.moId))}
               style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 18px', background: '#f1f5f9', cursor: 'pointer', userSelect: 'none' }}>
               <span style={{ color: T.textMuted, transition: 'transform 0.15s', transform: collapsed ? 'rotate(-90deg)' : 'none', display: 'inline-flex' }}><ChevronDown size={13} /></span>
               <span style={{ fontSize: 13, fontWeight: 800, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Folder size={13} /> {groupLabel}</span>
@@ -139,7 +139,7 @@ function BuyerMatrixView({ groups, collapsedGroups, toggleGroup, onOpen }) {
                         Step
                       </th>
                       {entries.map(({ order, asgn }) => (
-                        <th key={`${order.id}-${asgn.mid}`} onClick={() => onOpen(order.id, asgn.mid)}
+                        <th key={`${order.id}-${asgn.mid}`} onClick={() => onOpen(order.id, asgn.mid)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => onOpen(order.id, asgn.mid))}
                           title={`${order.product} — ${order.id}`}
                           style={{ padding: '9px 10px', textAlign: 'left', minWidth: 150, cursor: 'pointer', borderLeft: `1px solid ${T.border}` }}>
                           <div style={{ fontSize: 11, fontWeight: 700, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 130 }}>
@@ -167,7 +167,7 @@ function BuyerMatrixView({ groups, collapsedGroups, toggleGroup, onOpen }) {
                               ? `${step} — ${st.label}\nPlanned: ${fmtStageDate(stage.baselineEta)}${stage.eta && stage.eta !== stage.baselineEta ? `  →  Revised: ${fmtStageDate(stage.eta)}` : ''}\nActual: ${fmtStageDate(stage.actualEnd)}`
                               : step
                             return (
-                              <td key={`${order.id}-${asgn.mid}`} onClick={() => onOpen(order.id, asgn.mid)}
+                              <td key={`${order.id}-${asgn.mid}`} onClick={() => onOpen(order.id, asgn.mid)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => onOpen(order.id, asgn.mid))}
                                 title={tip}
                                 style={{ padding: '5px 8px', borderLeft: `1px solid ${T.border}`, cursor: 'pointer', verticalAlign: 'top' }}>
                                 {!stage ? (
@@ -318,7 +318,7 @@ export function BuyerDashboard({ onOpen, onSubmitReq }) {
 
       {/* ── Submit Requirement Banner ── */}
       <div
-        onClick={onSubmitReq}
+        onClick={onSubmitReq} role="button" tabIndex={0} onKeyDown={activateOnKey(onSubmitReq)}
         style={{ background: T.heroGradient, borderRadius: 14, padding: '20px 26px', marginBottom: 24, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, transition: 'transform 0.15s, box-shadow 0.15s', position: 'relative', overflow: 'hidden' }}
         onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 8px 28px rgba(0,59,115,0.3)' }}
         onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none' }}
@@ -506,7 +506,7 @@ export function BuyerDashboard({ onOpen, onSubmitReq }) {
             const collapsed = collapsedGroups.has(g.moId)
             const groupLabel = g.mo?.orderName || (g.moId === '__none__' ? 'Other Orders' : g.moId)
             const GroupHeader = (
-              <div onClick={() => toggleGroup(g.moId)}
+              <div onClick={() => toggleGroup(g.moId)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => toggleGroup(g.moId))}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 18px', background: '#f1f5f9', borderRadius: collapsed ? 10 : '10px 10px 0 0', cursor: 'pointer', userSelect: 'none' }}>
                 <span style={{ color: T.textMuted, transition: 'transform 0.15s', transform: collapsed ? 'rotate(-90deg)' : 'none', display: 'inline-flex' }}><ChevronDown size={13} /></span>
                 <span style={{ fontSize: 13, fontWeight: 800, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Folder size={13} /> {groupLabel}</span>
@@ -531,7 +531,7 @@ export function BuyerDashboard({ onOpen, onSubmitReq }) {
                       const overdue = new Date(o.delivery) < new Date(getToday()) && rowStatus !== 'Delivered'
                       const rowBg = rowStatus === 'Delayed' ? '#fff8f8' : rowStatus === 'On Hold' ? '#fefdf5' : T.surface
                       return (
-                        <div key={`${o.id}-${a ? a.sub : 'm'}-${i}`} onClick={() => onOpen(o.id, a?.mid)}
+                        <div key={`${o.id}-${a ? a.sub : 'm'}-${i}`} onClick={() => onOpen(o.id, a?.mid)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => onOpen(o.id, a?.mid))}
                           style={{ display: 'grid', gridTemplateColumns: '225px 56px 1fr 1.2fr 80px 110px 120px 120px', gap: 0, minWidth: 876, padding: '14px 22px', alignItems: 'start', cursor: 'pointer', background: rowBg, borderBottom: `1px solid ${T.border}`, transition: 'background 0.12s' }}
                           onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
                           onMouseLeave={e => e.currentTarget.style.background = rowBg}>
@@ -580,7 +580,7 @@ export function BuyerDashboard({ onOpen, onSubmitReq }) {
                     const o = t.order; const a = t.mfr; const rowStatus = t.status
                     const overdue = new Date(o.delivery) < new Date(getToday()) && rowStatus !== 'Delivered'
                     return (
-                      <div key={`c-${o.id}-${i}`} onClick={() => onOpen(o.id, a?.mid)}
+                      <div key={`c-${o.id}-${i}`} onClick={() => onOpen(o.id, a?.mid)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => onOpen(o.id, a?.mid))}
                         style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: '14px 16px', cursor: 'pointer' }}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
                           <div style={{ minWidth: 0, display: 'flex', gap: 10 }}>

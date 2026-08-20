@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AlertTriangle, User, Shield, Settings2, MessageCircle, ClipboardList, Image as ImageIcon, Package, Check } from 'lucide-react'
+import { AlertTriangle, User, Shield, Settings2, MessageCircle, ClipboardList, Image as ImageIcon, Package, Check, ArrowLeft, ArrowRight, ChevronRight } from 'lucide-react'
 import { T, STAGE_DOC_MAP, getToday, isExpiringSoon, isExpired } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, FlexRow, Mono, Tabs, Alert, EmptyState, FileUpload, Input, DocCard, LoadingScreen, StageTimeline, StageDocGroup, useToast, fileUploadPayload, ProductThumb } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -55,7 +55,7 @@ export function MfrOrderDetail({ orderId, onBack }) {
   if (!order || !mine) return (
     <div>
       <FlexRow style={{ marginBottom: 18 }} gap={12}>
-        <Btn variant="secondary" size="sm" onClick={onBack}>← Back</Btn>
+        <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
       </FlexRow>
       <Card><EmptyState icon={<AlertTriangle size={26} color={T.textLight} />} title="Order not found" desc={`Order ${orderId} could not be loaded.`} /></Card>
     </div>
@@ -400,7 +400,7 @@ export function MfrOrderDetail({ orderId, onBack }) {
 
       {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-        <Btn variant="secondary" size="sm" onClick={onBack}>← Back</Btn>
+        <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
         <ProductThumb order={order} size="lg" />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -454,7 +454,7 @@ export function MfrOrderDetail({ orderId, onBack }) {
             return (
               <div style={{ padding: '10px 20px', borderTop: `1px solid ${T.border}`, background: T.successBg, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ fontSize: 13, color: T.success }}><strong>{stages[nxt - 1]?.name}</strong> is complete! Ready to advance to <strong>{stages[nxt]?.name}</strong>?</span>
-                <Btn variant="success" size="sm" onClick={() => openStageModal(nxt)}>Advance →</Btn>
+                <Btn variant="success" size="sm" onClick={() => openStageModal(nxt)}>Advance <ArrowRight size={12} style={{ marginLeft: -2 }} /></Btn>
               </div>
             )
           }
@@ -507,7 +507,7 @@ export function MfrOrderDetail({ orderId, onBack }) {
                   return (
                     <div
                       key={i}
-                      onClick={() => openStageModal(i)}
+                      onClick={() => openStageModal(i)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => openStageModal(i))}
                       style={{
                         display: 'flex', alignItems: 'center', gap: 14,
                         padding: '12px 14px',
@@ -579,7 +579,7 @@ export function MfrOrderDetail({ orderId, onBack }) {
                       </div>
 
                       {/* Edit indicator */}
-                      <div style={{ fontSize: 14, color: T.textLight, flexShrink: 0 }}>›</div>
+                      <div style={{ color: T.textLight, flexShrink: 0, display: 'flex' }}><ChevronRight size={16} /></div>
                     </div>
                   )
                 })}

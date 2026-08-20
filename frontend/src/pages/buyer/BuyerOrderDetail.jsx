@@ -1,11 +1,11 @@
 import { useState, Fragment } from 'react'
-import { AlertTriangle, MessageCircle, BarChart3, ClipboardList, Image as ImageIcon, Shield, Package, Eye, Check, Download } from 'lucide-react'
+import { AlertTriangle, MessageCircle, BarChart3, ClipboardList, Image as ImageIcon, Shield, Package, Eye, Check, Download, ArrowLeft, ChevronRight } from 'lucide-react'
 import {
   T, isExpiringSoon, isExpired,
   stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone,
   stagePct, stageProgressLabel, dayNumber,
 } from '../../constants.js'
-import { Badge, Btn, Card, FlexRow, Mono, EmptyState, DocCard, Tabs, Alert, LoadingScreen, StageTimeline, MfrProfileLink, StageDocGroup, dataUrlToBlobUrl, ProductThumb } from '../../components/ui.jsx'
+import { Badge, Btn, Card, FlexRow, Mono, EmptyState, DocCard, Tabs, Alert, LoadingScreen, StageTimeline, MfrProfileLink, StageDocGroup, dataUrlToBlobUrl, ProductThumb, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
 function TabLabel({ Icon, text }) {
@@ -55,7 +55,7 @@ export function BuyerOrderDetail({ orderId, onBack, initialMid }) {
   if (!order) return (
     <div>
       <FlexRow style={{ marginBottom: 18 }} gap={12}>
-        <Btn variant="secondary" size="sm" onClick={onBack}>← Back</Btn>
+        <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
       </FlexRow>
       <Card>
         <EmptyState icon={<AlertTriangle size={26} color={T.textLight} />} title="Order not found" desc={`Order ${orderId} could not be loaded. It may have been removed or you may not have access.`} />
@@ -90,7 +90,7 @@ export function BuyerOrderDetail({ orderId, onBack, initialMid }) {
     return (
       <div>
         <FlexRow style={{ marginBottom: 18 }} gap={12}>
-          <Btn variant="secondary" size="sm" onClick={onBack}>← Back</Btn>
+          <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
           <div style={{ flex: 1, minWidth: 0 }}>
             <Mono style={{ fontSize: 14, fontWeight: 800 }}>{order.id}</Mono>
             <div style={{ fontSize: 13, color: T.textMuted, marginTop: 3 }}>
@@ -108,7 +108,7 @@ export function BuyerOrderDetail({ orderId, onBack, initialMid }) {
             const stageCnt = orderDocs.filter(d => d.stageIndex != null && String(d.mfrId || '') === String(a.mid)).length
             return (
               <div key={a.mid}
-                onClick={() => setSelectedMid(String(a.mid))}
+                onClick={() => setSelectedMid(String(a.mid))} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setSelectedMid(String(a.mid)))}
                 style={{ border: `1px solid ${T.border}`, borderRadius: 12, padding: '16px 18px', cursor: 'pointer', background: T.surface, transition: 'all 0.15s' }}
                 onMouseEnter={e => { e.currentTarget.style.background = T.primaryLight; e.currentTarget.style.borderColor = T.primary }}
                 onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.borderColor = T.border }}
@@ -172,7 +172,7 @@ export function BuyerOrderDetail({ orderId, onBack, initialMid }) {
       {viewer}
       {/* ── Header ── */}
       <FlexRow style={{ marginBottom: 18 }} gap={12}>
-        <Btn variant="secondary" size="sm" onClick={onBack}>← Back</Btn>
+        <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
         <ProductThumb order={order} size="lg" />
         <div style={{ flex: 1, minWidth: 0 }}>
           <Mono style={{ fontSize: 14, fontWeight: 800 }}>{order.id}</Mono>
@@ -360,7 +360,7 @@ export function BuyerOrderDetail({ orderId, onBack, initialMid }) {
                                 <td style={{ padding: '8px 10px', textAlign: 'right' }}>
                                   <button onClick={() => setExpandedStage(rowExpanded ? null : rowKey)}
                                     style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2 }}>
-                                    <span style={{ fontSize: 13, color: T.textMuted, display: 'inline-block', transform: rowExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>›</span>
+                                    <span style={{ color: T.textMuted, display: 'inline-flex', transition: 'transform 0.15s', transform: rowExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}><ChevronRight size={14} /></span>
                                   </button>
                                 </td>
                               </tr>

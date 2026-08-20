@@ -1,11 +1,11 @@
 import { useState, useMemo, Fragment } from 'react'
-import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, ArrowLeftRight, X, Download } from 'lucide-react'
+import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight } from 'lucide-react'
 import {
   T, ORDER_STATUSES, STAGE_DOC_MAP, DOC_ICONS,
   stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone,
   stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber,
 } from '../../constants.js'
-import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb } from '../../components/ui.jsx'
+import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
@@ -34,6 +34,21 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   const [viewerName, setViewerName] = useState('')
   const [viewerLoading, setViewerLoading] = useState(false)
   const closeViewer = () => { if (viewerBlob) { viewerBlob.revoke(); setViewerBlob(null) }; setViewerLoading(false) }
+  // Shared by every stage-evidence/PO chip — factored out once so the keyboard
+  // path (onKeyDown) can call the exact same logic as the click path, instead
+  // of duplicating this async body a second time per chip.
+  const openDocViewer = async (d) => {
+    try {
+      setViewerName(d.name)
+      setViewerLoading(true)
+      setViewerBlob(null)
+      const data = await getDocData(d.id)
+      if (!data?.dataUrl) { setViewerLoading(false); return }
+      const blob = dataUrlToBlobUrl(data.dataUrl)
+      if (!blob) { setViewerLoading(false); return }
+      setViewerBlob(blob)
+    } catch { setViewerLoading(false) }
+  }
 
   // Status override modal
   const [showSt, setShowSt] = useState(false)
@@ -521,7 +536,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     return (
       <div>
         <FlexRow style={{ marginBottom: 20 }} gap={12}>
-          <Btn variant="secondary" size="sm" onClick={onBack} icon="←">Back</Btn>
+          <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
           <ProductThumb order={order} size="lg" onClick={() => setShowEdit(true)} />
           <div style={{ flex: 1 }}>
             <FlexRow gap={10}>
@@ -545,7 +560,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
             const stageCnt = orderDocs.filter(d => d.stageIndex != null && String(d.mfrId || '') === String(a.mid)).length
             return (
               <div key={a.mid}
-                onClick={() => setSelectedMid(String(a.mid))}
+                onClick={() => setSelectedMid(String(a.mid))} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setSelectedMid(String(a.mid)))}
                 style={{ border: `1px solid ${a.status === 'Delayed' ? T.dangerBorder : a.status === 'On Hold' ? T.warningBorder : T.border}`, borderRadius: 12, padding: '16px 18px', cursor: 'pointer', background: a.status === 'Delayed' ? '#fff8f8' : a.status === 'On Hold' ? '#fefdf5' : T.surface, transition: 'all 0.15s' }}
                 onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
                 onMouseLeave={e => e.currentTarget.style.opacity = '1'}
@@ -871,18 +886,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                         {poRow.length > 0 && (
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
                             {poRow.map(d => (
-                              <span key={d.id} onClick={async () => {
-                                try {
-                                  setViewerName(d.name)
-                                  setViewerLoading(true)
-                                  setViewerBlob(null)
-                                  const data = await getDocData(d.id)
-                                  if (!data?.dataUrl) { setViewerLoading(false); return }
-                                  const blob = dataUrlToBlobUrl(data.dataUrl)
-                                  if (!blob) { setViewerLoading(false); return }
-                                  setViewerBlob(blob)
-                                } catch { setViewerLoading(false) }
-                              }} style={{ fontSize: 10, background: T.primaryLight, color: T.primaryDark, padding: '2px 8px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${T.warningBorder}`, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                              <span key={d.id} onClick={() => openDocViewer(d)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => openDocViewer(d))} style={{ fontSize: 10, background: T.primaryLight, color: T.primaryDark, padding: '2px 8px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${T.warningBorder}`, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                                 <Paperclip size={10} /> {d.name}
                               </span>
                             ))}
@@ -916,18 +920,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                 {uploadedStageDocs.length > 0 && (
                   <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
                     {uploadedStageDocs.map(d => (
-                      <span key={d.id} onClick={async () => {
-                        try {
-                          setViewerName(d.name)
-                          setViewerLoading(true)
-                          setViewerBlob(null)
-                          const data = await getDocData(d.id)
-                          if (!data?.dataUrl) { setViewerLoading(false); return }
-                          const blob = dataUrlToBlobUrl(data.dataUrl)
-                          if (!blob) { setViewerLoading(false); return }
-                          setViewerBlob(blob)
-                        } catch { setViewerLoading(false) }
-                      }} style={{ fontSize: 10, background: T.primaryLight, color: T.primaryDark, padding: '2px 8px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${T.warningBorder}`, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                      <span key={d.id} onClick={() => openDocViewer(d)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => openDocViewer(d))} style={{ fontSize: 10, background: T.primaryLight, color: T.primaryDark, padding: '2px 8px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${T.warningBorder}`, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                         {(() => { const Icon = DOC_ICONS[d.type] || FileText; return <Icon size={10} /> })()} {d.name}
                       </span>
                     ))}
@@ -1153,7 +1146,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
 
       {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-        <Btn variant="secondary" size="sm" onClick={onBack} icon="←">Back</Btn>
+        <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
         <ProductThumb order={order} size="lg" onClick={() => setShowEdit(true)} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <FlexRow gap={10} style={{ flexWrap: 'wrap' }}>
@@ -1262,7 +1255,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                           const receivedCount = (s.materials || []).filter(m => m.status === 'received').length
                           return (
                             <Fragment key={i}>
-                            <tr onClick={() => openUpdateStage(a.mid, i)}
+                            <tr onClick={() => openUpdateStage(a.mid, i)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => openUpdateStage(a.mid, i))}
                               style={{ borderTop: `1px solid ${T.border}`, cursor: 'pointer', background: done ? T.successBg : (isLate || s.blocked) ? T.dangerBg : 'transparent' }}>
                               <td style={{ padding: '8px 10px', fontSize: 10, color: T.textLight }}>{i + 1}</td>
                               <td style={{ padding: '8px 10px', minWidth: 200 }}>
@@ -1313,7 +1306,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                               <td style={{ padding: '8px 10px', textAlign: 'right' }}>
                                 <button onClick={e => { e.stopPropagation(); setExpandedStage(rowExpanded ? null : rowKey) }}
                                   style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2 }}>
-                                  <span style={{ fontSize: 13, color: T.textMuted, display: 'inline-block', transform: rowExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>›</span>
+                                  <span style={{ color: T.textMuted, display: 'inline-flex', transition: 'transform 0.15s', transform: rowExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}><ChevronRight size={14} /></span>
                                 </button>
                               </td>
                             </tr>

@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import Papa from 'papaparse'
 import { Package, Download, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { T } from '../../constants.js'
-import { Btn, FlexRow, EmptyState } from '../../components/ui.jsx'
+import { Btn, FlexRow, EmptyState, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
 const MAX_ROWS = 200
@@ -116,7 +116,7 @@ export function MaterialRequirementsBulkUploadPanel({ onDone }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div>
-        <div onClick={() => fileInputRef.current?.click()}
+        <div onClick={() => fileInputRef.current?.click()} role="button" tabIndex={0} onKeyDown={activateOnKey(() => fileInputRef.current?.click())}
           style={{ border: `2px dashed ${T.border}`, borderRadius: 10, padding: '24px', textAlign: 'center', cursor: 'pointer', background: '#fafbff' }}>
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6, color: T.textLight }}><Package size={26} /></div>
           <div style={{ fontWeight: 600, color: T.textMuted }}>Click to upload a CSV, or drag & drop</div>

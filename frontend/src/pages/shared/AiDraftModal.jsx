@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FileText, SearchX, AlertTriangle } from 'lucide-react'
+import { FileText, SearchX, AlertTriangle, ArrowLeft } from 'lucide-react'
 import { T, REQUIREMENT_CATEGORY_LABEL } from '../../constants.js'
 import { Card, Btn, FlexRow, useToast, LoadingScreen, EmptyState, Modal } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -91,7 +91,7 @@ export function AiDraftModal({ scopeType, orderId, mfrProjectId, candidateDocs, 
               </div>
             ))}
           <FlexRow justify="space-between">
-            <Btn variant="secondary" onClick={() => setDraftLines(null)}>← Try Different Documents</Btn>
+            <Btn variant="secondary" onClick={() => setDraftLines(null)} icon={<ArrowLeft size={14} />}>Try Different Documents</Btn>
             <Btn onClick={saveAccepted} disabled={saving || accepted.size === 0}>{saving ? 'Saving…' : `Add ${accepted.size} Selected Line${accepted.size !== 1 ? 's' : ''}`}</Btn>
           </FlexRow>
         </div>

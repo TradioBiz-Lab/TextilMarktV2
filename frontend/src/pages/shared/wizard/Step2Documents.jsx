@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ArrowLeft } from 'lucide-react'
 import { T, DOC_TYPES, PATTERN_LINK_ONLY_TYPES } from '../../../constants.js'
 import { Card, Btn, Select, Input, FlexRow, FileUpload, fileUploadPayload, useToast, Alert } from '../../../components/ui.jsx'
 import { useApp } from '../../../context.jsx'
@@ -97,7 +98,7 @@ export function Step2Documents({ wizardState, onNext, onBack }) {
       {err && <div style={{ marginTop: 16 }}><Alert type="danger">{err}</Alert></div>}
 
       <FlexRow justify="space-between" style={{ marginTop: 24 }}>
-        <Btn variant="secondary" size="lg" onClick={onBack}>← Back</Btn>
+        <Btn variant="secondary" size="lg" onClick={onBack} icon={<ArrowLeft size={16} />}>Back</Btn>
         <FlexRow gap={8}>
           <Btn variant="secondary" size="lg" onClick={onNext} disabled={uploading}>Skip</Btn>
           <Btn size="lg" onClick={submit} disabled={uploading}>

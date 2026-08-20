@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { PackageCheck } from 'lucide-react'
+import { PackageCheck, ArrowLeft, ArrowRight } from 'lucide-react'
 import { T } from '../../../constants.js'
 import { Card, Btn, FlexRow, EmptyState } from '../../../components/ui.jsx'
 import { useApp } from '../../../context.jsx'
@@ -48,9 +48,9 @@ export function StepHandoff({ wizardState, onBack, onNavigate, onOpenOrder }) {
               </div>
               <FlexRow gap={8}>
                 {isAdmin ? (
-                  <Btn size="sm" variant="secondary" onClick={() => onOpenOrder(item.id)}>Open Order →</Btn>
+                  <Btn size="sm" variant="secondary" onClick={() => onOpenOrder(item.id)}>Open Order <ArrowRight size={13} style={{ marginLeft: -2 }} /></Btn>
                 ) : (
-                  <Btn size="sm" variant="secondary" onClick={() => onNavigate('projects')}>Open Project →</Btn>
+                  <Btn size="sm" variant="secondary" onClick={() => onNavigate('projects')}>Open Project <ArrowRight size={13} style={{ marginLeft: -2 }} /></Btn>
                 )}
               </FlexRow>
             </div>
@@ -59,7 +59,7 @@ export function StepHandoff({ wizardState, onBack, onNavigate, onOpenOrder }) {
       )}
 
       <FlexRow justify="space-between" style={{ marginTop: 24 }}>
-        <Btn variant="secondary" size="lg" onClick={onBack}>← Back</Btn>
+        <Btn variant="secondary" size="lg" onClick={onBack} icon={<ArrowLeft size={16} />}>Back</Btn>
         <Btn size="lg" onClick={() => onNavigate(isAdmin ? 'orders' : 'projects')}>Finish</Btn>
       </FlexRow>
     </Card>

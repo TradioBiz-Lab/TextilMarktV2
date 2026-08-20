@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react'
-import { Info, CheckCircle2, AlertTriangle, X, Crown, Link2, Package, Factory, Eye, Download, FileText, Image as ImageIcon, Paperclip, Upload, Link as LinkGlyph, StickyNote, Building2, Check, ChevronDown, ChevronRight, Inbox } from 'lucide-react'
+import { Info, CheckCircle2, AlertTriangle, X, Crown, Link2, Package, Factory, Eye, Download, FileText, Image as ImageIcon, Paperclip, Upload, Link as LinkGlyph, StickyNote, Building2, Check, ChevronDown, ChevronRight, ChevronLeft, Inbox, ArrowLeft } from 'lucide-react'
 import { T, ST, DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired } from '../constants.js'
 import * as pdfjsLib from 'pdfjs-dist'
 // Imported as a Vite worker (not `?url`) so the build emits a plain .js chunk —
@@ -8,6 +8,18 @@ import * as pdfjsLib from 'pdfjs-dist'
 import PdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker'
 
 pdfjsLib.GlobalWorkerOptions.workerPort = new PdfWorker()
+
+// A plain <div onClick> is invisible to keyboard navigation — Tab never lands
+// on it, Enter/Space do nothing. This makes such a div behave like a real
+// button for keyboard users: pair with role="button" tabIndex={0} on the
+// element itself. Space is prevented from also scrolling the page, matching
+// native <button> behavior.
+export function activateOnKey(onClick) {
+  return e => {
+    if (!onClick) return
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(e) }
+  }
+}
 
 // ── Convert a base64 data URL to an object URL ──
 // Desktop Chrome blocks navigation to top-level data: URLs (phishing mitigation)
@@ -99,10 +111,10 @@ function PdfPageViewer({ bytes, onReady }) {
       {numPages > 1 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#1e293b', padding: '6px 14px', borderRadius: 8, flexShrink: 0 }}>
           <button onClick={() => setPageNum(p => Math.max(1, p - 1))} disabled={pageNum <= 1}
-            style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: pageNum <= 1 ? 'not-allowed' : 'pointer', opacity: pageNum <= 1 ? 0.4 : 1, fontSize: 13, fontFamily: 'inherit' }}>‹ Prev</button>
+            style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: pageNum <= 1 ? 'not-allowed' : 'pointer', opacity: pageNum <= 1 ? 0.4 : 1, fontSize: 13, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}><ChevronLeft size={14} /> Prev</button>
           <span style={{ color: '#94a3b8', fontSize: 12 }}>Page {pageNum} of {numPages}</span>
           <button onClick={() => setPageNum(p => Math.min(numPages, p + 1))} disabled={pageNum >= numPages}
-            style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: pageNum >= numPages ? 'not-allowed' : 'pointer', opacity: pageNum >= numPages ? 0.4 : 1, fontSize: 13, fontFamily: 'inherit' }}>Next ›</button>
+            style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: pageNum >= numPages ? 'not-allowed' : 'pointer', opacity: pageNum >= numPages ? 0.4 : 1, fontSize: 13, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}>Next <ChevronRight size={14} /></button>
         </div>
       )}
     </div>
@@ -182,14 +194,19 @@ export function RoleBadge({ role, adminType }) {
 }
 
 export function Btn({ children, onClick, variant = 'primary', size = 'md', disabled, type = 'button', block, icon, style: extraStyle }) {
+  // primary/danger/success/ghost/outline all measured below the 4.5:1 AA floor
+  // using T.primary/T.danger/T.success directly (2.4-3.4:1) — those tokens stay
+  // correct for large fills, dots and icons (>=3:1, the non-text UI floor) but
+  // are wrong wherever they ARE the text/foreground, which is every case here.
+  // The *Deep tokens fix exactly that without touching the tokens themselves.
   const v = {
-    primary: { bg: T.primary, hover: T.primaryDark, color: '#fff', border: 'none', shadow: '0 1px 2px rgba(249,115,22,0.25), 0 4px 10px rgba(249,115,22,0.16)' },
+    primary: { bg: T.primaryDeep, hover: T.primaryDeeper, color: '#fff', border: 'none', shadow: '0 1px 2px rgba(194,65,12,0.25), 0 4px 10px rgba(194,65,12,0.16)' },
     secondary: { bg: '#fff', hover: '#F7F8FA', color: T.text, border: `1px solid ${T.border}`, shadow: T.shadow.xs },
-    danger: { bg: T.dangerBg, hover: '#fecaca', color: T.danger, border: `1px solid ${T.dangerBorder}` },
-    success: { bg: T.successBg, hover: '#bbf7d0', color: T.success, border: `1px solid ${T.successBorder}` },
+    danger: { bg: T.dangerBg, hover: '#fecaca', color: T.dangerDeep, border: `1px solid ${T.dangerBorder}` },
+    success: { bg: T.successBg, hover: '#bbf7d0', color: T.successDeep, border: `1px solid ${T.successBorder}` },
     warning: { bg: T.warningBg, hover: '#fde68a', color: T.warning, border: `1px solid ${T.warningBorder}` },
-    ghost: { bg: 'transparent', hover: T.primaryLight, color: T.primary, border: 'none' },
-    outline: { bg: 'transparent', hover: T.primaryLight, color: T.primary, border: `1px solid ${T.primary}` },
+    ghost: { bg: 'transparent', hover: T.primaryLight, color: T.primaryDeep, border: 'none' },
+    outline: { bg: 'transparent', hover: T.primaryLight, color: T.primaryDeep, border: `1px solid ${T.primaryDeep}` },
     master: { bg: T.masterBg, hover: '#ddd6fe', color: T.master, border: '1px solid #c4b5fd' },
   }[variant] || {}
   const sz = { sm: { p: '6px 12px', fs: 11.5 }, md: { p: '9px 16px', fs: 13 }, lg: { p: '12px 22px', fs: 14 } }[size] || {}
@@ -197,7 +214,7 @@ export function Btn({ children, onClick, variant = 'primary', size = 'md', disab
   return (
     <button type={type} disabled={disabled} onClick={onClick}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{ background: hov && !disabled ? v.hover : v.bg, color: v.color, border: v.border, padding: sz.p, borderRadius: T.radius.sm, fontSize: sz.fs, fontWeight: 600, letterSpacing: '-0.005em', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, whiteSpace: 'nowrap', width: block ? '100%' : undefined, boxShadow: disabled ? 'none' : v.shadow, transition: 'background 0.12s, box-shadow 0.15s, transform 0.1s', fontFamily: 'inherit', transform: hov && !disabled ? 'translateY(-0.5px)' : 'none', ...extraStyle }}>
+      style={{ background: hov && !disabled ? v.hover : v.bg, color: v.color, border: v.border, padding: sz.p, borderRadius: T.radius.sm, fontSize: sz.fs, fontWeight: 600, letterSpacing: '-0.005em', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, whiteSpace: 'nowrap', width: block ? '100%' : undefined, boxShadow: disabled ? 'none' : v.shadow, transition: 'background 0.12s, box-shadow 0.15s, transform 0.1s', fontFamily: 'inherit', transform: hov && !disabled ? 'translateY(-1px)' : 'none', ...extraStyle }}>
       {icon && <span style={{ fontSize: (sz.fs || 13) + 1, display: 'inline-flex' }}>{icon}</span>}{children}
     </button>
   )
@@ -256,7 +273,7 @@ export function Textarea({ label, hint, ...p }) {
 export function Card({ children, style: s, pad = true, onClick }) {
   const [hov, setHov] = useState(false)
   return (
-    <div onClick={onClick}
+    <div onClick={onClick} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined} onKeyDown={activateOnKey(onClick)}
       onMouseEnter={() => onClick && setHov(true)} onMouseLeave={() => onClick && setHov(false)}
       style={{ background: T.surface, borderRadius: T.radius.lg, border: `1px solid ${hov ? T.borderHover : T.border}`, overflow: 'hidden', boxShadow: hov ? T.shadow.md : T.shadow.xs, transition: 'box-shadow 0.18s, border-color 0.18s, transform 0.18s', cursor: onClick ? 'pointer' : undefined, transform: hov && onClick ? 'translateY(-1px)' : 'none', ...s, padding: pad ? (s?.padding || '22px') : 0 }}>
       {children}
@@ -428,7 +445,7 @@ export function FileUpload({ file, onFile, error, onError }) {
 
       {mode === 'file' ? (
         <>
-          <div onClick={() => inputRef.current?.click()}
+          <div onClick={() => inputRef.current?.click()} role="button" tabIndex={0} onKeyDown={activateOnKey(() => inputRef.current?.click())}
             onDragOver={e => { e.preventDefault(); setDrag(true) }}
             onDragLeave={() => setDrag(false)}
             onDrop={e => { e.preventDefault(); setDrag(false); process(e.dataTransfer.files[0]) }}
@@ -475,7 +492,7 @@ export function ProductThumb({ order, size = 'sm', onClick }) {
   const showImg = url && !broken
   return (
     <div
-      onClick={onClick}
+      onClick={onClick} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined} onKeyDown={activateOnKey(onClick)}
       title={onClick ? (showImg ? 'Change photo' : 'Add photo') : undefined}
       style={{ width: dim, height: dim, borderRadius: size === 'lg' ? 12 : 6, overflow: 'hidden', flexShrink: 0, background: '#f1f5f9', border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: onClick ? 'pointer' : undefined }}
     >
@@ -685,7 +702,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
       <div style={{ background: T.surface, borderRadius: 10, border: `1px solid ${exp || expd ? T.warningBorder : T.border}`, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
         <div style={{ width: 38, height: 38, borderRadius: T.radius.sm, background: T.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><DocIcon size={17} color={T.primaryDark} /></div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div onClick={hasFile ? openFile : undefined} style={{ fontSize: 13, fontWeight: 700, color: hasFile ? T.primary : T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: hasFile ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 5 }} title={hasFile ? (hasExternal ? 'Click to open link' : 'Click to view') : undefined}>{doc.name}{hasExternal && <Link2 size={11} style={{ opacity: 0.7, flexShrink: 0 }} />}</div>
+          <div onClick={hasFile ? openFile : undefined} role={hasFile ? 'button' : undefined} tabIndex={hasFile ? 0 : undefined} onKeyDown={hasFile ? activateOnKey(openFile) : undefined} style={{ fontSize: 13, fontWeight: 700, color: hasFile ? T.primary : T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: hasFile ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 5 }} title={hasFile ? (hasExternal ? 'Click to open link' : 'Click to view') : undefined}>{doc.name}{hasExternal && <Link2 size={11} style={{ opacity: 0.7, flexShrink: 0 }} />}</div>
           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center', marginTop: 5 }}>
             <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10, background: '#f1f5f9', color: T.textMuted, border: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>{typLabel}</span>
             {doc.orderId && <span style={{ fontSize: 11, color: T.primary, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Package size={11} /> {doc.orderId}</span>}
@@ -950,7 +967,8 @@ export function Grid({ cols, gap = 14, children, style: s }) {
 
 export function FlexRow({ children, gap = 10, align = 'center', justify = 'flex-start', style: s, onClick }) {
   return (
-    <div onClick={onClick} style={{ display: 'flex', alignItems: align, justifyContent: justify, gap, cursor: onClick ? 'pointer' : undefined, ...s }}>
+    <div onClick={onClick} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined} onKeyDown={activateOnKey(onClick)}
+      style={{ display: 'flex', alignItems: align, justifyContent: justify, gap, cursor: onClick ? 'pointer' : undefined, ...s }}>
       {children}
     </div>
   )

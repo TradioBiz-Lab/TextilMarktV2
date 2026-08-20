@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import Papa from 'papaparse'
 import { FileText, Download, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { T, DEFAULT_STAGE_NAMES } from '../../constants.js'
-import { Btn, FlexRow, EmptyState } from '../../components/ui.jsx'
+import { Btn, FlexRow, EmptyState, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
 const MFR_SPLIT_MAX = 5
@@ -218,7 +218,7 @@ export function BulkUploadCsvPanel({ masterOrder, onDone }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div>
-        <div onClick={() => fileInputRef.current?.click()}
+        <div onClick={() => fileInputRef.current?.click()} role="button" tabIndex={0} onKeyDown={activateOnKey(() => fileInputRef.current?.click())}
           style={{ border: `2px dashed ${T.border}`, borderRadius: 10, padding: '24px', textAlign: 'center', cursor: 'pointer', background: '#fafbff' }}>
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6, color: T.textLight }}><FileText size={26} /></div>
           <div style={{ fontWeight: 600, color: T.textMuted }}>Click to upload a CSV, or drag & drop</div>
@@ -260,7 +260,7 @@ export function BulkUploadCsvPanel({ masterOrder, onDone }) {
               {validated.flatMap(({ row, v }) => {
                 const isOpen = expandedRow === row.rowIndex
                 const mainRow = (
-                  <tr key={`r${row.rowIndex}`} onClick={() => setExpandedRow(isOpen ? null : row.rowIndex)}
+                  <tr key={`r${row.rowIndex}`} onClick={() => setExpandedRow(isOpen ? null : row.rowIndex)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setExpandedRow(isOpen ? null : row.rowIndex))}
                     style={{ borderTop: `1px solid ${T.border}`, cursor: 'pointer', background: isOpen ? '#f8fafc' : 'transparent' }}>
                     <td style={{ padding: '9px 12px', fontSize: 12, color: T.textMuted }}>{row.rowIndex + 1}</td>
                     <td style={{ padding: '9px 12px', fontSize: 13, fontWeight: 600, color: T.text }}>{row.product || '—'}</td>

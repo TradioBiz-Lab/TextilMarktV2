@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Ruler, ClipboardList, FileText, Link2, Building2 } from 'lucide-react'
+import { Ruler, ClipboardList, FileText, Link2, Building2, ChevronRight } from 'lucide-react'
 import { T, WIKI_PAGE_CATEGORIES, WIKI_DOC_TYPES, DOC_ICONS } from '../../constants.js'
 import { PageHeader, Tabs, Card, EmptyState, Btn, Input, Select, FlexRow, LoadingScreen, useToast, Modal } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -114,7 +114,7 @@ function ClientGroup({ groupKey, label, count, open, onToggle, children }) {
     <div style={{ border: `1px solid ${open ? T.primary + '44' : T.border}`, borderRadius: 12, overflow: 'hidden', transition: 'border-color 0.15s' }}>
       <button onClick={() => onToggle(groupKey)}
         style={{ width: '100%', padding: '11px 16px', background: open ? T.primaryLight : '#f8fafc', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'inherit', transition: 'background 0.15s' }}>
-        <span style={{ fontSize: 13, color: open ? T.primary : T.textMuted, transition: 'transform 0.15s', display: 'inline-block', transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}>›</span>
+        <span style={{ color: open ? T.primary : T.textMuted, transition: 'transform 0.15s', display: 'inline-flex', transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}><ChevronRight size={14} /></span>
         <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{label}</span>
         <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: T.textMuted, background: '#e2e8f0', padding: '1px 8px', borderRadius: 10 }}>{count}</span>
       </button>
@@ -150,7 +150,10 @@ export function WikiPage() {
   const [linkForm, setLinkForm] = useState({ type: 'wiki_inspection_form', name: '', wikiScope: 'company', buyerId: '', externalUrl: '' })
   const [linkSaving, setLinkSaving] = useState(false)
 
-  const [openGroups, setOpenGroups] = useState(new Set())
+  // Company-wide is one fixed group per tab regardless of how many buyers
+  // exist, so opening it by default never scales badly. Per-buyer groups stay
+  // collapsed — a real account can have many buyers.
+  const [openGroups, setOpenGroups] = useState(new Set(['pages:__company__', 'files:__company__']))
   const toggleGroup = id => setOpenGroups(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
 
   if (loading) return <LoadingScreen />

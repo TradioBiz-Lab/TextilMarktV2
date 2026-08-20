@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Crown, Check, AlertTriangle, Plus, Search, KeyRound, Pencil, Users } from 'lucide-react'
+import { Crown, Check, AlertTriangle, Plus, Search, KeyRound, Pencil, Users, Circle } from 'lucide-react'
 import { T } from '../../constants.js'
 import { Modal, Input, Select, Btn, Card, Alert, EmptyState, FlexRow, PageHeader, RoleBadge, Mono, LoadingScreen, FileUpload, useToast, fileUploadPayload } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -240,7 +240,9 @@ export function UserSetup() {
                   <td style={{ padding: '12px 18px' }}><Mono style={{ fontSize: 11 }}>{u.code || '—'}</Mono></td>
                   <td style={{ padding: '12px 18px' }}>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <span style={{ padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: u.isActive ? T.successBg : '#f1f5f9', color: u.isActive ? T.success : T.textMuted }}>{u.isActive ? '● Active' : '○ Inactive'}</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: u.isActive ? T.successBg : '#f1f5f9', color: u.isActive ? T.success : T.textMuted }}>
+                        <Circle size={7} fill={u.isActive ? 'currentColor' : 'none'} stroke="currentColor" /> {u.isActive ? 'Active' : 'Inactive'}
+                      </span>
                       {u.mustChangePw && <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 10, fontWeight: 700, background: T.warningBg, color: T.warning, display: 'inline-flex', alignItems: 'center', gap: 3 }}><KeyRound size={9} /> Pending</span>}
                     </div>
                   </td>
