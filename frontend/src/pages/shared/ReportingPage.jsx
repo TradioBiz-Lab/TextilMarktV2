@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { CalendarClock, AlertTriangle, Package, Ban, CircleDot, CheckCircle2, Search, BarChart3, Folder, MessageCircle, Calendar, ChevronDown, ChevronRight, Play } from 'lucide-react'
 import {
   T, dayNumber, getToday, fmtN,
   stageStatusOf, stageIsOverdue, isStageDone, inFlightStages, stageProgressLabel, stageVariance,
@@ -82,7 +83,7 @@ function GanttChart({ asgn }) {
     : key === 'blocked' ? '#7c3aed' : key === 'danger' ? T.danger : '#cbd5e1'
 
   if (validDays.length === 0) {
-    return <EmptyState icon="📅" title="No dates on this timeline" desc="This order's stages don't have start/end dates set yet." />
+    return <EmptyState icon={<CalendarClock size={26} color={T.textLight} />} title="No dates on this timeline" desc="This order's stages don't have start/end dates set yet." />
   }
 
   const minDay = Math.min(...validDays, todayNum)
@@ -292,7 +293,7 @@ export function ReportingPage({ onOpen }) {
 
   if (loading) return <LoadingScreen />
   if (loadError) return (
-    <Card><EmptyState icon="⚠️" title="Could not load report" desc="Check your connection and refresh the page." /></Card>
+    <Card><EmptyState icon={<AlertTriangle size={26} color={T.textLight} />} title="Could not load report" desc="Check your connection and refresh the page." /></Card>
   )
 
   return (
@@ -304,19 +305,22 @@ export function ReportingPage({ onOpen }) {
       />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 14 }} className="grid-responsive-4">
-        <StatCard icon="📦" label="Live orders" value={stats.orders} color={T.primary} />
-        <StatCard icon="⛔" label="Blocked" value={stats.blocked} color={T.danger} />
-        <StatCard icon="🔴" label="Late" value={stats.late} color={T.danger} />
-        <StatCard icon="⚠️" label="At risk" value={stats.risk} color={T.warning} />
-        <StatCard icon="✅" label="On track" value={stats.ontrack} color={T.success} />
+        <StatCard icon={<Package size={19} color={T.primary} />} label="Live orders" value={stats.orders} color={T.primary} />
+        <StatCard icon={<Ban size={19} color={T.danger} />} label="Blocked" value={stats.blocked} color={T.danger} />
+        <StatCard icon={<CircleDot size={19} color={T.danger} />} label="Late" value={stats.late} color={T.danger} />
+        <StatCard icon={<AlertTriangle size={19} color={T.warning} />} label="At risk" value={stats.risk} color={T.warning} />
+        <StatCard icon={<CheckCircle2 size={19} color={T.success} />} label="On track" value={stats.ontrack} color={T.success} />
       </div>
 
       <FlexRow gap={8} style={{ marginBottom: 14 }}>
-        <input
-          value={q} onChange={e => setQ(e.target.value)}
-          placeholder="🔍  Search by customer, order ID, style, or manufacturer…"
-          style={{ flex: 1, border: `1px solid ${T.border}`, borderRadius: 9, padding: '9px 14px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit', boxSizing: 'border-box' }}
-        />
+        <div style={{ position: 'relative', flex: 1 }}>
+          <Search size={14} color={T.textLight} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+          <input
+            value={q} onChange={e => setQ(e.target.value)}
+            placeholder="Search by customer, order ID, style, or manufacturer…"
+            style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 9, padding: '9px 14px 9px 34px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit', boxSizing: 'border-box' }}
+          />
+        </div>
         <select
           value={healthFilter} onChange={e => setHealthFilter(e.target.value)}
           style={{ border: `1px solid ${T.border}`, borderRadius: 9, padding: '9px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit', cursor: 'pointer' }}
@@ -327,7 +331,7 @@ export function ReportingPage({ onOpen }) {
       </FlexRow>
 
       {groups.length === 0 ? (
-        <Card><EmptyState icon="📊" title={q || healthFilter !== 'All' ? 'No matching orders' : 'No orders'} desc={q || healthFilter !== 'All' ? 'Try adjusting the search or filter' : 'Orders will appear here'} /></Card>
+        <Card><EmptyState icon={<BarChart3 size={26} color={T.textLight} />} title={q || healthFilter !== 'All' ? 'No matching orders' : 'No orders'} desc={q || healthFilter !== 'All' ? 'Try adjusting the search or filter' : 'Orders will appear here'} /></Card>
       ) : groups.map(g => {
         const isOpen = !collapsed[g.key]
         return (
@@ -337,9 +341,9 @@ export function ReportingPage({ onOpen }) {
               onClick={() => setCollapsed(p => ({ ...p, [g.key]: isOpen }))}
               style={{ padding: '10px 16px', background: '#f1f5f9', borderRadius: '12px 12px 0 0', cursor: 'pointer' }}
             >
-              <span style={{ fontSize: 11, color: T.textMuted, transform: isOpen ? 'none' : 'rotate(-90deg)', display: 'inline-block' }}>▾</span>
-              <span style={{ fontSize: 13, fontWeight: 800, color: T.text }}>
-                📁 {!isBuyer ? `${g.buyerCompany} — ` : ''}{g.mo?.orderName || (g.moId === '__none__' ? 'Other orders' : g.moId)}
+              <span style={{ color: T.textMuted, transform: isOpen ? 'none' : 'rotate(-90deg)', display: 'inline-flex' }}><ChevronDown size={13} /></span>
+              <span style={{ fontSize: 13, fontWeight: 800, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <Folder size={13} /> {!isBuyer ? `${g.buyerCompany} — ` : ''}{g.mo?.orderName || (g.moId === '__none__' ? 'Other orders' : g.moId)}
               </span>
               {g.mo?.season && <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', background: '#dbeafe', padding: '1px 7px', borderRadius: 4 }}>{g.mo.season}</span>}
               <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{g.rows.length} order{g.rows.length !== 1 ? 's' : ''}</span>
@@ -395,9 +399,9 @@ export function ReportingPage({ onOpen }) {
                             ) : (
                               <>
                                 <FlexRow gap={4} style={{ flexWrap: 'wrap' }}>
-                                  {r.blocked.length > 0 && <Chip tone={HEALTH.blocked} title={r.blocked.map(({ stage }) => stage.blockedReason || stage.name).join('\n')}>⛔ {r.blocked.length} blocked</Chip>}
-                                  {r.late.length > 0 && <Chip tone={HEALTH.late}>🔴 {r.late.length} past deadline</Chip>}
-                                  {r.working.length > 0 && <Chip tone={{ bg: '#dbeafe', fg: '#1d4ed8' }}>▶ {r.working.length} in progress</Chip>}
+                                  {r.blocked.length > 0 && <Chip tone={HEALTH.blocked} title={r.blocked.map(({ stage }) => stage.blockedReason || stage.name).join('\n')}><Ban size={9} style={{ marginRight: 3, verticalAlign: -1 }} />{r.blocked.length} blocked</Chip>}
+                                  {r.late.length > 0 && <Chip tone={HEALTH.late}><CircleDot size={9} style={{ marginRight: 3, verticalAlign: -1 }} />{r.late.length} past deadline</Chip>}
+                                  {r.working.length > 0 && <Chip tone={{ bg: '#dbeafe', fg: '#1d4ed8' }}><Play size={8} style={{ marginRight: 3, verticalAlign: -1 }} fill="#1d4ed8" />{r.working.length} in progress</Chip>}
                                 </FlexRow>
                                 <div style={{ fontSize: 11, color: T.text, marginTop: 4, lineHeight: 1.45 }}>
                                   {r.live.slice(0, 2).map(({ stage, index }) => {
@@ -419,14 +423,14 @@ export function ReportingPage({ onOpen }) {
                               </>
                             )}
                             {r.order.callout && (
-                              <div style={{ fontSize: 10, color: '#b45309', background: '#fef3c7', borderRadius: 4, padding: '3px 6px', marginTop: 5 }} title={r.order.callout}>
-                                ⚠ {r.order.callout.length > 60 ? `${r.order.callout.slice(0, 60)}…` : r.order.callout}
+                              <div style={{ fontSize: 10, color: '#b45309', background: '#fef3c7', borderRadius: 4, padding: '3px 6px', marginTop: 5, display: 'flex', alignItems: 'flex-start', gap: 3 }} title={r.order.callout}>
+                                <AlertTriangle size={10} style={{ flexShrink: 0, marginTop: 1 }} /> {r.order.callout.length > 60 ? `${r.order.callout.slice(0, 60)}…` : r.order.callout}
                               </div>
                             )}
                             {r.lastUpdate && (
-                              <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 250 }}
+                              <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 250, display: 'flex', alignItems: 'center', gap: 3 }}
                                 title={`${r.lastUpdate.stageName}: ${r.lastUpdate.text}`}>
-                                💬 {r.lastUpdate.text.length > 60 ? `${r.lastUpdate.text.slice(0, 60)}…` : r.lastUpdate.text}
+                                <MessageCircle size={10} style={{ flexShrink: 0 }} /> {r.lastUpdate.text.length > 60 ? `${r.lastUpdate.text.slice(0, 60)}…` : r.lastUpdate.text}
                               </div>
                             )}
                           </td>
@@ -453,9 +457,9 @@ export function ReportingPage({ onOpen }) {
                             <button
                               onClick={e => { e.stopPropagation(); setGanttTarget({ order: r.order, asgn: r.asgn }) }}
                               title="View timeline"
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, fontSize: 14, marginRight: 4, verticalAlign: 'middle' }}
-                            >📅</button>
-                            <span style={{ color: T.textLight }}>›</span>
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, marginRight: 4, display: 'inline-flex', verticalAlign: 'middle', color: T.textMuted }}
+                            ><Calendar size={15} /></button>
+                            <ChevronRight size={14} color={T.textLight} />
                           </td>
                         </tr>
                       )
