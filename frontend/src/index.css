@@ -37,8 +37,27 @@ table { border-collapse: collapse; width: 100%; }
 /* Header user details - visible on desktop */
 .header-user-info { display: flex; }
 
-/* Scrollable table wrapper */
-.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* Scrollable table wrapper. A wide TNA/order table (up to 11 columns) can
+   scroll with zero visual cue that it does — the last visible column just
+   looks cut off, reading as a bug rather than "swipe right". The two
+   gradient pairs below are the classic background-attachment scroll-shadow:
+   a thin dark edge shadow shows only on the side that still has content,
+   revealed/hidden automatically by scroll position with no JS. Assumes a
+   white surface behind the table, true for every current usage (all sit
+   directly in a white Card). */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  background:
+    linear-gradient(to right, #fff 30%, rgba(255,255,255,0)) 0 0,
+    linear-gradient(to left, #fff 30%, rgba(255,255,255,0)) 100% 0,
+    linear-gradient(to right, rgba(15,23,42,0.12), rgba(15,23,42,0)) 0 0,
+    linear-gradient(to left, rgba(15,23,42,0.12), rgba(15,23,42,0)) 100% 0;
+  background-repeat: no-repeat;
+  background-color: #fff;
+  background-size: 24px 100%, 24px 100%, 10px 100%, 10px 100%;
+  background-attachment: local, local, scroll, scroll;
+}
 
 /* Responsive grid: collapses on smaller screens.
    minmax(0,1fr) rather than a bare 1fr — a bare 1fr floors at the track's
