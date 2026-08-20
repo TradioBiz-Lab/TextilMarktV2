@@ -1,16 +1,17 @@
 import { useState, useMemo } from 'react'
+import { Package, RotateCw, Paperclip, User, Ban, Check, KeyRound, Zap, Search, Crown } from 'lucide-react'
 import { T } from '../../constants.js'
 import { Card, PageHeader, EmptyState, FlexRow, LoadingScreen } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
 const ACTION_META = {
-  'Order Created':     { bg: '#dcfce7', c: '#15803d', border: '#86efac', icon: '📦' },
-  'Status Update':     { bg: '#dbeafe', c: '#1d4ed8', border: '#93c5fd', icon: '🔄' },
-  'Document Uploaded': { bg: '#ede9fe', c: '#6d28d9', border: '#c4b5fd', icon: '📎' },
-  'User Created':      { bg: '#ccfbf1', c: '#0f766e', border: '#5eead4', icon: '👤' },
-  'User Deactivated':  { bg: '#fee2e2', c: '#dc2626', border: '#fca5a5', icon: '🚫' },
-  'User Activated':    { bg: '#dcfce7', c: '#16a34a', border: '#86efac', icon: '✅' },
-  'Password Reset':    { bg: '#fef3c7', c: '#d97706', border: '#fde68a', icon: '🔑' },
+  'Order Created':     { bg: '#dcfce7', c: '#15803d', border: '#86efac', Icon: Package },
+  'Status Update':     { bg: '#dbeafe', c: '#1d4ed8', border: '#93c5fd', Icon: RotateCw },
+  'Document Uploaded': { bg: '#ede9fe', c: '#6d28d9', border: '#c4b5fd', Icon: Paperclip },
+  'User Created':      { bg: '#ccfbf1', c: '#0f766e', border: '#5eead4', Icon: User },
+  'User Deactivated':  { bg: '#fee2e2', c: '#dc2626', border: '#fca5a5', Icon: Ban },
+  'User Activated':    { bg: '#dcfce7', c: '#16a34a', border: '#86efac', Icon: Check },
+  'Password Reset':    { bg: '#fef3c7', c: '#d97706', border: '#fde68a', Icon: KeyRound },
 }
 
 const PAGE_SIZE = 20
@@ -139,7 +140,7 @@ export function AdminAuditLog() {
                   border: `1.5px solid ${active ? meta.c : meta.border}`,
                   boxShadow: active ? `0 2px 8px ${meta.c}40` : 'none',
                 }}>
-                <span style={{ fontSize: 14 }}>{meta.icon}</span>
+                <meta.Icon size={13} />
                 <span>{key}</span>
                 <span style={{
                   background: active ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.1)',
@@ -154,12 +155,15 @@ export function AdminAuditLog() {
       {/* ── Filter bar ── */}
       <Card pad={false} style={{ marginBottom: 16 }}>
         <div style={{ padding: '12px 16px', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          <input
-            value={q}
-            onChange={e => { setQ(e.target.value); setPage(1) }}
-            placeholder="🔍  Search detail or user…"
-            style={{ flex: 1, minWidth: 200, border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 12px', fontSize: 13, color: T.text, background: '#f8fafc', fontFamily: 'inherit', outline: 'none' }}
-          />
+          <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+            <Search size={13} color={T.textLight} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+            <input
+              value={q}
+              onChange={e => { setQ(e.target.value); setPage(1) }}
+              placeholder="Search detail or user…"
+              style={{ width: '100%', boxSizing: 'border-box', border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 12px 7px 32px', fontSize: 13, color: T.text, background: '#f8fafc', fontFamily: 'inherit', outline: 'none' }}
+            />
+          </div>
           <select value={actionFilt} onChange={e => { setActionFilt(e.target.value); setPage(1) }}
             style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit' }}>
             <option value="All">All Actions</option>
@@ -189,7 +193,7 @@ export function AdminAuditLog() {
       {/* ── Log feed ── */}
       {filtered.length === 0 ? (
         <Card>
-          <EmptyState icon="🔍" title="No matching entries" desc="Try adjusting your search or filters" />
+          <EmptyState icon={<Search size={26} color={T.textLight} />} title="No matching entries" desc="Try adjusting your search or filters" />
         </Card>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -210,7 +214,7 @@ export function AdminAuditLog() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {grouped[group].map(a => {
                   const u = users.find(x => x.id === a.by)
-                  const meta = ACTION_META[a.action] || { bg: '#f1f5f9', c: '#475569', border: T.border, icon: '⚡' }
+                  const meta = ACTION_META[a.action] || { bg: '#f1f5f9', c: '#475569', border: T.border, Icon: Zap }
                   return (
                     <div key={a.id}
                       style={{ display: 'flex', gap: 0, background: T.surface, borderRadius: 10, border: `1px solid ${T.border}`, overflow: 'hidden', transition: 'box-shadow 0.15s, border-color 0.15s' }}
@@ -227,7 +231,7 @@ export function AdminAuditLog() {
                           background: meta.bg, border: `1px solid ${meta.border}`,
                           display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17,
                         }}>
-                          {meta.icon}
+                          <meta.Icon size={13} />
                         </div>
 
                         {/* Main body */}
@@ -244,7 +248,7 @@ export function AdminAuditLog() {
                                 <span style={{ fontWeight: 700, color: T.text }}>{u.name}</span>
                                 {u.adminType === 'master' && (
                                   <span style={{ marginLeft: 5, fontSize: 10, fontWeight: 700, color: '#7c3aed', background: '#ede9fe', border: '1px solid #c4b5fd', padding: '1px 6px', borderRadius: 6 }}>
-                                    👑 Master
+                                    <Crown size={11} style={{ marginRight: 3, verticalAlign: -1 }} />Master
                                   </span>
                                 )}
                               </span>
