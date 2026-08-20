@@ -1,7 +1,12 @@
 import { useState } from 'react'
+import { AlertTriangle, User, Shield, Settings2, MessageCircle, ClipboardList, Image as ImageIcon, Package, Check } from 'lucide-react'
 import { T, STAGE_DOC_MAP, getToday, isExpiringSoon, isExpired } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, FlexRow, Mono, Tabs, Alert, EmptyState, FileUpload, Input, DocCard, LoadingScreen, StageTimeline, StageDocGroup, useToast, fileUploadPayload, ProductThumb } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
+
+function TabLabel({ Icon, text }) {
+  return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon size={13} /> {text}</span>
+}
 
 function fmtDate(d) {
   if (!d) return '—'
@@ -52,7 +57,7 @@ export function MfrOrderDetail({ orderId, onBack }) {
       <FlexRow style={{ marginBottom: 18 }} gap={12}>
         <Btn variant="secondary" size="sm" onClick={onBack}>← Back</Btn>
       </FlexRow>
-      <Card><EmptyState icon="⚠️" title="Order not found" desc={`Order ${orderId} could not be loaded.`} /></Card>
+      <Card><EmptyState icon={<AlertTriangle size={26} color={T.textLight} />} title="Order not found" desc={`Order ${orderId} could not be loaded.`} /></Card>
     </div>
   )
 
@@ -274,7 +279,7 @@ export function MfrOrderDetail({ orderId, onBack }) {
 
             {/* Responsible person (read-only — reassignment is admin-only) */}
             {stages[stageIdx]?.responsibleName && (
-              <div style={{ fontSize: 11, color: T.textMuted }}>👤 Responsible: <strong>{stages[stageIdx].responsibleName}</strong></div>
+              <div style={{ fontSize: 11, color: T.textMuted, display: 'flex', alignItems: 'center', gap: 4 }}><User size={11} /> Responsible: <strong>{stages[stageIdx].responsibleName}</strong></div>
             )}
 
             {/* Updates thread — any manufacturer on this assignment can post */}
@@ -411,8 +416,8 @@ export function MfrOrderDetail({ orderId, onBack }) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
-          <Btn variant="secondary" size="sm" onClick={() => setShowUp(true)} icon="🛡">Upload Cert</Btn>
-          <Btn size="sm" onClick={() => openStageModal(nextIncompleteStage() ?? 0)} icon="⚙️">Update Stage</Btn>
+          <Btn variant="secondary" size="sm" onClick={() => setShowUp(true)} icon={<Shield size={13} />}>Upload Cert</Btn>
+          <Btn size="sm" onClick={() => openStageModal(nextIncompleteStage() ?? 0)} icon={<Settings2 size={13} />}>Update Stage</Btn>
         </div>
       </div>
 
@@ -460,7 +465,7 @@ export function MfrOrderDetail({ orderId, onBack }) {
       {/* ── Latest note ── */}
       {mine.note && (
         <div style={{ marginBottom: 14, display: 'flex', alignItems: 'flex-start', gap: 10, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: '11px 14px' }}>
-          <span style={{ fontSize: 15, flexShrink: 0 }}>💬</span>
+          <MessageCircle size={15} color={T.textMuted} style={{ flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, marginBottom: 3 }}>Latest Note</div>
             <div style={{ fontSize: 13, color: T.text }}>{mine.note}</div>
@@ -472,11 +477,11 @@ export function MfrOrderDetail({ orderId, onBack }) {
       <Card pad={false}>
         <Tabs
           tabs={[
-            { id: 'stages',         label: `⚙️ Production (${stages.length})` },
-            { id: 'docs',           label: `📋 Documents (${orderDocs.filter(d => d.stageIndex == null).length})` },
-            { id: 'stage_evidence', label: `🖼 Stage Evidence (${stageDocs.length})` },
-            { id: 'certs',          label: `🛡 Certificates (${myDocs.length})` },
-            { id: 'info',           label: '📦 Order Info' },
+            { id: 'stages',         label: <TabLabel Icon={Settings2} text={`Production (${stages.length})`} /> },
+            { id: 'docs',           label: <TabLabel Icon={ClipboardList} text={`Documents (${orderDocs.filter(d => d.stageIndex == null).length})`} /> },
+            { id: 'stage_evidence', label: <TabLabel Icon={ImageIcon} text={`Stage Evidence (${stageDocs.length})`} /> },
+            { id: 'certs',          label: <TabLabel Icon={Shield} text={`Certificates (${myDocs.length})`} /> },
+            { id: 'info',           label: <TabLabel Icon={Package} text="Order Info" /> },
           ]}
           active={tab}
           onChange={setTab}
@@ -522,7 +527,7 @@ export function MfrOrderDetail({ orderId, onBack }) {
                         fontSize: 12, fontWeight: 800,
                         border: isLate ? `2px solid ${T.danger}` : 'none',
                       }}>
-                        {done ? '✓' : i + 1}
+                        {done ? <Check size={14} strokeWidth={3} /> : i + 1}
                       </div>
 
                       {/* Name + progress bar */}
@@ -542,13 +547,13 @@ export function MfrOrderDetail({ orderId, onBack }) {
                         )}
                         {(s.responsibleName || (s.materials || []).length > 0) && (
                           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 3, flexWrap: 'wrap' }}>
-                            {s.responsibleName && <span style={{ fontSize: 10, color: T.textLight }}>👤 {s.responsibleName}</span>}
+                            {s.responsibleName && <span style={{ fontSize: 10, color: T.textLight, display: 'inline-flex', alignItems: 'center', gap: 3 }}><User size={10} /> {s.responsibleName}</span>}
                             {(s.materials || []).length > 0 && (() => {
                               const receivedCount = s.materials.filter(m => m.status === 'received').length
                               const allReceived = receivedCount === s.materials.length
                               return (
-                                <span style={{ fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 4, background: allReceived ? T.successBg : T.warningBg, color: allReceived ? T.success : T.warning }}>
-                                  📦 {receivedCount}/{s.materials.length} received
+                                <span style={{ fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 4, background: allReceived ? T.successBg : T.warningBg, color: allReceived ? T.success : T.warning, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                  <Package size={9} /> {receivedCount}/{s.materials.length} received
                                 </span>
                               )
                             })()}
@@ -585,7 +590,7 @@ export function MfrOrderDetail({ orderId, onBack }) {
           {/* ── TAB: Order Documents ── */}
           {tab === 'docs' && (
             orderDocs.filter(d => d.stageIndex == null).length === 0
-              ? <EmptyState icon="📋" title="No order documents" desc="PO, Tech Pack, and other documents uploaded to this order will appear here" />
+              ? <EmptyState icon={<ClipboardList size={26} color={T.textLight} />} title="No order documents" desc="PO, Tech Pack, and other documents uploaded to this order will appear here" />
               : <StageDocGroup
                   docs={orderDocs.filter(d => d.stageIndex == null)}
                   stages={mine.stages || []}
@@ -597,7 +602,7 @@ export function MfrOrderDetail({ orderId, onBack }) {
           {tab === 'stage_evidence' && (
             <div>
               {stageDocs.length === 0 ? (
-                <EmptyState icon="🖼" title="No stage evidence yet" desc="Upload images or documents when updating each production stage — they will appear here" />
+                <EmptyState icon={<ImageIcon size={26} color={T.textLight} />} title="No stage evidence yet" desc="Upload images or documents when updating each production stage — they will appear here" />
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   {stages.map((s, i) => {
@@ -609,7 +614,7 @@ export function MfrOrderDetail({ orderId, onBack }) {
                       <div key={i} style={{ border: `1px solid ${done ? T.successBorder : T.border}`, borderRadius: 12, overflow: 'hidden' }}>
                         <div style={{ padding: '10px 16px', background: done ? T.successBg : '#f8fafc', borderBottom: `1px solid ${done ? T.successBorder : T.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
                           <div style={{ width: 26, height: 26, borderRadius: '50%', background: done ? T.success : T.primary, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
-                            {done ? '✓' : i + 1}
+                            {done ? <Check size={12} strokeWidth={3} /> : i + 1}
                           </div>
                           <span style={{ fontSize: 13, fontWeight: 700, color: done ? T.success : T.text }}>{s.name}</span>
                           <span style={{ fontSize: 11, color: T.textMuted }}>{pct}%</span>
@@ -630,10 +635,10 @@ export function MfrOrderDetail({ orderId, onBack }) {
           {tab === 'certs' && (
             <div>
               <FlexRow justify="flex-end" style={{ marginBottom: 12 }}>
-                <Btn size="sm" icon="🛡" onClick={() => setShowUp(true)}>Upload Certificate</Btn>
+                <Btn size="sm" icon={<Shield size={13} />} onClick={() => setShowUp(true)}>Upload Certificate</Btn>
               </FlexRow>
               {myDocs.length === 0
-                ? <EmptyState icon="🛡" title="No certificates" desc="Upload your compliance documents so buyers and admin can verify your factory" />
+                ? <EmptyState icon={<Shield size={26} color={T.textLight} />} title="No certificates" desc="Upload your compliance documents so buyers and admin can verify your factory" />
                 : <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {myDocs.map(d => {
                       const exp = isExpiringSoon(d.expiryDate)
