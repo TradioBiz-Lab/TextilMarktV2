@@ -1,4 +1,5 @@
 import { useState, useMemo, Fragment } from 'react'
+import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, ArrowLeftRight, X } from 'lucide-react'
 import {
   T, ORDER_STATUSES, STAGE_DOC_MAP, DOC_ICONS,
   stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone,
@@ -531,7 +532,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
               {order.product} · {order.buyerCompany || '—'} · {order.totalQty?.toLocaleString()} pcs · Due {fmtDate(order.delivery)}
             </div>
           </div>
-          <Btn variant="secondary" onClick={() => setShowUp(true)} icon="📎">Upload Document</Btn>
+          <Btn variant="secondary" onClick={() => setShowUp(true)} icon={<Paperclip size={13} />}>Upload Document</Btn>
         </FlexRow>
         <div style={{ marginBottom: 12, fontSize: 13, fontWeight: 600, color: T.textMuted }}>Select a manufacturer to manage that transaction:</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -573,7 +574,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   const tabs = [
     { id: 'production', label: `Production` },
     { id: 'documents', label: `Documents (${txnDocs.filter(d => d.stageIndex == null).length})` },
-    { id: 'stage_evidence', label: `🖼 Stage Evidence (${stageDocs.length})` },
+    { id: 'stage_evidence', label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><ImageIcon size={13} /> Stage Evidence ({stageDocs.length})</span> },
     { id: 'compliance', label: `Compliance (${mfrDocs.length})` },
     { id: 'info', label: 'Order Info' },
   ]
@@ -863,9 +864,9 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                             {m.status}
                           </button>
                           <button onClick={() => openMaterialPoUpload(usTarget, usIndex, mi)} title="Attach PO document"
-                            style={{ background: '#fff', border: `1px solid ${T.border}`, borderRadius: 6, cursor: 'pointer', width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, flexShrink: 0 }}>📎</button>
+                            style={{ background: '#fff', border: `1px solid ${T.border}`, borderRadius: 6, cursor: 'pointer', width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Paperclip size={11} /></button>
                           <button onClick={() => deleteMaterial(usTarget, usIndex, mi)}
-                            style={{ background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 6, cursor: 'pointer', width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: T.danger, flexShrink: 0 }}>×</button>
+                            style={{ background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 6, cursor: 'pointer', width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.danger, flexShrink: 0 }}><X size={12} /></button>
                         </div>
                         {poRow.length > 0 && (
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
@@ -881,8 +882,8 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                                   if (!blob) { setViewerLoading(false); return }
                                   setViewerBlob(blob)
                                 } catch { setViewerLoading(false) }
-                              }} style={{ fontSize: 10, background: T.primaryLight, color: T.primaryDark, padding: '2px 8px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${T.warningBorder}` }}>
-                                📎 {d.name}
+                              }} style={{ fontSize: 10, background: T.primaryLight, color: T.primaryDark, padding: '2px 8px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${T.warningBorder}`, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                <Paperclip size={10} /> {d.name}
                               </span>
                             ))}
                           </div>
@@ -926,14 +927,14 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                           if (!blob) { setViewerLoading(false); return }
                           setViewerBlob(blob)
                         } catch { setViewerLoading(false) }
-                      }} style={{ fontSize: 10, background: T.primaryLight, color: T.primaryDark, padding: '2px 8px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${T.warningBorder}` }}>
-                        {DOC_ICONS[d.type] || '📄'} {d.name}
+                      }} style={{ fontSize: 10, background: T.primaryLight, color: T.primaryDark, padding: '2px 8px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${T.warningBorder}`, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                        {(() => { const Icon = DOC_ICONS[d.type] || FileText; return <Icon size={10} /> })()} {d.name}
                       </span>
                     ))}
                   </div>
                 )}
-                <Btn size="sm" variant="outline" onClick={() => openStageDocUpload(usTarget, usIndex)}>
-                  📎 Upload Evidence
+                <Btn size="sm" variant="outline" onClick={() => openStageDocUpload(usTarget, usIndex)} icon={<Paperclip size={12} />}>
+                  Upload Evidence
                 </Btn>
               </div>
 
@@ -997,8 +998,8 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                     <button
                       onClick={() => openStageDocUpload(etaTarget, i)}
                       title="Upload evidence document for this stage"
-                      style={{ flexShrink: 0, background: '#fff', border: `1px solid ${T.border}`, borderRadius: 6, cursor: 'pointer', width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}
-                    >📎</button>
+                      style={{ flexShrink: 0, background: '#fff', border: `1px solid ${T.border}`, borderRadius: 6, cursor: 'pointer', width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    ><Paperclip size={13} /></button>
                   </div>
                 ))}
               </div>
@@ -1085,7 +1086,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                 </div>
               </div>
             ))}
-            {sdErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500 }}>⚠ {sdErr}</div>}
+            {sdErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={12} /> {sdErr}</div>}
             <FlexRow justify="space-between" gap={8}>
               <Btn variant="secondary" size="sm" onClick={addSdItem}>+ Add Another Document</Btn>
               <FlexRow gap={8}>
@@ -1165,10 +1166,10 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flexShrink: 0 }}>
           {order.assignments?.length > 1 && (
-            <Btn variant="secondary" size="sm" onClick={() => setSelectedMid(null)}>⇄ Change Mfr</Btn>
+            <Btn variant="secondary" size="sm" onClick={() => setSelectedMid(null)} icon={<ArrowLeftRight size={13} />}>Change Mfr</Btn>
           )}
-          <Btn variant="secondary" onClick={() => setShowUp(true)} icon="📎">Upload Document</Btn>
-          <Btn variant="secondary" onClick={() => setShowEdit(true)} icon="✏️">Edit Order</Btn>
+          <Btn variant="secondary" onClick={() => setShowUp(true)} icon={<Paperclip size={13} />}>Upload Document</Btn>
+          <Btn variant="secondary" onClick={() => setShowEdit(true)} icon={<Pencil size={13} />}>Edit Order</Btn>
           <button
             onClick={() => setShowDelete(true)}
             style={{ padding: '8px 14px', fontSize: 12, fontWeight: 700, borderRadius: 8, border: `1px solid ${T.dangerBorder}`, background: T.dangerBg, color: T.danger, cursor: 'pointer', fontFamily: 'inherit' }}
@@ -1206,11 +1207,11 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                       </div>
                       <FlexRow gap={8}>
                         <Badge status={a.status} />
-                        <Btn size="sm" variant="warning" onClick={() => openStatusOverride(a.mid, a.status)}>✏️ Status</Btn>
+                        <Btn size="sm" variant="warning" onClick={() => openStatusOverride(a.mid, a.status)} icon={<Pencil size={12} />}>Status</Btn>
                         {currentUser?.adminType === 'master' && (
-                          <Btn size="sm" variant="outline" onClick={() => openStageOverride(a.mid)}>⚠️ Override</Btn>
+                          <Btn size="sm" variant="outline" onClick={() => openStageOverride(a.mid)} icon={<ShieldAlert size={12} />}>Override</Btn>
                         )}
-                        <Btn size="sm" variant="secondary" onClick={() => openEtaAdjust(a.mid)}>📝 Bulk Edit</Btn>
+                        <Btn size="sm" variant="secondary" onClick={() => openEtaAdjust(a.mid)} icon={<ClipboardEdit size={12} />}>Bulk Edit</Btn>
                       </FlexRow>
                     </div>
 
@@ -1270,11 +1271,11 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                                 <FlexRow gap={6} style={{ marginTop: 2, flexWrap: 'wrap' }}>
                                   {kind !== 'quantity' && <span style={{ fontSize: 9, fontWeight: 700, color: T.textLight, textTransform: 'uppercase' }}>{kind}</span>}
                                   {(s.materials || []).length > 0 && (
-                                    <span style={{ fontSize: 9, fontWeight: 800, padding: '1px 5px', borderRadius: 3, background: receivedCount === s.materials.length ? T.successBg : T.warningBg, color: receivedCount === s.materials.length ? T.success : T.warning }}>
-                                      📦 {receivedCount}/{s.materials.length}
+                                    <span style={{ fontSize: 9, fontWeight: 800, padding: '1px 5px', borderRadius: 3, background: receivedCount === s.materials.length ? T.successBg : T.warningBg, color: receivedCount === s.materials.length ? T.success : T.warning, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                                      <Package size={9} /> {receivedCount}/{s.materials.length}
                                     </span>
                                   )}
-                                  {(s.updates || []).length > 0 && <span style={{ fontSize: 9, color: T.textMuted }}>💬 {s.updates.length}</span>}
+                                  {(s.updates || []).length > 0 && <span style={{ fontSize: 9, color: T.textMuted, display: 'inline-flex', alignItems: 'center', gap: 2 }}><MessageCircle size={9} /> {s.updates.length}</span>}
                                 </FlexRow>
                               </td>
                               <td style={{ padding: '8px 10px', fontSize: 11, color: T.textMuted, whiteSpace: 'nowrap' }}>
@@ -1321,7 +1322,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                                 <td colSpan={11} style={{ padding: 0, background: '#f8fafc', borderTop: `1px solid ${T.border}` }}>
                                 <div onClick={e => e.stopPropagation()} style={{ padding: '12px 16px', cursor: 'default' }}>
                                   {s.blocked && s.blockedReason && (
-                                    <div style={{ fontSize: 11, color: T.danger, background: T.dangerBg, borderRadius: 5, padding: '5px 9px', marginBottom: 10 }}>⛔ {s.blockedReason}</div>
+                                    <div style={{ fontSize: 11, color: T.danger, background: T.dangerBg, borderRadius: 5, padding: '5px 9px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={11} /> {s.blockedReason}</div>
                                   )}
 
                                   {kind === 'checklist' && (
@@ -1348,8 +1349,8 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                                             <button
                                               onClick={() => toggleStageItem(a.mid, i, ii, it.status)}
                                               title={it.status === 'done' ? 'Mark pending' : 'Mark done'}
-                                              style={{ cursor: 'pointer', border: `1px solid ${it.status === 'done' ? T.success : T.border}`, background: it.status === 'done' ? T.success : '#fff', color: '#fff', borderRadius: 4, width: 18, height: 18, fontSize: 11, lineHeight: 1, flexShrink: 0 }}
-                                            >{it.status === 'done' ? '✓' : ''}</button>
+                                              style={{ cursor: 'pointer', border: `1px solid ${it.status === 'done' ? T.success : T.border}`, background: it.status === 'done' ? T.success : '#fff', color: '#fff', borderRadius: 4, width: 18, height: 18, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                            >{it.status === 'done' ? <Check size={11} strokeWidth={3} /> : ''}</button>
                                             <span style={{ flex: 1, fontSize: 11, color: T.text, textDecoration: it.status === 'done' ? 'line-through' : 'none' }}>{it.name}</span>
                                             {it.dueDate && (
                                               <span style={{ fontSize: 9, color: T.textLight, fontFamily: "'JetBrains Mono',monospace", whiteSpace: 'nowrap' }} title={`Planned ${it.plannedDate === 'NA' ? 'N/A' : it.plannedDate ? fmtDate(it.plannedDate) : '—'}`}>
@@ -1357,12 +1358,12 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                                               </span>
                                             )}
                                             {it.doneDate && (
-                                              <span style={{ fontSize: 10, fontWeight: 700, color: T.success, fontFamily: "'JetBrains Mono',monospace", whiteSpace: 'nowrap' }} title="Actual completion date">
-                                                ✓ {fmtDate(it.doneDate)}
+                                              <span style={{ fontSize: 10, fontWeight: 700, color: T.success, fontFamily: "'JetBrains Mono',monospace", whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 2 }} title="Actual completion date">
+                                                <Check size={10} strokeWidth={3} /> {fmtDate(it.doneDate)}
                                               </span>
                                             )}
                                             <button onClick={() => removeStageItem(order.id, a.mid, i, ii)} title="Remove"
-                                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textLight, fontSize: 13 }}>×</button>
+                                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textLight, display: 'flex' }}><X size={12} /></button>
                                           </FlexRow>
                                           )
                                         })}
@@ -1423,8 +1424,8 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                       </div>
 
                       {a.note && (
-                        <div style={{ marginTop: 12, background: '#f8fafc', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: T.textMuted, border: `1px solid ${T.border}` }}>
-                          💬 {a.note}
+                        <div style={{ marginTop: 12, background: '#f8fafc', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: T.textMuted, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'flex-start', gap: 7 }}>
+                          <MessageCircle size={13} style={{ flexShrink: 0, marginTop: 2 }} /> {a.note}
                         </div>
                       )}
                     </div>
@@ -1439,7 +1440,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
             <div>
               <FlexRow justify="space-between" style={{ marginBottom: 14 }}>
                 <SectionLabel>Order Documents</SectionLabel>
-                <Btn size="sm" onClick={() => setShowUp(true)} icon="📎">Upload</Btn>
+                <Btn size="sm" onClick={() => setShowUp(true)} icon={<Paperclip size={13} />}>Upload</Btn>
               </FlexRow>
               {txnDocs.filter(d => d.stageIndex == null).length === 0 ? (
                 <Alert type="info">No documents uploaded for this order yet.</Alert>
@@ -1457,7 +1458,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
           {tab === 'stage_evidence' && (
             <div>
               {stageDocs.length === 0 ? (
-                <EmptyState icon="🖼" title="No stage evidence" desc="Images and docs uploaded for each production stage will appear here" />
+                <EmptyState icon={<ImageIcon size={30} color={T.textLight} />} title="No stage evidence" desc="Images and docs uploaded for each production stage will appear here" />
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   {(selectedAsgn?.stages || []).map((s, i) => {
@@ -1469,13 +1470,13 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                       <div key={i} style={{ border: `1px solid ${done ? T.successBorder : T.border}`, borderRadius: 12, overflow: 'hidden' }}>
                         <div style={{ padding: '10px 16px', background: done ? T.successBg : '#f8fafc', borderBottom: `1px solid ${done ? T.successBorder : T.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
                           <div style={{ width: 26, height: 26, borderRadius: '50%', background: done ? T.success : T.primary, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
-                            {done ? '✓' : i + 1}
+                            {done ? <Check size={12} strokeWidth={3} /> : i + 1}
                           </div>
                           <span style={{ fontSize: 13, fontWeight: 700, color: done ? T.success : T.text }}>{s.name}</span>
                           <span style={{ fontSize: 11, color: T.textMuted }}>{pct}%</span>
                           <FlexRow gap={8} style={{ marginLeft: 'auto' }}>
                             <span style={{ fontSize: 11, fontWeight: 700, color: '#1d4ed8', background: '#dbeafe', padding: '2px 8px', borderRadius: 10 }}>{sDocs.length} file{sDocs.length !== 1 ? 's' : ''}</span>
-                            <Btn size="sm" variant="outline" style={{ fontSize: 10 }} onClick={() => openStageDocUpload(effectiveMid, i)}>📎 Add</Btn>
+                            <Btn size="sm" variant="outline" style={{ fontSize: 10 }} onClick={() => openStageDocUpload(effectiveMid, i)} icon={<Paperclip size={10} />}>Add</Btn>
                           </FlexRow>
                         </div>
                         <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>

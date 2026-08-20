@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { Factory, ClipboardList, CheckCircle2, AlertTriangle, XCircle, Paperclip, Shield, BookOpen, Folder, Inbox, FileText, ChevronRight } from 'lucide-react'
 import { T, DOC_TYPES, DOC_ICONS, isExpiringSoon, isExpired } from '../../constants.js'
 import { Modal, Select, Input, Btn, Card, Alert, EmptyState, FlexRow, PageHeader, DocCard, FileUpload, StatCard, LoadingScreen, useToast, fileUploadPayload, Grid } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -72,14 +73,14 @@ export function AdminDocuments() {
     { v: 'all', l: `All (${nonStageDocs.length})` }, { v: 'PO', l: 'Purchase Orders' }, { v: 'buyer_order', l: 'Buyer Orders' },
     { v: 'tech_pack', l: 'Tech Packs' }, { v: 'cost_sheet', l: 'Cost Sheets' },
     { v: 'compliance_cert', l: 'Compliance' }, { v: 'factory_audit', l: 'Audit Reports' },
-    { v: 'mfr_profile', l: '🏭 Mfr Profiles' },
+    { v: 'mfr_profile', l: 'Mfr Profiles', Icon: Factory },
   ]
 
   const certTabs = [
-    { id: 'all', l: `All (${certData.all.length})`, icon: '📋' },
-    { id: 'active', l: `Active (${certData.active.length})`, icon: '🟢' },
-    { id: 'expiring', l: `Expiring (${certData.expiring.length})`, icon: '⚠️' },
-    { id: 'expired', l: `Expired (${certData.expired.length})`, icon: '❌' },
+    { id: 'all', l: `All (${certData.all.length})`, Icon: ClipboardList },
+    { id: 'active', l: `Active (${certData.active.length})`, Icon: CheckCircle2 },
+    { id: 'expiring', l: `Expiring (${certData.expiring.length})`, Icon: AlertTriangle },
+    { id: 'expired', l: `Expired (${certData.expired.length})`, Icon: XCircle },
   ]
 
   const getMfrName = mfrId => {
@@ -195,17 +196,17 @@ export function AdminDocuments() {
       })()}
 
       {mode !== 'wiki' && (
-        <PageHeader title="Document Repository" subtitle="All documents across orders and manufacturers" action={<Btn onClick={() => setShow(true)} icon="📎">Upload Document</Btn>} />
+        <PageHeader title="Document Repository" subtitle="All documents across orders and manufacturers" action={<Btn onClick={() => setShow(true)} icon={<Paperclip size={13} />}>Upload Document</Btn>} />
       )}
 
       {/* Mode toggle: Documents vs Certificate Tracker vs Wiki — Wiki is part of this
           same feature, not a separate nav destination (tech packs, SOPs, inspection
           forms etc. are all "documents"). */}
       <div style={{ display: 'flex', gap: 0, borderBottom: `2px solid ${T.border}`, marginBottom: 16 }}>
-        {[{ id: 'docs', l: 'All Documents' }, { id: 'certs', l: 'Certificate Tracker' }, { id: 'wiki', l: 'Wiki' }].map(m => (
+        {[{ id: 'docs', l: 'All Documents', Icon: Folder }, { id: 'certs', l: 'Certificate Tracker', Icon: Shield }, { id: 'wiki', l: 'Wiki', Icon: BookOpen }].map(m => (
           <button key={m.id} onClick={() => setMode(m.id)}
-            style={{ padding: '10px 22px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: mode === m.id ? T.primary : T.textMuted, borderBottom: `2px solid ${mode === m.id ? T.primary : 'transparent'}`, marginBottom: -2, fontFamily: 'inherit' }}>
-            {m.id === 'certs' ? '🛡 ' : m.id === 'wiki' ? '📖 ' : '📁 '}{m.l}
+            style={{ padding: '10px 22px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: mode === m.id ? T.primary : T.textMuted, borderBottom: `2px solid ${mode === m.id ? T.primary : 'transparent'}`, marginBottom: -2, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+            <m.Icon size={15} />{m.l}
           </button>
         ))}
       </div>
@@ -217,8 +218,8 @@ export function AdminDocuments() {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
             {filterBtns.map(fb => (
               <button key={fb.v} onClick={() => setFilt(fb.v)}
-                style={{ padding: '5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer', background: filt === fb.v ? T.primary : T.surface, color: filt === fb.v ? '#fff' : T.textMuted, border: filt === fb.v ? 'none' : `1px solid ${T.border}`, fontFamily: 'inherit' }}>
-                {fb.l}
+                style={{ padding: '5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer', background: filt === fb.v ? T.primary : T.surface, color: filt === fb.v ? '#fff' : T.textMuted, border: filt === fb.v ? 'none' : `1px solid ${T.border}`, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                {fb.Icon && <fb.Icon size={12} />}{fb.l}
               </button>
             ))}
           </div>
@@ -239,8 +240,8 @@ export function AdminDocuments() {
                   return (
                     <div style={{ border: `1px solid ${isOpen ? T.primary + '44' : T.border}`, borderRadius: 12, overflow: 'hidden', transition: 'border-color 0.15s' }}>
                       <button onClick={() => toggleGroup('__buyer_docs__')} style={{ width: '100%', padding: '11px 16px', background: isOpen ? T.primaryLight : '#fff7ed', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'inherit', transition: 'background 0.15s' }}>
-                        <span style={{ fontSize: 13, color: isOpen ? T.primary : T.textMuted, transition: 'transform 0.15s', display: 'inline-block', transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>›</span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>📥 Buyer Docs</span>
+                        <span style={{ color: isOpen ? T.primary : T.textMuted, transition: 'transform 0.15s', display: 'inline-flex', transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}><ChevronRight size={13} /></span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Inbox size={13} /> Buyer Docs</span>
                         <span style={{ fontSize: 10, color: T.textMuted, fontWeight: 600 }}>Requirement documents uploaded by buyers</span>
                         <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: '#9a3412', background: '#fed7aa', padding: '1px 8px', borderRadius: 10 }}>{buyerDocs.length}</span>
                       </button>
@@ -259,8 +260,8 @@ export function AdminDocuments() {
                   return (
                     <div style={{ border: `1px solid ${T.border}`, borderRadius: 12, overflow: 'hidden' }}>
                       <button onClick={() => toggleGroup('__general__')} style={{ width: '100%', padding: '11px 16px', background: '#f8fafc', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'inherit' }}>
-                        <span style={{ fontSize: 13, color: isOpen ? T.primary : T.textMuted, transition: 'transform 0.15s', display: 'inline-block', transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>›</span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>📁 General Documents</span>
+                        <span style={{ color: isOpen ? T.primary : T.textMuted, transition: 'transform 0.15s', display: 'inline-flex', transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}><ChevronRight size={13} /></span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Folder size={13} /> General Documents</span>
                         <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: T.textMuted, background: '#e2e8f0', padding: '1px 8px', borderRadius: 10 }}>{noOrder.length}</span>
                       </button>
                       {isOpen && (
@@ -278,7 +279,7 @@ export function AdminDocuments() {
                   return (
                     <div key={o.id} style={{ border: `1px solid ${isOpen ? T.primary + '44' : T.border}`, borderRadius: 12, overflow: 'hidden', transition: 'border-color 0.15s' }}>
                       <button onClick={() => toggleGroup(o.id)} style={{ width: '100%', padding: '11px 16px', background: isOpen ? T.primaryLight : '#f8fafc', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'inherit', transition: 'background 0.15s' }}>
-                        <span style={{ fontSize: 13, color: isOpen ? T.primary : T.textMuted, transition: 'transform 0.15s', display: 'inline-block', transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>›</span>
+                        <span style={{ color: isOpen ? T.primary : T.textMuted, transition: 'transform 0.15s', display: 'inline-flex', transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}><ChevronRight size={13} /></span>
                         <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, fontWeight: 800, color: T.primary }}>{o.id}</span>
                         <span style={{ fontSize: 12, color: T.text, fontWeight: 600 }}>{o.product}</span>
                         {o.season && <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', background: '#dbeafe', padding: '1px 6px', borderRadius: 4 }}>{o.season}</span>}
@@ -292,13 +293,13 @@ export function AdminDocuments() {
                     </div>
                   )
                 })}
-                {show2.length === 0 && <Card><EmptyState icon="📁" title="No documents" desc="Upload your first document above" /></Card>}
+                {show2.length === 0 && <Card><EmptyState icon={<Folder size={26} color={T.textLight} />} title="No documents" desc="Upload your first document above" /></Card>}
               </div>
             )
           })() : (
             <>
               {show2.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} />)}
-              {show2.length === 0 && <Card><EmptyState icon="📁" title="No documents" desc="Upload your first document above" /></Card>}
+              {show2.length === 0 && <Card><EmptyState icon={<Folder size={26} color={T.textLight} />} title="No documents" desc="Upload your first document above" /></Card>}
             </>
           )}
         </>
@@ -308,10 +309,10 @@ export function AdminDocuments() {
         <>
           {/* Summary stats */}
           <Grid cols={4} gap={12} style={{ marginBottom: 18 }}>
-            <StatCard label="Total Certificates" value={certData.all.length} icon="📋" bg={T.infoBg} />
-            <StatCard label="Active" value={certData.active.length} icon="🟢" bg={T.successBg} />
-            <StatCard label="Expiring (30d)" value={certData.expiring.length} icon="⚠️" bg={T.warningBg} />
-            <StatCard label="Expired" value={certData.expired.length} icon="❌" bg={T.dangerBg} />
+            <StatCard label="Total Certificates" value={certData.all.length} icon={<ClipboardList size={20} color={T.info} />} bg={T.infoBg} />
+            <StatCard label="Active" value={certData.active.length} icon={<CheckCircle2 size={20} color={T.success} />} bg={T.successBg} />
+            <StatCard label="Expiring (30d)" value={certData.expiring.length} icon={<AlertTriangle size={20} color={T.warning} />} bg={T.warningBg} />
+            <StatCard label="Expired" value={certData.expired.length} icon={<XCircle size={20} color={T.danger} />} bg={T.dangerBg} />
           </Grid>
 
           {(certData.expiring.length > 0 || certData.expired.length > 0) && (
@@ -325,8 +326,8 @@ export function AdminDocuments() {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
             {certTabs.map(ct => (
               <button key={ct.id} onClick={() => setCertTab(ct.id)}
-                style={{ padding: '6px 16px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer', background: certTab === ct.id ? (ct.id === 'expired' ? T.dangerBg : ct.id === 'expiring' ? T.warningBg : ct.id === 'active' ? T.successBg : T.primary) : T.surface, color: certTab === ct.id ? (ct.id === 'expired' ? T.danger : ct.id === 'expiring' ? T.warning : ct.id === 'active' ? T.success : '#fff') : T.textMuted, border: certTab === ct.id ? 'none' : `1px solid ${T.border}`, fontFamily: 'inherit' }}>
-                {ct.icon} {ct.l}
+                style={{ padding: '6px 16px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer', background: certTab === ct.id ? (ct.id === 'expired' ? T.dangerBg : ct.id === 'expiring' ? T.warningBg : ct.id === 'active' ? T.successBg : T.primary) : T.surface, color: certTab === ct.id ? (ct.id === 'expired' ? T.danger : ct.id === 'expiring' ? T.warning : ct.id === 'active' ? T.success : '#fff') : T.textMuted, border: certTab === ct.id ? 'none' : `1px solid ${T.border}`, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <ct.Icon size={12} /> {ct.l}
               </button>
             ))}
           </div>
@@ -349,18 +350,19 @@ export function AdminDocuments() {
                     const expiring = isExpiringSoon(cert.expiryDate) && !expired
                     const statusBg = expired ? T.dangerBg : expiring ? T.warningBg : T.successBg
                     const statusColor = expired ? T.danger : expiring ? T.warning : T.success
-                    const statusLabel = expired ? '❌ Expired' : expiring ? '⚠️ Expiring' : '🟢 Active'
-                    const icon = DOC_ICONS[cert.type] || '📄'
+                    const StatusIcon = expired ? XCircle : expiring ? AlertTriangle : CheckCircle2
+                    const statusLabel = expired ? 'Expired' : expiring ? 'Expiring' : 'Active'
+                    const CertIcon = DOC_ICONS[cert.type] || FileText
 
                     return (
                       <tr key={cert.id} style={{ borderTop: `1px solid ${T.border}` }}>
                         <td style={{ padding: '10px 16px' }}>
-                          <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: statusBg, color: statusColor, whiteSpace: 'nowrap' }}>
-                            {statusLabel}
+                          <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: statusBg, color: statusColor, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <StatusIcon size={11} /> {statusLabel}
                           </span>
                         </td>
                         <td style={{ padding: '10px 16px' }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{icon} {cert.name}</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: T.text, display: 'flex', alignItems: 'center', gap: 6 }}><CertIcon size={13} /> {cert.name}</div>
                           <div style={{ fontSize: 10, color: T.textLight }}>Uploaded {fmtDate(cert.uploadedAt)}</div>
                         </td>
                         <td style={{ padding: '10px 16px', fontSize: 12, color: T.textMuted }}>{certTypeName(cert.type)}</td>
@@ -376,7 +378,7 @@ export function AdminDocuments() {
                     )
                   })}
                   {certFiltered.length === 0 && (
-                    <tr><td colSpan={7}><EmptyState icon="🛡" title="No certificates found" desc={certTab === 'all' ? 'Upload compliance certificates to track them here' : `No ${certTab} certificates`} /></td></tr>
+                    <tr><td colSpan={7}><EmptyState icon={<Shield size={26} color={T.textLight} />} title="No certificates found" desc={certTab === 'all' ? 'Upload compliance certificates to track them here' : `No ${certTab} certificates`} /></td></tr>
                   )}
                 </tbody>
               </table>
