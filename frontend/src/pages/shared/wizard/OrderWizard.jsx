@@ -1,6 +1,6 @@
 import { useState } from 'react'
+import { Check } from 'lucide-react'
 import { T } from '../../../constants.js'
-import { PageHeader, Card, FlexRow } from '../../../components/ui.jsx'
 import { useApp } from '../../../context.jsx'
 import { Step1MasterOrder } from './Step1MasterOrder.jsx'
 import { Step2Documents } from './Step2Documents.jsx'
@@ -20,6 +20,11 @@ import { StepHandoff } from './StepHandoff.jsx'
 // step created, and Steps 4-6 (Materials/Costing/TNA) hand off to the
 // existing standalone pages for each created line item rather than
 // re-embedding them here — those modules already work per-order/per-project.
+//
+// Deliberately styled as a single-column online form rather than a boxed
+// internal-tool panel: centered content, a slim progress bar in place of a
+// circle-and-connector stepper, generous whitespace. Each step still owns its
+// own layout — this shell only sets the frame around it.
 const STEPS = [
   { n: 1, label: 'Master Order' },
   { n: 2, label: 'Documents' },
@@ -42,41 +47,45 @@ export function OrderWizard({ onNavigate, onOpenOrder }) {
 
   const goTo = n => setStep(n)
   const patchState = patch => setWizardState(prev => ({ ...prev, ...patch }))
+  const progressPct = ((step - 1) / (STEPS.length - 1)) * 100
 
   return (
-    <div>
-      <PageHeader
-        title={role === 'admin' ? 'New Order Setup' : 'New Project Setup'}
-        subtitle="Master order → Documents → Line items → Materials & Costing → TNA"
-      />
+    <div style={{ maxWidth: 680, margin: '0 auto', padding: '8px 0 48px' }}>
+      <div style={{ textAlign: 'center', marginBottom: 34 }}>
+        <h1 style={{ fontSize: 27, fontWeight: 750, color: T.text, margin: 0, letterSpacing: '-0.025em' }}>
+          {role === 'admin' ? 'New Order Setup' : 'New Project Setup'}
+        </h1>
+        <p style={{ fontSize: 13.5, color: T.textMuted, marginTop: 7 }}>
+          A guided flow from master order to production plan — step {step} of {STEPS.length}.
+        </p>
+      </div>
 
-      <Card style={{ marginBottom: 16 }}>
-        <FlexRow gap={0} style={{ overflowX: 'auto' }}>
-          {STEPS.map((s, i) => {
-            const reached = step >= s.n || (s.n === 1 && wizardState.masterOrderId) || (s.n === 1 && wizardState.mfrMasterProjectId)
+      {/* Slim progress bar + step labels — the "online form" stepper */}
+      <div style={{ marginBottom: 38 }}>
+        <div style={{ height: 5, borderRadius: T.radius.pill, background: T.border, overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${progressPct}%`, borderRadius: T.radius.pill, background: T.primary, transition: 'width 0.35s ease' }} />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10 }}>
+          {STEPS.map(s => {
+            const reached = step >= s.n || (s.n === 1 && (wizardState.masterOrderId || wizardState.mfrMasterProjectId))
+            const done = step > s.n
             const active = step === s.n
             return (
-              <div key={s.n} style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 130 }}>
-                <div
-                  onClick={() => { if (reached) goTo(s.n) }}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 8, cursor: reached ? 'pointer' : 'default',
-                    opacity: reached ? 1 : 0.4,
-                  }}>
-                  <div style={{
-                    width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 12, fontWeight: 800, flexShrink: 0,
-                    background: active ? T.primary : (reached ? T.primaryLight : '#f1f5f9'),
-                    color: active ? '#fff' : (reached ? T.primaryDark : T.textLight),
-                  }}>{s.n}</div>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: active ? T.text : T.textMuted, whiteSpace: 'nowrap' }}>{s.label}</span>
-                </div>
-                {i < STEPS.length - 1 && <div style={{ flex: 1, height: 1, background: T.border, margin: '0 10px' }} />}
+              <div key={s.n} onClick={() => { if (reached) goTo(s.n) }}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: reached ? 'pointer' : 'default' }}>
+                {done ? (
+                  <span style={{ width: 14, height: 14, borderRadius: '50%', background: T.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Check size={9} color="#fff" strokeWidth={3.5} />
+                  </span>
+                ) : (
+                  <span style={{ width: 14, height: 14, borderRadius: '50%', border: `2px solid ${active ? T.primary : T.border}`, flexShrink: 0 }} />
+                )}
+                <span style={{ fontSize: 11.5, fontWeight: active ? 700 : 550, color: active ? T.text : (done ? T.textMuted : T.textLight), whiteSpace: 'nowrap' }}>{s.label}</span>
               </div>
             )
           })}
-        </FlexRow>
-      </Card>
+        </div>
+      </div>
 
       {step === 1 && (
         <Step1MasterOrder wizardState={wizardState} patchState={patchState} onNext={() => goTo(2)} />

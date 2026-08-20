@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { T, SEASONS, CATEGORIES } from '../../../constants.js'
-import { Card, Btn, Input, Select, FlexRow, useToast, SectionLabel, FileUpload, fileUploadPayload } from '../../../components/ui.jsx'
+import { Card, Btn, Input, Select, FlexRow, useToast, Alert, FileUpload, fileUploadPayload } from '../../../components/ui.jsx'
 import { useApp } from '../../../context.jsx'
 import { BulkUploadCsvPanel } from '../../admin/BulkUploadCsvPanel.jsx'
 
@@ -56,7 +56,7 @@ function MfrLineItemsForm({ wizardState, patchState, onNext, onBack }) {
     <>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {rows.map(row => (
-          <div key={row.key} style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div key={row.key} style={{ border: `1px solid ${T.border}`, borderRadius: T.radius.md, padding: 16, background: T.bg, display: 'flex', flexDirection: 'column', gap: 10 }}>
             <FlexRow justify="space-between">
               <div style={{ flex: 1 }} className="form-grid-2">
                 <Input label="Style Name *" value={row.styleName} onChange={e => updateRow(row.key, { styleName: e.target.value })} />
@@ -87,15 +87,15 @@ function MfrLineItemsForm({ wizardState, patchState, onNext, onBack }) {
         ))}
       </div>
 
-      <FlexRow justify="flex-start" style={{ marginTop: 12 }}>
+      <FlexRow justify="flex-start" style={{ marginTop: 14 }}>
         <Btn variant="secondary" onClick={() => setRows(prev => [...prev, blankStyleRow()])}>+ Add Style</Btn>
       </FlexRow>
 
-      {err && <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, marginTop: 12 }}>⚠ {err}</div>}
+      {err && <div style={{ marginTop: 16 }}><Alert type="danger">{err}</Alert></div>}
 
-      <FlexRow justify="space-between" style={{ marginTop: 20 }}>
-        <Btn variant="secondary" onClick={onBack}>← Back</Btn>
-        <Btn onClick={submit} disabled={saving}>{saving ? 'Creating…' : 'Next: Materials & Costing →'}</Btn>
+      <FlexRow justify="space-between" style={{ marginTop: 24 }}>
+        <Btn variant="secondary" size="lg" onClick={onBack}>← Back</Btn>
+        <Btn size="lg" onClick={submit} disabled={saving}>{saving ? 'Creating…' : 'Next: Materials & Costing →'}</Btn>
       </FlexRow>
     </>
   )
@@ -107,12 +107,14 @@ export function Step3LineItems({ wizardState, patchState, onNext, onBack }) {
   const masterOrder = isAdmin ? masterOrders.find(m => m.id === wizardState.masterOrderId) : null
 
   return (
-    <Card>
-      <SectionLabel>Step 3 — Product Line Items</SectionLabel>
-      <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 14 }}>
-        {isAdmin
-          ? 'Add each style — image, quantity, colourways — manually or via CSV. Production stages default to "NA" dates; you\'ll set the real TNA plan in the next step.'
-          : 'Add each style your own project covers.'}
+    <Card style={{ padding: '30px 32px' }}>
+      <div style={{ marginBottom: 22 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0, letterSpacing: '-0.01em' }}>Product line items</h2>
+        <p style={{ fontSize: 12.5, color: T.textMuted, marginTop: 5 }}>
+          {isAdmin
+            ? 'Add each style — image, quantity, colourways — manually or via CSV. Production stages default to "NA" dates; you\'ll set the real TNA plan in the next step.'
+            : 'Add each style your own project covers.'}
+        </p>
       </div>
 
       {isAdmin ? (

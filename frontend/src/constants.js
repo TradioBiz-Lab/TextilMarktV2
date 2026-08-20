@@ -130,20 +130,29 @@ export const REQUIREMENT_CATEGORIES = [
 export const REQUIREMENT_CATEGORY_LABEL = Object.fromEntries([...REQUIREMENT_CATEGORIES, { v: 'fabric', l: 'Fabric' }].map(c => [c.v, c.l]))
 
 export const T = {
-  bg: '#F8FAFC', surface: '#FFFFFF', border: '#e2e8f0', borderHover: '#CBD5E1',
-  primary: '#F97316', primaryDark: '#EA580C', primaryLight: '#FFF7ED',
+  bg: '#F7F8FA', surface: '#FFFFFF', surfaceSubtle: '#FAFBFC', border: '#E8EAEE', borderHover: '#D3D7DE',
+  primary: '#F97316', primaryDark: '#EA580C', primaryLight: '#FFF3E8',
   // textMuted/textLight darkened from slate-500/slate-400 — the previous values read
   // as too low-contrast on line items (order rows, bulk-edit grids): ~4.8:1 and ~2.6:1
   // against a white surface, the latter failing WCAG AA outright. Now ~7.6:1 / ~4.8:1.
-  text: '#0f172a', textMuted: '#475569', textLight: '#64748b',
-  success: '#10B981', successBg: '#ECFDF5', successBorder: '#6EE7B7',
-  danger: '#EF4444', dangerBg: '#FEF2F2', dangerBorder: '#FCA5A5',
+  text: '#12141A', textMuted: '#565D6B', textLight: '#878D99',
+  success: '#10B981', successBg: '#ECFDF5', successBorder: '#A7F3D0',
+  danger: '#EF4444', dangerBg: '#FEF2F2', dangerBorder: '#FECACA',
   warning: '#C2410C', warningBg: '#FFF7ED', warningBorder: '#FDBA74',
   info: '#002B5B', infoBg: '#E6F0FF', infoBorder: '#93c5fd',
   master: '#7c3aed', masterBg: '#ede9fe',
   sidebar: '#003B73', sidebarBorder: 'rgba(255,255,255,0.1)',
   sidebarGradient: 'linear-gradient(180deg, #0a4f8a 0%, #003B73 50%, #001c38 100%)',
   heroGradient: 'linear-gradient(135deg, #0a4f8a 0%, #003B73 55%, #002347 100%)',
+  // Shared radius/shadow scale — every primitive in ui.jsx pulls from here so a
+  // future tweak to "how rounded/how elevated" changes everywhere at once.
+  radius: { sm: 8, md: 12, lg: 16, xl: 20, pill: 999 },
+  shadow: {
+    xs: '0 1px 2px rgba(18,20,26,0.04)',
+    sm: '0 1px 3px rgba(18,20,26,0.06), 0 1px 2px rgba(18,20,26,0.04)',
+    md: '0 6px 16px rgba(18,20,26,0.08), 0 2px 4px rgba(18,20,26,0.04)',
+    lg: '0 16px 40px rgba(18,20,26,0.14), 0 4px 10px rgba(18,20,26,0.05)',
+  },
 }
 
 // India Standard Time is a fixed UTC+5:30 offset (no DST) — the app's day

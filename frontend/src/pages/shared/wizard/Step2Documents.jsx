@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { T, DOC_TYPES, PATTERN_LINK_ONLY_TYPES } from '../../../constants.js'
-import { Card, Btn, Select, Input, FlexRow, FileUpload, fileUploadPayload, useToast, SectionLabel } from '../../../components/ui.jsx'
+import { Card, Btn, Select, Input, FlexRow, FileUpload, fileUploadPayload, useToast, Alert } from '../../../components/ui.jsx'
 import { useApp } from '../../../context.jsx'
 
 // Document types relevant during setup — POs/tech packs/reference material.
@@ -51,17 +51,19 @@ export function Step2Documents({ wizardState, onNext, onBack }) {
   }
 
   return (
-    <Card>
-      <SectionLabel>Step 2 — Documents</SectionLabel>
-      <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 14 }}>
-        Upload POs, tech packs, fit comments, measurement sheets, patterns (DXF links), and SOPs. Optional — you can skip this and add documents later.
+    <Card style={{ padding: '30px 32px' }}>
+      <div style={{ marginBottom: 22 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0, letterSpacing: '-0.01em' }}>Reference documents</h2>
+        <p style={{ fontSize: 12.5, color: T.textMuted, marginTop: 5 }}>
+          POs, tech packs, fit comments, measurement sheets, patterns (DXF links), and SOPs. Optional — you can skip this and add documents later.
+        </p>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {rows.map(row => {
           const isLinkOnly = PATTERN_LINK_ONLY_TYPES.includes(row.type)
           return (
-            <div key={row.key} style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div key={row.key} style={{ border: `1px solid ${T.border}`, borderRadius: T.radius.md, padding: 16, background: T.bg, display: 'flex', flexDirection: 'column', gap: 10 }}>
               <FlexRow gap={10} style={{ flexWrap: 'wrap' }}>
                 <div style={{ minWidth: 180 }}>
                   <Select label="Type" value={row.type} onChange={e => updateRow(row.key, { type: e.target.value })}>
@@ -88,17 +90,17 @@ export function Step2Documents({ wizardState, onNext, onBack }) {
         })}
       </div>
 
-      <FlexRow justify="flex-start" style={{ marginTop: 12 }}>
+      <FlexRow justify="flex-start" style={{ marginTop: 14 }}>
         <Btn variant="secondary" onClick={() => setRows(prev => [...prev, blankDocRow()])}>+ Add Another Document</Btn>
       </FlexRow>
 
-      {err && <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, marginTop: 12 }}>⚠ {err}</div>}
+      {err && <div style={{ marginTop: 16 }}><Alert type="danger">{err}</Alert></div>}
 
-      <FlexRow justify="space-between" style={{ marginTop: 20 }}>
-        <Btn variant="secondary" onClick={onBack}>← Back</Btn>
+      <FlexRow justify="space-between" style={{ marginTop: 24 }}>
+        <Btn variant="secondary" size="lg" onClick={onBack}>← Back</Btn>
         <FlexRow gap={8}>
-          <Btn variant="secondary" onClick={onNext} disabled={uploading}>Skip</Btn>
-          <Btn onClick={submit} disabled={uploading}>
+          <Btn variant="secondary" size="lg" onClick={onNext} disabled={uploading}>Skip</Btn>
+          <Btn size="lg" onClick={submit} disabled={uploading}>
             {uploading ? 'Uploading…' : filledRows.length > 0 ? `Upload ${filledRows.length} & Continue →` : 'Next: Line Items →'}
           </Btn>
         </FlexRow>

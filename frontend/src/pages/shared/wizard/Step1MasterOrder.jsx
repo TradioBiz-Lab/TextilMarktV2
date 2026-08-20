@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { T, SEASONS } from '../../../constants.js'
-import { Card, Btn, Input, Select, FlexRow, useToast, SectionLabel } from '../../../components/ui.jsx'
+import { Card, Btn, Input, Select, FlexRow, useToast, Alert } from '../../../components/ui.jsx'
 import { useApp } from '../../../context.jsx'
 
 function randomPassword() {
@@ -99,11 +99,14 @@ export function Step1MasterOrder({ wizardState, patchState, onNext }) {
   }
 
   return (
-    <Card>
-      <SectionLabel>Step 1 — Master Order & Customer</SectionLabel>
+    <Card style={{ padding: '30px 32px' }}>
+      <div style={{ marginBottom: 22 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0, letterSpacing: '-0.01em' }}>Master order &amp; customer</h2>
+        <p style={{ fontSize: 12.5, color: T.textMuted, marginTop: 5 }}>{isAdmin ? 'Who is this order for, and what should we call it?' : 'Who is this project for?'}</p>
+      </div>
 
       {isAdmin ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 480, marginTop: 10 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {!showNewCustomer ? (
             <>
               <Select label="Customer *" value={buyerId} onChange={e => setBuyerId(e.target.value)}>
@@ -118,8 +121,8 @@ export function Step1MasterOrder({ wizardState, patchState, onNext }) {
               )}
             </>
           ) : (
-            <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: 14, background: '#fafbff', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <FlexRow justify="space-between"><strong style={{ fontSize: 13 }}>New Customer</strong>
+            <div style={{ border: `1px solid ${T.border}`, borderRadius: T.radius.md, padding: 16, background: T.bg, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <FlexRow justify="space-between"><strong style={{ fontSize: 13 }}>New customer</strong>
                 <button type="button" onClick={() => setShowNewCustomer(false)} style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: 12 }}>Cancel</button>
               </FlexRow>
               <Input label="Contact Name *" value={nc.name} onChange={e => setNc({ ...nc, name: e.target.value })} />
@@ -127,7 +130,7 @@ export function Step1MasterOrder({ wizardState, patchState, onNext }) {
               <Input label="Company *" value={nc.company} onChange={e => setNc({ ...nc, company: e.target.value })} />
               <Input label="Phone" value={nc.phone} onChange={e => setNc({ ...nc, phone: e.target.value })} />
               <Input label="Company Code (3–5 chars) *" value={nc.code} onChange={e => setNc({ ...nc, code: e.target.value.toUpperCase().slice(0, 5) })} placeholder="ZAR" hint="Used in order IDs — must be unique" />
-              {ncErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 600 }}>⚠ {ncErr}</div>}
+              {ncErr && <Alert type="danger">{ncErr}</Alert>}
               <Btn onClick={createCustomer}>Create Customer</Btn>
             </div>
           )}
@@ -138,16 +141,16 @@ export function Step1MasterOrder({ wizardState, patchState, onNext }) {
           </Select>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 480, marginTop: 10 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>Customer</label>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Customer</label>
             <input list="wizard-buyer-names" value={buyerName} onChange={e => setBuyerName(e.target.value)}
               placeholder="Select an existing customer, or type a new one"
-              style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 8, padding: '10px 12px', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+              style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: T.radius.sm, padding: '9px 13px', fontSize: 13.5, fontFamily: 'inherit', boxSizing: 'border-box' }} />
             <datalist id="wizard-buyer-names">
               {existingBuyerNames.map(n => <option key={n} value={n} />)}
             </datalist>
-            <div style={{ fontSize: 11, color: T.textLight, marginTop: 4 }}>This is your own client — Tradio has no record of them.</div>
+            <div style={{ fontSize: 11, color: T.textLight, marginTop: 5 }}>This is your own client — Tradio has no record of them.</div>
           </div>
           <Select label="Season" value={season} onChange={e => setSeason(e.target.value)}>
             {SEASONS.map(s => <option key={s} value={s}>{s}</option>)}
@@ -156,10 +159,10 @@ export function Step1MasterOrder({ wizardState, patchState, onNext }) {
         </div>
       )}
 
-      {err && <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, marginTop: 12 }}>⚠ {err}</div>}
+      {err && <div style={{ marginTop: 16 }}><Alert type="danger">{err}</Alert></div>}
 
-      <FlexRow justify="flex-end" style={{ marginTop: 20 }}>
-        <Btn onClick={submit} disabled={saving}>{saving ? 'Creating…' : 'Next: Documents →'}</Btn>
+      <FlexRow justify="flex-end" style={{ marginTop: 24 }}>
+        <Btn size="lg" onClick={submit} disabled={saving}>{saving ? 'Creating…' : 'Next: Documents →'}</Btn>
       </FlexRow>
     </Card>
   )

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react'
+import { Info, CheckCircle2, AlertTriangle, X, Crown } from 'lucide-react'
 import { T, ST, DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired } from '../constants.js'
 import * as pdfjsLib from 'pdfjs-dist'
 // Imported as a Vite worker (not `?url`) so the build emits a plain .js chunk —
@@ -159,7 +160,8 @@ function ToastStack({ toasts, onDismiss }) {
 export function Badge({ status }) {
   const s = ST[status] || { bg: '#f1f5f9', c: '#475569' }
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: s.bg, color: s.c, whiteSpace: 'nowrap', letterSpacing: '0.02em' }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px 3px 8px', borderRadius: T.radius.pill, fontSize: 11, fontWeight: 650, background: s.bg, color: s.c, whiteSpace: 'nowrap', letterSpacing: '0.01em' }}>
+      <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', flexShrink: 0 }} />
       {status}
     </span>
   )
@@ -173,16 +175,16 @@ export function RoleBadge({ role, adminType }) {
   }
   const s = map[role] || { label: role, bg: '#f1f5f9', c: '#475569' }
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: s.bg, color: s.c, whiteSpace: 'nowrap' }}>
-      {role === 'admin' && adminType === 'master' && '👑 '}{s.label}
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: T.radius.pill, fontSize: 11, fontWeight: 700, background: s.bg, color: s.c, whiteSpace: 'nowrap' }}>
+      {role === 'admin' && adminType === 'master' && <Crown size={11} />}{s.label}
     </span>
   )
 }
 
-export function Btn({ children, onClick, variant = 'primary', size = 'md', disabled, type = 'button', block, icon }) {
+export function Btn({ children, onClick, variant = 'primary', size = 'md', disabled, type = 'button', block, icon, style: extraStyle }) {
   const v = {
-    primary: { bg: T.primary, hover: T.primaryDark, color: '#fff', border: 'none' },
-    secondary: { bg: '#f8fafc', hover: '#f1f5f9', color: T.text, border: `1px solid ${T.border}` },
+    primary: { bg: T.primary, hover: T.primaryDark, color: '#fff', border: 'none', shadow: '0 1px 2px rgba(249,115,22,0.25), 0 4px 10px rgba(249,115,22,0.16)' },
+    secondary: { bg: '#fff', hover: '#F7F8FA', color: T.text, border: `1px solid ${T.border}`, shadow: T.shadow.xs },
     danger: { bg: T.dangerBg, hover: '#fecaca', color: T.danger, border: `1px solid ${T.dangerBorder}` },
     success: { bg: T.successBg, hover: '#bbf7d0', color: T.success, border: `1px solid ${T.successBorder}` },
     warning: { bg: T.warningBg, hover: '#fde68a', color: T.warning, border: `1px solid ${T.warningBorder}` },
@@ -190,13 +192,13 @@ export function Btn({ children, onClick, variant = 'primary', size = 'md', disab
     outline: { bg: 'transparent', hover: T.primaryLight, color: T.primary, border: `1px solid ${T.primary}` },
     master: { bg: T.masterBg, hover: '#ddd6fe', color: T.master, border: '1px solid #c4b5fd' },
   }[variant] || {}
-  const sz = { sm: { p: '4px 10px', fs: 11 }, md: { p: '7px 14px', fs: 13 }, lg: { p: '10px 20px', fs: 14 } }[size] || {}
+  const sz = { sm: { p: '6px 12px', fs: 11.5 }, md: { p: '9px 16px', fs: 13 }, lg: { p: '12px 22px', fs: 14 } }[size] || {}
   const [hov, setHov] = useState(false)
   return (
     <button type={type} disabled={disabled} onClick={onClick}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{ background: hov && !disabled ? v.hover : v.bg, color: v.color, border: v.border, padding: sz.p, borderRadius: 8, fontSize: sz.fs, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, whiteSpace: 'nowrap', width: block ? '100%' : undefined, transition: 'background 0.12s', fontFamily: 'inherit' }}>
-      {icon && <span style={{ fontSize: (sz.fs || 13) + 1 }}>{icon}</span>}{children}
+      style={{ background: hov && !disabled ? v.hover : v.bg, color: v.color, border: v.border, padding: sz.p, borderRadius: T.radius.sm, fontSize: sz.fs, fontWeight: 600, letterSpacing: '-0.005em', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, whiteSpace: 'nowrap', width: block ? '100%' : undefined, boxShadow: disabled ? 'none' : v.shadow, transition: 'background 0.12s, box-shadow 0.15s, transform 0.1s', fontFamily: 'inherit', transform: hov && !disabled ? 'translateY(-0.5px)' : 'none', ...extraStyle }}>
+      {icon && <span style={{ fontSize: (sz.fs || 13) + 1, display: 'inline-flex' }}>{icon}</span>}{children}
     </button>
   )
 }
@@ -204,10 +206,10 @@ export function Btn({ children, onClick, variant = 'primary', size = 'md', disab
 export function Input({ label, error, hint, style: s, inputStyle, ...p }) {
   return (
     <div style={s}>
-      {label && <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>{label}</label>}
-      <input {...p} style={{ width: '100%', border: `1px solid ${error ? T.danger : T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit', ...inputStyle }} />
-      {error && <div style={{ fontSize: 11, color: T.danger, marginTop: 3 }}>⚠ {error}</div>}
-      {hint && !error && <div style={{ fontSize: 11, color: T.textLight, marginTop: 3 }}>{hint}</div>}
+      {label && <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>{label}</label>}
+      <input {...p} style={{ width: '100%', border: `1px solid ${error ? T.danger : T.border}`, borderRadius: T.radius.sm, padding: '9px 13px', fontSize: 13.5, color: T.text, background: T.surface, fontFamily: 'inherit', transition: 'border-color 0.12s', ...inputStyle }} />
+      {error && <div style={{ fontSize: 11, color: T.danger, marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}><AlertTriangle size={11} /> {error}</div>}
+      {hint && !error && <div style={{ fontSize: 11, color: T.textLight, marginTop: 4 }}>{hint}</div>}
     </div>
   )
 }
@@ -222,9 +224,9 @@ export function SupplierCombobox({ label = 'Supplier', suppliers = [], value, on
   const listId = useRef(`supplier-list-${++supplierComboboxSeq}`).current
   return (
     <div>
-      {label && <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>{label}</label>}
+      {label && <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>{label}</label>}
       <input list={listId} value={value || ''} onChange={e => onChange(e.target.value)} placeholder={placeholder || 'Supplier name'}
-        style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+        style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: T.radius.sm, padding: '9px 13px', fontSize: 13.5, color: T.text, background: T.surface, fontFamily: 'inherit', boxSizing: 'border-box' }} />
       <datalist id={listId}>
         {suppliers.map(s => <option key={s.id} value={s.name} />)}
       </datalist>
@@ -235,8 +237,8 @@ export function SupplierCombobox({ label = 'Supplier', suppliers = [], value, on
 export function Select({ label, children, style: s, ...p }) {
   return (
     <div style={s}>
-      {label && <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>{label}</label>}
-      <select {...p} style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit', cursor: 'pointer' }}>{children}</select>
+      {label && <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>{label}</label>}
+      <select {...p} style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: T.radius.sm, padding: '9px 13px', fontSize: 13.5, color: T.text, background: T.surface, fontFamily: 'inherit', cursor: 'pointer' }}>{children}</select>
     </div>
   )
 }
@@ -244,9 +246,9 @@ export function Select({ label, children, style: s, ...p }) {
 export function Textarea({ label, hint, ...p }) {
   return (
     <div>
-      {label && <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>{label}</label>}
-      <textarea {...p} style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit', resize: 'vertical', minHeight: 72 }} />
-      {hint && <div style={{ fontSize: 11, color: T.textLight, marginTop: 3 }}>{hint}</div>}
+      {label && <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>{label}</label>}
+      <textarea {...p} style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: T.radius.sm, padding: '9px 13px', fontSize: 13.5, color: T.text, background: T.surface, fontFamily: 'inherit', resize: 'vertical', minHeight: 72, lineHeight: 1.5 }} />
+      {hint && <div style={{ fontSize: 11, color: T.textLight, marginTop: 4 }}>{hint}</div>}
     </div>
   )
 }
@@ -256,7 +258,7 @@ export function Card({ children, style: s, pad = true, onClick }) {
   return (
     <div onClick={onClick}
       onMouseEnter={() => onClick && setHov(true)} onMouseLeave={() => onClick && setHov(false)}
-      style={{ background: T.surface, borderRadius: 12, border: `1px solid ${hov ? T.borderHover : T.border}`, overflow: 'hidden', boxShadow: hov ? '0 4px 16px rgba(0,0,0,0.08)' : 'none', transition: 'box-shadow 0.15s, border-color 0.15s', cursor: onClick ? 'pointer' : undefined, ...s, padding: pad ? (s?.padding || '20px') : 0 }}>
+      style={{ background: T.surface, borderRadius: T.radius.lg, border: `1px solid ${hov ? T.borderHover : T.border}`, overflow: 'hidden', boxShadow: hov ? T.shadow.md : T.shadow.xs, transition: 'box-shadow 0.18s, border-color 0.18s, transform 0.18s', cursor: onClick ? 'pointer' : undefined, transform: hov && onClick ? 'translateY(-1px)' : 'none', ...s, padding: pad ? (s?.padding || '22px') : 0 }}>
       {children}
     </div>
   )
@@ -270,16 +272,16 @@ export function Modal({ title, subtitle, onClose, children, size = 'md' }) {
   }, [onClose])
   const w = { sm: 420, md: 500, lg: 680, xl: 820, xxl: 1040 }[size] || 500
   return (
-    <div className="modal-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-inner" style={{ background: T.surface, border: `1px solid ${T.border}`, width: '100%', maxWidth: w, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '20px 24px 16px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
+    <div className="modal-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(15,17,23,0.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(3px)' }} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-inner" style={{ background: T.surface, border: `1px solid ${T.border}`, width: '100%', maxWidth: w, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: T.shadow.lg, borderRadius: T.radius.lg }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '22px 26px 16px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>{title}</div>
-            {subtitle && <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>{subtitle}</div>}
+            <div style={{ fontSize: 17, fontWeight: 750, color: T.text, letterSpacing: '-0.01em' }}>{title}</div>
+            {subtitle && <div style={{ fontSize: 12.5, color: T.textMuted, marginTop: 4 }}>{subtitle}</div>}
           </div>
-          <button onClick={onClose} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: T.textMuted, flexShrink: 0, marginTop: 1 }}>×</button>
+          <button onClick={onClose} style={{ background: T.bg, border: 'none', cursor: 'pointer', width: 30, height: 30, borderRadius: T.radius.sm, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.textMuted, flexShrink: 0, marginTop: 1, transition: 'background 0.12s' }}><X size={15} /></button>
         </div>
-        <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>{children}</div>
+        <div style={{ padding: '22px 26px', overflowY: 'auto', flex: 1 }}>{children}</div>
       </div>
     </div>
   )
@@ -287,10 +289,10 @@ export function Modal({ title, subtitle, onClose, children, size = 'md' }) {
 
 export function Tabs({ tabs, active, onChange }) {
   return (
-    <div style={{ display: 'flex', borderBottom: `1px solid ${T.border}`, gap: 0, flexShrink: 0, overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+    <div style={{ display: 'flex', borderBottom: `1px solid ${T.border}`, gap: 4, flexShrink: 0, overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
       {tabs.map(t => (
         <button key={t.id} onClick={() => onChange(t.id)}
-          style={{ padding: '10px 18px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: active === t.id ? T.primary : T.textMuted, borderBottom: `2px solid ${active === t.id ? T.primary : 'transparent'}`, transition: 'all 0.15s', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+          style={{ padding: '11px 16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: active === t.id ? 700 : 550, color: active === t.id ? T.text : T.textMuted, borderBottom: `2px solid ${active === t.id ? T.primary : 'transparent'}`, transition: 'all 0.15s', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
           {t.label}
         </button>
       ))}
@@ -300,11 +302,11 @@ export function Tabs({ tabs, active, onChange }) {
 
 export function StatCard({ label, value, icon, bg, trend }) {
   return (
-    <div style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.border}`, padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
-      <div style={{ width: 46, height: 46, borderRadius: 12, background: bg || T.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>{icon}</div>
+    <div style={{ background: T.surface, borderRadius: T.radius.lg, border: `1px solid ${T.border}`, boxShadow: T.shadow.xs, padding: '20px 22px', display: 'flex', alignItems: 'center', gap: 15 }}>
+      <div style={{ width: 46, height: 46, borderRadius: T.radius.md, background: bg || T.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 21, flexShrink: 0 }}>{icon}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 26, fontWeight: 800, color: T.text, lineHeight: 1.1 }}>{value}</div>
-        <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>{label}</div>
+        <div style={{ fontSize: 25, fontWeight: 750, color: T.text, lineHeight: 1.1, letterSpacing: '-0.02em' }}>{value}</div>
+        <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3, fontWeight: 500 }}>{label}</div>
       </div>
       {trend != null && <div style={{ fontSize: 12, fontWeight: 700, color: trend >= 0 ? T.success : T.danger }}>{trend >= 0 ? '+' : ''}{trend}%</div>}
     </div>
@@ -313,14 +315,14 @@ export function StatCard({ label, value, icon, bg, trend }) {
 
 export function Alert({ type, children }) {
   const s = {
-    info: { bg: T.infoBg, border: T.infoBorder, c: T.info, icon: 'ℹ' },
-    success: { bg: T.successBg, border: T.successBorder, c: T.success, icon: '✓' },
-    warning: { bg: T.warningBg, border: T.warningBorder, c: T.warning, icon: '⚠' },
-    danger: { bg: T.dangerBg, border: T.dangerBorder, c: T.danger, icon: '⚠' },
-  }[type] || { bg: T.infoBg, border: T.infoBorder, c: T.info, icon: 'ℹ' }
+    info: { bg: T.infoBg, border: T.infoBorder, c: T.info, Icon: Info },
+    success: { bg: T.successBg, border: T.successBorder, c: T.success, Icon: CheckCircle2 },
+    warning: { bg: T.warningBg, border: T.warningBorder, c: T.warning, Icon: AlertTriangle },
+    danger: { bg: T.dangerBg, border: T.dangerBorder, c: T.danger, Icon: AlertTriangle },
+  }[type] || { bg: T.infoBg, border: T.infoBorder, c: T.info, Icon: Info }
   return (
-    <div style={{ background: s.bg, border: `1px solid ${s.border}`, borderRadius: 10, padding: '10px 14px', fontSize: 13, color: s.c, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-      <span style={{ flexShrink: 0, fontWeight: 700 }}>{s.icon}</span><div style={{ flex: 1 }}>{children}</div>
+    <div style={{ background: s.bg, border: `1px solid ${s.border}`, borderRadius: T.radius.sm, padding: '11px 14px', fontSize: 13, color: s.c, display: 'flex', gap: 9, alignItems: 'flex-start' }}>
+      <s.Icon size={15} style={{ flexShrink: 0, marginTop: 1 }} /><div style={{ flex: 1, lineHeight: 1.5 }}>{children}</div>
     </div>
   )
 }
@@ -856,8 +858,8 @@ export function PageHeader({ title, subtitle, action }) {
   return (
     <div className="page-header">
       <div>
-        <h1 style={{ fontSize: 22, fontWeight: 800, color: T.text, margin: 0, letterSpacing: '-0.02em' }}>{title}</h1>
-        {subtitle && <p style={{ fontSize: 13, color: T.textMuted, marginTop: 5 }}>{subtitle}</p>}
+        <h1 style={{ fontSize: 26, fontWeight: 750, color: T.text, margin: 0, letterSpacing: '-0.025em', lineHeight: 1.15 }}>{title}</h1>
+        {subtitle && <p style={{ fontSize: 13.5, color: T.textMuted, marginTop: 6, lineHeight: 1.5 }}>{subtitle}</p>}
       </div>
       {action}
     </div>
@@ -866,10 +868,10 @@ export function PageHeader({ title, subtitle, action }) {
 
 export function EmptyState({ icon, title, desc }) {
   return (
-    <div style={{ textAlign: 'center', padding: '48px 24px', color: T.textLight }}>
-      <div style={{ fontSize: 36, marginBottom: 12 }}>{icon}</div>
-      <div style={{ fontSize: 15, fontWeight: 700, color: T.textMuted, marginBottom: 6 }}>{title}</div>
-      <div style={{ fontSize: 13 }}>{desc}</div>
+    <div style={{ textAlign: 'center', padding: '52px 24px', color: T.textLight }}>
+      <div style={{ width: 68, height: 68, borderRadius: T.radius.pill, background: T.bg, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30, margin: '0 auto 16px' }}>{icon}</div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: T.text, marginBottom: 6 }}>{title}</div>
+      <div style={{ fontSize: 13, lineHeight: 1.5, maxWidth: 360, margin: '0 auto' }}>{desc}</div>
     </div>
   )
 }
