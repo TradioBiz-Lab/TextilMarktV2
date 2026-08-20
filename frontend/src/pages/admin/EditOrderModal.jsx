@@ -92,7 +92,7 @@ export function EditOrderModal({ order, onClose, onSave }) {
             )}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="form-grid-2" style={{ gap: 12 }}>
             <div>
               <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Category</label>
               <select
@@ -110,7 +110,7 @@ export function EditOrderModal({ order, onClose, onSave }) {
             </Select>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="form-grid-2" style={{ gap: 12 }}>
             <Input
               label="Total Quantity *"
               type="number"

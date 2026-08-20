@@ -449,6 +449,18 @@ export function AdminOrders({ onOpen, onNavigate, initialStatus }) {
     return result
   })()
 
+  // A small account has one or two master orders, and collapsing those meant the
+  // page opened as column headers above nothing — reading as an empty table
+  // rather than a tidy one. Auto-expand once, on first load, only when the list
+  // is short enough that the scroll argument above doesn't apply. Runs a single
+  // time so every later toggle is purely the user's.
+  const [autoExpanded, setAutoExpanded] = useState(false)
+  useEffect(() => {
+    if (autoExpanded || groupedOrders.length === 0) return
+    if (groupedOrders.length <= 3) setExpandedGroups(new Set(groupedOrders.map(g => g.moId)))
+    setAutoExpanded(true)
+  }, [groupedOrders.length, autoExpanded])
+
   return (
     <div>
       {editTarget && (
@@ -550,7 +562,11 @@ export function AdminOrders({ onOpen, onNavigate, initialStatus }) {
         </div>
         {view === 'list' && (
         <div className="table-scroll">
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
+          {/* 8 columns at minWidth 700 left ~87px each, so "Slim Fit Jeans" and
+              "H&M Sourcing" wrapped to two lines and every row grew taller than
+              its thumbnail. The wrapper already scrolls horizontally — giving the
+              table its natural width is what that scroll is for. */}
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 920 }}>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
                 {[

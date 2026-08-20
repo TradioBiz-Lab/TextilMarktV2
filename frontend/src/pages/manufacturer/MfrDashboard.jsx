@@ -100,7 +100,7 @@ export function MfrDashboard({ onOpen }) {
       <Card style={{ marginBottom: 24 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}><User size={15} /> My Pending Steps</div>
         {myPendingStages.length === 0 ? (
-          <EmptyState icon={<CheckCircle2 size={26} color={T.textLight} />} title="All caught up" desc="No production stages assigned to you are pending" />
+          <EmptyState icon={<CheckCircle2 size={26} color={T.textLight} />} compact title="All caught up" desc="No production stages assigned to you are pending" />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {myPendingStages.map(item => (

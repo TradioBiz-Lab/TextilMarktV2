@@ -304,7 +304,7 @@ export function ReportingPage({ onOpen }) {
         action={<Btn variant="secondary" icon={<Download size={16} />} onClick={exportCsv} disabled={filtered.length === 0}>Export CSV</Btn>}
       />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 14 }} className="grid-responsive-4">
+      <div style={{ gap: 12, marginBottom: 14 }} className="grid-responsive-5">
         <StatCard icon={<Package size={19} color={T.primary} />} label="Live orders" value={stats.orders} color={T.primary} />
         <StatCard icon={<Ban size={19} color={T.danger} />} label="Blocked" value={stats.blocked} color={T.danger} />
         <StatCard icon={<CircleDot size={19} color={T.danger} />} label="Late" value={stats.late} color={T.danger} />

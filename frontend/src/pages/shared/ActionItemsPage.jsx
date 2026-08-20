@@ -292,7 +292,7 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
         }
       />
 
-      <div className="grid-responsive-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 14 }}>
+      <div className="grid-responsive-4" style={{ gap: 12, marginBottom: 14 }}>
         <StatCard icon={<RotateCw size={19} color={T.primary} />} label="Open items" value={stats.open} color={T.primary} />
         <StatCard icon={<Ban size={19} color={T.danger} />} label="Blocked" value={stats.blocked} color={T.danger} />
         <StatCard icon={<CircleDot size={19} color={T.danger} />} label="Past deadline" value={stats.overdue} color={T.danger} />
@@ -573,7 +573,7 @@ function CreateActionItemModal({ users, onClose, onCreate }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <Input label="Title *" value={f.title} onChange={e => setF({ ...f, title: e.target.value })} placeholder="e.g. Close pricing for Poplin Lycra" />
         <Textarea label="Detail" value={f.detail} onChange={e => setF({ ...f, detail: e.target.value })} />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div className="form-grid-2" style={{ gap: 12 }}>
           <Select label="Assignee *" value={f.assigneeId} onChange={e => setF({ ...f, assigneeId: e.target.value })}>
             <option value="">— Select —</option>
             {admins.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
@@ -583,7 +583,7 @@ function CreateActionItemModal({ users, onClose, onCreate }) {
             {buyers.map(u => <option key={u.id} value={u.id}>{u.company}</option>)}
           </Select>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div className="form-grid-2" style={{ gap: 12 }}>
           <Select label="Priority" value={f.priority} onChange={e => setF({ ...f, priority: e.target.value })}>
             <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
           </Select>

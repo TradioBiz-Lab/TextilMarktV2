@@ -66,7 +66,12 @@ function SectionHeader({ icon, label, count, open, onToggle }) {
 
 export function AdminDashboard({ onNavigate, onOpen }) {
   const { orders, users, docs, masterOrders, actionItems, currentUser, loading, getDocData, listAllRibbons, createRibbon, updateRibbon, removeRibbon } = useApp()
-  const [openSections, setOpenSections] = useState({ orders: false, requests: false, alerts: false, ribbons: false })
+  // The two sections that answer "what needs me today" open by default — a
+  // dashboard that opens as four shut drawers makes the reader work to see
+  // state it already knows. Requests/ribbons stay collapsed: they're reference,
+  // not triage, and keep the page scannable. Same open-by-default posture
+  // ReportingPage already uses.
+  const [openSections, setOpenSections] = useState({ orders: true, requests: false, alerts: true, ribbons: false })
   const toggleSection = id => setOpenSections(p => ({ ...p, [id]: !p[id] }))
 
   // ── Ribbon management state ──
@@ -279,7 +284,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
           <Btn size="sm" variant="secondary" onClick={() => onNavigate && onNavigate('action_items')}>Open Action Items →</Btn>
         </FlexRow>
         {combinedOpen.length === 0 ? (
-          <EmptyState icon={<Check size={26} color={T.success} strokeWidth={2.5} />} title="All caught up" desc="No open action items assigned to you" />
+          <EmptyState icon={<Check size={26} color={T.success} strokeWidth={2.5} />} compact title="All caught up" desc="No open action items assigned to you" />
         ) : (
           <>
             <FlexRow gap={10} style={{ marginBottom: 14, flexWrap: 'wrap' }}>
@@ -311,7 +316,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
         {openSections.requests && (
           <div style={{ padding: '0 18px 18px' }}>
             {buyerRequests.length === 0 ? (
-              <EmptyState icon={<ClipboardList size={26} color={T.textLight} />} title="No buyer requests yet" desc="Buyer-submitted RFQs, Tech Packs, and Buyer Orders will appear here" />
+              <EmptyState icon={<ClipboardList size={26} color={T.textLight} />} compact title="No buyer requests yet" desc="Buyer-submitted RFQs, Tech Packs, and Buyer Orders will appear here" />
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                 {buyerRequests.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} />)}
@@ -356,7 +361,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
             {!ribbonsLoaded ? (
               <div style={{ padding: 24, textAlign: 'center', color: T.textMuted, fontSize: 13 }}>Loading ribbons…</div>
             ) : allRibbons.length === 0 ? (
-              <EmptyState icon={<Megaphone size={26} color={T.textLight} />} title="No ribbons published" desc="Publish a ribbon notification to display a banner to your users" />
+              <EmptyState icon={<Megaphone size={26} color={T.textLight} />} compact title="No ribbons published" desc="Publish a ribbon notification to display a banner to your users" />
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {allRibbons.map(r => {

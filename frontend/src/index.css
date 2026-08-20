@@ -40,10 +40,17 @@ table { border-collapse: collapse; width: 100%; }
 /* Scrollable table wrapper */
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
-/* Responsive grid: collapses on smaller screens */
-.grid-responsive-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-.grid-responsive-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-.grid-responsive-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+/* Responsive grid: collapses on smaller screens.
+   minmax(0,1fr) rather than a bare 1fr — a bare 1fr floors at the track's
+   min-content width, so one long cell (a wide stat value, an un-truncated
+   order id) widens its own column and pushes the row past its container.
+   These rules are also the SINGLE source of truth for column counts: a
+   component that sets grid-template-columns inline silently beats every
+   media query below, which is exactly how this system went inert before. */
+.grid-responsive-5 { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
+.grid-responsive-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.grid-responsive-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.grid-responsive-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 
 /* Login layout */
 .login-container {
@@ -101,8 +108,9 @@ table { border-collapse: collapse; width: 100%; }
 
 /* ── ── Tablet (≤1024px) ── */
 @media (max-width: 1024px) {
-  .grid-responsive-4 { grid-template-columns: repeat(2, 1fr); }
-  .grid-responsive-3 { grid-template-columns: repeat(2, 1fr); }
+  .grid-responsive-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .grid-responsive-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid-responsive-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .main-content { padding: 20px; }
   .shell-header { padding: 0 16px; }
   .hero-tiles { grid-template-columns: repeat(2, 1fr); }
@@ -155,7 +163,8 @@ table { border-collapse: collapse; width: 100%; }
   .header-user-info { display: none; }
 
   /* Grid collapses */
-  .grid-responsive-4 { grid-template-columns: repeat(2, 1fr); }
+  .grid-responsive-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid-responsive-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .grid-responsive-3 { grid-template-columns: 1fr; }
   .grid-responsive-2 { grid-template-columns: 1fr; }
 
@@ -194,7 +203,8 @@ table { border-collapse: collapse; width: 100%; }
 
 /* ── Small mobile (≤480px) ── */
 @media (max-width: 480px) {
-  .grid-responsive-4 { grid-template-columns: 1fr; }
+  .grid-responsive-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid-responsive-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .grid-responsive-2 { grid-template-columns: 1fr; }
   .main-content { padding: 12px; }
   .hero-tiles { grid-template-columns: repeat(2, 1fr); gap: 8px; }

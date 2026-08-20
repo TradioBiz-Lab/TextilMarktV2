@@ -139,6 +139,11 @@ export const REQUIREMENT_CATEGORY_LABEL = Object.fromEntries([...REQUIREMENT_CAT
 export const T = {
   bg: '#F7F8FA', surface: '#FFFFFF', surfaceSubtle: '#FAFBFC', border: '#E8EAEE', borderHover: '#D3D7DE',
   primary: '#F97316', primaryDark: '#EA580C', primaryLight: '#FFF3E8',
+  // Text-grade orange. #F97316 is a fine FILL but only reaches 2.8:1 as text on
+  // white — well under the 4.5:1 body-text floor, and it visibly washes out at
+  // the 11-12px used for order ids. primaryDeep is the same hue carried to
+  // 5.2:1 so small orange text stays legible. Fills/accents keep `primary`.
+  primaryDeep: '#C2410C',
   // textMuted/textLight darkened from slate-500/slate-400 — the previous values read
   // as too low-contrast on line items (order rows, bulk-edit grids): ~4.8:1 and ~2.6:1
   // against a white surface, the latter failing WCAG AA outright. Now ~7.6:1 / ~4.8:1.

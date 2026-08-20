@@ -98,7 +98,7 @@ export function WikiPageEditor({ page, onClose, onSaved }) {
               </button>
             </FlexRow>
           </FlexRow>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="form-grid-2" style={{ gap: 12 }}>
             <textarea
               value={bodyMarkdown}
               onChange={e => setBodyMarkdown(e.target.value)}

@@ -262,11 +262,11 @@ export function MaterialRequirementsPanel({ order }) {
           <Input placeholder="Qty" type="number" value={form.requiredQty} onChange={e => setForm(f => ({ ...f, requiredQty: e.target.value }))} />
           <Input placeholder="Unit" value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+        <div className="form-grid-2" style={{ gap: 8, marginBottom: 8 }}>
           <SupplierCombobox label="" suppliers={suppliers} value={form.supplier} onChange={v => setForm(f => ({ ...f, supplier: v }))} placeholder="Supplier (optional)" />
           <Input placeholder="Colourway (optional)" value={form.colourway} onChange={e => setForm(f => ({ ...f, colourway: e.target.value }))} />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+        <div className="form-grid-2" style={{ gap: 8, marginBottom: 8 }}>
           <Input placeholder="Wastage % (optional)" type="number" min="0" value={form.wastagePct} onChange={e => setForm(f => ({ ...f, wastagePct: e.target.value }))} />
           <Input placeholder="Rate per unit (optional)" type="number" min="0" value={form.rate} onChange={e => setForm(f => ({ ...f, rate: e.target.value }))} />
         </div>

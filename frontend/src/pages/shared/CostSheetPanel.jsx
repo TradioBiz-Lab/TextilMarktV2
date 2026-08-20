@@ -325,7 +325,7 @@ export function CostSheetPanel({ scopeType, orderId, mfrProjectId, mfrId, orderQ
           {canSetMargin && (
             <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 10, marginBottom: 12, background: T.primaryLight, borderRadius: 8, padding: 12 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, marginBottom: 6 }}>COMMERCIAL (master admin only)</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <div className="form-grid-2" style={{ gap: 8 }}>
                 <Input label="Margin (Factory) %" type="number" value={marginDraft?.marginPct ?? ''} onChange={e => setMarginDraft(m => ({ ...m, marginPct: e.target.value }))} />
                 <Input label="Tradio Fee %" type="number" value={marginDraft?.tradioFeePct ?? ''} onChange={e => setMarginDraft(m => ({ ...m, tradioFeePct: e.target.value }))} />
                 <Input label="Final Negotiated Price" type="number" value={marginDraft?.finalNegotiatedPrice ?? ''} onChange={e => setMarginDraft(m => ({ ...m, finalNegotiatedPrice: e.target.value }))} />
