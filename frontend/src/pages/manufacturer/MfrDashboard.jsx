@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { Package, Settings2, PauseCircle, AlertTriangle, CheckCircle2, User, Search } from 'lucide-react'
 import { T, ORDER_STATUSES, getToday, dayNumber } from '../../constants.js'
 import { StatCard, Card, Badge, EmptyState, Mono, Grid, PageHeader, LoadingScreen } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -78,7 +79,7 @@ export function MfrDashboard({ onOpen }) {
 
   if (loadError) return (
     <Card>
-      <EmptyState icon="⚠️" title="Could not load orders" desc="Check your connection and refresh the page." />
+      <EmptyState icon={<AlertTriangle size={26} color={T.textLight} />} title="Could not load orders" desc="Check your connection and refresh the page." />
     </Card>
   )
 
@@ -88,18 +89,18 @@ export function MfrDashboard({ onOpen }) {
 
       {/* ── Stat cards ── */}
       <Grid cols={5} style={{ marginBottom: 24 }}>
-        <StatCard label="Total Assigned"  value={stats.total}        icon="📦" bg={T.primaryLight} />
-        <StatCard label="In Production"   value={stats.inProduction} icon="⚙️" bg="#fef9c3" />
-        <StatCard label="On Hold"         value={stats.onHold}       icon="⏸️" bg={T.infoBg} />
-        <StatCard label="Delayed"         value={stats.delayed}      icon="⚠️" bg={T.dangerBg} />
-        <StatCard label="Delivered"       value={stats.delivered}    icon="✅" bg={T.successBg} />
+        <StatCard label="Total Assigned"  value={stats.total}        icon={<Package size={19} color={T.primaryDark} />} bg={T.primaryLight} />
+        <StatCard label="In Production"   value={stats.inProduction} icon={<Settings2 size={19} color="#92400e" />} bg="#fef9c3" />
+        <StatCard label="On Hold"         value={stats.onHold}       icon={<PauseCircle size={19} color="#1d4ed8" />} bg={T.infoBg} />
+        <StatCard label="Delayed"         value={stats.delayed}      icon={<AlertTriangle size={19} color={T.danger} />} bg={T.dangerBg} />
+        <StatCard label="Delivered"       value={stats.delivered}    icon={<CheckCircle2 size={19} color={T.success} />} bg={T.successBg} />
       </Grid>
 
       {/* ── My Pending Steps ── */}
       <Card style={{ marginBottom: 24 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 12 }}>👤 My Pending Steps</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}><User size={15} /> My Pending Steps</div>
         {myPendingStages.length === 0 ? (
-          <EmptyState icon="✅" title="All caught up" desc="No production stages assigned to you are pending" />
+          <EmptyState icon={<CheckCircle2 size={26} color={T.textLight} />} title="All caught up" desc="No production stages assigned to you are pending" />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {myPendingStages.map(item => (
@@ -116,7 +117,7 @@ export function MfrDashboard({ onOpen }) {
       {/* ── Filter bar ── */}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
-          <span style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: T.textLight, pointerEvents: 'none', zIndex: 1 }}>🔍</span>
+          <span style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', display: 'flex', color: T.textLight, pointerEvents: 'none', zIndex: 1 }}><Search size={14} /></span>
           <input
             value={q}
             onChange={e => { setQ(e.target.value); setShowSugg(true) }}
@@ -160,7 +161,7 @@ export function MfrDashboard({ onOpen }) {
       {filtered.length === 0 ? (
         <Card>
           <EmptyState
-            icon="📦"
+            icon={<Package size={26} color={T.textLight} />}
             title={q || sf !== 'All' ? 'No matching orders' : 'No orders assigned'}
             desc={q || sf !== 'All' ? 'Try adjusting your search or filter' : 'Your assigned orders will appear here'}
           />
