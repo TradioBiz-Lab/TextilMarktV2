@@ -1,4 +1,5 @@
 import { useState, Fragment } from 'react'
+import { AlertTriangle, MessageCircle, BarChart3, ClipboardList, Image as ImageIcon, Shield, Package, Eye, Check } from 'lucide-react'
 import {
   T, isExpiringSoon, isExpired,
   stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone,
@@ -7,6 +8,9 @@ import {
 import { Badge, Btn, Card, FlexRow, Mono, EmptyState, DocCard, Tabs, Alert, LoadingScreen, StageTimeline, MfrProfileLink, StageDocGroup, dataUrlToBlobUrl, ProductThumb } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
+function TabLabel({ Icon, text }) {
+  return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon size={13} /> {text}</span>
+}
 
 function fmtDate(d) {
   if (!d) return '—'
@@ -54,7 +58,7 @@ export function BuyerOrderDetail({ orderId, onBack, initialMid }) {
         <Btn variant="secondary" size="sm" onClick={onBack}>← Back</Btn>
       </FlexRow>
       <Card>
-        <EmptyState icon="⚠️" title="Order not found" desc={`Order ${orderId} could not be loaded. It may have been removed or you may not have access.`} />
+        <EmptyState icon={<AlertTriangle size={26} color={T.textLight} />} title="Order not found" desc={`Order ${orderId} could not be loaded. It may have been removed or you may not have access.`} />
       </Card>
     </div>
   )
@@ -198,7 +202,7 @@ export function BuyerOrderDetail({ orderId, onBack, initialMid }) {
         <div style={{ marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
           {notes.map(a => (
             <div key={a.id || a.sub} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: '11px 14px' }}>
-              <span style={{ fontSize: 15, flexShrink: 0 }}>💬</span>
+              <MessageCircle size={15} color={T.textMuted} style={{ flexShrink: 0 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
                   <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted }}><MfrProfileLink mfrId={a.mid} mfrName={a.mfrCompany || 'Manufacturer'} docs={docs} onGetData={getDocData} /> · {a.sub}</span>
@@ -215,10 +219,10 @@ export function BuyerOrderDetail({ orderId, onBack, initialMid }) {
       <Card pad={false}>
         <Tabs
           tabs={[
-            { id: 'progress',   label: '📊 Progress' },
-            { id: 'docs',       label: `📋 Order Docs (${txnDocs.filter(d => d.stageIndex == null).length})` },
-            { id: 'stage_evidence', label: `🖼 Stage Evidence (${stageDocs.length})` },
-            { id: 'compliance', label: `🛡 Compliance (${compDocs.length})` },
+            { id: 'progress',   label: <TabLabel Icon={BarChart3} text="Progress" /> },
+            { id: 'docs',       label: <TabLabel Icon={ClipboardList} text={`Order Docs (${txnDocs.filter(d => d.stageIndex == null).length})`} /> },
+            { id: 'stage_evidence', label: <TabLabel Icon={ImageIcon} text={`Stage Evidence (${stageDocs.length})`} /> },
+            { id: 'compliance', label: <TabLabel Icon={Shield} text={`Compliance (${compDocs.length})`} /> },
           ]}
           active={tab}
           onChange={setTab}
@@ -305,18 +309,18 @@ export function BuyerOrderDetail({ orderId, onBack, initialMid }) {
                                   <FlexRow gap={6} style={{ marginTop: 2, flexWrap: 'wrap' }}>
                                     {kind !== 'quantity' && <span style={{ fontSize: 9, fontWeight: 700, color: T.textLight, textTransform: 'uppercase' }}>{kind}</span>}
                                     {(s.materials || []).length > 0 && (
-                                      <span style={{ fontSize: 9, fontWeight: 800, padding: '1px 5px', borderRadius: 3, background: receivedCount === s.materials.length ? T.successBg : T.warningBg, color: receivedCount === s.materials.length ? T.success : T.warning }}>
-                                        📦 {receivedCount}/{s.materials.length}
+                                      <span style={{ fontSize: 9, fontWeight: 800, padding: '1px 5px', borderRadius: 3, background: receivedCount === s.materials.length ? T.successBg : T.warningBg, color: receivedCount === s.materials.length ? T.success : T.warning, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                                        <Package size={9} /> {receivedCount}/{s.materials.length}
                                       </span>
                                     )}
-                                    {(s.updates || []).length > 0 && <span style={{ fontSize: 9, color: T.textMuted }}>💬 {s.updates.length}</span>}
+                                    {(s.updates || []).length > 0 && <span style={{ fontSize: 9, color: T.textMuted, display: 'inline-flex', alignItems: 'center', gap: 2 }}><MessageCircle size={9} /> {s.updates.length}</span>}
                                     {stageEvidenceDocs.length > 0 && (
                                       <button
                                         onClick={e => { e.stopPropagation(); openDoc(stageEvidenceDocs[0]) }}
-                                        style={{ fontSize: 9, fontWeight: 700, color: '#1d4ed8', background: '#dbeafe', border: '1px solid #bfdbfe', borderRadius: 8, padding: '1px 6px', cursor: 'pointer', fontFamily: 'inherit' }}
+                                        style={{ fontSize: 9, fontWeight: 700, color: '#1d4ed8', background: '#dbeafe', border: '1px solid #bfdbfe', borderRadius: 8, padding: '1px 6px', cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 2 }}
                                         title={stageEvidenceDocs.length > 1 ? `${stageEvidenceDocs.length} files — expand row to view all` : 'Click to view evidence'}
                                       >
-                                        👁 {stageEvidenceDocs.length}
+                                        <Eye size={9} /> {stageEvidenceDocs.length}
                                       </button>
                                     )}
                                   </FlexRow>
@@ -365,7 +369,7 @@ export function BuyerOrderDetail({ orderId, onBack, initialMid }) {
                                   <td colSpan={11} style={{ padding: 0, background: '#f8fafc', borderTop: `1px solid ${T.border}` }}>
                                   <div style={{ padding: '12px 16px' }}>
                                     {s.blocked && s.blockedReason && (
-                                      <div style={{ fontSize: 11, color: T.danger, background: T.dangerBg, borderRadius: 5, padding: '5px 9px', marginBottom: 10 }}>⛔ {s.blockedReason}</div>
+                                      <div style={{ fontSize: 11, color: T.danger, background: T.dangerBg, borderRadius: 5, padding: '5px 9px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={11} /> {s.blockedReason}</div>
                                     )}
 
                                     {kind === 'checklist' && (
@@ -380,7 +384,7 @@ export function BuyerOrderDetail({ orderId, onBack, initialMid }) {
                                               ? dayNumber(it.dueDate) - dayNumber(it.plannedDate) : null
                                             return (
                                             <FlexRow key={ii} gap={8} style={{ background: '#fff', borderRadius: 6, padding: '5px 9px', border: `1px solid ${T.border}` }}>
-                                              <span style={{ display: 'inline-block', border: `1px solid ${it.status === 'done' ? T.success : T.border}`, background: it.status === 'done' ? T.success : '#fff', color: '#fff', borderRadius: 4, width: 18, height: 18, fontSize: 11, lineHeight: '16px', flexShrink: 0, textAlign: 'center' }}>{it.status === 'done' ? '✓' : ''}</span>
+                                              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${it.status === 'done' ? T.success : T.border}`, background: it.status === 'done' ? T.success : '#fff', color: '#fff', borderRadius: 4, width: 18, height: 18, flexShrink: 0 }}>{it.status === 'done' ? <Check size={11} strokeWidth={3} /> : ''}</span>
                                               <span style={{ flex: 1, fontSize: 11, color: T.text, textDecoration: it.status === 'done' ? 'line-through' : 'none' }}>{it.name}</span>
                                               {it.dueDate && (
                                                 <span style={{ fontSize: 9, color: T.textLight, fontFamily: "'JetBrains Mono',monospace", whiteSpace: 'nowrap' }} title={`Planned ${it.plannedDate === 'NA' ? 'N/A' : it.plannedDate ? fmtDate(it.plannedDate) : '—'}`}>
@@ -388,8 +392,8 @@ export function BuyerOrderDetail({ orderId, onBack, initialMid }) {
                                                 </span>
                                               )}
                                               {it.doneDate && (
-                                                <span style={{ fontSize: 10, fontWeight: 700, color: T.success, fontFamily: "'JetBrains Mono',monospace", whiteSpace: 'nowrap' }} title="Actual completion date">
-                                                  ✓ {fmtDate(it.doneDate)}
+                                                <span style={{ fontSize: 10, fontWeight: 700, color: T.success, fontFamily: "'JetBrains Mono',monospace", whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 2 }} title="Actual completion date">
+                                                  <Check size={10} strokeWidth={3} /> {fmtDate(it.doneDate)}
                                                 </span>
                                               )}
                                             </FlexRow>
@@ -457,7 +461,7 @@ export function BuyerOrderDetail({ orderId, onBack, initialMid }) {
                 )
               })}
               {(!order.assignments || order.assignments.length === 0) && (
-                <EmptyState icon="📊" title="No assignments" desc="No manufacturer assignments found for this order" />
+                <EmptyState icon={<BarChart3 size={26} color={T.textLight} />} title="No assignments" desc="No manufacturer assignments found for this order" />
               )}
             </div>
           )}
@@ -465,7 +469,7 @@ export function BuyerOrderDetail({ orderId, onBack, initialMid }) {
           {tab === 'docs' && (
             <div>
               {txnDocs.filter(d => d.stageIndex == null).length === 0
-                ? <EmptyState icon="📋" title="No order documents" desc="Upload a PO, Tech Pack, or other document for this order" />
+                ? <EmptyState icon={<ClipboardList size={26} color={T.textLight} />} title="No order documents" desc="Upload a PO, Tech Pack, or other document for this order" />
                 : <StageDocGroup
                     docs={txnDocs.filter(d => d.stageIndex == null)}
                     stages={selectedAsgn?.stages || order.assignments[0]?.stages || []}
@@ -479,7 +483,7 @@ export function BuyerOrderDetail({ orderId, onBack, initialMid }) {
           {tab === 'stage_evidence' && (
             <div>
               {stageDocs.length === 0 ? (
-                <EmptyState icon="🖼" title="No stage evidence" desc="Images and documents uploaded by the manufacturer for each production stage will appear here" />
+                <EmptyState icon={<ImageIcon size={26} color={T.textLight} />} title="No stage evidence" desc="Images and documents uploaded by the manufacturer for each production stage will appear here" />
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   {(selectedAsgn?.stages || []).map((s, i) => {
@@ -491,7 +495,7 @@ export function BuyerOrderDetail({ orderId, onBack, initialMid }) {
                       <div key={i} style={{ border: `1px solid ${done ? T.successBorder : T.border}`, borderRadius: 12, overflow: 'hidden' }}>
                         <div style={{ padding: '10px 14px', background: done ? T.successBg : '#f8fafc', borderBottom: `1px solid ${done ? T.successBorder : T.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
                           <div style={{ width: 26, height: 26, borderRadius: '50%', background: done ? T.success : T.primary, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
-                            {done ? '✓' : i + 1}
+                            {done ? <Check size={12} strokeWidth={3} /> : i + 1}
                           </div>
                           <span style={{ fontSize: 13, fontWeight: 700, color: done ? T.success : T.text }}>{s.name}</span>
                           <span style={{ fontSize: 11, color: T.textMuted }}>{pct}%</span>
@@ -510,7 +514,7 @@ export function BuyerOrderDetail({ orderId, onBack, initialMid }) {
 
           {tab === 'compliance' && (
             compDocs.length === 0
-              ? <EmptyState icon="🛡" title="No compliance docs" desc="Manufacturer certificates will appear here" />
+              ? <EmptyState icon={<Shield size={26} color={T.textLight} />} title="No compliance docs" desc="Manufacturer certificates will appear here" />
               : <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {compDocs.map(d => {
                     const company = mfrCompanyById[String(d.mfrId)] || users.find(u => String(u.id) === String(d.mfrId))?.company
