@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { Bot, Copy, Package, CheckCircle2 } from 'lucide-react'
 import { T, REQUIREMENT_CATEGORIES, REQUIREMENT_CATEGORY_LABEL } from '../../constants.js'
 import { Card, Btn, Input, FlexRow, useToast, LoadingScreen, EmptyState, SupplierCombobox, Modal } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -179,13 +180,13 @@ export function MaterialRequirementsPanel({ order }) {
       <FlexRow justify="space-between" style={{ marginBottom: 12 }}>
         <div style={{ fontWeight: 700, fontSize: 14 }}>Materials Requirement</div>
         <FlexRow gap={8}>
-          <Btn size="sm" variant="secondary" onClick={() => setShowAiDraft(true)}>🤖 AI Draft from Documents</Btn>
-          <Btn size="sm" variant="secondary" disabled={!doc?.id || lines.length === 0} onClick={() => setShowClone(true)}>⧉ Clone to…</Btn>
+          <Btn size="sm" variant="secondary" icon={<Bot size={14} />} onClick={() => setShowAiDraft(true)}>AI Draft from Documents</Btn>
+          <Btn size="sm" variant="secondary" icon={<Copy size={14} />} disabled={!doc?.id || lines.length === 0} onClick={() => setShowClone(true)}>Clone to…</Btn>
         </FlexRow>
       </FlexRow>
 
       {lines.length === 0
-        ? <EmptyState icon="📦" title="No requirement lines yet" subtitle="Add fabric, trims, or accessories needed for this order below." />
+        ? <EmptyState icon={<Package size={26} color={T.textLight} />} title="No requirement lines yet" subtitle="Add fabric, trims, or accessories needed for this order below." />
         : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
             {lines.map(line => (
@@ -208,9 +209,9 @@ export function MaterialRequirementsPanel({ order }) {
                       const stageName = asgn?.stages?.[p.stageIndex]?.name || `Stage ${p.stageIndex + 1}`
                       const key = pushKey(line.id, p)
                       return (
-                        <label key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: T.success, cursor: 'pointer' }}>
+                        <label key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: T.success, cursor: 'pointer' }}>
                           <input type="checkbox" checked={selectedPushes.has(key)} onChange={() => togglePushSelection(line.id, p)} />
-                          ✓ Pushed to {asgn?.mfrCompany || p.mfrId} — {stageName}
+                          <CheckCircle2 size={12} /> Pushed to {asgn?.mfrCompany || p.mfrId} — {stageName}
                         </label>
                       )
                     })}

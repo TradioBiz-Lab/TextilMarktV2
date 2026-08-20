@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { Plus, FolderOpen, Bot } from 'lucide-react'
 import { T, REQUIREMENT_CATEGORIES, REQUIREMENT_CATEGORY_LABEL } from '../../constants.js'
 import { PageHeader, Input, Btn, Card, Badge, FlexRow, EmptyState, LoadingScreen, useToast, SupplierCombobox, Modal, Tabs } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -54,10 +55,10 @@ export function MfrProjects({ onNavigate }) {
   return (
     <div>
       <PageHeader title="My Projects" subtitle="Materials + costing for your own business — private, never visible to Tradio"
-        action={<Btn onClick={() => onNavigate('order_wizard')} icon="✚">New Project</Btn>} />
+        action={<Btn onClick={() => onNavigate('order_wizard')} icon={<Plus size={16} />}>New Project</Btn>} />
 
       {masters.length === 0 && (projectsByMaster._standalone || []).length === 0 && (
-        <Card><EmptyState icon="🗂" title="No projects yet" subtitle="Use New Project to set up a master project and add styles." /></Card>
+        <Card><EmptyState icon={<FolderOpen size={26} color={T.textLight} />} title="No projects yet" subtitle="Use New Project to set up a master project and add styles." /></Card>
       )}
 
       {masters.map(mp => (
@@ -208,7 +209,7 @@ function ProjectDetail({ project: initialProject, onBack, getMaterialRequirement
       </FlexRow>
       <PageHeader title={project.styleName} subtitle={`${project.buyerName || 'No buyer set'} · ${project.category || '—'}`}
         action={<FlexRow gap={8}>
-          <Btn size="sm" variant="secondary" onClick={() => setShowAiDraft(true)}>🤖 AI Draft</Btn>
+          <Btn size="sm" variant="secondary" icon={<Bot size={14} />} onClick={() => setShowAiDraft(true)}>AI Draft</Btn>
           <Btn size="sm" variant="secondary" disabled={!doc?.id || (doc?.lines || []).length === 0} onClick={() => setShowClone(true)}>⧉ Clone to…</Btn>
         </FlexRow>} />
 
