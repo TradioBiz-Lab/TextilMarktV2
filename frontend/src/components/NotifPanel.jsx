@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { Bell, AlertTriangle, RefreshCw, Package } from 'lucide-react'
 import { T } from '../constants.js'
 import { EmptyState } from './ui.jsx'
 import { useApp } from '../context.jsx'
@@ -43,13 +44,15 @@ export function NotifPanel({ onClose, onOpenOrder }) {
       </div>
       <div style={{ maxHeight: 360, overflowY: 'auto' }}>
         {notifs.length === 0
-          ? <EmptyState icon="🔔" title="All caught up" desc="No notifications" />
+          ? <EmptyState icon={<Bell size={26} color={T.textLight} />} title="All caught up" desc="No notifications" />
           : notifs.map(n => {
             const clickable = !n.read || (n.orderId && onOpenOrder)
             return (
               <div key={n.id} onClick={() => handleNotifClick(n)}
                 style={{ padding: '12px 18px', borderBottom: `1px solid ${T.border}`, background: n.read ? T.surface : '#fafbff', display: 'flex', gap: 10, alignItems: 'flex-start', cursor: clickable ? 'pointer' : 'default' }}>
-                <span style={{ fontSize: 16, lineHeight: 1, flexShrink: 0 }}>{n.type === 'alert' ? '⚠️' : n.type === 'status' ? '🔄' : '📦'}</span>
+                <span style={{ display: 'flex', flexShrink: 0, color: n.type === 'alert' ? T.danger : T.textMuted }}>
+                  {n.type === 'alert' ? <AlertTriangle size={16} /> : n.type === 'status' ? <RefreshCw size={16} /> : <Package size={16} />}
+                </span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12, color: T.text, fontWeight: n.read ? 400 : 600, lineHeight: 1.5 }}>{n.msg}</div>
                   {n.orderId && onOpenOrder && (
