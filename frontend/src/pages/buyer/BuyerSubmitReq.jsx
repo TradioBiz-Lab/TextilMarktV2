@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react' // useMemo kept for myReqDocs
+import { AlertTriangle, ClipboardList, UploadCloud, Search, Package } from 'lucide-react'
 import { T, DOC_TYPES, getToday } from '../../constants.js'
 import { Card, EmptyState, PageHeader, Btn, Modal, Select, Input, FileUpload, FlexRow, LoadingScreen, DocCard, useToast, fileUploadPayload } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -46,7 +47,7 @@ export function BuyerSubmitReq() {
   }
 
   if (loadError) return (
-    <Card><EmptyState icon="⚠️" title="Could not load data" desc="Check your connection and refresh the page." /></Card>
+    <Card><EmptyState icon={<AlertTriangle size={26} color={T.textLight} />} title="Could not load data" desc="Check your connection and refresh the page." /></Card>
   )
 
   return (
@@ -63,7 +64,7 @@ export function BuyerSubmitReq() {
               <Input label="Date" type="date" value={uf.issueDate} onChange={e => setUf({ ...uf, issueDate: e.target.value })} />
             </div>
             <FileUpload file={fileData} onFile={f => { setFileData(f); setFileErr(''); setUploadErr('') }} error={fileErr} onError={setFileErr} />
-            {uploadErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500 }}>⚠ {uploadErr}</div>}
+            {uploadErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={13} /> {uploadErr}</div>}
             <FlexRow justify="flex-end" gap={8}>
               <Btn variant="secondary" onClick={() => { setShowUpload(false); resetUpload() }}>Cancel</Btn>
               <Btn disabled={!uf.name.trim() || !fileData || saving} onClick={submitDoc}>{saving ? 'Submitting…' : 'Submit Requirement'}</Btn>
@@ -75,7 +76,7 @@ export function BuyerSubmitReq() {
       <PageHeader
         title="Submit Requirement"
         subtitle="Upload your RFQ, Tech Pack, or Purchase Order for Tradio to process"
-        action={<Btn icon="📋" onClick={() => setShowUpload(true)}>New Requirement</Btn>}
+        action={<Btn icon={<ClipboardList size={16} />} onClick={() => setShowUpload(true)}>New Requirement</Btn>}
       />
 
       {/* Intro banner */}
@@ -83,14 +84,14 @@ export function BuyerSubmitReq() {
         <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 8 }}>How it works</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16 }}>
           {[
-            { step: '1', icon: '📄', title: 'Upload Document', desc: 'Upload your RFQ, Tech Pack, or PO' },
-            { step: '2', icon: '🔍', title: 'Tradio Reviews', desc: 'Our team reviews and matches manufacturers' },
-            { step: '3', icon: '📦', title: 'Order Created', desc: 'Approved requirements become tracked orders' },
+            { step: '1', icon: UploadCloud, title: 'Upload Document', desc: 'Upload your RFQ, Tech Pack, or PO' },
+            { step: '2', icon: Search, title: 'Tradio Reviews', desc: 'Our team reviews and matches manufacturers' },
+            { step: '3', icon: Package, title: 'Order Created', desc: 'Approved requirements become tracked orders' },
           ].map(s => (
             <div key={s.step} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
               <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, flexShrink: 0 }}>{s.step}</div>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>{s.icon} {s.title}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}><s.icon size={14} /> {s.title}</div>
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>{s.desc}</div>
               </div>
             </div>
@@ -102,7 +103,7 @@ export function BuyerSubmitReq() {
       {myReqDocs.length === 0 ? (
         <Card>
           <EmptyState
-            icon="📋"
+            icon={<ClipboardList size={26} color={T.textLight} />}
             title="No requirements submitted yet"
             desc="Click 'New Requirement' above to upload your first RFQ, Tech Pack, or Purchase Order"
           />
