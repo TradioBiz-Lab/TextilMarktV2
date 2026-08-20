@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Ruler, ClipboardList, FileText, Link2, Building2 } from 'lucide-react'
 import { T, WIKI_PAGE_CATEGORIES, WIKI_DOC_TYPES, DOC_ICONS } from '../../constants.js'
 import { PageHeader, Tabs, Card, EmptyState, Btn, Input, Select, FlexRow, LoadingScreen, useToast, Modal } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -42,7 +43,7 @@ function PageRow({ p, isAdmin, users, onOpen, onEdit, onDelete }) {
     <Card pad={false} onClick={() => onOpen(p.id)} style={{ padding: '14px 16px' }}>
       <FlexRow justify="space-between" gap={14}>
         <FlexRow gap={14} style={{ minWidth: 0, flex: 1 }}>
-          <RowIcon>{p.category === 'tech_pack' ? '📐' : '📋'}</RowIcon>
+          <RowIcon>{p.category === 'tech_pack' ? <Ruler size={18} color={T.primary} /> : <ClipboardList size={18} color={T.primary} />}</RowIcon>
           <div style={{ minWidth: 0 }}>
             <FlexRow gap={8}>
               <span style={{ fontSize: 13.5, fontWeight: 700, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.title}</span>
@@ -65,11 +66,12 @@ function PageRow({ p, isAdmin, users, onOpen, onEdit, onDelete }) {
 }
 
 function FileRow({ d, users }) {
+  const DocIcon = DOC_ICONS[d.type] || FileText
   return (
     <Card pad={false} onClick={() => window.open(d.externalUrl, '_blank', 'noopener,noreferrer')} style={{ padding: '14px 16px' }}>
       <FlexRow justify="space-between" gap={14}>
         <FlexRow gap={14} style={{ minWidth: 0, flex: 1 }}>
-          <RowIcon>{DOC_ICONS[d.type] || '📄'}</RowIcon>
+          <RowIcon><DocIcon size={18} color={T.primary} /></RowIcon>
           <div style={{ minWidth: 0 }}>
             <FlexRow gap={8}>
               <span style={{ fontSize: 13.5, fontWeight: 700, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</span>
@@ -212,7 +214,7 @@ export function WikiPage() {
         title="Wiki"
         subtitle="Tech packs, SOPs, inspection forms, fit comments and photos — one reference library"
         action={isAdmin
-          ? (tab === 'pages' ? <Btn onClick={() => setShowNewPage(true)} icon="📄">New Page</Btn> : <Btn onClick={() => setShowAddLink(true)} icon="🔗">Add Link</Btn>)
+          ? (tab === 'pages' ? <Btn onClick={() => setShowNewPage(true)} icon={<FileText size={16} />}>New Page</Btn> : <Btn onClick={() => setShowAddLink(true)} icon={<Link2 size={16} />}>Add Link</Btn>)
           : null}
       />
 
@@ -229,13 +231,13 @@ export function WikiPage() {
 
       {tab === 'pages' && (
         filteredPages.length === 0 ? (
-          <Card><EmptyState icon="📄" title="No pages" desc={isAdmin ? 'Create the first Tech Pack or SOP page above' : 'No Tech Pack or SOP pages have been added yet'} /></Card>
+          <Card><EmptyState icon={<FileText size={26} color={T.textLight} />} title="No pages" desc={isAdmin ? 'Create the first Tech Pack or SOP page above' : 'No Tech Pack or SOP pages have been added yet'} /></Card>
         ) : isAdmin ? (() => {
           const { company, buyerGroups } = groupByClient(filteredPages, users)
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {company.length > 0 && (
-                <ClientGroup groupKey="pages:__company__" label="🏢 Company-wide" count={company.length} open={openGroups.has('pages:__company__')} onToggle={toggleGroup}>
+                <ClientGroup groupKey="pages:__company__" label={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Building2 size={13} /> Company-wide</span>} count={company.length} open={openGroups.has('pages:__company__')} onToggle={toggleGroup}>
                   {company.map(p => <PageRow key={p.id} p={p} isAdmin={isAdmin} users={users} onOpen={openPage} onEdit={setEditingPage} onDelete={deletePage} />)}
                 </ClientGroup>
               )}
@@ -255,13 +257,13 @@ export function WikiPage() {
 
       {tab === 'files' && (
         filteredDocs.length === 0 ? (
-          <Card><EmptyState icon="🔗" title="No linked files" desc={isAdmin ? 'Add a link to an Inspection Form, Fit Comments sheet, or Photo above' : 'No reference files have been linked yet'} /></Card>
+          <Card><EmptyState icon={<Link2 size={26} color={T.textLight} />} title="No linked files" desc={isAdmin ? 'Add a link to an Inspection Form, Fit Comments sheet, or Photo above' : 'No reference files have been linked yet'} /></Card>
         ) : isAdmin ? (() => {
           const { company, buyerGroups } = groupByClient(filteredDocs, users)
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {company.length > 0 && (
-                <ClientGroup groupKey="files:__company__" label="🏢 Company-wide" count={company.length} open={openGroups.has('files:__company__')} onToggle={toggleGroup}>
+                <ClientGroup groupKey="files:__company__" label={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Building2 size={13} /> Company-wide</span>} count={company.length} open={openGroups.has('files:__company__')} onToggle={toggleGroup}>
                   {company.map(d => <FileRow key={d.id} d={d} users={users} />)}
                 </ClientGroup>
               )}
