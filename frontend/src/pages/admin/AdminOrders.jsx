@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { BarChart3, Plus, List, LayoutGrid, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown } from 'lucide-react'
 import {
   T, CATEGORIES, SEASONS, DEFAULT_STAGE_NAMES, ORDER_STATUSES, STAGE_DOC_MAP,
   isStageDone, stageIsOverdue, stageStatusOf, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct,
@@ -1067,9 +1068,9 @@ export function AdminOrders({ onOpen, initialStatus }) {
       <PageHeader title="Order Management" subtitle="Create orders, assign manufacturers, and manage the full order lifecycle" action={
         <FlexRow gap={8}>
           <Btn variant="secondary" onClick={() => setShowMO(true)} icon="📁">New Master Order</Btn>
-          <Btn variant="secondary" onClick={() => setShowTnaImport(true)} icon="📊">Import TNA Dates</Btn>
+          <Btn variant="secondary" onClick={() => setShowTnaImport(true)} icon={<BarChart3 size={13} />}>Import TNA Dates</Btn>
           <Btn variant="secondary" onClick={() => setShowMatBulk(true)} icon="📦">Bulk Upload Materials</Btn>
-          <Btn onClick={() => setShowC(true)} icon="➕">Create Order</Btn>
+          <Btn onClick={() => setShowC(true)} icon={<Plus size={13} />}>Create Order</Btn>
         </FlexRow>
       } />
 
@@ -1077,13 +1078,14 @@ export function AdminOrders({ onOpen, initialStatus }) {
           across the top, TNA steps down the side, for "where does the whole
           book stand" at a glance — the shape of the Summary TNA sheet. */}
       <FlexRow gap={6} style={{ marginBottom: 14 }}>
-        {[['list', '☰ List'], ['matrix', '▦ Matrix']].map(([id, label]) => (
+        {[['list', 'List', List], ['matrix', 'Matrix', LayoutGrid]].map(([id, label, Icon]) => (
           <button key={id} onClick={() => setView(id)}
             style={{ fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
               border: `1px solid ${view === id ? T.primary : T.border}`,
               background: view === id ? T.primaryLight : T.surface,
-              color: view === id ? T.primaryDark : T.textMuted }}>
-            {label}
+              color: view === id ? T.primaryDark : T.textMuted,
+              display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <Icon size={13} /> {label}
           </button>
         ))}
       </FlexRow>
@@ -1113,13 +1115,14 @@ export function AdminOrders({ onOpen, initialStatus }) {
               : []
             return (
               <div style={{ flex: 1, minWidth: 200, position: 'relative' }}>
+                <Search size={13} color={T.textLight} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
                 <input
                   value={q}
                   onChange={e => { setQ(e.target.value); setShowSugg(true) }}
                   onFocus={() => setShowSugg(true)}
                   onBlur={() => setTimeout(() => setShowSugg(false), 150)}
-                  placeholder="🔍  Search by product or order ID…"
-                  style={{ width: '100%', boxSizing: 'border-box', border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 12px', fontSize: 13, color: T.text, background: '#f8fafc', fontFamily: 'inherit' }}
+                  placeholder="Search by product or order ID…"
+                  style={{ width: '100%', boxSizing: 'border-box', border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 12px 7px 32px', fontSize: 13, color: T.text, background: '#f8fafc', fontFamily: 'inherit' }}
                 />
                 {showSugg && sugg.length > 0 && (
                   <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.1)', zIndex: 200, overflow: 'hidden' }}>
@@ -1187,8 +1190,8 @@ export function AdminOrders({ onOpen, initialStatus }) {
                   <tr key={`h-${g.moId}`} onClick={() => toggleGroup(g.moId)} style={{ cursor: 'pointer', background: '#f1f5f9' }}>
                     <td colSpan={8} style={{ padding: '10px 16px' }}>
                       <FlexRow gap={10}>
-                        <span style={{ fontSize: 11, color: T.textMuted, transition: 'transform 0.15s', transform: collapsed ? 'rotate(-90deg)' : 'none', display: 'inline-block' }}>▾</span>
-                        <span style={{ fontSize: 13, fontWeight: 800, color: T.text }}>📁 {groupLabel}</span>
+                        <span style={{ color: T.textMuted, transition: 'transform 0.15s', transform: collapsed ? 'rotate(-90deg)' : 'none', display: 'inline-flex' }}><ChevronDown size={13} /></span>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Folder size={13} /> {groupLabel}</span>
                         {g.mo?.season && <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', background: '#dbeafe', padding: '2px 7px', borderRadius: 4 }}>{g.mo.season}</span>}
                         <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{g.orders.length} order{g.orders.length !== 1 ? 's' : ''}</span>
                       </FlexRow>
@@ -1249,7 +1252,7 @@ export function AdminOrders({ onOpen, initialStatus }) {
                 })
                 return [spacerRow, headerRow, ...rows].filter(Boolean)
               })}
-              {filtered.length === 0 && <tr><td colSpan={8}><EmptyState icon="📦" title="No orders" desc="Create your first order above" /></td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={8}><EmptyState icon={<Package size={26} color={T.textLight} />} title="No orders" desc="Create your first order above" /></td></tr>}
             </tbody>
           </table>
         </div>
@@ -1262,7 +1265,7 @@ export function AdminOrders({ onOpen, initialStatus }) {
           // is a glanceable summary of exactly that.
           <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-            {groupedOrders.length === 0 && <EmptyState icon="📦" title="No orders" desc="Create your first order above" />}
+            {groupedOrders.length === 0 && <EmptyState icon={<Package size={26} color={T.textLight} />} title="No orders" desc="Create your first order above" />}
 
             {groupedOrders.map(g => {
               // Earliest delivery first — the style due soonest is the one that
@@ -1282,8 +1285,8 @@ export function AdminOrders({ onOpen, initialStatus }) {
                 <div key={g.moId} style={{ border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
                   <FlexRow gap={10} onClick={() => toggleGroup(g.moId)}
                     style={{ padding: '9px 14px', background: '#f1f5f9', cursor: 'pointer' }}>
-                    <span style={{ fontSize: 11, color: T.textMuted, transform: isOpen ? 'none' : 'rotate(-90deg)', display: 'inline-block' }}>▾</span>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: T.text }}>📁 {groupLabel}</span>
+                    <span style={{ color: T.textMuted, transform: isOpen ? 'none' : 'rotate(-90deg)', display: 'inline-flex' }}><ChevronDown size={13} /></span>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Folder size={13} /> {groupLabel}</span>
                     {g.mo?.season && <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', background: '#dbeafe', padding: '1px 7px', borderRadius: 4 }}>{g.mo.season}</span>}
                     <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{entries.length} style{entries.length !== 1 ? 's' : ''} · {spine.length} steps</span>
                   </FlexRow>
@@ -1362,7 +1365,7 @@ export function AdminOrders({ onOpen, initialStatus }) {
                                               raw counts aren't shown at all (only on hover). */}
                                           <FlexRow gap={5} style={{ justifyContent: 'space-between' }}>
                                             <span style={{ fontSize: 12, fontWeight: 800, color: st.fg, whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono',monospace" }}>
-                                              {state === 'done' ? '✓ ' : state === 'blocked' ? '⛔ ' : state === 'overdue' ? '! ' : ''}{fmtStageDate(done ? stage.actualEnd : stage.eta)}
+                                              {state === 'done' ? <Check size={10} strokeWidth={3} style={{ verticalAlign: -1 }} /> : state === 'blocked' ? <Ban size={10} style={{ verticalAlign: -1 }} /> : state === 'overdue' ? <AlertTriangle size={10} style={{ verticalAlign: -1 }} /> : ''} {fmtStageDate(done ? stage.actualEnd : stage.eta)}
                                             </span>
                                             {variance != null && variance !== 0 && (
                                               <span style={{ fontSize: 9, fontWeight: 800, color: variance > 0 ? '#b91c1c' : '#047857', whiteSpace: 'nowrap' }}>
