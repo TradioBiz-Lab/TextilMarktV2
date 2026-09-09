@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { Folder, ClipboardList, Ruler, Wallet, Shield, AlertTriangle, ChevronRight } from 'lucide-react'
 import { T, DOC_TYPES, DOC_ICONS, getToday, isExpiringSoon, isExpired } from '../../constants.js'
 import { Card, EmptyState, DocCard, PageHeader, LoadingScreen, StageDocGroup } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -32,10 +33,10 @@ function OrderGroup({ order, docs, users, getDocData }) {
         onClick={() => setOpen(o => !o)}
         style={{ width: '100%', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '11px 16px', background: open && !isGeneral ? T.primaryLight : '#f8fafc', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', transition: 'background 0.15s' }}
       >
-        <span style={{ fontSize: 13, color: open ? T.primary : T.textMuted, transition: 'transform 0.15s', display: 'inline-block', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', flexShrink: 0 }}>›</span>
+        <span style={{ color: open ? T.primary : T.textMuted, transition: 'transform 0.15s', display: 'inline-flex', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', flexShrink: 0 }}><ChevronRight size={14} /></span>
 
         {isGeneral ? (
-          <span style={{ fontSize: 12, fontWeight: 700, color: T.text, flex: 1 }}>📁 General Documents</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: T.text, flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}><Folder size={13} /> General Documents</span>
         ) : (
           <>
             <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, fontWeight: 800, color: T.primary, whiteSpace: 'nowrap' }}>{order.id}</span>
@@ -117,15 +118,15 @@ export function BuyerDocuments() {
   }), [myDocs])
 
   const filters = [
-    { v: 'all',        l: 'All',        icon: '📁' },
-    { v: 'PO',         l: 'Purchase Orders', icon: '📋' },
-    { v: 'tech_pack',  l: 'Tech Packs', icon: '📐' },
-    { v: 'cost_sheet', l: 'Cost Sheets', icon: '💰' },
-    { v: 'compliance', l: 'Compliance', icon: '🛡' },
+    { v: 'all',        l: 'All',        Icon: Folder },
+    { v: 'PO',         l: 'Purchase Orders', Icon: ClipboardList },
+    { v: 'tech_pack',  l: 'Tech Packs', Icon: Ruler },
+    { v: 'cost_sheet', l: 'Cost Sheets', Icon: Wallet },
+    { v: 'compliance', l: 'Compliance', Icon: Shield },
   ]
 
   if (loadError) return (
-    <Card><EmptyState icon="⚠️" title="Could not load documents" desc="Check your connection and refresh the page." /></Card>
+    <Card><EmptyState icon={<AlertTriangle size={26} color={T.textLight} />} title="Could not load documents" desc="Check your connection and refresh the page." /></Card>
   )
 
   return (
@@ -152,7 +153,7 @@ export function BuyerDocuments() {
                 border: active ? 'none' : `1px solid ${T.border}`,
                 boxShadow: active ? `0 2px 8px ${T.primary}40` : 'none',
               }}>
-              <span>{f.icon}</span>
+              <f.Icon size={12} />
               <span>{f.l}</span>
               <span style={{
                 fontSize: 10, fontWeight: 800, marginLeft: 2,
@@ -169,14 +170,14 @@ export function BuyerDocuments() {
       {filt === 'all' && orderGroups && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {myDocs.length === 0 && (
-            <Card><EmptyState icon="📁" title="No documents yet" desc="Documents for your orders will appear here" /></Card>
+            <Card><EmptyState icon={<Folder size={26} color={T.textLight} />} title="No documents yet" desc="Documents for your orders will appear here" /></Card>
           )}
 
           {/* Buyer Docs — requirement documents you submitted */}
           {buyerDocs.length > 0 && (
             <OrderGroup
               key="__buyer_docs__"
-              order={{ id: null, product: '📥 Buyer Docs — Your Submissions', delivery: null, assignments: [] }}
+              order={{ id: null, product: 'Buyer Docs — Your Submissions', delivery: null, assignments: [] }}
               docs={buyerDocs}
               users={users}
               getDocData={getDocData}
@@ -214,7 +215,7 @@ export function BuyerDocuments() {
       {filt !== 'all' && (
         <div>
           {filteredFlat.length === 0
-            ? <Card><EmptyState icon="📁" title="No documents" desc={`No ${filters.find(f => f.v === filt)?.l.toLowerCase()} documents found`} /></Card>
+            ? <Card><EmptyState icon={<Folder size={26} color={T.textLight} />} title="No documents" desc={`No ${filters.find(f => f.v === filt)?.l.toLowerCase()} documents found`} /></Card>
             : <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                 {filteredFlat.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} />)}
               </div>
