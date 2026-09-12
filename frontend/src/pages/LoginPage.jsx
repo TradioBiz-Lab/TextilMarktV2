@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Eye, EyeOff, AlertTriangle } from 'lucide-react'
 import { T } from '../constants.js'
 import { Input } from '../components/ui.jsx'
 import { useApp } from '../context.jsx'
@@ -81,11 +82,11 @@ export function LoginPage() {
                 <input type={showPw ? 'text' : 'password'} value={pw} onChange={e => { setPw(e.target.value); setError('') }} placeholder="Enter your password" required
                   style={{ width: '100%', border: `1px solid ${error ? T.danger : T.border}`, borderRadius: 8, padding: '10px 40px 10px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit' }} />
                 <button type="button" onClick={() => setShowPw(p => !p)}
-                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, color: T.textMuted, padding: '0 4px' }}>
-                  {showPw ? '🙈' : '👁'}
+                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', color: T.textMuted, padding: '0 4px' }}>
+                  {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
-              {error && <div style={{ fontSize: 12, color: T.danger, marginTop: 6, fontWeight: 500, background: T.dangerBg, padding: '8px 12px', borderRadius: 8, border: `1px solid ${T.dangerBorder}` }}>⚠ {error}</div>}
+              {error && <div style={{ fontSize: 12, color: T.danger, marginTop: 6, fontWeight: 500, background: T.dangerBg, padding: '8px 12px', borderRadius: 8, border: `1px solid ${T.dangerBorder}`, display: 'flex', alignItems: 'center', gap: 6 }}><AlertTriangle size={13} /> {error}</div>}
             </div>
             <button type="submit" disabled={loading}
               style={{ background: loading ? '#fb923c' : T.primary, color: '#fff', border: 'none', padding: '12px', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: loading ? 'wait' : 'pointer', marginTop: 4, transition: 'background 0.15s', fontFamily: 'inherit', letterSpacing: '0.01em' }}>

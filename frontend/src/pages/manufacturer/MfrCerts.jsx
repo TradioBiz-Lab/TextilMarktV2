@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Paperclip, ShieldCheck } from 'lucide-react'
 import { T, isExpiringSoon, isExpired } from '../../constants.js'
 import { Modal, Select, Input, Btn, Card, Alert, EmptyState, FlexRow, PageHeader, DocCard, FileUpload, LoadingScreen, useToast, fileUploadPayload } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -59,14 +60,14 @@ export function MfrCerts() {
           </div>
         </Modal>
       )}
-      <PageHeader title="My Certificates" subtitle="Manage compliance and certification documents" action={<Btn onClick={() => setShow(true)} icon="📎">Upload Certificate</Btn>} />
+      <PageHeader title="My Certificates" subtitle="Manage compliance and certification documents" action={<Btn onClick={() => setShow(true)} icon={<Paperclip size={16} />}>Upload Certificate</Btn>} />
       {expiring.length > 0 && (
         <div style={{ marginBottom: 16 }}>
           <Alert type="warning"><strong>{expiring.length} certificate(s)</strong> expiring or expired — please renew before they affect order visibility.</Alert>
         </div>
       )}
       {myDocs.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} />)}
-      {myDocs.length === 0 && <Card><EmptyState icon="🛡" title="No certificates yet" desc="Upload your compliance documents to share with buyers" /></Card>}
+      {myDocs.length === 0 && <Card><EmptyState icon={<ShieldCheck size={26} color={T.textLight} />} title="No certificates yet" desc="Upload your compliance documents to share with buyers" /></Card>}
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { CheckCircle2, AlertTriangle } from 'lucide-react'
 import { T } from '../constants.js'
 import { Input, Btn } from '../components/ui.jsx'
 import api from '../api.js'
@@ -59,7 +60,7 @@ export function SignUpPage({ onBackToLogin }) {
         <div style={{ background: T.surface, borderRadius: 14, border: `1px solid ${T.border}`, padding: 32, boxShadow: '0 8px 32px rgba(0,0,0,0.08)' }}>
           {done ? (
             <div style={{ textAlign: 'center', padding: '12px 0' }}>
-              <div style={{ fontSize: 40, marginBottom: 16 }}>✅</div>
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16, color: T.success }}><CheckCircle2 size={40} /></div>
               <div style={{ fontSize: 18, fontWeight: 800, color: T.text, marginBottom: 10 }}>Request Received!</div>
               <div style={{ fontSize: 14, color: T.textMuted, lineHeight: 1.7, marginBottom: 24 }}>
                 Thank you for your interest in TextilMarkt. Your information has been recorded and a member of the Tradio team will contact you shortly to set up your account.
@@ -141,8 +142,8 @@ export function SignUpPage({ onBackToLogin }) {
                 </div>
 
                 {err && (
-                  <div style={{ fontSize: 12, color: T.danger, fontWeight: 500, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}>
-                    ⚠ {err}
+                  <div style={{ fontSize: 12, color: T.danger, fontWeight: 500, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <AlertTriangle size={13} /> {err}
                   </div>
                 )}
 

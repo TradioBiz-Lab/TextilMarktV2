@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef } from 'react'
 import Papa from 'papaparse'
+import { FileText, BarChart3 } from 'lucide-react'
 import { T } from '../../constants.js'
 import { Btn, FlexRow, EmptyState } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -195,7 +196,7 @@ export function TnaImportPanel({ onClose }) {
 
       <FlexRow gap={10}>
         <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={handleFile} style={{ display: 'none' }} />
-        <Btn variant="secondary" onClick={() => fileRef.current?.click()}>📄 Choose CSV</Btn>
+        <Btn variant="secondary" icon={<FileText size={14} />} onClick={() => fileRef.current?.click()}>Choose CSV</Btn>
         {fileName && <span style={{ fontSize: 12, color: T.textMuted }}>{fileName}</span>}
       </FlexRow>
 
@@ -204,7 +205,7 @@ export function TnaImportPanel({ onClose }) {
       )}
 
       {columns.length === 0 && !parseErr && (
-        <EmptyState icon="📊" title="No file loaded" desc="Choose a Summary TNA CSV to preview the changes." />
+        <EmptyState icon={<BarChart3 size={26} color={T.textLight} />} title="No file loaded" desc="Choose a Summary TNA CSV to preview the changes." />
       )}
 
       {columns.length > 0 && (
