@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
-import { Package, Settings2, PauseCircle, AlertTriangle, CheckCircle2, User, Search } from 'lucide-react'
+import { Package, Settings2, PauseCircle, AlertTriangle, CheckCircle2, User, Search, ChevronRight } from 'lucide-react'
 import { T, ORDER_STATUSES, getToday, dayNumber } from '../../constants.js'
-import { StatCard, Card, Badge, EmptyState, Mono, Grid, PageHeader, LoadingScreen } from '../../components/ui.jsx'
+import { StatCard, Card, Badge, EmptyState, Mono, Grid, PageHeader, LoadingScreen, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
 
@@ -104,7 +104,7 @@ export function MfrDashboard({ onOpen }) {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {myPendingStages.map(item => (
-              <div key={item.id} onClick={() => onOpen(item.orderId)}
+              <div key={item.id} onClick={() => onOpen(item.orderId)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => onOpen(item.orderId))}
                 style={{ border: `1px solid ${item.overdue ? T.dangerBorder : T.border}`, borderRadius: 8, padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, background: item.overdue ? T.dangerBg : '#fafbfc' }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: T.text, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</span>
                 {item.eta && <span style={{ fontSize: 10, fontWeight: 700, color: item.overdue ? T.danger : T.textMuted, whiteSpace: 'nowrap' }}>{fmtDate(item.eta)}</span>}
@@ -180,7 +180,7 @@ export function MfrDashboard({ onOpen }) {
                 const overdue = new Date(o.delivery) < new Date(getToday()) && o.mine.status !== 'Delivered'
                 const rowBg = o.mine.status === 'Delayed' ? '#fff8f8' : o.mine.status === 'On Hold' ? '#fefdf5' : T.surface
                 return (
-                  <div key={o.id} onClick={() => onOpen(o.id)}
+                  <div key={o.id} onClick={() => onOpen(o.id)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => onOpen(o.id))}
                     style={{ display: 'grid', gridTemplateColumns: '1.8fr 2fr 1.2fr 0.6fr 0.9fr 1fr 30px', gap: 0, minWidth: 700, padding: '12px 18px', alignItems: 'center', cursor: 'pointer', background: rowBg, borderBottom: ri < filtered.length - 1 ? `1px solid ${T.border}` : 'none', transition: 'background 0.12s' }}
                     onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
                     onMouseLeave={e => e.currentTarget.style.background = rowBg}>
@@ -197,7 +197,7 @@ export function MfrDashboard({ onOpen }) {
                       <Badge status={o.mine.status} />
                       {overdue && <span style={{ fontSize: 8, fontWeight: 800, color: T.danger, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 3, padding: '1px 4px', letterSpacing: '0.04em' }}>LATE</span>}
                     </div>
-                    <span style={{ color: T.textLight, fontSize: 16, textAlign: 'right' }}>›</span>
+                    <span style={{ color: T.textLight, display: 'flex', justifyContent: 'flex-end' }}><ChevronRight size={16} /></span>
                   </div>
                 )
               })}
@@ -209,7 +209,7 @@ export function MfrDashboard({ onOpen }) {
             {filtered.map(o => {
               const overdue = new Date(o.delivery) < new Date(getToday()) && o.mine.status !== 'Delivered'
               return (
-                <div key={o.id} onClick={() => onOpen(o.id)}
+                <div key={o.id} onClick={() => onOpen(o.id)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => onOpen(o.id))}
                   style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: '14px 16px', cursor: 'pointer' }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
                     <div style={{ minWidth: 0 }}>

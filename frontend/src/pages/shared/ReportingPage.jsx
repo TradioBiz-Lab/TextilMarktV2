@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
-import { CalendarClock, AlertTriangle, Package, Ban, CircleDot, CheckCircle2, Search, BarChart3, Folder, MessageCircle, Calendar, ChevronDown, ChevronRight, Play, Download } from 'lucide-react'
+import { CalendarClock, AlertTriangle, Package, Ban, CircleDot, CheckCircle2, Search, BarChart3, Folder, MessageCircle, Calendar, ChevronDown, ChevronRight, Play, Download, ArrowRight } from 'lucide-react'
 import {
   T, dayNumber, getToday, fmtN,
   stageStatusOf, stageIsOverdue, isStageDone, inFlightStages, stageProgressLabel, stageVariance,
 } from '../../constants.js'
-import { Btn, Card, EmptyState, FlexRow, Modal, Mono, LoadingScreen, PageHeader, ProductThumb, StatCard } from '../../components/ui.jsx'
+import { Btn, Card, EmptyState, FlexRow, Modal, Mono, LoadingScreen, PageHeader, ProductThumb, StatCard, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
 // This page answers one question per row: WHERE IS THIS ORDER?
@@ -172,7 +172,7 @@ function GanttModal({ order, asgn, onClose, onOpen }) {
       <GanttChart asgn={asgn} />
       <FlexRow justify="flex-end" gap={8} style={{ marginTop: 20 }}>
         <Btn variant="secondary" onClick={onClose}>Close</Btn>
-        {onOpen && <Btn onClick={() => { onClose(); onOpen(order.id, asgn.mid) }}>Open Order →</Btn>}
+        {onOpen && <Btn onClick={() => { onClose(); onOpen(order.id, asgn.mid) }}>Open Order <ArrowRight size={13} style={{ marginLeft: -2 }} /></Btn>}
       </FlexRow>
     </Modal>
   )
@@ -366,7 +366,7 @@ export function ReportingPage({ onOpen }) {
                       return (
                         <tr
                           key={`${r.order.id}-${r.asgn.mid}`}
-                          onClick={() => onOpen?.(r.order.id, r.asgn.mid)}
+                          onClick={() => onOpen?.(r.order.id, r.asgn.mid)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => onOpen?.(r.order.id, r.asgn.mid))}
                           style={{ borderTop: `1px solid ${T.border}`, cursor: 'pointer', background: r.health === 'blocked' || r.health === 'late' ? '#fffbfb' : 'transparent' }}
                         >
                           <td style={{ padding: '10px 14px', minWidth: 230 }}>

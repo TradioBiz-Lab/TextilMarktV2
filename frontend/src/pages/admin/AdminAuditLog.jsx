@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Package, RotateCw, Paperclip, User, Ban, Check, KeyRound, Zap, Search, Crown } from 'lucide-react'
+import { Package, RotateCw, Paperclip, User, Ban, Check, KeyRound, Zap, Search, Crown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { T } from '../../constants.js'
 import { Card, PageHeader, EmptyState, FlexRow, LoadingScreen } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -281,8 +281,8 @@ export function AdminAuditLog() {
       {/* ── Pagination ── */}
       {totalPages > 1 && (
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, marginTop: 28, paddingBottom: 8 }}>
-          <PagBtn onClick={() => goPage(1)} disabled={safePage === 1}>«</PagBtn>
-          <PagBtn onClick={() => goPage(safePage - 1)} disabled={safePage === 1}>‹</PagBtn>
+          <PagBtn onClick={() => goPage(1)} disabled={safePage === 1}><ChevronsLeft size={14} /></PagBtn>
+          <PagBtn onClick={() => goPage(safePage - 1)} disabled={safePage === 1}><ChevronLeft size={14} /></PagBtn>
 
           {pageNumbers[0] > 1 && (
             <>
@@ -302,8 +302,8 @@ export function AdminAuditLog() {
             </>
           )}
 
-          <PagBtn onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages}>›</PagBtn>
-          <PagBtn onClick={() => goPage(totalPages)} disabled={safePage === totalPages}>»</PagBtn>
+          <PagBtn onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages}><ChevronRight size={14} /></PagBtn>
+          <PagBtn onClick={() => goPage(totalPages)} disabled={safePage === totalPages}><ChevronsRight size={14} /></PagBtn>
 
           <span style={{ fontSize: 12, color: T.textMuted, marginLeft: 6, whiteSpace: 'nowrap' }}>
             {((safePage - 1) * PAGE_SIZE) + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)} of {filtered.length}
@@ -326,6 +326,7 @@ function PagBtn({ children, onClick, disabled, active }) {
         fontSize: 13, fontWeight: active ? 700 : 400,
         fontFamily: 'inherit', transition: 'all 0.15s',
         boxShadow: active ? `0 2px 8px ${T.primary}40` : 'none',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
       }}>
       {children}
     </button>

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Bell, AlertTriangle, RefreshCw, Package } from 'lucide-react'
 import { T } from '../constants.js'
-import { EmptyState } from './ui.jsx'
+import { EmptyState, activateOnKey } from './ui.jsx'
 import { useApp } from '../context.jsx'
 
 function fmtAge(at) {
@@ -48,7 +48,7 @@ export function NotifPanel({ onClose, onOpenOrder }) {
           : notifs.map(n => {
             const clickable = !n.read || (n.orderId && onOpenOrder)
             return (
-              <div key={n.id} onClick={() => handleNotifClick(n)}
+              <div key={n.id} onClick={() => handleNotifClick(n)} role={clickable ? 'button' : undefined} tabIndex={clickable ? 0 : undefined} onKeyDown={clickable ? activateOnKey(() => handleNotifClick(n)) : undefined}
                 style={{ padding: '12px 18px', borderBottom: `1px solid ${T.border}`, background: n.read ? T.surface : '#fafbff', display: 'flex', gap: 10, alignItems: 'flex-start', cursor: clickable ? 'pointer' : 'default' }}>
                 <span style={{ display: 'flex', flexShrink: 0, color: n.type === 'alert' ? T.danger : T.textMuted }}>
                   {n.type === 'alert' ? <AlertTriangle size={16} /> : n.type === 'status' ? <RefreshCw size={16} /> : <Package size={16} />}
