@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { AlertTriangle } from 'lucide-react'
 import { T } from '../../constants.js'
 import { Btn, FlexRow, Mono } from '../../components/ui.jsx'
 
@@ -58,8 +59,8 @@ export function DeleteOrderModal({ order, onClose, onConfirm }) {
           </div>
 
           {err && (
-            <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}>
-              ⚠ {err}
+            <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <AlertTriangle size={13} /> {err}
             </div>
           )}
 

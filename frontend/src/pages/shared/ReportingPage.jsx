@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { CalendarClock, AlertTriangle, Package, Ban, CircleDot, CheckCircle2, Search, BarChart3, Folder, MessageCircle, Calendar, ChevronDown, ChevronRight, Play } from 'lucide-react'
+import { CalendarClock, AlertTriangle, Package, Ban, CircleDot, CheckCircle2, Search, BarChart3, Folder, MessageCircle, Calendar, ChevronDown, ChevronRight, Play, Download } from 'lucide-react'
 import {
   T, dayNumber, getToday, fmtN,
   stageStatusOf, stageIsOverdue, isStageDone, inFlightStages, stageProgressLabel, stageVariance,
@@ -301,7 +301,7 @@ export function ReportingPage({ onOpen }) {
       <PageHeader
         title="Order Status"
         subtitle="Where every order stands right now — what's open, what's stuck, what's next"
-        action={<Btn variant="secondary" icon="⬇" onClick={exportCsv} disabled={filtered.length === 0}>Export CSV</Btn>}
+        action={<Btn variant="secondary" icon={<Download size={16} />} onClick={exportCsv} disabled={filtered.length === 0}>Export CSV</Btn>}
       />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 14 }} className="grid-responsive-4">
