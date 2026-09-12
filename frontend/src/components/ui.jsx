@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react'
-import { Link2, Package, Factory, Eye, Download, FileText, StickyNote, AlertTriangle, CheckCircle2, Info, X, Image as ImageIcon, Paperclip, Upload, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Link2, Package, Factory, Eye, Download, FileText, StickyNote, AlertTriangle, CheckCircle2, Info, X, Image as ImageIcon, Paperclip, Upload, ChevronLeft, ChevronRight, Crown } from 'lucide-react'
 import { T, ST, DOC_TYPES, STAGE_DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired } from '../constants.js'
 import { useApp } from '../context.jsx'
 import * as pdfjsLib from 'pdfjs-dist'
@@ -188,7 +188,7 @@ export function RoleBadge({ role, adminType }) {
   const s = map[role] || { label: role, bg: '#f1f5f9', c: '#475569' }
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: s.bg, color: s.c, whiteSpace: 'nowrap' }}>
-      {role === 'admin' && adminType === 'master' && '👑 '}{s.label}
+      {role === 'admin' && adminType === 'master' && <Crown size={11} />}{s.label}
     </span>
   )
 }
@@ -316,14 +316,14 @@ export function StatCard({ label, value, icon, bg, trend }) {
 
 export function Alert({ type, children }) {
   const s = {
-    info: { bg: T.infoBg, border: T.infoBorder, c: T.info, icon: 'ℹ' },
-    success: { bg: T.successBg, border: T.successBorder, c: T.success, icon: '✓' },
-    warning: { bg: T.warningBg, border: T.warningBorder, c: T.warning, icon: '⚠' },
-    danger: { bg: T.dangerBg, border: T.dangerBorder, c: T.danger, icon: '⚠' },
-  }[type] || { bg: T.infoBg, border: T.infoBorder, c: T.info, icon: 'ℹ' }
+    info: { bg: T.infoBg, border: T.infoBorder, c: T.info, Icon: Info },
+    success: { bg: T.successBg, border: T.successBorder, c: T.success, Icon: CheckCircle2 },
+    warning: { bg: T.warningBg, border: T.warningBorder, c: T.warning, Icon: AlertTriangle },
+    danger: { bg: T.dangerBg, border: T.dangerBorder, c: T.danger, Icon: AlertTriangle },
+  }[type] || { bg: T.infoBg, border: T.infoBorder, c: T.info, Icon: Info }
   return (
     <div style={{ background: s.bg, border: `1px solid ${s.border}`, borderRadius: 10, padding: '10px 14px', fontSize: 13, color: s.c, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-      <span style={{ flexShrink: 0, fontWeight: 700 }}>{s.icon}</span><div style={{ flex: 1 }}>{children}</div>
+      <s.Icon size={15} style={{ flexShrink: 0, marginTop: 1 }} /><div style={{ flex: 1, lineHeight: 1.5 }}>{children}</div>
     </div>
   )
 }

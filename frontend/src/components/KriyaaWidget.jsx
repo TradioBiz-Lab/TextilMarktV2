@@ -89,7 +89,7 @@ export function KriyaaWidget() {
                 placeholder="Ask, or tell it what changed…"
               />
             </div>
-            <Btn size="sm" onClick={send} disabled={busy || !input.trim()}>{busy ? '…' : 'Send'}</Btn>
+            <Btn size="sm" onClick={() => send()} disabled={busy || !input.trim()}>{busy ? '…' : 'Send'}</Btn>
           </div>
         </div>
       )}

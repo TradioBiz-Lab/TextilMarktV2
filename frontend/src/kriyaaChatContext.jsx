@@ -18,8 +18,11 @@ export function KriyaaChatProvider({ children }) {
   const [busy, setBusy] = useState(false)
   const [slow, setSlow] = useState(false)
 
-  const send = useCallback(async () => {
-    const text = input.trim()
+  // overrideText lets a caller (a suggestion chip) send specific text in the
+  // same tick without waiting on the setInput('...') state update to land —
+  // the default (no arg) keeps reading the live input box, unchanged.
+  const send = useCallback(async (overrideText) => {
+    const text = (overrideText ?? input).trim()
     if (!text || busy) return
     const userMsg = { role: 'user', content: text, at: new Date() }
     const nextMessages = [...messages, userMsg]
