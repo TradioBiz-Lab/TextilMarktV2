@@ -101,6 +101,16 @@ export const SEASONS = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
 export const T = {
   bg: '#F8FAFC', surface: '#FFFFFF', border: '#e2e8f0', borderHover: '#CBD5E1',
   primary: '#F97316', primaryDark: '#EA580C', primaryLight: '#FFF7ED',
+  // Text/fill-grade orange for anywhere contrast is measured, not just decorative
+  // use: #F97316 only reaches 2.8:1 as white-on-fill or as small text on white,
+  // under the 4.5:1 AA floor. primaryDeep carries the same hue to ~5.2:1 and is
+  // what Btn's primary/ghost/outline variants use; primaryDeeper is the hover
+  // state on the primary fill, ~7.3:1.
+  primaryDeep: '#C2410C', primaryDeeper: '#9A3412',
+  // successDeep/dangerDeep: same relationship — T.success/T.danger read fine as
+  // small dots or icon fills (>=3:1, the non-text UI-component floor) but fall
+  // under AA as TEXT on their own *Bg tint. Measured at ~5.2:1 / ~5.9:1.
+  successDeep: '#047857', dangerDeep: '#B91C1C',
   // textMuted/textLight darkened from slate-500/slate-400 — the previous values read
   // as too low-contrast on line items (order rows, bulk-edit grids): ~4.8:1 and ~2.6:1
   // against a white surface, the latter failing WCAG AA outright. Now ~7.6:1 / ~4.8:1.
@@ -113,6 +123,13 @@ export const T = {
   sidebar: '#003B73', sidebarBorder: 'rgba(255,255,255,0.1)',
   sidebarGradient: 'linear-gradient(180deg, #0a4f8a 0%, #003B73 50%, #001c38 100%)',
   heroGradient: 'linear-gradient(135deg, #0a4f8a 0%, #003B73 55%, #002347 100%)',
+  // Type scale. 916 inline fontSize declarations across 24 distinct values (some
+  // under 11px) existed with no shared scale before this — new/touched call sites
+  // should pull from here; this does not retroactively migrate existing ones.
+  // Named for role, not size, so a future rebalance doesn't require touching call
+  // sites: micro=badges/pills, xs=metadata/captions, sm=table cells, body=default
+  // UI text, md=section labels, lg=card values, xl=page titles.
+  fontSize: { micro: 10, xs: 11, sm: 12, body: 13, md: 14, lg: 16, xl: 20 },
   // Shared radius/shadow scale — every primitive in ui.jsx pulls from here so a
   // future tweak to "how rounded/how elevated" changes everywhere at once.
   radius: { sm: 8, md: 12, lg: 16, xl: 20, pill: 999 },

@@ -182,14 +182,19 @@ export function RoleBadge({ role, adminType }) {
 }
 
 export function Btn({ children, onClick, variant = 'primary', size = 'md', disabled, type = 'button', block, icon }) {
+  // primary/danger/success/ghost/outline all measured below the 4.5:1 AA floor
+  // using T.primary/T.danger/T.success directly (2.4-3.4:1) — those tokens stay
+  // correct for large fills, dots and icons (>=3:1, the non-text UI floor) but
+  // are wrong wherever they ARE the text/foreground, which is every case here.
+  // The *Deep tokens fix exactly that without touching the tokens themselves.
   const v = {
-    primary: { bg: T.primary, hover: T.primaryDark, color: '#fff', border: 'none' },
+    primary: { bg: T.primaryDeep, hover: T.primaryDeeper, color: '#fff', border: 'none' },
     secondary: { bg: '#f8fafc', hover: '#f1f5f9', color: T.text, border: `1px solid ${T.border}` },
-    danger: { bg: T.dangerBg, hover: '#fecaca', color: T.danger, border: `1px solid ${T.dangerBorder}` },
-    success: { bg: T.successBg, hover: '#bbf7d0', color: T.success, border: `1px solid ${T.successBorder}` },
+    danger: { bg: T.dangerBg, hover: '#fecaca', color: T.dangerDeep, border: `1px solid ${T.dangerBorder}` },
+    success: { bg: T.successBg, hover: '#bbf7d0', color: T.successDeep, border: `1px solid ${T.successBorder}` },
     warning: { bg: T.warningBg, hover: '#fde68a', color: T.warning, border: `1px solid ${T.warningBorder}` },
-    ghost: { bg: 'transparent', hover: T.primaryLight, color: T.primary, border: 'none' },
-    outline: { bg: 'transparent', hover: T.primaryLight, color: T.primary, border: `1px solid ${T.primary}` },
+    ghost: { bg: 'transparent', hover: T.primaryLight, color: T.primaryDeep, border: 'none' },
+    outline: { bg: 'transparent', hover: T.primaryLight, color: T.primaryDeep, border: `1px solid ${T.primaryDeep}` },
     master: { bg: T.masterBg, hover: '#ddd6fe', color: T.master, border: '1px solid #c4b5fd' },
   }[variant] || {}
   const sz = { sm: { p: '4px 10px', fs: 11 }, md: { p: '7px 14px', fs: 13 }, lg: { p: '10px 20px', fs: 14 } }[size] || {}
