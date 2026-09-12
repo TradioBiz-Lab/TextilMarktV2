@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react'
-import { Link2, Package, Factory, Eye, Download, FileText, StickyNote, AlertTriangle, CheckCircle2, Info, X, Image as ImageIcon, Paperclip, Upload } from 'lucide-react'
+import { Link2, Package, Factory, Eye, Download, FileText, StickyNote, AlertTriangle, CheckCircle2, Info, X, Image as ImageIcon, Paperclip, Upload, ChevronLeft, ChevronRight } from 'lucide-react'
 import { T, ST, DOC_TYPES, STAGE_DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired } from '../constants.js'
 import { useApp } from '../context.jsx'
 import * as pdfjsLib from 'pdfjs-dist'
@@ -9,6 +9,18 @@ import * as pdfjsLib from 'pdfjs-dist'
 import PdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker'
 
 pdfjsLib.GlobalWorkerOptions.workerPort = new PdfWorker()
+
+// A plain <div onClick> is invisible to keyboard navigation — Tab never lands
+// on it, Enter/Space do nothing. This makes such a div behave like a real
+// button for keyboard users: pair with role="button" tabIndex={0} on the
+// element itself. Space is prevented from also scrolling the page, matching
+// native <button> behavior.
+export function activateOnKey(onClick) {
+  return e => {
+    if (!onClick) return
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(e) }
+  }
+}
 
 // ── Convert a base64 data URL to an object URL ──
 // Desktop Chrome blocks navigation to top-level data: URLs (phishing mitigation)
@@ -100,10 +112,10 @@ function PdfPageViewer({ bytes, onReady }) {
       {numPages > 1 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#1e293b', padding: '6px 14px', borderRadius: 8, flexShrink: 0 }}>
           <button onClick={() => setPageNum(p => Math.max(1, p - 1))} disabled={pageNum <= 1}
-            style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: pageNum <= 1 ? 'not-allowed' : 'pointer', opacity: pageNum <= 1 ? 0.4 : 1, fontSize: 13, fontFamily: 'inherit' }}>‹ Prev</button>
+            style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: pageNum <= 1 ? 'not-allowed' : 'pointer', opacity: pageNum <= 1 ? 0.4 : 1, fontSize: 13, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}><ChevronLeft size={14} /> Prev</button>
           <span style={{ color: '#94a3b8', fontSize: 12 }}>Page {pageNum} of {numPages}</span>
           <button onClick={() => setPageNum(p => Math.min(numPages, p + 1))} disabled={pageNum >= numPages}
-            style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: pageNum >= numPages ? 'not-allowed' : 'pointer', opacity: pageNum >= numPages ? 0.4 : 1, fontSize: 13, fontFamily: 'inherit' }}>Next ›</button>
+            style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: pageNum >= numPages ? 'not-allowed' : 'pointer', opacity: pageNum >= numPages ? 0.4 : 1, fontSize: 13, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}>Next <ChevronRight size={14} /></button>
         </div>
       )}
     </div>
@@ -241,7 +253,7 @@ export function Textarea({ label, hint, ...p }) {
 export function Card({ children, style: s, pad = true, onClick }) {
   const [hov, setHov] = useState(false)
   return (
-    <div onClick={onClick}
+    <div onClick={onClick} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined} onKeyDown={activateOnKey(onClick)}
       onMouseEnter={() => onClick && setHov(true)} onMouseLeave={() => onClick && setHov(false)}
       style={{ background: T.surface, borderRadius: 12, border: `1px solid ${hov ? T.borderHover : T.border}`, overflow: 'hidden', boxShadow: hov ? '0 4px 16px rgba(0,0,0,0.08)' : 'none', transition: 'box-shadow 0.15s, border-color 0.15s', cursor: onClick ? 'pointer' : undefined, ...s, padding: pad ? (s?.padding || '20px') : 0 }}>
       {children}
@@ -409,7 +421,7 @@ export function FileUpload({ file, onFile, error, onError }) {
 
       {mode === 'file' ? (
         <>
-          <div onClick={() => inputRef.current?.click()}
+          <div onClick={() => inputRef.current?.click()} role="button" tabIndex={0} onKeyDown={activateOnKey(() => inputRef.current?.click())}
             onDragOver={e => { e.preventDefault(); setDrag(true) }}
             onDragLeave={() => setDrag(false)}
             onDrop={e => { e.preventDefault(); setDrag(false); process(e.dataTransfer.files[0]) }}
@@ -456,7 +468,7 @@ export function ProductThumb({ order, size = 'sm', onClick }) {
   const showImg = url && !broken
   return (
     <div
-      onClick={onClick}
+      onClick={onClick} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined} onKeyDown={activateOnKey(onClick)}
       title={onClick ? (showImg ? 'Change photo' : 'Add photo') : undefined}
       style={{ width: dim, height: dim, borderRadius: size === 'lg' ? 12 : 6, overflow: 'hidden', flexShrink: 0, background: '#f1f5f9', border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: onClick ? 'pointer' : undefined }}
     >
@@ -761,7 +773,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
       <div style={{ background: T.surface, borderRadius: 10, border: `1px solid ${exp || expd ? T.warningBorder : T.border}`, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
         <div style={{ width: 38, height: 38, borderRadius: T.radius.sm, background: T.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><DocIcon size={17} color={T.primaryDark} /></div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div onClick={hasFile ? openFile : undefined} style={{ fontSize: 13, fontWeight: 700, color: hasFile ? T.primary : T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: hasFile ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 5 }} title={hasFile ? (hasExternal ? 'Click to open link' : 'Click to view') : undefined}>{doc.name}{hasExternal && <Link2 size={11} style={{ opacity: 0.7, flexShrink: 0 }} />}</div>
+          <div onClick={hasFile ? openFile : undefined} role={hasFile ? 'button' : undefined} tabIndex={hasFile ? 0 : undefined} onKeyDown={hasFile ? activateOnKey(openFile) : undefined} style={{ fontSize: 13, fontWeight: 700, color: hasFile ? T.primary : T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: hasFile ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 5 }} title={hasFile ? (hasExternal ? 'Click to open link' : 'Click to view') : undefined}>{doc.name}{hasExternal && <Link2 size={11} style={{ opacity: 0.7, flexShrink: 0 }} />}</div>
           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center', marginTop: 5 }}>
             <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10, background: '#f1f5f9', color: T.textMuted, border: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>{typLabel}</span>
             {doc.orderId && <span style={{ fontSize: 11, color: T.primary, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Package size={11} /> {doc.orderId}</span>}
@@ -1009,7 +1021,8 @@ export function Grid({ cols, gap = 14, children, style: s }) {
 
 export function FlexRow({ children, gap = 10, align = 'center', justify = 'flex-start', style: s, onClick }) {
   return (
-    <div onClick={onClick} style={{ display: 'flex', alignItems: align, justifyContent: justify, gap, cursor: onClick ? 'pointer' : undefined, ...s }}>
+    <div onClick={onClick} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined} onKeyDown={activateOnKey(onClick)}
+      style={{ display: 'flex', alignItems: align, justifyContent: justify, gap, cursor: onClick ? 'pointer' : undefined, ...s }}>
       {children}
     </div>
   )
