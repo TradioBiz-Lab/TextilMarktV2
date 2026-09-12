@@ -299,11 +299,15 @@ export function Tabs({ tabs, active, onChange }) {
 
 export function StatCard({ label, value, icon, bg, trend }) {
   return (
-    <div style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.border}`, padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
+    // height:100% so every card in a grid row matches the tallest, rather than
+    // each shrink-wrapping its own label and leaving a ragged row edge.
+    <div style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.border}`, padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 14, height: '100%' }}>
       <div style={{ width: 46, height: 46, borderRadius: 12, background: bg || T.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>{icon}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 26, fontWeight: 800, color: T.text, lineHeight: 1.1 }}>{value}</div>
-        <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>{label}</div>
+        <div style={{ fontSize: 26, fontWeight: 800, color: T.text, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+        {/* labels are short ("Active Buyers"); balance keeps a 2-word wrap from
+            leaving one orphan word on line two */}
+        <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2, textWrap: 'balance' }}>{label}</div>
       </div>
       {trend != null && <div style={{ fontSize: 12, fontWeight: 700, color: trend >= 0 ? T.success : T.danger }}>{trend >= 0 ? '+' : ''}{trend}%</div>}
     </div>
@@ -969,12 +973,20 @@ export function PageHeader({ title, subtitle, action }) {
   )
 }
 
-export function EmptyState({ icon, title, desc }) {
+// `compact` is for an empty state nested inside a section that is only one part
+// of a larger page — a dashboard widget, a panel, a tab body. At full size the
+// block reserves too much room to say nothing is wrong, which on a dashboard
+// crowds out content that IS actionable. Full size stays the default for a
+// whole-page empty state, where the extra room reads as intentional.
+export function EmptyState({ icon, title, desc, compact }) {
+  const dim = compact
+    ? { pad: '22px 20px', iconFs: 26, titleFs: 13.5, bodyFs: 12.5 }
+    : { pad: '48px 24px', iconFs: 36, titleFs: 15, bodyFs: 13 }
   return (
-    <div style={{ textAlign: 'center', padding: '48px 24px', color: T.textLight }}>
-      <div style={{ fontSize: 36, marginBottom: 12 }}>{icon}</div>
-      <div style={{ fontSize: 15, fontWeight: 700, color: T.textMuted, marginBottom: 6 }}>{title}</div>
-      <div style={{ fontSize: 13 }}>{desc}</div>
+    <div style={{ textAlign: 'center', padding: dim.pad, color: T.textLight }}>
+      <div style={{ fontSize: dim.iconFs, marginBottom: 12 }}>{icon}</div>
+      <div style={{ fontSize: dim.titleFs, fontWeight: 700, color: T.textMuted, marginBottom: 6 }}>{title}</div>
+      <div style={{ fontSize: dim.bodyFs }}>{desc}</div>
     </div>
   )
 }
@@ -1010,13 +1022,24 @@ export function RibbonBanner({ ribbons = [] }) {
   )
 }
 
+// Mono carries order ids, quantities and dates. Two defaults matter:
+// nowrap, because an id like ZAR-TPR-XX-SS26-001 otherwise breaks at every
+// hyphen and stacks four lines deep in a narrow column (the table already
+// scrolls horizontally, so there is nothing to gain by wrapping); and
+// tabular-nums so quantities stay column-aligned down a list.
 export function Mono({ children, style: s }) {
-  return <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: T.primary, fontWeight: 500, ...s }}>{children}</span>
+  return <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: T.primaryDeep, fontWeight: 500, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', ...s }}>{children}</span>
 }
 
+// Column count lives in index.css's .grid-responsive-* rules, NOT inline —
+// an inline grid-template-columns outranks every media query, which silently
+// froze every Grid at its desktop column count at all widths. Only a cols
+// value with no matching class falls back to an inline template.
 export function Grid({ cols, gap = 14, children, style: s }) {
-  const cls = cols >= 4 ? 'grid-responsive-4' : cols === 3 ? 'grid-responsive-3' : cols === 2 ? 'grid-responsive-2' : ''
-  return <div className={cls} style={{ display: 'grid', gridTemplateColumns: `repeat(${cols},1fr)`, gap, ...s }}>{children}</div>
+  const cls = cols >= 5 ? 'grid-responsive-5' : cols === 4 ? 'grid-responsive-4'
+    : cols === 3 ? 'grid-responsive-3' : cols === 2 ? 'grid-responsive-2' : ''
+  const fallback = cls ? null : `repeat(${cols},minmax(0,1fr))`
+  return <div className={cls} style={{ display: 'grid', ...(fallback && { gridTemplateColumns: fallback }), gap, ...s }}>{children}</div>
 }
 
 export function FlexRow({ children, gap = 10, align = 'center', justify = 'flex-start', style: s, onClick }) {

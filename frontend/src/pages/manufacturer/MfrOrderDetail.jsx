@@ -659,7 +659,7 @@ export function MfrOrderDetail({ orderId, onBack }) {
           {tab === 'info' && (
             <div>
               {/* Two-column grid */}
-              <div className="grid-responsive-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 32px' }}>
+              <div className="grid-responsive-2" style={{ gap: '0 32px' }}>
                 {[
                   ['Order ID',     <Mono key="oid" style={{ fontSize: 12 }}>{order.id}</Mono>],
                   ['Split',        mine.sub],
