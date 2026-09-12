@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react'
+import { Link2, Package, Factory, Eye, Download, FileText, StickyNote, AlertTriangle, CheckCircle2, Info, X, Image as ImageIcon, Paperclip, Upload } from 'lucide-react'
 import { T, ST, DOC_TYPES, STAGE_DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired } from '../constants.js'
 import { useApp } from '../context.jsx'
 import * as pdfjsLib from 'pdfjs-dist'
@@ -91,7 +92,7 @@ function PdfPageViewer({ bytes, onReady }) {
     return () => { cancelled = true }
   }, [pdf, pageNum])
 
-  if (error) return <div style={{ color: '#fca5a5', padding: 24, fontSize: 13 }}>⚠ {error}</div>
+  if (error) return <div style={{ color: '#fca5a5', padding: 24, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}><AlertTriangle size={14} /> {error}</div>
 
   return (
     <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 16, gap: 12 }}>
@@ -134,10 +135,10 @@ export function useToast() {
 function ToastStack({ toasts, onDismiss }) {
   if (!toasts.length) return null
   const styles = {
-    success: { bg: '#f0fdf4', border: '#86efac', text: '#15803d', icon: '✓' },
-    error:   { bg: '#fef2f2', border: '#fca5a5', text: '#b91c1c', icon: '✕' },
-    info:    { bg: '#eff6ff', border: '#93c5fd', text: '#1d4ed8', icon: 'ℹ' },
-    warning: { bg: '#fffbeb', border: '#fde68a', text: '#92400e', icon: '⚠' },
+    success: { bg: '#f0fdf4', border: '#86efac', text: '#15803d', Icon: CheckCircle2 },
+    error:   { bg: '#fef2f2', border: '#fca5a5', text: '#b91c1c', Icon: X },
+    info:    { bg: '#eff6ff', border: '#93c5fd', text: '#1d4ed8', Icon: Info },
+    warning: { bg: '#fffbeb', border: '#fde68a', text: '#92400e', Icon: AlertTriangle },
   }
   return (
     <div className="toast-stack">
@@ -146,10 +147,10 @@ function ToastStack({ toasts, onDismiss }) {
         return (
           <div key={t.id}
             style={{ background: s.bg, border: `1px solid ${s.border}`, borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'flex-start', gap: 9, boxShadow: '0 4px 16px rgba(0,0,0,0.10)', pointerEvents: 'all', animation: 'toast-in 0.18s ease' }}>
-            <span style={{ fontSize: 14, fontWeight: 800, color: s.text, flexShrink: 0, marginTop: 1 }}>{s.icon}</span>
+            <s.Icon size={16} color={s.text} style={{ flexShrink: 0, marginTop: 1 }} />
             <span style={{ fontSize: 13, fontWeight: 500, color: s.text, flex: 1, lineHeight: 1.45 }}>{t.msg}</span>
             <button onClick={() => onDismiss(t.id)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, color: s.text, opacity: 0.45, padding: 0, lineHeight: 1, fontFamily: 'inherit', flexShrink: 0 }}>×</button>
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: s.text, opacity: 0.5, padding: 0, lineHeight: 1, fontFamily: 'inherit', flexShrink: 0, display: 'flex' }}><X size={14} /></button>
           </div>
         )
       })}
@@ -359,12 +360,12 @@ export function FileUpload({ file, onFile, error, onError }) {
   }
 
   const fmtSize = b => b > 1024 * 1024 ? (b / 1024 / 1024).toFixed(1) + 'MB' : (b / 1024).toFixed(0) + 'KB'
-  const fileIcon = t => t === 'application/pdf' ? '📄' : (t && t.startsWith('image/')) ? '🖼' : '📎'
+  const FileTypeIcon = t => t === 'application/pdf' ? FileText : (t && t.startsWith('image/')) ? ImageIcon : Paperclip
 
   // Selected state — either a file (file.dataUrl) or a link (file.externalUrl)
   if (file?.externalUrl) return (
     <div style={{ border: `2px solid ${T.successBorder}`, borderRadius: 10, padding: '14px 16px', background: T.successBg, display: 'flex', alignItems: 'center', gap: 12 }}>
-      <span style={{ fontSize: 28, flexShrink: 0 }}>🔗</span>
+      <div style={{ width: 40, height: 40, borderRadius: 10, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Link2 size={19} color={T.success} /></div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Drive link attached</div>
         <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.externalUrl}</div>
@@ -373,28 +374,31 @@ export function FileUpload({ file, onFile, error, onError }) {
     </div>
   )
 
-  if (file?.dataUrl) return (
-    <div style={{ border: `2px solid ${T.successBorder}`, borderRadius: 10, padding: '14px 16px', background: T.successBg, display: 'flex', alignItems: 'center', gap: 12 }}>
-      <span style={{ fontSize: 28, flexShrink: 0 }}>{fileIcon(file.mimeType)}</span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</div>
-        <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{fmtSize(file.size)} · {file.mimeType?.split('/')[1]?.toUpperCase() || 'FILE'}</div>
+  if (file?.dataUrl) {
+    const Icon = FileTypeIcon(file.mimeType)
+    return (
+      <div style={{ border: `2px solid ${T.successBorder}`, borderRadius: 10, padding: '14px 16px', background: T.successBg, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 10, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon size={19} color={T.success} /></div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</div>
+          <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{fmtSize(file.size)} · {file.mimeType?.split('/')[1]?.toUpperCase() || 'FILE'}</div>
+        </div>
+        <button onClick={() => { onFile(null); onError && onError('') }} style={{ background: '#fff', border: `1px solid ${T.border}`, borderRadius: 8, cursor: 'pointer', padding: '4px 10px', fontSize: 12, color: T.danger, fontWeight: 600, fontFamily: 'inherit' }}>Remove</button>
       </div>
-      <button onClick={() => { onFile(null); onError && onError('') }} style={{ background: '#fff', border: `1px solid ${T.border}`, borderRadius: 8, cursor: 'pointer', padding: '4px 10px', fontSize: 12, color: T.danger, fontWeight: 600, fontFamily: 'inherit' }}>Remove</button>
-    </div>
-  )
+    )
+  }
 
   return (
     <div>
       {/* Mode toggle */}
       <div role="tablist" style={{ display: 'flex', gap: 2, background: '#f1f5f9', padding: 3, borderRadius: 9, marginBottom: 10, width: 'fit-content' }}>
         <button type="button" role="tab" aria-selected={mode === 'file'} onClick={() => { setMode('file'); onError && onError('') }}
-          style={{ background: mode === 'file' ? '#fff' : 'transparent', border: 'none', cursor: 'pointer', padding: '5px 12px', borderRadius: 7, fontSize: 11, fontWeight: 700, color: mode === 'file' ? T.text : T.textMuted, fontFamily: 'inherit', boxShadow: mode === 'file' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none' }}>
-          📎 Upload file
+          style={{ background: mode === 'file' ? '#fff' : 'transparent', border: 'none', cursor: 'pointer', padding: '5px 12px', borderRadius: 7, fontSize: 11, fontWeight: 700, color: mode === 'file' ? T.text : T.textMuted, fontFamily: 'inherit', boxShadow: mode === 'file' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <Paperclip size={12} /> Upload file
         </button>
         <button type="button" role="tab" aria-selected={mode === 'link'} onClick={() => { setMode('link'); onError && onError('') }}
-          style={{ background: mode === 'link' ? '#fff' : 'transparent', border: 'none', cursor: 'pointer', padding: '5px 12px', borderRadius: 7, fontSize: 11, fontWeight: 700, color: mode === 'link' ? T.text : T.textMuted, fontFamily: 'inherit', boxShadow: mode === 'link' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none' }}>
-          🔗 Paste link
+          style={{ background: mode === 'link' ? '#fff' : 'transparent', border: 'none', cursor: 'pointer', padding: '5px 12px', borderRadius: 7, fontSize: 11, fontWeight: 700, color: mode === 'link' ? T.text : T.textMuted, fontFamily: 'inherit', boxShadow: mode === 'link' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <Link2 size={12} /> Paste link
         </button>
       </div>
 
@@ -405,7 +409,7 @@ export function FileUpload({ file, onFile, error, onError }) {
             onDragLeave={() => setDrag(false)}
             onDrop={e => { e.preventDefault(); setDrag(false); process(e.dataTransfer.files[0]) }}
             style={{ border: `2px dashed ${drag ? T.primary : error ? T.danger : T.border}`, borderRadius: 10, padding: '28px', textAlign: 'center', cursor: 'pointer', background: drag ? T.primaryLight : '#fafbff', transition: 'all 0.15s' }}>
-            <div style={{ fontSize: 28, marginBottom: 8 }}>📎</div>
+            <Upload size={26} color={drag ? T.primary : T.textLight} style={{ marginBottom: 8 }} />
             <div style={{ fontWeight: 600, color: drag ? T.primary : T.textMuted, marginBottom: 4 }}>Click to upload or drag & drop</div>
             <div style={{ fontSize: 12, color: T.textLight }}>PDF, JPG, PNG · Max 10MB</div>
             <div style={{ fontSize: 11, color: T.textLight, marginTop: 6 }}>Larger file? Use <strong>Paste link</strong> above.</div>
@@ -432,7 +436,7 @@ export function FileUpload({ file, onFile, error, onError }) {
           </div>
         </div>
       )}
-      {error && <div style={{ fontSize: 11, color: T.danger, marginTop: 5, fontWeight: 500 }}>⚠ {error}</div>}
+      {error && <div style={{ fontSize: 11, color: T.danger, marginTop: 6, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}><AlertTriangle size={11} /> {error}</div>}
     </div>
   )
 }
@@ -454,7 +458,7 @@ export function ProductThumb({ order, size = 'sm', onClick }) {
       {showImg ? (
         <img src={url} alt="" onError={() => setBroken(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
       ) : (
-        <span style={{ fontSize: size === 'lg' ? 32 : 20, color: T.textLight }}>🖼</span>
+        <ImageIcon size={size === 'lg' ? 32 : 20} color={T.textLight} />
       )}
     </div>
   )
@@ -569,7 +573,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
     ? `${uploaderRole === 'manufacturer' ? 'Mfr' : uploaderRole === 'buyer' ? 'Buyer' : 'Admin'} · ${uploaderCompany}`
     : null
   const exp = isExpiringSoon(doc.expiryDate), expd = isExpired(doc.expiryDate)
-  const icon = DOC_ICONS[doc.type] || '📄'
+  const DocIcon = DOC_ICONS[doc.type] || FileText
   const typLabel = DOC_TYPES.find(d => d.v === doc.type)?.l || STAGE_DOC_TYPES.find(d => d.v === doc.type)?.l || doc.type
   const [fileData, setFileData] = useState(null)
   const [fetching, setFetching] = useState(false)
@@ -697,12 +701,14 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
             <span style={{ fontSize: 10, fontWeight: 800, background: '#1d4ed8', color: '#fff', padding: '2px 8px', borderRadius: 6, letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
               Stage {doc.stageIndex + 1} — {stageName}
             </span>
-            {doc.orderId && <span style={{ fontSize: 11, color: T.primary, fontWeight: 700, whiteSpace: 'nowrap' }}>📦 {doc.orderId}</span>}
-            {mfr && <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 600, whiteSpace: 'nowrap' }}>🏭 {mfr.company}</span>}
+            {doc.orderId && <span style={{ fontSize: 11, color: T.primary, fontWeight: 700, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Package size={11} /> {doc.orderId}</span>}
+            {mfr && <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Factory size={11} /> {mfr.company}</span>}
           </div>
           {/* Doc body */}
           <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ fontSize: 20, flexShrink: 0 }}>{hasFile ? icon : (hasNotes ? '📝' : icon)}</div>
+            <div style={{ width: 34, height: 34, borderRadius: T.radius.sm, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              {hasNotes && !hasFile ? <StickyNote size={16} color="#1d4ed8" /> : <DocIcon size={16} color="#1d4ed8" />}
+            </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.name}</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 4 }}>
@@ -719,8 +725,8 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
             <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
               {hasFile ? (
                 <>
-                  <Btn size="sm" variant="secondary" onClick={openFile} disabled={fetching}>{hasExternal ? '🔗 Open Link' : '👁 View'}</Btn>
-                  {!hasExternal && <Btn size="sm" variant="secondary" onClick={download} disabled={fetching}>⬇ Download</Btn>}
+                  <Btn size="sm" variant="secondary" onClick={openFile} disabled={fetching} icon={hasExternal ? <Link2 size={13} /> : <Eye size={13} />}>{hasExternal ? 'Open Link' : 'View'}</Btn>
+                  {!hasExternal && <Btn size="sm" variant="secondary" onClick={download} disabled={fetching} icon={<Download size={13} />}>Download</Btn>}
                 </>
               ) : hasNotes ? (
                 <span style={{ fontSize: 10, fontWeight: 800, color: '#1d4ed8', background: '#dbeafe', padding: '3px 8px', borderRadius: 10, letterSpacing: '0.04em' }}>TEXT</span>
@@ -748,13 +754,13 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
       {viewer}
       {editModal}
       <div style={{ background: T.surface, borderRadius: 10, border: `1px solid ${exp || expd ? T.warningBorder : T.border}`, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-        <div style={{ fontSize: 22, flexShrink: 0 }}>{icon}</div>
+        <div style={{ width: 38, height: 38, borderRadius: T.radius.sm, background: T.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><DocIcon size={17} color={T.primaryDark} /></div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div onClick={hasFile ? openFile : undefined} style={{ fontSize: 13, fontWeight: 700, color: hasFile ? T.primary : T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: hasFile ? 'pointer' : 'default' }} title={hasFile ? (hasExternal ? 'Click to open link' : 'Click to view') : undefined}>{doc.name}{hasExternal && <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.7 }}>🔗</span>}</div>
+          <div onClick={hasFile ? openFile : undefined} style={{ fontSize: 13, fontWeight: 700, color: hasFile ? T.primary : T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: hasFile ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 5 }} title={hasFile ? (hasExternal ? 'Click to open link' : 'Click to view') : undefined}>{doc.name}{hasExternal && <Link2 size={11} style={{ opacity: 0.7, flexShrink: 0 }} />}</div>
           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center', marginTop: 5 }}>
             <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10, background: '#f1f5f9', color: T.textMuted, border: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>{typLabel}</span>
-            {doc.orderId && <span style={{ fontSize: 11, color: T.primary, fontWeight: 600, whiteSpace: 'nowrap' }}>📦 {doc.orderId}</span>}
-            {mfr && <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 600, whiteSpace: 'nowrap' }}>🏭 {mfr.company}</span>}
+            {doc.orderId && <span style={{ fontSize: 11, color: T.primary, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Package size={11} /> {doc.orderId}</span>}
+            {mfr && <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Factory size={11} /> {mfr.company}</span>}
             <span style={{ fontSize: 11, color: T.textLight, whiteSpace: 'nowrap' }}>{fmtShort(doc.issueDate || doc.uploadedAt)}</span>
             {uploaderName && (
               <span style={{ fontSize: 11, color: T.textLight }}>
@@ -766,15 +772,18 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
         </div>
         {doc.expiryDate && (
           <div style={{ textAlign: 'right', flexShrink: 0 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: expd ? T.danger : exp ? T.warning : T.success }}>{expd ? '⚠ Expired' : exp ? '⚠ Expiring' : '✓ Valid'}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: expd ? T.danger : exp ? T.warning : T.success, display: 'flex', alignItems: 'center', gap: 3, justifyContent: 'flex-end' }}>
+              {expd || exp ? <AlertTriangle size={11} /> : <CheckCircle2 size={11} />}
+              {expd ? 'Expired' : exp ? 'Expiring' : 'Valid'}
+            </div>
             <div style={{ fontSize: 10, color: T.textLight }}>Exp: {fmtShort(doc.expiryDate)}</div>
           </div>
         )}
         <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
           {hasFile ? (
             <>
-              <Btn size="sm" variant="secondary" onClick={openFile} disabled={fetching}>{hasExternal ? '🔗 Open Link' : '👁 View'}</Btn>
-              {!hasExternal && <Btn size="sm" variant="secondary" onClick={download} disabled={fetching}>⬇ Download</Btn>}
+              <Btn size="sm" variant="secondary" onClick={openFile} disabled={fetching} icon={hasExternal ? <Link2 size={13} /> : <Eye size={13} />}>{hasExternal ? 'Open Link' : 'View'}</Btn>
+              {!hasExternal && <Btn size="sm" variant="secondary" onClick={download} disabled={fetching} icon={<Download size={13} />}>Download</Btn>}
             </>
           ) : (
             <span style={{ fontSize: 11, color: T.textLight, fontStyle: 'italic' }}>Seed data</span>

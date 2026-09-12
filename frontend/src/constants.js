@@ -1,3 +1,9 @@
+import {
+  ClipboardList, ShoppingCart, Ruler, Wallet, Mail, FileText, ShieldCheck, Search,
+  FlaskConical, Leaf, ShieldPlus, Package, Layers, CheckCircle2, Palette, Settings2,
+  Scissors, Shirt, Trophy, Truck, Factory,
+} from 'lucide-react'
+
 // Legacy status flow (kept for admin/mfr pages not yet migrated)
 export const STATUS_FLOW = [
   'Order Confirmed', 'Material Sourcing', 'In Production',
@@ -76,16 +82,17 @@ export const STAGE_DOC_MAP = STAGE_DOC_TYPES.reduce((acc, d) => {
   return acc
 }, {})
 
+// Values are Lucide icon COMPONENTS, not emoji — render as <DOC_ICONS[type] size={..}/>.
 export const DOC_ICONS = {
-  PO: '📋', buyer_order: '🛒', tech_pack: '📐', cost_sheet: '💰', RFQ: '📩', terms: '📄',
-  compliance_cert: '🛡', factory_audit: '🔍', chemical_cert: '🧪',
-  environmental_cert: '🌿', insurance: '🏥',
+  PO: ClipboardList, buyer_order: ShoppingCart, tech_pack: Ruler, cost_sheet: Wallet, RFQ: Mail, terms: FileText,
+  compliance_cert: ShieldCheck, factory_audit: Search, chemical_cert: FlaskConical,
+  environmental_cert: Leaf, insurance: ShieldPlus,
   // Stage evidence docs
-  material_po: '📦', knitting_grn: '🧶', knitting_qc: '✅',
-  dyeing_grn: '🎨', dyeing_qc: '✅', processing_grn: '⚙️', processing_qc: '✅',
-  cutting_qc: '✂️', stitching_qc: '🧵', final_qc: '🏆',
-  packing_qc: '📦', dispatch_docs: '🚚',
-  mfr_profile: '🏭',
+  material_po: Package, knitting_grn: Layers, knitting_qc: CheckCircle2,
+  dyeing_grn: Palette, dyeing_qc: CheckCircle2, processing_grn: Settings2, processing_qc: CheckCircle2,
+  cutting_qc: Scissors, stitching_qc: Shirt, final_qc: Trophy,
+  packing_qc: Package, dispatch_docs: Truck,
+  mfr_profile: Factory,
 }
 
 export const CATEGORIES = ['TSHRT', 'JEANS', 'BEDSH', 'SHIRT', 'DRESS', 'JACKET', 'POLO', 'SHORTS', 'HOODIE']
@@ -106,6 +113,15 @@ export const T = {
   sidebar: '#003B73', sidebarBorder: 'rgba(255,255,255,0.1)',
   sidebarGradient: 'linear-gradient(180deg, #0a4f8a 0%, #003B73 50%, #001c38 100%)',
   heroGradient: 'linear-gradient(135deg, #0a4f8a 0%, #003B73 55%, #002347 100%)',
+  // Shared radius/shadow scale — every primitive in ui.jsx pulls from here so a
+  // future tweak to "how rounded/how elevated" changes everywhere at once.
+  radius: { sm: 8, md: 12, lg: 16, xl: 20, pill: 999 },
+  shadow: {
+    xs: '0 1px 2px rgba(18,20,26,0.04)',
+    sm: '0 1px 3px rgba(18,20,26,0.06), 0 1px 2px rgba(18,20,26,0.04)',
+    md: '0 6px 16px rgba(18,20,26,0.08), 0 2px 4px rgba(18,20,26,0.04)',
+    lg: '0 16px 40px rgba(18,20,26,0.14), 0 4px 10px rgba(18,20,26,0.05)',
+  },
 }
 
 // India Standard Time is a fixed UTC+5:30 offset (no DST) — the app's day
