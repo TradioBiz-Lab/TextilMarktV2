@@ -19,6 +19,7 @@ import masterOrdersRouter  from './routes/masterOrders.js'
 import signupRouter         from './routes/signup.js'
 import actionItemsRouter   from './routes/actionItems.js'
 import assistantRouter     from './routes/assistant.js'
+import voiceRouter         from './routes/voice.js'
 
 // ── Validate required env vars at startup ──────────────────────────────────
 const isProd = process.env.NODE_ENV === 'production'
@@ -45,6 +46,9 @@ if (!process.env.RESEND_API_KEY && !isTest) {
 }
 if (!process.env.ANTHROPIC_API_KEY && !isTest) {
   console.warn('[WARN] ANTHROPIC_API_KEY not set — AI assistant endpoint will be unavailable')
+}
+if (!process.env.SARVAM_API_KEY && !isTest) {
+  console.warn('[WARN] SARVAM_API_KEY not set — voice input/output will be unavailable')
 }
 
 const app = express()
@@ -164,6 +168,7 @@ app.use('/api/audit',         auditRouter)
 app.use('/api/ribbons',       ribbonsRouter)
 app.use('/api/action-items',  actionItemsRouter)
 app.use('/api/assistant',     assistantRouter)
+app.use('/api/voice',         voiceRouter)
 app.use('/api/master-orders', masterOrdersRouter)
 app.use('/api/signup',        signupRouter)
 

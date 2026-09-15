@@ -26,10 +26,13 @@ export function activateOnKey(onClick) {
 // Desktop Chrome blocks navigation to top-level data: URLs (phishing mitigation)
 // and silently refuses to render large base64 data URLs in iframes. Blob URLs work.
 // Returns { url, mimeType, revoke } — caller is responsible for revoke() when done.
-// Allowlist of mime types the document viewer is permitted to render.
-// Anything outside this set is refused, even if the server stored it.
+// Allowlist of mime types dataUrlToBlobUrl is permitted to decode.
+// Anything outside this set is refused, even if the server stored/returned
+// it. audio/wav is here for Kriyaa voice playback (voiceApi.speak's
+// response) — inert binary audio, same non-executable reasoning as the
+// document types below.
 const VIEWER_ALLOWED_MIME = new Set([
-  'application/pdf', 'image/jpeg', 'image/jpg', 'image/png',
+  'application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'audio/wav',
 ])
 
 // Shared parsing: data URL -> raw bytes + mimeType. Used both for the Blob/object-URL
@@ -66,6 +69,19 @@ export function dataUrlToBlobUrl(dataUrl) {
   const blob = new Blob([parsed.bytes], { type: parsed.mimeType })
   const url = URL.createObjectURL(blob)
   return { url, mimeType: parsed.mimeType, bytes: parsed.bytes, revoke: () => URL.revokeObjectURL(url) }
+}
+
+// The counterpart to dataUrlToBlobUrl — used by Kriyaa voice input to turn
+// a recorded audio Blob into the base64 data URL voiceApi.transcribe sends
+// to the server. Same FileReader.readAsDataURL() approach FileUpload
+// already uses for document uploads, above.
+export function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
 }
 
 // Renders PDF bytes onto a <canvas> client-side via pdf.js — no iframe/sandbox

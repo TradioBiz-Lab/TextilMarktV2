@@ -1,8 +1,11 @@
 import { useRef, useEffect } from 'react'
-import { Bot, Sparkles, ShieldAlert, PenLine, ListTodo } from 'lucide-react'
+import { Bot, Sparkles, ShieldAlert, PenLine, ListTodo, Mic, Square, Volume2, AudioLines } from 'lucide-react'
 import { T } from '../../constants.js'
 import { PageHeader, Card, Textarea, Btn } from '../../components/ui.jsx'
 import { useKriyaaChat } from '../../kriyaaChatContext.jsx'
+import { useKriyaaVoice } from '../../useKriyaaVoice.js'
+import { useVoiceMode } from '../../useVoiceMode.js'
+import { KriyaaVoiceMode } from '../../components/KriyaaVoiceMode.jsx'
 import { useApp } from '../../context.jsx'
 
 function fmtTime(d) {
@@ -70,6 +73,15 @@ export function KriyaaPage() {
   const { messages, input, setInput, busy, slow, send } = useKriyaaChat()
   const { currentUser } = useApp()
   const bottomRef = useRef(null)
+  // This page is a real unmount on navigation (App.jsx's hand-rolled
+  // router), so useVoicePlayback's own unmount cleanup already covers
+  // "left the page mid-playback" — active always true here, unlike the
+  // widget which stays mounted and only toggles visibility.
+  const voiceMode = useVoiceMode()
+  // suppressAutoPlay: fullscreen voice mode has its own independent
+  // playback loop watching the same shared messages — without this, a
+  // voice-mode reply gets auto-spoken twice, once by each hook.
+  const voice = useKriyaaVoice({ active: true, suppressAutoPlay: voiceMode.isOpen })
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -94,7 +106,7 @@ export function KriyaaPage() {
         subtitle="TextilMarkt's AI assistant — ask what's pending, narrate a status change, or ask about delivery risk, in plain language."
       />
 
-      <Card pad={false} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 400, marginTop: 16 }}>
+      <Card pad={false} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 400, marginTop: 16, position: 'relative' }}>
         <div style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
           {messages.length === 0 && (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20, padding: '20px 16px', textAlign: 'center' }}>
@@ -124,7 +136,15 @@ export function KriyaaPage() {
                 boxShadow: m.role === 'user' ? '0 2px 6px rgba(249,115,22,0.18)' : 'none',
               }}>
                 {m.content}
-                <div style={{ fontSize: 10, marginTop: 6, opacity: 0.6 }}>{fmtTime(m.at)}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 6 }}>
+                  <span style={{ fontSize: 10, opacity: 0.6 }}>{fmtTime(m.at)}</span>
+                  {m.role === 'assistant' && m.voiceOriginated && (
+                    <button onClick={() => voice.replay(m.content, m.languageCode, i)} title="Play"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', color: voice.speakingIndex === i ? T.primary : T.textLight, opacity: 0.8 }}>
+                      <Volume2 size={12} />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ))}
@@ -141,17 +161,45 @@ export function KriyaaPage() {
           <div ref={bottomRef} />
         </div>
 
-        <div style={{ borderTop: `1px solid ${T.border}`, padding: 14, display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-          <div style={{ flex: 1 }}>
-            <Textarea
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask about pending items, or tell it what changed…"
-            />
+        <div style={{ borderTop: `1px solid ${T.border}` }}>
+          {(voice.recState === 'recording' || voice.transcribing || voice.recErrorMsg || voice.voiceError) && (
+            <div style={{ padding: '8px 14px 0', fontSize: 11.5, color: voice.recErrorMsg || voice.voiceError ? T.danger : T.textMuted }}>
+              {voice.recState === 'recording' ? 'Recording — tap the mic again to stop'
+                : voice.transcribing ? 'Transcribing…'
+                : (voice.recErrorMsg || voice.voiceError)}
+            </div>
+          )}
+          <div style={{ padding: 14, display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+            <button onClick={voice.toggleMic} disabled={voice.disabled && voice.recState !== 'recording'} title="Voice input"
+              style={{
+                flexShrink: 0, width: 38, height: 38, borderRadius: T.radius.sm, border: 'none', cursor: voice.disabled && voice.recState !== 'recording' ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: voice.recState === 'recording' ? T.danger : '#f8fafc',
+                color: voice.recState === 'recording' ? '#fff' : T.textMuted,
+                opacity: voice.disabled && voice.recState !== 'recording' ? 0.5 : 1,
+              }}>
+              {voice.recState === 'recording' ? <Square size={16} /> : <Mic size={16} />}
+            </button>
+            <button onClick={voiceMode.enter} title="Voice mode"
+              style={{
+                flexShrink: 0, width: 38, height: 38, borderRadius: T.radius.sm, border: 'none', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', color: T.textMuted,
+              }}>
+              <AudioLines size={16} />
+            </button>
+            <div style={{ flex: 1 }}>
+              <Textarea
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask about pending items, or tell it what changed…"
+              />
+            </div>
+            <Btn onClick={() => send()} disabled={busy || !input.trim()}>{busy ? 'Sending…' : 'Send'}</Btn>
           </div>
-          <Btn onClick={() => send()} disabled={busy || !input.trim()}>{busy ? 'Sending…' : 'Send'}</Btn>
         </div>
+
+        {voiceMode.isOpen && <KriyaaVoiceMode voice={voiceMode} />}
       </Card>
     </div>
   )

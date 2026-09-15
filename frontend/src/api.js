@@ -162,6 +162,11 @@ export const assistantApi = {
   chat: (messages) => api.post('/assistant/chat', { messages }, { timeout: 120000 }),
 }
 
+export const voiceApi = {
+  transcribe: (audioDataUrl) => api.post('/voice/transcribe', { audioDataUrl }, { timeout: 30000 }),
+  speak: (text, languageCode) => api.post('/voice/speak', { text, languageCode }, { timeout: 30000 }),
+}
+
 export const masterOrdersApi = {
   list: () => api.get('/master-orders'),
   create: data => api.post('/master-orders', data),

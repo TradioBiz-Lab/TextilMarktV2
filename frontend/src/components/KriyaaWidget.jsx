@@ -1,8 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
-import { Bot, X } from 'lucide-react'
+import { Bot, X, Mic, Square, Volume2, AudioLines } from 'lucide-react'
 import { T } from '../constants.js'
 import { Btn, Textarea } from './ui.jsx'
 import { useKriyaaChat } from '../kriyaaChatContext.jsx'
+import { useKriyaaVoice } from '../useKriyaaVoice.js'
+import { useVoiceMode } from '../useVoiceMode.js'
+import { KriyaaVoiceMode } from './KriyaaVoiceMode.jsx'
 
 function fmtTime(d) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -18,6 +21,19 @@ export function KriyaaWidget() {
   const { messages, input, setInput, busy, slow, send } = useKriyaaChat()
   const [open, setOpen] = useState(false)
   const bottomRef = useRef(null)
+  // active: false while the panel is closed — releases the mic/stops
+  // playback rather than letting either keep running behind a closed
+  // panel (KriyaaWidget is always mounted from Shell.jsx; closing it only
+  // toggles `open`, it doesn't unmount).
+  // Voice mode renders scoped inside the panel's own box (see the panel's
+  // JSX below) rather than fullscreen, so it only has anywhere to show
+  // itself while the panel is open — closing the panel while voice mode
+  // is active exits it too (see the close button's onClick).
+  const voiceMode = useVoiceMode()
+  // suppressAutoPlay: fullscreen voice mode has its own independent
+  // playback loop watching the same shared messages — without this, a
+  // voice-mode reply gets auto-spoken twice, once by each hook.
+  const voice = useKriyaaVoice({ active: open, suppressAutoPlay: voiceMode.isOpen })
 
   useEffect(() => {
     if (open) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -44,7 +60,7 @@ export function KriyaaWidget() {
               <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Kriyaa</div>
               <div style={{ fontSize: 10, color: T.textLight }}>TextilMarkt's AI assistant</div>
             </div>
-            <button onClick={() => setOpen(false)}
+            <button onClick={() => { if (voiceMode.isOpen) voiceMode.exit(); setOpen(false) }}
               style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 26, height: 26, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.textMuted }}>
               <X size={14} />
             </button>
@@ -66,7 +82,15 @@ export function KriyaaWidget() {
                   fontSize: 12.5, lineHeight: 1.5, whiteSpace: 'pre-wrap',
                 }}>
                   {m.content}
-                  <div style={{ fontSize: 9, marginTop: 5, opacity: 0.65 }}>{fmtTime(m.at)}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5 }}>
+                    <span style={{ fontSize: 9, opacity: 0.65 }}>{fmtTime(m.at)}</span>
+                    {m.role === 'assistant' && m.voiceOriginated && (
+                      <button onClick={() => voice.replay(m.content, m.languageCode, i)} title="Play"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', color: voice.speakingIndex === i ? T.primary : T.textLight, opacity: 0.75 }}>
+                        <Volume2 size={11} />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -80,17 +104,45 @@ export function KriyaaWidget() {
             <div ref={bottomRef} />
           </div>
 
-          <div style={{ borderTop: `1px solid ${T.border}`, padding: 12, display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0 }}>
-            <div style={{ flex: 1 }}>
-              <Textarea
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask, or tell it what changed…"
-              />
+          <div style={{ borderTop: `1px solid ${T.border}`, flexShrink: 0 }}>
+            {(voice.recState === 'recording' || voice.transcribing || voice.recErrorMsg || voice.voiceError) && (
+              <div style={{ padding: '6px 12px 0', fontSize: 10.5, color: voice.recErrorMsg || voice.voiceError ? T.danger : T.textMuted }}>
+                {voice.recState === 'recording' ? 'Recording — tap the mic again to stop'
+                  : voice.transcribing ? 'Transcribing…'
+                  : (voice.recErrorMsg || voice.voiceError)}
+              </div>
+            )}
+            <div style={{ padding: 12, display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+              <button onClick={voice.toggleMic} disabled={voice.disabled && voice.recState !== 'recording'} title="Voice input"
+                style={{
+                  flexShrink: 0, width: 34, height: 34, borderRadius: 8, border: 'none', cursor: voice.disabled && voice.recState !== 'recording' ? 'not-allowed' : 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: voice.recState === 'recording' ? T.danger : '#f8fafc',
+                  color: voice.recState === 'recording' ? '#fff' : T.textMuted,
+                  opacity: voice.disabled && voice.recState !== 'recording' ? 0.5 : 1,
+                }}>
+                {voice.recState === 'recording' ? <Square size={15} /> : <Mic size={15} />}
+              </button>
+              <button onClick={voiceMode.enter} title="Voice mode"
+                style={{
+                  flexShrink: 0, width: 34, height: 34, borderRadius: 8, border: 'none', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', color: T.textMuted,
+                }}>
+                <AudioLines size={15} />
+              </button>
+              <div style={{ flex: 1 }}>
+                <Textarea
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Ask, or tell it what changed…"
+                />
+              </div>
+              <Btn size="sm" onClick={() => send()} disabled={busy || !input.trim()}>{busy ? '…' : 'Send'}</Btn>
             </div>
-            <Btn size="sm" onClick={() => send()} disabled={busy || !input.trim()}>{busy ? '…' : 'Send'}</Btn>
           </div>
+
+          {voiceMode.isOpen && <KriyaaVoiceMode voice={voiceMode} />}
         </div>
       )}
 
