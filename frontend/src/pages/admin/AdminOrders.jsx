@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { BarChart3, Plus, List, LayoutGrid, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react'
+import { Plus, List, LayoutGrid, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react'
 import {
   T, CATEGORIES, SEASONS, DEFAULT_STAGE_NAMES, ORDER_STATUSES,
   isStageDone, stageIsOverdue, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct, fmtStageDate, effectiveEta,
@@ -11,8 +11,6 @@ import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
 import { BulkUploadCsvPanel } from './BulkUploadCsvPanel.jsx'
-import { MaterialsBulkUploadPanel } from './MaterialsBulkUploadPanel.jsx'
-import { TnaImportPanel } from './TnaImportPanel.jsx'
 import { QuickStageModal } from './QuickStageModal.jsx'
 
 function fmtDate(d) {
@@ -58,7 +56,7 @@ export function AdminOrders({ onOpen, initialStatus }) {
   // List vs Matrix (styles across, TNA steps down). Both read the SAME
   // expandedGroups Set, keyed by master-order id — so a group left open in one
   // view stays open switching to the other; only the rendering changes.
-  const [view, setView] = useState('list')
+  const [view, setView] = useState('matrix')
   // Native `title` tooltips are slow to appear (~1s browser delay) and easy to
   // miss entirely — a custom one shows the instant the cursor lands, following
   // the mouse so it never gets clipped by the scrolling matrix container.
@@ -82,8 +80,6 @@ export function AdminOrders({ onOpen, initialStatus }) {
   // ── Edit / Delete modal state ──
   const [editTarget, setEditTarget] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
-  const [showMatBulk, setShowMatBulk] = useState(false)
-  const [showTnaImport, setShowTnaImport] = useState(false)
 
   // ── Create Order state ──
   const [showC, setShowC] = useState(false)
@@ -609,7 +605,7 @@ export function AdminOrders({ onOpen, initialStatus }) {
                 <option value="">Select buyer…</option>
                 {buyerUsers.map(b => <option key={b.id} value={b.id}>{b.company} ({b.code})</option>)}
               </Select>
-              <Input label="Order Name *" value={mo.orderName} onChange={e => setMo({ ...mo, orderName: e.target.value })} placeholder="e.g. Spring Collection 2026" />
+              <Input label="Order Name *" value={mo.orderName} onChange={e => setMo({ ...mo, orderName: e.target.value })} placeholder="e.g. H1, H26, Core Series" hint="The buyer name is added automatically wherever this shows — e.g. Cocoblu — H1." />
               <Select label="Season" value={mo.season} onChange={e => setMo({ ...mo, season: e.target.value })}>
                 {SEASONS.map(s => <option key={s}>{s}</option>)}
               </Select>
@@ -659,8 +655,6 @@ export function AdminOrders({ onOpen, initialStatus }) {
       <PageHeader title="Order Management" subtitle="Create orders, assign manufacturers, and manage the full order lifecycle" action={
         <FlexRow gap={8}>
           <Btn variant="secondary" onClick={() => setShowMO(true)} icon="📁">New Master Order</Btn>
-          <Btn variant="secondary" onClick={() => setShowTnaImport(true)} icon={<BarChart3 size={13} />}>Import TNA Dates</Btn>
-          <Btn variant="secondary" onClick={() => setShowMatBulk(true)} icon="📦">Bulk Upload Materials</Btn>
           <Btn onClick={() => setShowC(true)} icon={<Plus size={13} />}>Create Order</Btn>
         </FlexRow>
       } />
@@ -680,19 +674,6 @@ export function AdminOrders({ onOpen, initialStatus }) {
           </button>
         ))}
       </FlexRow>
-
-      {/* ── Materials Bulk Upload Modal ── */}
-      {showTnaImport && (
-        <Modal title="Import TNA Dates" subtitle="Re-sync revised start/end dates from a Summary TNA sheet onto existing orders" size="xl" onClose={() => setShowTnaImport(false)}>
-          <TnaImportPanel onClose={() => setShowTnaImport(false)} />
-        </Modal>
-      )}
-
-      {showMatBulk && (
-        <Modal title="Bulk Upload Materials" subtitle="Add materials/PO lines onto existing orders' stages, by order ID + manufacturer code + stage name" size="xl" onClose={() => setShowMatBulk(false)}>
-          <MaterialsBulkUploadPanel onDone={() => setShowMatBulk(false)} />
-        </Modal>
-      )}
 
       <Card pad={false}>
         <div style={{ padding: '14px 18px', borderBottom: `1px solid ${T.border}`, display: 'flex', gap: 10, flexWrap: 'wrap' }}>

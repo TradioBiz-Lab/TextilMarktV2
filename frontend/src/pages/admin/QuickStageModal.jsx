@@ -263,7 +263,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
                     <span style={{ fontSize: 11, color: T.textMuted, flexShrink: 0 }}>{Math.round(stage.unitsDone / stage.totalUnits * 100)}%</span>
                   )}
                   {isDone ? (
-                    <Btn size="sm" variant="secondary" disabled={saving} onClick={undoMarkDone}>{saving ? 'Saving…' : 'Undo — Reopen Stage'}</Btn>
+                    <Btn size="sm" variant="secondary" disabled={saving} onClick={undoMarkDone}>{saving ? 'Saving…' : 'Reopen Stage'}</Btn>
                   ) : (
                     <Btn size="sm" disabled={saving} onClick={markStageDone}>{saving ? 'Saving…' : 'Mark Stage Done'}</Btn>
                   )}
@@ -273,7 +273,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
                 onClick={() => setShowPartial(p => !p)}
                 style={{ marginTop: 8, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 11.5, fontWeight: 600, color: T.primary, padding: 0 }}
               >
-                {showPartial ? 'Hide partial update' : 'Update partial completion instead'}
+                {showPartial ? 'Hide partial update' : 'Update partial completion'}
               </button>
               {showPartial && (
                 <div style={{ marginTop: 10 }}>
