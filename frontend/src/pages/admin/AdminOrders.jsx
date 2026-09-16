@@ -260,19 +260,19 @@ function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrder }) {
           <SectionLabel>Progress</SectionLabel>
           {kind === 'quantity' ? (
             <>
-              <div style={{ background: '#f8fafc', borderRadius: 10, border: `1px solid ${T.border}`, padding: '12px 14px', marginBottom: 10 }}>
-                <FlexRow justify="space-between" style={{ marginBottom: 6 }}>
-                  <span style={{ fontSize: 12, color: T.textMuted }}>Current: {stage.unitsDone} / {stage.totalUnits} units</span>
-                </FlexRow>
-                <div style={{ height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
-                  <div style={{ height: 6, background: T.primary, borderRadius: 3, width: `${stage.totalUnits > 0 ? (stage.unitsDone / stage.totalUnits) * 100 : 0}%`, transition: 'width 0.3s' }} />
-                </div>
-              </div>
               <FlexRow justify="flex-end">
                 <Btn size="sm" disabled={saving} onClick={markStageDone}>{saving ? 'Saving…' : 'Mark Stage Done'}</Btn>
               </FlexRow>
               <div style={{ borderTop: `1px dashed ${T.border}`, marginTop: 14, paddingTop: 14 }}>
                 <SectionLabel>Update partial completion</SectionLabel>
+                <div style={{ background: '#f8fafc', borderRadius: 10, border: `1px solid ${T.border}`, padding: '12px 14px', marginBottom: 10 }}>
+                  <FlexRow justify="space-between" style={{ marginBottom: 6 }}>
+                    <span style={{ fontSize: 12, color: T.textMuted }}>Current: {stage.unitsDone} / {stage.totalUnits} units</span>
+                  </FlexRow>
+                  <div style={{ height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ height: 6, background: T.primary, borderRadius: 3, width: `${stage.totalUnits > 0 ? (stage.unitsDone / stage.totalUnits) * 100 : 0}%`, transition: 'width 0.3s' }} />
+                  </div>
+                </div>
                 <Input label={`Units Done (max ${stage.totalUnits})`} type="number" value={units} onChange={e => setUnits(e.target.value)} />
                 <FlexRow justify="flex-end" style={{ marginTop: 8 }}>
                   <Btn size="sm" variant="secondary" disabled={saving} onClick={saveProgress}>{saving ? 'Saving…' : 'Save partial progress'}</Btn>
