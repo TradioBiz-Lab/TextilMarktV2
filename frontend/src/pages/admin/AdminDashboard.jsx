@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { ShoppingBag, Factory, Package, Siren, Target, Check, ClipboardList, Megaphone, ChevronRight } from 'lucide-react'
-import { T, ST, isExpiringSoon, isExpired, getToday, dayNumber } from '../../constants.js'
+import { T, ST, isExpiringSoon, isExpired, getToday, dayNumber, withBuyerPrefix } from '../../constants.js'
 import { StatCard, Card, Grid, EmptyState, Mono, PageHeader, Badge, Btn, FlexRow, Modal, Select, Textarea, Input, Alert, LoadingScreen, DocCard } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
@@ -26,7 +26,7 @@ function buildOrdersByMasterOrder(orders, masterOrders) {
     const mo = masterOrders.find(m => m.id === key)
     return {
       key,
-      label: key === '__unassigned__' ? 'No Master Order' : (mo?.orderName || key),
+      label: key === '__unassigned__' ? 'No Master Order' : withBuyerPrefix(mo?.orderName || key, groups[key]),
       season: mo?.season || null,
       orders: groups[key],
     }

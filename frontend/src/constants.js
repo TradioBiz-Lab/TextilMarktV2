@@ -173,6 +173,15 @@ export const isExpired = d => {
 }
 export const fmtN = n => n?.toLocaleString?.() ?? n
 
+// "Fitleasure — Core Series" rather than just "Core Series" — a master-order
+// name alone doesn't say whose order it is. Only prefixes when every order in
+// the group shares one buyer (a real master-order group always does; a
+// catch-all "no master order" bucket can span several, so it stays bare).
+export const withBuyerPrefix = (base, orders) => {
+  const buyers = new Set((orders || []).map(o => o.buyerCompany).filter(Boolean))
+  return buyers.size === 1 ? `${[...buyers][0]} — ${base}` : base
+}
+
 // ── Stage derivation ────────────────────────────────────────────────────────
 // Mirrors backend/src/models/Order.js. The server already normalizes these in
 // enrichOrder, so `kind`/`status` arrive resolved; the fallbacks here exist only

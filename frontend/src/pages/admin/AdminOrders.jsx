@@ -3,7 +3,7 @@ import { Plus, List, LayoutGrid, Search, Folder, Package, Check, Ban, AlertTrian
 import {
   T, CATEGORIES, SEASONS, DEFAULT_STAGE_NAMES, ORDER_STATUSES,
   isStageDone, stageIsOverdue, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct, fmtStageDate, effectiveEta,
-  CELL_STATE, cellState, buildMatrixSpine,
+  CELL_STATE, cellState, buildMatrixSpine, withBuyerPrefix,
 } from '../../constants.js'
 import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, FileUpload, LoadingScreen, useToast, fileUploadPayload, ProductThumb, Modal, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -31,8 +31,7 @@ function fmtDate(d) {
 // only gets a client prefix when every order in it happens to share one.
 function groupDisplayLabel(g) {
   const base = g.mo?.orderName || (g.moId === '__none__' ? 'Other Orders' : g.moId)
-  const buyers = new Set(g.orders.map(o => o.buyerCompany).filter(Boolean))
-  return buyers.size === 1 ? `${[...buyers][0]} — ${base}` : base
+  return withBuyerPrefix(base, g.orders)
 }
 
 export function AdminOrders({ onOpen, initialStatus }) {
