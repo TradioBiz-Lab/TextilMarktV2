@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { AlertTriangle, User, Shield, Settings2, MessageCircle, ClipboardList, Image as ImageIcon, Package, Check, ArrowLeft, ArrowRight, ChevronRight } from 'lucide-react'
-import { T, STAGE_DOC_MAP, getToday, isExpiringSoon, isExpired } from '../../constants.js'
+import { T, STAGE_DOC_MAP, getToday, isExpiringSoon, isExpired, stageKindOf } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, FlexRow, Mono, Tabs, Alert, EmptyState, FileUpload, Input, DocCard, LoadingScreen, StageTimeline, StageDocGroup, useToast, fileUploadPayload, ProductThumb } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
@@ -181,6 +181,36 @@ export function MfrOrderDetail({ orderId, onBack }) {
     } finally { setSaving(false) }
   }
 
+  // Quantity-kind close path — skips the units math entirely (see backend's
+  // status:'done' handling in the stage-update route's quantity branch).
+  // Mirrors submitStage's evidence-upload + note/date handling, minus the
+  // unitsDone write.
+  const markStageDone = async () => {
+    setSaving(true)
+    try {
+      const stageDocTypes = STAGE_DOC_MAP[stageIdx] || []
+      const docType = stageDocTypes[0]?.v || 'compliance_cert'
+      const stageName = stages[stageIdx]?.name || `Stage ${stageIdx + 1}`
+      const filesToUpload = stageFiles.filter(Boolean)
+      const stageNoteTrim = stageNote.trim()
+      for (const f of filesToUpload) {
+        await uploadDoc({
+          type: docType,
+          name: `${stageName} — ${orderId}`,
+          issuer: null, issueDate: new Date().toISOString().slice(0, 10), expiryDate: null,
+          mfrId: user.id, orderId, stageIndex: stageIdx,
+          notes: stageNoteTrim || null,
+          ...fileUploadPayload(f),
+        })
+      }
+      await updateStage(orderId, user.id, stageIdx, { status: 'done', note: stageNote, stageDate: stageDate || null })
+      toast('Stage marked done', 'success')
+      setShowStage(false)
+    } catch {
+      toast('Failed to close stage', 'error')
+    } finally { setSaving(false) }
+  }
+
   // Cert upload helpers
   const certDocTypes = [
     { v: 'compliance_cert', l: 'Compliance Certificate' }, { v: 'factory_audit', l: 'Factory Audit Report' },
@@ -206,6 +236,8 @@ export function MfrOrderDetail({ orderId, onBack }) {
     return total > 0 ? Math.min(100, Math.round((parseInt(stageUnits, 10) || 0) / total * 100)) : 0
   }
 
+  const stageKind = stageKindOf(stages[stageIdx])
+
   return (
     <div>
       {/* ── Stage Update Modal ── */}
@@ -229,23 +261,56 @@ export function MfrOrderDetail({ orderId, onBack }) {
               })}
             </Select>
 
-            <div>
-              <Input
-                label={`Units Completed (of ${stages[stageIdx]?.totalUnits || 0})`}
-                type="number" min="0" max={stages[stageIdx]?.totalUnits || 0}
-                value={stageUnits} onChange={e => setStageUnits(e.target.value)}
-              />
-              <div style={{ marginTop: 8, background: '#f1f5f9', borderRadius: 6, height: 8, overflow: 'hidden' }}>
-                <div style={{ width: `${modalPct()}%`, height: '100%', background: modalPct() >= 100 ? T.success : T.primary, borderRadius: 6, transition: 'width 0.2s' }} />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-                <FlexRow gap={10}>
-                  {stages[stageIdx]?.startDate && stages[stageIdx].startDate !== 'NA' && <span style={{ fontSize: 11, color: T.info }}>Start: {fmtDate(stages[stageIdx].startDate)}</span>}
-                  {stages[stageIdx]?.eta && <span style={{ fontSize: 11, color: T.info }}>ETA: {fmtDate(stages[stageIdx].eta)}</span>}
+            {stageKind === 'quantity' && (
+              <>
+                <FlexRow justify="flex-end">
+                  <Btn size="sm" disabled={saving} onClick={markStageDone}>{saving ? 'Saving…' : 'Mark Stage Done'}</Btn>
                 </FlexRow>
-                <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{modalPct()}%</span>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+                    Update partial completion
+                  </div>
+                  <Input
+                    label={`Units Completed (of ${stages[stageIdx]?.totalUnits || 0})`}
+                    type="number" min="0" max={stages[stageIdx]?.totalUnits || 0}
+                    value={stageUnits} onChange={e => setStageUnits(e.target.value)}
+                  />
+                  <div style={{ marginTop: 8, background: '#f1f5f9', borderRadius: 6, height: 8, overflow: 'hidden' }}>
+                    <div style={{ width: `${modalPct()}%`, height: '100%', background: modalPct() >= 100 ? T.success : T.primary, borderRadius: 6, transition: 'width 0.2s' }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                    <FlexRow gap={10}>
+                      {stages[stageIdx]?.startDate && stages[stageIdx].startDate !== 'NA' && <span style={{ fontSize: 11, color: T.info }}>Start: {fmtDate(stages[stageIdx].startDate)}</span>}
+                      {stages[stageIdx]?.eta && <span style={{ fontSize: 11, color: T.info }}>ETA: {fmtDate(stages[stageIdx].eta)}</span>}
+                    </FlexRow>
+                    <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{modalPct()}%</span>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Non-quantity kinds keep the original units-only flow unchanged
+                for now — out of scope for this pass, which targets the
+                forced-percentage problem on quantity-kind stages only. */}
+            {stageKind !== 'quantity' && (
+              <div>
+                <Input
+                  label={`Units Completed (of ${stages[stageIdx]?.totalUnits || 0})`}
+                  type="number" min="0" max={stages[stageIdx]?.totalUnits || 0}
+                  value={stageUnits} onChange={e => setStageUnits(e.target.value)}
+                />
+                <div style={{ marginTop: 8, background: '#f1f5f9', borderRadius: 6, height: 8, overflow: 'hidden' }}>
+                  <div style={{ width: `${modalPct()}%`, height: '100%', background: modalPct() >= 100 ? T.success : T.primary, borderRadius: 6, transition: 'width 0.2s' }} />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                  <FlexRow gap={10}>
+                    {stages[stageIdx]?.startDate && stages[stageIdx].startDate !== 'NA' && <span style={{ fontSize: 11, color: T.info }}>Start: {fmtDate(stages[stageIdx].startDate)}</span>}
+                    {stages[stageIdx]?.eta && <span style={{ fontSize: 11, color: T.info }}>ETA: {fmtDate(stages[stageIdx].eta)}</span>}
+                  </FlexRow>
+                  <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{modalPct()}%</span>
+                </div>
               </div>
-            </div>
+            )}
 
             <Input label="Stage Date" type="date" value={stageDate} onChange={e => setStageDate(e.target.value)} hint="Date when this stage was completed or updated" />
             <Textarea label="Optional Note" value={stageNote} onChange={e => setStageNote(e.target.value)} placeholder="Describe progress or any issues…" />

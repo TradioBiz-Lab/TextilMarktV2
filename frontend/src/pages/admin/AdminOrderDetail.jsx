@@ -423,6 +423,19 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     } finally { setSaving(false) }
   }
 
+  // Quantity-kind close path — skips the units math entirely (see backend's
+  // status:'done' handling in the stage-update route's quantity branch).
+  const markStageDone = async () => {
+    setSaving(true)
+    try {
+      const res = await updateStage(order.id, usTarget, usIndex, { status: 'done' })
+      if (res?.warnings?.length) toast(res.warnings[0], 'warning')
+      else toast('Stage marked done', 'success')
+    } catch (err) {
+      toast(err?.message || 'Failed to close stage', 'error')
+    } finally { setSaving(false) }
+  }
+
   // Same /eta route (and refreshOrders() refetch) QuickStageModal and the
   // Adjust Stage Details modal both use — one write path for the New date.
   const saveUsEta = async () => {
@@ -750,16 +763,27 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                         </div>
                       </div>
                     )}
-                    <Input label={`Units Done (max ${usStageData?.totalUnits || 0})`} type="number" value={usUnits} onChange={e => setUsUnits(e.target.value)} placeholder="0" />
+                    <FlexRow justify="flex-end">
+                      <Btn size="sm" disabled={saving} onClick={markStageDone}>{saving ? 'Saving…' : 'Mark Stage Done'}</Btn>
+                    </FlexRow>
+                    <div style={{ borderTop: `1px dashed ${T.border}`, marginTop: 14, paddingTop: 14 }}>
+                      <SectionLabel>Update partial completion</SectionLabel>
+                      <Input label={`Units Done (max ${usStageData?.totalUnits || 0})`} type="number" value={usUnits} onChange={e => setUsUnits(e.target.value)} placeholder="0" />
+                      <FlexRow justify="flex-end" style={{ marginTop: 8 }}>
+                        <Btn size="sm" variant="secondary" disabled={saving} onClick={submitStatusChange}>{saving ? 'Saving…' : 'Save partial progress'}</Btn>
+                      </FlexRow>
+                    </div>
                   </>
                 ) : (
-                  <Select label="Status" value={usStatus} onChange={e => setUsStatus(e.target.value)}>
-                    {Object.entries(STAGE_STATUS_LABELS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-                  </Select>
+                  <>
+                    <Select label="Status" value={usStatus} onChange={e => setUsStatus(e.target.value)}>
+                      {Object.entries(STAGE_STATUS_LABELS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+                    </Select>
+                    <FlexRow justify="flex-end" style={{ marginTop: 8 }}>
+                      <Btn size="sm" disabled={saving} onClick={submitStatusChange}>{saving ? 'Saving…' : 'Save Progress'}</Btn>
+                    </FlexRow>
+                  </>
                 )}
-                <FlexRow justify="flex-end" style={{ marginTop: 8 }}>
-                  <Btn size="sm" disabled={saving} onClick={submitStatusChange}>{saving ? 'Saving…' : 'Save Progress'}</Btn>
-                </FlexRow>
               </div>
 
               {/* Dates */}

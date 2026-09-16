@@ -948,6 +948,12 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
       const attempted = Object.keys(req.body).filter(k => !BUYER_WRITABLE.has(k))
       if (attempted.length)
         return res.status(403).json({ error: `Buyers may only set status on a stage they own (not: ${attempted.join(', ')})` })
+      // The BRD §3 carve-out exists for approval-type milestone stages a
+      // buyer owns, not for closing a quantity-tracked production stage —
+      // status was previously ignored for quantity kind, so this was a
+      // non-issue until status:'done' started doing something there below.
+      if (kind === 'quantity' && status === 'done')
+        return res.status(403).json({ error: 'Buyers cannot update production stages' })
     }
 
     if (has('status') && !STAGE_STATUS_VALUES.includes(status))
@@ -963,9 +969,14 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
     let nextStatus
     let nextUnits
     if (kind === 'quantity') {
+      // Explicit close — "mark stage done" without going through the units
+      // math at all. Ignores any unitsDone also present in the body.
+      if (has('status') && status === 'done') {
+        nextUnits = totalUnits
+        nextStatus = 'done'
       // A write that doesn't mention units (flagging blocked, adding a note)
       // holds the current progress rather than being rejected for omitting it.
-      if (!has('unitsDone')) {
+      } else if (!has('unitsDone')) {
         nextUnits = currentUnits
         nextStatus = deriveStageStatus({ unitsDone: currentUnits, totalUnits })
       } else {

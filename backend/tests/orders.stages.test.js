@@ -83,6 +83,64 @@ describe('stage update — progress', () => {
   })
 })
 
+describe('stage close — status:"done" on a quantity-kind stage', () => {
+  test('closes the stage outright, filling unitsDone to the total', async () => {
+    const { api, stageUrl, readStages } = await arrange({ totalQty: 100 })
+
+    const { status } = await api.post(stageUrl(0), { status: 'done' })
+    assert.equal(status, 200)
+
+    const s = (await readStages())[0]
+    assert.equal(s.unitsDone, 100)
+    assert.equal(s.status, 'done')
+  })
+
+  test('ignores any unitsDone sent alongside status:"done"', async () => {
+    const { api, stageUrl, readStages } = await arrange({ totalQty: 100 })
+
+    await api.post(stageUrl(0), { status: 'done', unitsDone: 5 })
+
+    const s = (await readStages())[0]
+    assert.equal(s.unitsDone, 100)
+    assert.equal(s.status, 'done')
+  })
+
+  test('still blocked by the materials gate, same as advancing units was', async () => {
+    const { api, stageUrl, readStages } = await arrange()
+
+    await api.post(`${stageUrl(0)}/materials`, { name: 'Main fabric', requiredQty: 500, unit: 'm' })
+
+    const { status, body } = await api.post(stageUrl(0), { status: 'done' })
+    assert.equal(status, 400)
+    assert.match(body.error, /material\(s\) still pending/)
+    assert.equal((await readStages())[0].status, 'not_started')
+  })
+
+  test('master override bypasses the materials gate on close, same as units', async () => {
+    const { masterApi, stageUrl, readStages } = await arrange()
+
+    await masterApi.post(`${stageUrl(0)}/materials`, { name: 'Main fabric', requiredQty: 500 })
+
+    assert.equal((await masterApi.post(stageUrl(0), { status: 'done', override: true })).status, 200)
+    assert.equal((await readStages())[0].status, 'done')
+  })
+
+  test('a buyer cannot close a quantity-kind stage even if they own it', async () => {
+    const { api, buyerApi, buyer, mfr, stageUrl, readStages } = await arrange()
+
+    // Give the buyer ownership of stage 0 via the bulk-stages route (the
+    // only write path that can set responsibleId on an existing stage).
+    const bulkUrl = `/api/orders/${ORDER_ID}/assignments/${mfr._id}/stages/bulk`
+    const setResp = await api.post(bulkUrl, { stages: [{ index: 0, responsibleId: buyer._id }] })
+    assert.equal(setResp.status, 200, `setup failed: ${JSON.stringify(setResp.body)}`)
+
+    const { status, body } = await buyerApi.post(stageUrl(0), { status: 'done' })
+    assert.equal(status, 403)
+    assert.match(body.error, /Buyers cannot update production stages/)
+    assert.equal((await readStages())[0].status, 'not_started')
+  })
+})
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Stages are now INDEPENDENT. The sequential reset (which zeroed unitsDone and
 // note on every later stage, on every write) is gone: real TNA plans overlap.
