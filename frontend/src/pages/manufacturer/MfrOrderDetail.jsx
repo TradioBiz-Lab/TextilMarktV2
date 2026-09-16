@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { AlertTriangle, User, Shield, Settings2, MessageCircle, ClipboardList, Image as ImageIcon, Package, Check, ArrowLeft, ArrowRight, ChevronRight } from 'lucide-react'
-import { T, STAGE_DOC_MAP, getToday, isExpiringSoon, isExpired, stageKindOf } from '../../constants.js'
+import { T, STAGE_DOC_MAP, getToday, isExpiringSoon, isExpired, stageKindOf, stageStatusOf } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, FlexRow, Mono, Tabs, Alert, EmptyState, FileUpload, Input, DocCard, LoadingScreen, StageTimeline, StageDocGroup, useToast, fileUploadPayload, ProductThumb } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
@@ -215,6 +215,20 @@ export function MfrOrderDetail({ orderId, onBack }) {
     } finally { setSaving(false) }
   }
 
+  // Reopens a closed quantity-kind stage. This modal closes on Mark Done
+  // (unlike the admin QuickStageModal, which stays open), so there's no
+  // in-session "what units were before closing" to restore — reopens at 0.
+  const undoMarkDone = async () => {
+    setSaving(true)
+    try {
+      await updateStage(orderId, user.id, stageIdx, { unitsDone: 0, note: stageNote, stageDate: stageDate || null })
+      toast('Stage reopened', 'success')
+      setShowStage(false)
+    } catch {
+      toast('Failed to reopen stage', 'error')
+    } finally { setSaving(false) }
+  }
+
   // Cert upload helpers
   const certDocTypes = [
     { v: 'compliance_cert', l: 'Compliance Certificate' }, { v: 'factory_audit', l: 'Factory Audit Report' },
@@ -241,6 +255,7 @@ export function MfrOrderDetail({ orderId, onBack }) {
   }
 
   const stageKind = stageKindOf(stages[stageIdx])
+  const stageDone = stageStatusOf(stages[stageIdx]) === 'done'
 
   return (
     <div>
@@ -278,7 +293,11 @@ export function MfrOrderDetail({ orderId, onBack }) {
                         <div style={{ width: `${modalPct()}%`, height: '100%', background: modalPct() >= 100 ? T.success : T.primary, borderRadius: 3, transition: 'width 0.2s' }} />
                       </div>
                     </div>
-                    <Btn size="sm" disabled={saving} onClick={markStageDone}>{saving ? 'Saving…' : 'Mark Stage Done'}</Btn>
+                    {stageDone ? (
+                      <Btn size="sm" variant="secondary" disabled={saving} onClick={undoMarkDone}>{saving ? 'Saving…' : 'Undo — Reopen Stage'}</Btn>
+                    ) : (
+                      <Btn size="sm" disabled={saving} onClick={markStageDone}>{saving ? 'Saving…' : 'Mark Stage Done'}</Btn>
+                    )}
                   </FlexRow>
                 </div>
                 <button

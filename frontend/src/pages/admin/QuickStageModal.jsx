@@ -54,6 +54,8 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
   // the action almost everyone wants; the units form is there for the
   // minority of stages where partial progress matters, one click away.
   const [showPartial, setShowPartial] = useState(false)
+  // Set right before markStageDone() writes — see its comment.
+  const [preCloseUnits, setPreCloseUnits] = useState(null)
 
   // ── Stage evidence ──
   const [showStageDocs, setShowStageDocs] = useState(false)
@@ -121,6 +123,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
 
   if (!order || !asgn || !stage) return null
   const kind = stageKindOf(stage)
+  const isDone = stageStatusOf(stage) === 'done'
 
   const saveDescription = async () => {
     setSaving(true)
@@ -147,14 +150,30 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
 
   // Quantity-kind close path — skips the units math entirely (see backend's
   // status:'done' handling in the stage-update route's quantity branch).
+  // Remembers what unitsDone was right before closing, so Undo can restore
+  // real partial progress instead of always dropping back to 0 — but only
+  // for this modal session; a stage that was already done when this modal
+  // opened has no such memory, so its Undo falls back to reopening at 0.
   const markStageDone = async () => {
     setSaving(true)
     try {
+      setPreCloseUnits(stage.unitsDone || 0)
       const res = await updateStage(orderId, mfrId, stageIndex, { status: 'done' })
       if (res?.warnings?.length) toast(res.warnings[0], 'warning')
       else toast('Stage marked done', 'success')
     } catch (err) {
       toast(err?.message || 'Failed to close stage', 'error')
+    } finally { setSaving(false) }
+  }
+
+  const undoMarkDone = async () => {
+    setSaving(true)
+    try {
+      const res = await updateStage(orderId, mfrId, stageIndex, { unitsDone: preCloseUnits ?? 0 })
+      if (res?.warnings?.length) toast(res.warnings[0], 'warning')
+      else toast('Stage reopened', 'success')
+    } catch (err) {
+      toast(err?.message || 'Failed to reopen stage', 'error')
     } finally { setSaving(false) }
   }
 
@@ -246,7 +265,11 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
                       <div style={{ height: 6, background: T.primary, borderRadius: 3, width: `${stage.totalUnits > 0 ? (stage.unitsDone / stage.totalUnits) * 100 : 0}%`, transition: 'width 0.3s' }} />
                     </div>
                   </div>
-                  <Btn size="sm" disabled={saving} onClick={markStageDone}>{saving ? 'Saving…' : 'Mark Stage Done'}</Btn>
+                  {isDone ? (
+                    <Btn size="sm" variant="secondary" disabled={saving} onClick={undoMarkDone}>{saving ? 'Saving…' : 'Undo — Reopen Stage'}</Btn>
+                  ) : (
+                    <Btn size="sm" disabled={saving} onClick={markStageDone}>{saving ? 'Saving…' : 'Mark Stage Done'}</Btn>
+                  )}
                 </FlexRow>
               </div>
               <button
