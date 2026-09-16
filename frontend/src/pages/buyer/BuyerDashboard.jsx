@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { AlertTriangle, Folder, Check, Ban, ClipboardList, CheckCircle2, ShieldAlert, List, LayoutGrid, Package, Siren, X, Shield, ChevronDown, Search, ChevronRight } from 'lucide-react'
-import { T, ORDER_STATUSES, getToday, isExpiringSoon, isExpired, cellState, CELL_STATE, buildMatrixSpine, stagePct } from '../../constants.js'
+import { T, ORDER_STATUSES, getToday, isExpiringSoon, isExpired, cellState, CELL_STATE, buildMatrixSpine, stagePct, effectiveEta } from '../../constants.js'
 import { Badge, Card, EmptyState, Mono, Btn, LoadingScreen, MfrProfileLink, ProductThumb, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { ordersApi } from '../../api.js'
@@ -175,7 +175,7 @@ function BuyerMatrixView({ groups, collapsedGroups, toggleGroup, onOpen }) {
                                 ) : (
                                   <div style={{ background: st.bg, borderRadius: 5, padding: '4px 7px' }}>
                                     <span style={{ fontSize: 12, fontWeight: 800, color: st.fg, whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono',monospace", display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                                      {state === 'done' ? <Check size={11} strokeWidth={3} /> : state === 'blocked' ? <Ban size={11} /> : state === 'overdue' ? <AlertTriangle size={11} /> : null}{fmtStageDate(state === 'done' ? stage.actualEnd : stage.eta)}
+                                      {state === 'done' ? <Check size={11} strokeWidth={3} /> : state === 'blocked' ? <Ban size={11} /> : state === 'overdue' ? <AlertTriangle size={11} /> : null}{fmtStageDate(state === 'done' ? stage.actualEnd : effectiveEta(stage))}
                                     </span>
                                     <div style={{ fontSize: 9, color: st.fg, opacity: 0.75, marginTop: 1 }}>
                                       {stagePct(stage)}%

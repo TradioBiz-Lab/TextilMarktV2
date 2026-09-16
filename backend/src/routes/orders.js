@@ -11,7 +11,7 @@ import {
   DEFAULT_STAGE_NAMES, ORDER_STATUS_VALUES, STAGE_KINDS, STAGE_STATUS_VALUES,
   stageKindOf, deriveStageStatus, mirroredUnits, stageEtaVarianceDays, deriveActualEnd, deliveryVarianceDays,
 } from '../models/Order.js'
-import { dayNumber, getToday } from '../lib/stageMath.js'
+import { dayNumber, getToday, effectiveEta } from '../lib/stageMath.js'
 
 // Categories are now free-text — no validation needed
 const VALID_SEASONS    = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
@@ -428,8 +428,12 @@ async function validateAndCreateOrder({ id, buyerId, product, category, season, 
           return {
             name, unitsDone: 0,
             totalUnits: stageTotalUnitsResolved[si] ?? fallbackTotal,
-            startDate: startDates[si] || null, eta: etas[si] || null, note: '',
-            // Baseline is frozen at creation; `eta` is the one that moves.
+            startDate: startDates[si] || null,
+            // `eta` (the "New planned date") starts unset — it's only written once
+            // someone explicitly revises the schedule via /eta or /stages/bulk.
+            // The one date the admin enters at creation is the PLAN, not a revision
+            // of it, so it goes only into baselineEta.
+            eta: null, note: '',
             baselineEta: etas[si] || null,
             kind, status: 'not_started', blocked: false, blockedReason: '',
             description: stageDescriptionsResolved[si] || '',
@@ -843,7 +847,11 @@ router.post('/:orderId/assignments/:mfrId/stages/insert', requireAuth, requireAd
 
     const newStage = {
       name: name.trim(), unitsDone: resolvedUnitsDone, totalUnits: resolvedTotalUnits,
-      startDate, eta, baselineEta: eta, stageDate: null, note: '',
+      startDate,
+      // Same convention as order creation: the one date the admin gives here is
+      // the plan (baselineEta), not a revision — eta stays unset.
+      eta: null, baselineEta: eta,
+      stageDate: null, note: '',
       description: (description || '').trim(), responsibleId: resolvedResponsibleId,
       kind: resolvedKind, status: resolvedStatus, blocked: false, blockedReason: '',
       updates: [], materials: [], items: [], actualEnd: resolvedActualEnd,
@@ -1208,7 +1216,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
 
     // Ordering check against whichever side isn't being changed in this request
     const effectiveStart = hasStartDate ? startDate : currentStage.startDate
-    const effectiveEnd = hasEta ? eta : currentStage.eta
+    const effectiveEnd = hasEta ? eta : effectiveEta(currentStage)
     if (effectiveStart && effectiveEnd && effectiveStart !== 'NA' && effectiveEnd !== 'NA'
         && new Date(effectiveStart) > new Date(effectiveEnd)) {
       return res.status(400).json({ error: 'Start date must be on or before the end date' })

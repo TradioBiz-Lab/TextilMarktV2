@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { AlertTriangle, User, Shield, Settings2, MessageCircle, ClipboardList, Image as ImageIcon, Package, Check, ArrowLeft, ArrowRight, ChevronRight } from 'lucide-react'
-import { T, STAGE_DOC_MAP, getToday, isExpiringSoon, isExpired, stageKindOf, stageStatusOf } from '../../constants.js'
+import { T, STAGE_DOC_MAP, getToday, isExpiringSoon, isExpired, stageKindOf, stageStatusOf, effectiveEta } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, FlexRow, Mono, Tabs, Alert, EmptyState, FileUpload, Input, DocCard, LoadingScreen, StageTimeline, StageDocGroup, useToast, fileUploadPayload, ProductThumb } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
@@ -282,10 +282,10 @@ export function MfrOrderDetail({ orderId, onBack }) {
 
             {stageKind === 'quantity' && (
               <>
-                {(stages[stageIdx]?.startDate && stages[stageIdx].startDate !== 'NA') || stages[stageIdx]?.eta ? (
+                {(stages[stageIdx]?.startDate && stages[stageIdx].startDate !== 'NA') || effectiveEta(stages[stageIdx]) ? (
                   <FlexRow gap={10} style={{ marginBottom: 6 }}>
                     {stages[stageIdx]?.startDate && stages[stageIdx].startDate !== 'NA' && <span style={{ fontSize: 11, color: T.info }}>Start: {fmtDate(stages[stageIdx].startDate)}</span>}
-                    {stages[stageIdx]?.eta && <span style={{ fontSize: 11, color: T.info }}>ETA: {fmtDate(stages[stageIdx].eta)}</span>}
+                    {effectiveEta(stages[stageIdx]) && <span style={{ fontSize: 11, color: T.info }}>ETA: {fmtDate(effectiveEta(stages[stageIdx]))}</span>}
                   </FlexRow>
                 ) : null}
                 <div style={{ background: '#f8fafc', borderRadius: 10, border: `1px solid ${T.border}`, padding: '10px 14px' }}>
@@ -336,7 +336,7 @@ export function MfrOrderDetail({ orderId, onBack }) {
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
                   <FlexRow gap={10}>
                     {stages[stageIdx]?.startDate && stages[stageIdx].startDate !== 'NA' && <span style={{ fontSize: 11, color: T.info }}>Start: {fmtDate(stages[stageIdx].startDate)}</span>}
-                    {stages[stageIdx]?.eta && <span style={{ fontSize: 11, color: T.info }}>ETA: {fmtDate(stages[stageIdx].eta)}</span>}
+                    {effectiveEta(stages[stageIdx]) && <span style={{ fontSize: 11, color: T.info }}>ETA: {fmtDate(effectiveEta(stages[stageIdx]))}</span>}
                   </FlexRow>
                   <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{modalPct()}%</span>
                 </div>
@@ -599,7 +599,8 @@ export function MfrOrderDetail({ orderId, onBack }) {
                   const pct = s.totalUnits > 0 ? Math.round((s.unitsDone / s.totalUnits) * 100) : 0
                   const done = pct >= 100
                   const active = pct > 0 && !done
-                  const isLate = s.eta && new Date(s.eta) < new Date(getToday()) && !done
+                  const eff = effectiveEta(s)
+                  const isLate = eff && new Date(eff) < new Date(getToday()) && !done
                   return (
                     <div
                       key={i}
@@ -635,10 +636,10 @@ export function MfrOrderDetail({ orderId, onBack }) {
                         <div style={{ background: '#f1f5f9', borderRadius: 4, height: 6, overflow: 'hidden' }}>
                           <div style={{ width: `${pct}%`, height: '100%', background: done ? T.success : T.primary, borderRadius: 4, transition: 'width 0.3s' }} />
                         </div>
-                        {(s.startDate || s.eta) && (
+                        {(s.startDate || eff) && (
                           <div style={{ fontSize: 10, color: isLate ? T.danger : T.textLight, marginTop: 3 }}>
                             {s.startDate && s.startDate !== 'NA' && <>Start: {fmtDate(s.startDate)}  </>}
-                            {s.eta && <>ETA: {fmtDate(s.eta)}</>}
+                            {eff && <>ETA: {fmtDate(eff)}</>}
                           </div>
                         )}
                         {(s.responsibleName || (s.materials || []).length > 0) && (

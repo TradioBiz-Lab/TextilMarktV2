@@ -1,5 +1,5 @@
 import mongoose from 'mongoose'
-import { getToday } from '../lib/stageMath.js'
+import { getToday, effectiveEta } from '../lib/stageMath.js'
 
 // Default production stages — admin can override per order at creation time
 export const DEFAULT_STAGE_NAMES = [
@@ -151,7 +151,7 @@ export function deriveActualEnd(status, currentActualEnd, explicitActualEnd) {
 /** Days of slippage: positive = late, negative = pulled in, null = not measurable. */
 export function stageEtaVarianceDays(stage) {
   const base = stage?.baselineEta
-  const now = stage?.eta
+  const now = effectiveEta(stage)
   if (!base || !now || base === 'NA' || now === 'NA') return null
   const a = new Date(base).getTime()
   const b = new Date(now).getTime()

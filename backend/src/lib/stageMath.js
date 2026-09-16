@@ -28,6 +28,21 @@ export const dayNumber = dateStr => {
 export const getToday = () => new Date(Date.now() + IST_OFFSET_MS).toISOString().slice(0, 10)
 
 /**
+ * The date that actually governs delivery-risk/overdue/sort math for a stage:
+ * the current revision if one has been made, else the frozen baseline. `eta`
+ * starts null at creation (see validateAndCreateOrder / stages/insert) — it's
+ * only set once someone explicitly revises the schedule — so without this
+ * fallback every stage would read as having no target date until its first
+ * revision.
+ */
+export const effectiveEta = stage => {
+  const eta = stage?.eta
+  if (eta && eta !== 'NA') return eta
+  const base = stage?.baselineEta
+  return (base && base !== 'NA') ? base : null
+}
+
+/**
  * Days late (positive) or early (negative) that a stage ACTUALLY finished vs
  * its original `baselineEta` — null until it's actually done, and null if no
  * baseline was ever captured. Always measured against the frozen plan, never
@@ -53,7 +68,7 @@ export const deliveryOverrunDays = (order, assignment) => {
   const sources = assignment ? [assignment] : (order.assignments || [])
   const etas = sources
     .flatMap(a => a.stages || [])
-    .map(s => (s.eta && s.eta !== 'NA' ? dayNumber(s.eta) : null))
+    .map(s => { const e = effectiveEta(s); return e ? dayNumber(e) : null })
     .filter(d => d != null)
   if (etas.length === 0) return null
   const last = Math.max(...etas)

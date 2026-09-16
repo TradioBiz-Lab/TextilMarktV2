@@ -440,7 +440,10 @@ describe('baseline vs revised end date', () => {
     const { created } = await arrange()
     const s = created.assignments[0].stages[0]
     assert.equal(s.baselineEta, '2026-07-15')
-    assert.equal(s.eta, '2026-07-15')
+    // eta starts unset — effectiveEta() falls back to baselineEta for an
+    // unrevised stage, so "the plan" and "the baseline" still agree and
+    // variance reads 0, not null.
+    assert.equal(s.eta, null)
     assert.equal(s.etaVarianceDays, 0)
   })
 

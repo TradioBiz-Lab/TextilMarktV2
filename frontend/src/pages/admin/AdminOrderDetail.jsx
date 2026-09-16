@@ -2,7 +2,7 @@ import { useState, useMemo, Fragment } from 'react'
 import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight } from 'lucide-react'
 import {
   T, ORDER_STATUSES, STAGE_DOC_MAP, DOC_ICONS,
-  stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone,
+  stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
   stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber,
 } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey } from '../../components/ui.jsx'
@@ -598,8 +598,8 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                 {currentStageData.startDate && currentStageData.startDate !== 'NA' && (
                   <div style={{ fontSize: 11, color: T.textMuted }}>Start: {fmtDate(currentStageData.startDate)}</div>
                 )}
-                {currentStageData.eta && currentStageData.eta !== 'NA' && (
-                  <div style={{ fontSize: 11, color: T.textMuted }}>ETA: {fmtDate(currentStageData.eta)}</div>
+                {effectiveEta(currentStageData) && (
+                  <div style={{ fontSize: 11, color: T.textMuted }}>ETA: {fmtDate(effectiveEta(currentStageData))}</div>
                 )}
                 {currentStageData.note && (
                   <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>Last note: {currentStageData.note}</div>

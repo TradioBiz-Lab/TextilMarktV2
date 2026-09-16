@@ -133,9 +133,12 @@ DEFAULT_STAGE_NAMES = [
                        tracks the full order qty, e.g. "Lab Dip Approval" might target
                        3 dips, not 600 pieces)
   startDate:  String | null   ISO date string or "NA" — required at creation (planned start)
-  eta:        String | null   ISO date string or "NA" — required at creation. The CURRENT
-                       (revised) end date — this is the one that moves.
-  baselineEta: String | null  the originally planned end date, frozen. See below.
+  eta:        String | null   ISO date string or "NA", or null. The CURRENT (revised) end
+                       date — null until it's explicitly revised (see below); this is the
+                       one that moves.
+  baselineEta: String | null  ISO date string or "NA" — required at creation (the one end
+                       date the admin/CSV actually supplies goes here, not into `eta`). The
+                       originally planned end date, frozen. See below.
   actualEnd:  String | null   when the stage actually finished. Auto-stamped/cleared
                        alongside `status` (never hand-edited) — see below.
   stageDate:  String | null   date set by manufacturer when working this stage (actual, not planned)
@@ -157,10 +160,15 @@ DEFAULT_STAGE_NAMES = [
 }
 ```
 
-**Required at creation:** both `startDate` and `eta` must be an explicit date or the literal
-`"NA"` — never blank/null — enforced in `validateAndCreateOrder` (`backend/src/routes/orders.js`).
-When both are real (non-`"NA"`) dates, `startDate` must be on or before `eta`. There is
-deliberately **no cross-stage date rule** — overlapping windows are legal and expected.
+**Required at creation:** the admin/CSV still supplies exactly one end date per stage — it
+must be an explicit date or the literal `"NA"`, never blank — enforced in
+`validateAndCreateOrder` (`backend/src/routes/orders.js`). That single submitted date is
+written into `baselineEta` only; `eta` itself starts `null` and is set for the first time
+only when the stage's schedule is explicitly revised (the `/eta` route or `/stages/bulk`) —
+the `/stages/insert` route applies the same `eta: null, baselineEta: <submitted>` split for a
+stage added later. When `startDate` and the submitted end date are both real (non-`"NA"`)
+dates, `startDate` must be on or before it. There is deliberately **no cross-stage date
+rule** — overlapping windows are legal and expected.
 
 **Stage kinds.** Most real TNA steps are milestones: of the 16 steps in a Cocoblu plan only
 Production counts garments. `kind` selects how a stage measures done:
@@ -181,11 +189,26 @@ auto-deploys on push, AppSail does not). `totalUnits` must never be 0 on a non-q
 
 **Baseline vs revised end date.** `eta` is the live date; `baselineEta` is what was originally
 planned, so slippage (`etaVarianceDays`, computed in `enrichOrder`, never stored) is
-measurable. Set at creation. For stages predating the field it is captured **lazily**: the
-`/eta` and bulk routes write the *pre-update* `eta` into `baselineEta` the first time the date
-changes. A read-time `baselineEta ?? eta` fallback alone would be wrong — it moves with `eta`
-and pins variance at zero forever. Those stages honestly report 0 days of slippage until their
-first revision; the original baseline is genuinely gone and is not invented.
+measurable. `baselineEta` is set at creation from the one date the admin/CSV supplies; `eta`
+itself starts `null` and is only ever written by an explicit revision (`/eta`, `/stages/bulk`,
+or a master-only direct override). For stages predating this split (created before this
+behavior existed, or predating the `baselineEta` field entirely) it is captured **lazily**:
+the `/eta` and bulk routes write the *pre-update* `eta` into `baselineEta` the first time the
+date changes. A read-time `baselineEta ?? eta` fallback alone would be wrong — it moves with
+`eta` and pins variance at zero forever. Those stages honestly report 0 days of slippage until
+their first revision; the original baseline is genuinely gone and is not invented.
+
+**`effectiveEta`.** Because `eta` is routinely `null` for any stage that hasn't been revised
+yet, every consumer that does overdue detection, sorting, or delivery-risk/variance math reads
+through a shared `effectiveEta(stage)` helper instead of raw `stage.eta`: it returns `eta` if
+that's a real date, else `baselineEta` if that's real, else `null`. Backend:
+`backend/src/lib/stageMath.js` (also used internally by `stageEtaVarianceDays` in
+`backend/src/models/Order.js`, and by the `/eta` route's own start-vs-end ordering check).
+Frontend: `frontend/src/constants.js`. Sites that intentionally show the raw, possibly-blank
+`eta` as distinct from `baselineEta` — e.g. a "Revised" column sitting next to a separate
+"Planned" column, or a tooltip's `Planned: X → Revised: Y` line — deliberately do NOT use
+`effectiveEta` and keep reading `stage.eta` directly, since showing blank/NA there is the
+correct signal that no revision has happened.
 
 **Actual end date.** `actualEnd` is set the moment a stage's derived `status` reaches `"done"`
 (`deriveActualEnd()` in `Order.js`) and cleared back to `null` on reopen — the same

@@ -197,6 +197,17 @@ export function fmtStageDate(d) {
   return y && m && day ? `${day}-${m}-${y}` : '—'
 }
 
+// Mirrors backend/src/lib/stageMath.js. `eta` starts unset at creation — it's
+// only written once someone explicitly revises the schedule — so overdue/
+// sort/variance math has to fall back to the frozen baseline or it would read
+// every unrevised stage as having no target date at all.
+export const effectiveEta = s => {
+  const e = s?.eta
+  if (e && e !== 'NA') return e
+  const b = s?.baselineEta
+  return (b && b !== 'NA') ? b : null
+}
+
 export const stageStatusOf = s => {
   if (s?.status) return s.status
   const done = s?.unitsDone || 0
@@ -226,16 +237,17 @@ export const stageProgressLabel = s => {
 
 export const stageIsOverdue = s => {
   if (isStageDone(s)) return false
-  if (!s?.eta || s.eta === 'NA') return false
-  const d = dayNumber(s.eta)
+  const eta = effectiveEta(s)
+  if (!eta) return false
+  const d = dayNumber(eta)
   return d != null && d - dayNumber(getToday()) < 0
 }
 
 /** Days late (positive) or early (negative) vs the frozen baseline; null if not measurable. */
 export const stageVariance = s => {
   if (typeof s?.etaVarianceDays === 'number') return s.etaVarianceDays
-  const base = s?.baselineEta, now = s?.eta
-  if (!base || !now || base === 'NA' || now === 'NA') return null
+  const base = s?.baselineEta, now = effectiveEta(s)
+  if (!base || !now || base === 'NA') return null
   const a = dayNumber(base), b = dayNumber(now)
   return a == null || b == null ? null : b - a
 }
@@ -317,7 +329,8 @@ export const inFlightStages = (assignment, { windowDays = 3, includeOverdue = tr
       if (stageStatusOf(s) === 'in_progress') return true
       if (includeOverdue && stageIsOverdue(s)) return true
       const start = s.startDate && s.startDate !== 'NA' ? dayNumber(s.startDate) : null
-      const eta = s.eta && s.eta !== 'NA' ? dayNumber(s.eta) : null
+      const eff = effectiveEta(s)
+      const eta = eff ? dayNumber(eff) : null
       if (within(start) || within(eta)) return true
       // A long step whose window straddles today, with both ends outside the band.
       return start != null && eta != null && start <= today && eta >= today
@@ -336,7 +349,7 @@ export const deliveryOverrunDays = (order, assignment) => {
   const sources = assignment ? [assignment] : (order.assignments || [])
   const etas = sources
     .flatMap(a => a.stages || [])
-    .map(s => (s.eta && s.eta !== 'NA' ? dayNumber(s.eta) : null))
+    .map(s => { const e = effectiveEta(s); return e ? dayNumber(e) : null })
     .filter(d => d != null)
   if (etas.length === 0) return null
   const last = Math.max(...etas)
@@ -348,8 +361,9 @@ export const primaryStage = assignment => {
   const live = inFlightStages(assignment)
   if (live.length === 0) return null
   return live.slice().sort((a, b) => {
-    const ea = a.stage.eta && a.stage.eta !== 'NA' ? dayNumber(a.stage.eta) : Infinity
-    const eb = b.stage.eta && b.stage.eta !== 'NA' ? dayNumber(b.stage.eta) : Infinity
+    const eaVal = effectiveEta(a.stage), ebVal = effectiveEta(b.stage)
+    const ea = eaVal ? dayNumber(eaVal) : Infinity
+    const eb = ebVal ? dayNumber(ebVal) : Infinity
     return ea - eb || a.index - b.index
   })[0]
 }

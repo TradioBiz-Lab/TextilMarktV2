@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { BarChart3, Plus, List, LayoutGrid, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react'
 import {
   T, CATEGORIES, SEASONS, DEFAULT_STAGE_NAMES, ORDER_STATUSES,
-  isStageDone, stageIsOverdue, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct, fmtStageDate,
+  isStageDone, stageIsOverdue, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct, fmtStageDate, effectiveEta,
   CELL_STATE, cellState, buildMatrixSpine,
 } from '../../constants.js'
 import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, FileUpload, LoadingScreen, useToast, fileUploadPayload, ProductThumb, Modal, activateOnKey } from '../../components/ui.jsx'
@@ -960,7 +960,7 @@ export function AdminOrders({ onOpen, initialStatus }) {
                                               raw counts aren't shown at all (only on hover). */}
                                           <FlexRow gap={5} style={{ justifyContent: 'space-between' }}>
                                             <span style={{ fontSize: 12, fontWeight: 800, color: st.fg, whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono',monospace" }}>
-                                              {state === 'done' ? <Check size={10} strokeWidth={3} style={{ verticalAlign: -1 }} /> : state === 'blocked' ? <Ban size={10} style={{ verticalAlign: -1 }} /> : state === 'overdue' ? <AlertTriangle size={10} style={{ verticalAlign: -1 }} /> : ''} {fmtStageDate(done ? stage.actualEnd : stage.eta)}
+                                              {state === 'done' ? <Check size={10} strokeWidth={3} style={{ verticalAlign: -1 }} /> : state === 'blocked' ? <Ban size={10} style={{ verticalAlign: -1 }} /> : state === 'overdue' ? <AlertTriangle size={10} style={{ verticalAlign: -1 }} /> : ''} {fmtStageDate(done ? stage.actualEnd : effectiveEta(stage))}
                                             </span>
                                             {variance != null && variance !== 0 && (
                                               <span style={{ fontSize: 9, fontWeight: 800, color: variance > 0 ? '#b91c1c' : '#047857', whiteSpace: 'nowrap' }}>
