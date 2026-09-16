@@ -10,6 +10,7 @@ import { useApp } from '../../context.jsx'
 import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
+import { QuickStageModal } from './QuickStageModal.jsx'
 
 function fmtDate(d) {
   if (!d) return '—'
@@ -63,22 +64,10 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   const [sgUnits, setSgUnits] = useState('')
   const [sgNote, setSgNote] = useState('')
 
-  // Update Stage modal (status + dates + updates + materials) — opened by clicking a stage row.
-  // Mirrors QuickStageModal (Order Management page) so the two entry points show the same thing.
-  const [showUpdateStage, setShowUpdateStage] = useState(false)
-  const [usTarget, setUsTarget] = useState(null) // mfrId
-  const [usIndex, setUsIndex] = useState(0)
-  const [usUnits, setUsUnits] = useState('')
-  const [usStatus, setUsStatus] = useState('not_started')
-  const [usEtaDraft, setUsEtaDraft] = useState('')
-  // Planned/Actual are normally system-managed (frozen baseline, auto-stamped
-  // completion) — these two drafts exist only so the master admin can
-  // directly correct them, a short-term escape hatch for getting real
-  // historical dates into the system. See saveUsEta().
-  const [usBaselineEtaDraft, setUsBaselineEtaDraft] = useState('')
-  const [usActualEndDraft, setUsActualEndDraft] = useState('')
-  const [savingUsEta, setSavingUsEta] = useState(false)
-  const [usDescription, setUsDescription] = useState('')
+  // Update Stage modal — opened by clicking a stage row. The same
+  // QuickStageModal component the Order Management page's matrix cells
+  // open, so the two entry points can never drift out of sync.
+  const [quickStage, setQuickStage] = useState(null) // { mfrId, stageIndex } or null
 
   // Stage dates (start/end) adjustment modal
   const [showEta, setShowEta] = useState(false)
@@ -131,13 +120,6 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     const asgn = order.assignments.find(a => String(a.mid) === String(sgTarget))
     return asgn?.stages?.[sgIndex] || null
   }, [order, sgTarget, sgIndex])
-
-  const usStageData = useMemo(() => {
-    if (!usTarget || !order) return null
-    const asgn = order.assignments.find(a => String(a.mid) === String(usTarget))
-    return asgn?.stages?.[usIndex] || null
-  }, [order, usTarget, usIndex])
-  const usKind = usStageData ? stageKindOf(usStageData) : 'quantity'
 
   if (loading) return <LoadingScreen />
   if (!order) return null
@@ -396,80 +378,8 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     } finally { setSaving(false) }
   }
 
-  // ── Update Stage modal (status + dates + updates + materials) ──
-  const openUpdateStage = (mfrId, stageIndex) => {
-    const asgn = order.assignments.find(a => String(a.mid) === String(mfrId))
-    const s = asgn?.stages?.[stageIndex]
-    setUsTarget(mfrId)
-    setUsIndex(stageIndex)
-    setUsUnits(s?.unitsDone?.toString() || '0')
-    setUsStatus(s ? stageStatusOf(s) : 'not_started')
-    setUsEtaDraft(dateToInput(s?.eta))
-    setUsBaselineEtaDraft(dateToInput(s?.baselineEta))
-    setUsActualEndDraft(dateToInput(s?.actualEnd))
-    setUsDescription(s?.description || '')
-    setShowUpdateStage(true)
-  }
-
-  const submitStatusChange = async () => {
-    setSaving(true)
-    try {
-      const body = usKind === 'quantity' ? { unitsDone: parseInt(usUnits, 10) || 0 } : { status: usStatus }
-      const res = await updateStage(order.id, usTarget, usIndex, body)
-      if (res?.warnings?.length) toast(res.warnings[0], 'warning')
-      else toast('Stage progress updated', 'success')
-    } catch (err) {
-      toast(err?.message || 'Failed to update stage', 'error')
-    } finally { setSaving(false) }
-  }
-
-  // Quantity-kind close path — skips the units math entirely (see backend's
-  // status:'done' handling in the stage-update route's quantity branch).
-  const markStageDone = async () => {
-    setSaving(true)
-    try {
-      const res = await updateStage(order.id, usTarget, usIndex, { status: 'done' })
-      if (res?.warnings?.length) toast(res.warnings[0], 'warning')
-      else toast('Stage marked done', 'success')
-    } catch (err) {
-      toast(err?.message || 'Failed to close stage', 'error')
-    } finally { setSaving(false) }
-  }
-
-  // Same /eta route (and refreshOrders() refetch) QuickStageModal and the
-  // Adjust Stage Details modal both use — one write path for the New date.
-  const saveUsEta = async () => {
-    const dates = {}
-    if (usEtaDraft !== dateToInput(usStageData?.eta)) dates.eta = usEtaDraft === 'NA' ? 'NA' : (usEtaDraft || null)
-    // Master-only overrides — the backend rejects these from anyone else, but
-    // don't even offer to send them from a non-master session.
-    if (isMaster && usBaselineEtaDraft !== dateToInput(usStageData?.baselineEta)) {
-      dates.baselineEta = usBaselineEtaDraft === 'NA' ? 'NA' : (usBaselineEtaDraft || null)
-    }
-    if (isMaster && usActualEndDraft && usActualEndDraft !== dateToInput(usStageData?.actualEnd)) {
-      dates.actualEnd = usActualEndDraft
-    }
-    if (Object.keys(dates).length === 0) return
-    setSavingUsEta(true)
-    try {
-      await ordersApi.updateStageDates(order.id, usTarget, usIndex, dates)
-      await refreshOrders()
-      toast('Date updated', 'success')
-    } catch (err) {
-      toast(err?.message || 'Failed to update date', 'error')
-    } finally { setSavingUsEta(false) }
-  }
-
-  const submitDescriptionChange = async () => {
-    setSaving(true)
-    try {
-      await ordersApi.updateStageDates(order.id, usTarget, usIndex, { description: usDescription || '' })
-      await refreshOrders()
-      toast('Stage description updated', 'success')
-    } catch (err) {
-      toast(err?.message || 'Failed to update description', 'error')
-    } finally { setSaving(false) }
-  }
+  // ── Update Stage modal — opens the shared QuickStageModal ──
+  const openUpdateStage = (mfrId, stageIndex) => setQuickStage({ mfrId, stageIndex })
 
   // ── Doc Upload ──
   const submitDoc = async () => {
@@ -729,244 +639,12 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
         </Modal>
       )}
 
-      {/* ── Update Stage Modal (description + status + evidence) ── */}
-      {showUpdateStage && usTarget && (() => {
-        const key = `${usTarget}:${usIndex}`
-        const draft = materialDrafts[key] || emptyMaterialDraft
-        const uploadedStageDocs = orderDocs.filter(d => d.stageIndex === usIndex && d.materialLineIndex == null && String(d.mfrId || '') === String(usTarget))
-        return (
-          <Modal title={usStageData?.name || 'Update Stage'} subtitle="Update progress, post updates, and manage materials/PO and evidence for this stage" size="lg" onClose={() => setShowUpdateStage(false)}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-              {/* Description */}
-              <div>
-                <SectionLabel>Description</SectionLabel>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <Textarea value={usDescription} onChange={e => setUsDescription(e.target.value)} placeholder="What does this stage involve? (optional)" />
-                  <FlexRow justify="flex-end">
-                    <Btn size="sm" variant="secondary" disabled={saving} onClick={submitDescriptionChange}>{saving ? 'Saving…' : 'Save Description'}</Btn>
-                  </FlexRow>
-                </div>
-              </div>
-
-              {/* Status */}
-              <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
-                <SectionLabel>Progress</SectionLabel>
-                {usKind === 'quantity' ? (
-                  <>
-                    <FlexRow justify="flex-end">
-                      <Btn size="sm" disabled={saving} onClick={markStageDone}>{saving ? 'Saving…' : 'Mark Stage Done'}</Btn>
-                    </FlexRow>
-                    <div style={{ borderTop: `1px dashed ${T.border}`, marginTop: 14, paddingTop: 14 }}>
-                      <SectionLabel>Update partial completion</SectionLabel>
-                      {usStageData && (
-                        <div style={{ background: '#f8fafc', borderRadius: 10, border: `1px solid ${T.border}`, padding: '12px 14px', marginBottom: 10 }}>
-                          <FlexRow justify="space-between" style={{ marginBottom: 6 }}>
-                            <span style={{ fontSize: 12, color: T.textMuted }}>Current: {usStageData.unitsDone} / {usStageData.totalUnits} units</span>
-                          </FlexRow>
-                          <div style={{ height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
-                            <div style={{ height: 6, background: T.primary, borderRadius: 3, width: `${usStageData.totalUnits > 0 ? (usStageData.unitsDone / usStageData.totalUnits) * 100 : 0}%`, transition: 'width 0.3s' }} />
-                          </div>
-                        </div>
-                      )}
-                      <Input label={`Units Done (max ${usStageData?.totalUnits || 0})`} type="number" value={usUnits} onChange={e => setUsUnits(e.target.value)} placeholder="0" />
-                      <FlexRow justify="flex-end" style={{ marginTop: 8 }}>
-                        <Btn size="sm" variant="secondary" disabled={saving} onClick={submitStatusChange}>{saving ? 'Saving…' : 'Save partial progress'}</Btn>
-                      </FlexRow>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <Select label="Status" value={usStatus} onChange={e => setUsStatus(e.target.value)}>
-                      {Object.entries(STAGE_STATUS_LABELS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-                    </Select>
-                    <FlexRow justify="flex-end" style={{ marginTop: 8 }}>
-                      <Btn size="sm" disabled={saving} onClick={submitStatusChange}>{saving ? 'Saving…' : 'Save Progress'}</Btn>
-                    </FlexRow>
-                  </>
-                )}
-              </div>
-
-              {/* Dates */}
-              <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
-                <SectionLabel>Dates</SectionLabel>
-                <FlexRow gap={10} style={{ alignItems: 'flex-end' }}>
-                  <div>
-                    <div style={{ fontSize: 10, color: T.textLight, marginBottom: 4 }}>Planned</div>
-                    {isMaster ? (
-                      <input
-                        type={usBaselineEtaDraft === 'NA' ? 'text' : 'date'}
-                        value={usBaselineEtaDraft}
-                        onChange={e => setUsBaselineEtaDraft(e.target.value)}
-                        style={{ width: 120, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: usBaselineEtaDraft === 'NA' ? T.textLight : T.text, boxSizing: 'border-box' }}
-                      />
-                    ) : (
-                      <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>
-                        {usStageData?.baselineEta === 'NA' ? 'N/A' : usStageData?.baselineEta ? fmtDate(usStageData.baselineEta) : '—'}
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 110 }}>
-                    <div style={{ fontSize: 10, color: T.textLight, marginBottom: 4 }}>New</div>
-                    <input
-                      type={usEtaDraft === 'NA' ? 'text' : 'date'}
-                      value={usEtaDraft}
-                      onChange={e => setUsEtaDraft(e.target.value)}
-                      style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: usEtaDraft === 'NA' ? T.textLight : T.text, boxSizing: 'border-box' }}
-                    />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10, color: T.textLight, marginBottom: 4 }}>Actual</div>
-                    <FlexRow gap={4}>
-                      {isMaster ? (
-                        <input
-                          type="date"
-                          value={usActualEndDraft}
-                          onChange={e => setUsActualEndDraft(e.target.value)}
-                          style={{ width: 120, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: T.text, boxSizing: 'border-box' }}
-                        />
-                      ) : (
-                        <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>
-                          {usStageData?.actualEnd ? fmtDate(usStageData.actualEnd) : '—'}
-                        </div>
-                      )}
-                      {(() => {
-                        const av = stageActualVariance(usStageData)
-                        return av != null && av !== 0 ? (
-                          <span style={{ fontSize: 10, fontWeight: 800, color: av > 0 ? T.danger : T.success }}>
-                            {av > 0 ? '+' : ''}{av}d
-                          </span>
-                        ) : null
-                      })()}
-                    </FlexRow>
-                  </div>
-                  <Btn
-                    size="sm"
-                    disabled={savingUsEta || (
-                      usEtaDraft === dateToInput(usStageData?.eta)
-                      && (!isMaster || usBaselineEtaDraft === dateToInput(usStageData?.baselineEta))
-                      && (!isMaster || !usActualEndDraft || usActualEndDraft === dateToInput(usStageData?.actualEnd))
-                    )}
-                    onClick={saveUsEta}
-                  >{savingUsEta ? 'Saving…' : 'Save Date'}</Btn>
-                </FlexRow>
-                {isMaster && (
-                  <div style={{ fontSize: 10, color: T.textLight, marginTop: 4 }}>
-                    Planned/Actual are directly editable for the master admin — a short-term fix for entering real historical dates.
-                  </div>
-                )}
-                {(() => {
-                  const v = stageVariance(usStageData)
-                  return v != null && v !== 0 ? (
-                    <div style={{ fontSize: 10, color: v > 0 ? T.danger : T.success, marginTop: 6, fontWeight: 700 }}>
-                      {v > 0 ? '+' : ''}{v}d vs plan
-                    </div>
-                  ) : null
-                })()}
-              </div>
-
-              {/* Updates thread */}
-              <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
-                <SectionLabel>Updates</SectionLabel>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
-                  {(usStageData?.updates || []).length === 0 && <div style={{ fontSize: 11, color: T.textLight }}>No updates yet.</div>}
-                  {(usStageData?.updates || []).map((u, ui) => (
-                    <div key={ui} style={{ background: '#fff', borderRadius: 6, padding: '6px 10px', border: `1px solid ${T.border}` }}>
-                      <div style={{ fontSize: 11, color: T.text }}>{u.text}</div>
-                      <div style={{ fontSize: 9, color: T.textLight, marginTop: 2 }}>{u.byUserName || 'Someone'} · {fmtDate(u.at)}</div>
-                    </div>
-                  ))}
-                </div>
-                <FlexRow gap={6}>
-                  <input
-                    value={updateDrafts[key] || ''}
-                    onChange={e => setUpdateDrafts(d => ({ ...d, [key]: e.target.value }))}
-                    onKeyDown={e => { if (e.key === 'Enter') submitStageUpdateNote(usTarget, usIndex) }}
-                    placeholder="Add a progress update…"
-                    style={{ flex: 1, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit' }}
-                  />
-                  <Btn size="sm" disabled={!(updateDrafts[key] || '').trim()} onClick={() => submitStageUpdateNote(usTarget, usIndex)}>Post</Btn>
-                </FlexRow>
-              </div>
-
-              {/* Materials / PO checklist */}
-              <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
-                <SectionLabel>Materials / PO</SectionLabel>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
-                  {(usStageData?.materials || []).length === 0 && <div style={{ fontSize: 11, color: T.textLight }}>No materials tracked for this stage.</div>}
-                  {(usStageData?.materials || []).map((m, mi) => {
-                    const statusStyle = m.status === 'received' ? { bg: T.successBg, c: T.success, border: T.successBorder }
-                      : m.status === 'ordered' ? { bg: T.warningBg, c: T.warning, border: T.warningBorder }
-                      : { bg: '#f1f5f9', c: T.textMuted, border: T.border }
-                    const poRow = orderDocs.filter(d => d.stageIndex === usIndex && d.materialLineIndex === mi && String(d.mfrId || '') === String(usTarget))
-                    return (
-                      <div key={mi} style={{ background: '#fff', borderRadius: 6, padding: '6px 10px', border: `1px solid ${T.border}` }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: T.text }}>{m.name} — {m.requiredQty}{m.unit ? ` ${m.unit}` : ''}</div>
-                            <div style={{ fontSize: 10, color: T.textLight }}>{[m.supplier, m.poNumber, m.expectedDate].filter(Boolean).join(' · ') || '—'}</div>
-                          </div>
-                          <button onClick={() => advanceMaterialStatus(usTarget, usIndex, mi, m.status)}
-                            style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: statusStyle.bg, color: statusStyle.c, border: `1px solid ${statusStyle.border}`, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-                            {m.status}
-                          </button>
-                          <button onClick={() => openMaterialPoUpload(usTarget, usIndex, mi)} title="Attach PO document"
-                            style={{ background: '#fff', border: `1px solid ${T.border}`, borderRadius: 6, cursor: 'pointer', width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Paperclip size={11} /></button>
-                          <button onClick={() => deleteMaterial(usTarget, usIndex, mi)}
-                            style={{ background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 6, cursor: 'pointer', width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.danger, flexShrink: 0 }}><X size={12} /></button>
-                        </div>
-                        {poRow.length > 0 && (
-                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-                            {poRow.map(d => (
-                              <span key={d.id} onClick={() => openDocViewer(d)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => openDocViewer(d))} style={{ fontSize: 10, background: T.primaryLight, color: T.primaryDark, padding: '2px 8px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${T.warningBorder}`, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                                <Paperclip size={10} /> {d.name}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-                <FlexRow gap={6} style={{ flexWrap: 'wrap' }}>
-                  <input value={draft.name} placeholder="Material name" onChange={e => setMaterialDrafts(d => ({ ...d, [key]: { ...draft, name: e.target.value } }))}
-                    style={{ flex: 1, minWidth: 100, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit' }} />
-                  <input type="number" value={draft.requiredQty} placeholder="Qty" onChange={e => setMaterialDrafts(d => ({ ...d, [key]: { ...draft, requiredQty: e.target.value } }))}
-                    style={{ width: 60, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit' }} />
-                  <input value={draft.unit} placeholder="Unit" onChange={e => setMaterialDrafts(d => ({ ...d, [key]: { ...draft, unit: e.target.value } }))}
-                    style={{ width: 55, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit' }} />
-                  <input value={draft.supplier} placeholder="Supplier" onChange={e => setMaterialDrafts(d => ({ ...d, [key]: { ...draft, supplier: e.target.value } }))}
-                    style={{ width: 90, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit' }} />
-                  <input value={draft.poNumber} placeholder="PO #" onChange={e => setMaterialDrafts(d => ({ ...d, [key]: { ...draft, poNumber: e.target.value } }))}
-                    style={{ width: 75, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit' }} />
-                  <input type="date" value={draft.expectedDate} onChange={e => setMaterialDrafts(d => ({ ...d, [key]: { ...draft, expectedDate: e.target.value } }))}
-                    style={{ width: 120, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit' }} />
-                  <Btn size="sm" disabled={!draft.name.trim() || !draft.requiredQty} onClick={() => submitAddMaterial(usTarget, usIndex)}>+ Add</Btn>
-                </FlexRow>
-              </div>
-
-              {/* Evidence */}
-              <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
-                <SectionLabel>Evidence</SectionLabel>
-                {uploadedStageDocs.length === 0 && <div style={{ fontSize: 11, color: T.textLight, marginBottom: 8 }}>No evidence uploaded yet.</div>}
-                {uploadedStageDocs.length > 0 && (
-                  <div style={{ marginBottom: 8 }}>
-                    {uploadedStageDocs.map(d => (
-                      <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} stageName={usStageData?.name} />
-                    ))}
-                  </div>
-                )}
-                <Btn size="sm" variant="outline" onClick={() => openStageDocUpload(usTarget, usIndex)} icon={<Paperclip size={12} />}>
-                  Upload Evidence
-                </Btn>
-              </div>
-
-              <FlexRow justify="flex-end">
-                <Btn variant="secondary" onClick={() => setShowUpdateStage(false)}>Close</Btn>
-              </FlexRow>
-            </div>
-          </Modal>
-        )
-      })()}
+      {quickStage && (
+        <QuickStageModal
+          orderId={order.id} mfrId={quickStage.mfrId} stageIndex={quickStage.stageIndex}
+          onClose={() => setQuickStage(null)} showOpenOrderLink={false}
+        />
+      )}
 
       {/* ── Stage Dates Adjustment Modal ── */}
       {showEta && etaTarget && (

@@ -189,6 +189,14 @@ export const STAGE_STATUS_LABELS = {
 
 export const stageKindOf = s => s?.kind ?? 'quantity'
 
+// Stage dates are 'YYYY-MM-DD' strings or the literal 'NA' — never a bare
+// Date, so this is deliberately separate from a generic date formatter.
+export function fmtStageDate(d) {
+  if (!d || d === 'NA') return '—'
+  const [y, m, day] = d.slice(0, 10).split('-')
+  return y && m && day ? `${day}-${m}-${y}` : '—'
+}
+
 export const stageStatusOf = s => {
   if (s?.status) return s.status
   const done = s?.unitsDone || 0

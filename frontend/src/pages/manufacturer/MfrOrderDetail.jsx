@@ -27,6 +27,10 @@ export function MfrOrderDetail({ orderId, onBack }) {
   const [showStage, setShowStage] = useState(false)
   const [stageIdx, setStageIdx] = useState(0)
   const [stageUnits, setStageUnits] = useState('')
+  // Partial-completion entry is collapsed by default — Mark Stage Done is
+  // the action almost everyone wants; the units form is there for the
+  // minority of stages where partial progress matters, one click away.
+  const [showPartial, setShowPartial] = useState(false)
   const [stageNote, setStageNote] = useState('')
   const [stageDate, setStageDate] = useState('')
   const [stageInitUnits, setStageInitUnits] = useState('')
@@ -263,29 +267,36 @@ export function MfrOrderDetail({ orderId, onBack }) {
 
             {stageKind === 'quantity' && (
               <>
-                <FlexRow justify="flex-end">
-                  <Btn size="sm" disabled={saving} onClick={markStageDone}>{saving ? 'Saving…' : 'Mark Stage Done'}</Btn>
-                </FlexRow>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-                    Update partial completion
-                  </div>
-                  <Input
-                    label={`Units Completed (of ${stages[stageIdx]?.totalUnits || 0})`}
-                    type="number" min="0" max={stages[stageIdx]?.totalUnits || 0}
-                    value={stageUnits} onChange={e => setStageUnits(e.target.value)}
-                  />
-                  <div style={{ marginTop: 8, background: '#f1f5f9', borderRadius: 6, height: 8, overflow: 'hidden' }}>
-                    <div style={{ width: `${modalPct()}%`, height: '100%', background: modalPct() >= 100 ? T.success : T.primary, borderRadius: 6, transition: 'width 0.2s' }} />
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-                    <FlexRow gap={10}>
-                      {stages[stageIdx]?.startDate && stages[stageIdx].startDate !== 'NA' && <span style={{ fontSize: 11, color: T.info }}>Start: {fmtDate(stages[stageIdx].startDate)}</span>}
-                      {stages[stageIdx]?.eta && <span style={{ fontSize: 11, color: T.info }}>ETA: {fmtDate(stages[stageIdx].eta)}</span>}
-                    </FlexRow>
-                    <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{modalPct()}%</span>
-                  </div>
+                <div style={{ background: '#f8fafc', borderRadius: 10, border: `1px solid ${T.border}`, padding: '12px 14px' }}>
+                  <FlexRow justify="space-between" style={{ alignItems: 'center', gap: 12 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <FlexRow gap={10} style={{ marginBottom: 6 }}>
+                        {stages[stageIdx]?.startDate && stages[stageIdx].startDate !== 'NA' && <span style={{ fontSize: 11, color: T.info }}>Start: {fmtDate(stages[stageIdx].startDate)}</span>}
+                        {stages[stageIdx]?.eta && <span style={{ fontSize: 11, color: T.info }}>ETA: {fmtDate(stages[stageIdx].eta)}</span>}
+                      </FlexRow>
+                      <div style={{ height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
+                        <div style={{ width: `${modalPct()}%`, height: '100%', background: modalPct() >= 100 ? T.success : T.primary, borderRadius: 3, transition: 'width 0.2s' }} />
+                      </div>
+                    </div>
+                    <Btn size="sm" disabled={saving} onClick={markStageDone}>{saving ? 'Saving…' : 'Mark Stage Done'}</Btn>
+                  </FlexRow>
                 </div>
+                <button
+                  onClick={() => setShowPartial(p => !p)}
+                  style={{ marginTop: 8, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 11.5, fontWeight: 600, color: T.primary, padding: 0 }}
+                >
+                  {showPartial ? 'Hide partial update' : 'Update partial completion instead'}
+                </button>
+                {showPartial && (
+                  <div style={{ marginTop: 10 }}>
+                    <Input
+                      label={`Units Completed (of ${stages[stageIdx]?.totalUnits || 0})`}
+                      type="number" min="0" max={stages[stageIdx]?.totalUnits || 0}
+                      value={stageUnits} onChange={e => setStageUnits(e.target.value)}
+                    />
+                    <div style={{ marginTop: 8, fontSize: 11, color: T.textMuted, textAlign: 'right' }}>{modalPct()}%</div>
+                  </div>
+                )}
               </>
             )}
 
