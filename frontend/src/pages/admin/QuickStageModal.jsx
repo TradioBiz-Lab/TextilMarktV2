@@ -298,7 +298,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
 
         <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
           <SectionLabel>Dates</SectionLabel>
-          <FlexRow gap={10} style={{ alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
             <div>
               <div style={{ fontSize: 10, color: T.textLight, marginBottom: 4 }}>Planned date</div>
               {isMaster ? (
@@ -308,18 +308,18 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
                     value={baselineEtaDraft}
                     readOnly={baselineEtaDraft === 'NA'}
                     onChange={e => setBaselineEtaDraft(e.target.value)}
-                    style={{ width: 120, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: baselineEtaDraft === 'NA' ? T.textLight : T.text, boxSizing: 'border-box' }}
+                    style={{ flex: 1, minWidth: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: baselineEtaDraft === 'NA' ? T.textLight : T.text, boxSizing: 'border-box' }}
                   />
                   <button
                     onClick={() => setBaselineEtaDraft(baselineEtaDraft === 'NA' ? '' : 'NA')}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 700, color: T.primary, padding: '0 2px', whiteSpace: 'nowrap' }}
+                    style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 700, color: T.primary, padding: '0 2px' }}
                   >{baselineEtaDraft === 'NA' ? 'Set date' : 'N/A'}</button>
                 </FlexRow>
               ) : (
-                <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{fmtStageDate(stage.baselineEta)}</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.text, padding: '5px 0' }}>{fmtStageDate(stage.baselineEta)}</div>
               )}
             </div>
-            <div style={{ flex: 1, minWidth: 150 }}>
+            <div>
               <div style={{ fontSize: 10, color: T.textLight, marginBottom: 4 }}>New planned date</div>
               <FlexRow gap={4}>
                 <input
@@ -331,42 +331,42 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
                 />
                 <button
                   onClick={() => setEtaDraft(etaDraft === 'NA' ? '' : 'NA')}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 700, color: T.primary, padding: '0 2px', whiteSpace: 'nowrap' }}
+                  style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 700, color: T.primary, padding: '0 2px' }}
                 >{etaDraft === 'NA' ? 'Set date' : 'N/A'}</button>
               </FlexRow>
             </div>
             <div>
               <div style={{ fontSize: 10, color: T.textLight, marginBottom: 4 }}>Actual date</div>
-              <FlexRow gap={4}>
-                {isMaster ? (
-                  <>
-                    <input
-                      type="date"
-                      value={actualEndDraft}
-                      onChange={e => setActualEndDraft(e.target.value)}
-                      style={{ width: 120, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: T.text, boxSizing: 'border-box' }}
-                    />
-                    {actualEndDraft && (
-                      <button
-                        onClick={() => setActualEndDraft('')}
-                        title="Empty this field so Save Date doesn't submit it — to undo an already-saved actual date, reopen the stage instead (it clears automatically)."
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 700, color: T.primary, padding: '0 2px', whiteSpace: 'nowrap' }}
-                      >Clear</button>
-                    )}
-                  </>
-                ) : (
-                  <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{fmtStageDate(stage.actualEnd)}</div>
-                )}
-                {(() => {
-                  const av = stageActualVariance(stage)
-                  return av != null && av !== 0 ? (
-                    <span style={{ fontSize: 10, fontWeight: 800, color: av > 0 ? T.danger : T.success }}>
-                      {av > 0 ? '+' : ''}{av}d
-                    </span>
-                  ) : null
-                })()}
-              </FlexRow>
+              {isMaster ? (
+                <FlexRow gap={4}>
+                  <input
+                    type="date"
+                    value={actualEndDraft}
+                    onChange={e => setActualEndDraft(e.target.value)}
+                    style={{ flex: 1, minWidth: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: T.text, boxSizing: 'border-box' }}
+                  />
+                  {actualEndDraft && (
+                    <button
+                      onClick={() => setActualEndDraft('')}
+                      title="Reopening the stage clears an already-saved actual date automatically."
+                      style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 700, color: T.primary, padding: '0 2px' }}
+                    >Clear</button>
+                  )}
+                  {(() => {
+                    const av = stageActualVariance(stage)
+                    return av != null && av !== 0 ? (
+                      <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, color: av > 0 ? T.danger : T.success }}>
+                        {av > 0 ? '+' : ''}{av}d
+                      </span>
+                    ) : null
+                  })()}
+                </FlexRow>
+              ) : (
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.text, padding: '5px 0' }}>{fmtStageDate(stage.actualEnd)}</div>
+              )}
             </div>
+          </div>
+          <FlexRow justify="flex-end" style={{ marginTop: 10 }}>
             <Btn
               size="sm"
               disabled={savingEta || (
@@ -377,11 +377,6 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
               onClick={saveEta}
             >{savingEta ? 'Saving…' : 'Save Date'}</Btn>
           </FlexRow>
-          {isMaster && (
-            <div style={{ fontSize: 10, color: T.textLight, marginTop: 4 }}>
-              Planned/Actual are directly editable for the master admin — a short-term fix for entering real historical dates. Actual can't be set to N/A directly (it's a real completion date or nothing) — reopening the stage clears it.
-            </div>
-          )}
           {(() => {
             const v = stageVariance(stage)
             return v != null && v !== 0 ? (
