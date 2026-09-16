@@ -169,6 +169,20 @@ function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrder }) {
     } finally { setSaving(false) }
   }
 
+  // Quantity-kind close path — skips the units math entirely (see backend's
+  // status:'done' handling in the stage-update route's quantity branch).
+  // Mirrors AdminOrderDetail.jsx's markStageDone, so the two modals agree.
+  const markStageDone = async () => {
+    setSaving(true)
+    try {
+      const res = await updateStage(orderId, mfrId, stageIndex, { status: 'done' })
+      if (res?.warnings?.length) toast(res.warnings[0], 'warning')
+      else toast('Stage marked done', 'success')
+    } catch (err) {
+      toast(err?.message || 'Failed to close stage', 'error')
+    } finally { setSaving(false) }
+  }
+
   // The New/revised date goes through the same /eta route (and same
   // refreshOrders() refetch) that Order Detail's own date-adjustment modal
   // uses — one write path, so a date changed here is the same stage object
@@ -245,15 +259,36 @@ function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrder }) {
         <div>
           <SectionLabel>Progress</SectionLabel>
           {kind === 'quantity' ? (
-            <Input label={`Units Done (max ${stage.totalUnits})`} type="number" value={units} onChange={e => setUnits(e.target.value)} />
+            <>
+              <div style={{ background: '#f8fafc', borderRadius: 10, border: `1px solid ${T.border}`, padding: '12px 14px', marginBottom: 10 }}>
+                <FlexRow justify="space-between" style={{ marginBottom: 6 }}>
+                  <span style={{ fontSize: 12, color: T.textMuted }}>Current: {stage.unitsDone} / {stage.totalUnits} units</span>
+                </FlexRow>
+                <div style={{ height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{ height: 6, background: T.primary, borderRadius: 3, width: `${stage.totalUnits > 0 ? (stage.unitsDone / stage.totalUnits) * 100 : 0}%`, transition: 'width 0.3s' }} />
+                </div>
+              </div>
+              <FlexRow justify="flex-end">
+                <Btn size="sm" disabled={saving} onClick={markStageDone}>{saving ? 'Saving…' : 'Mark Stage Done'}</Btn>
+              </FlexRow>
+              <div style={{ borderTop: `1px dashed ${T.border}`, marginTop: 14, paddingTop: 14 }}>
+                <SectionLabel>Update partial completion</SectionLabel>
+                <Input label={`Units Done (max ${stage.totalUnits})`} type="number" value={units} onChange={e => setUnits(e.target.value)} />
+                <FlexRow justify="flex-end" style={{ marginTop: 8 }}>
+                  <Btn size="sm" variant="secondary" disabled={saving} onClick={saveProgress}>{saving ? 'Saving…' : 'Save partial progress'}</Btn>
+                </FlexRow>
+              </div>
+            </>
           ) : (
-            <Select label="Status" value={status} onChange={e => setStatus(e.target.value)}>
-              {Object.entries(STAGE_STATUS_LABELS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-            </Select>
+            <>
+              <Select label="Status" value={status} onChange={e => setStatus(e.target.value)}>
+                {Object.entries(STAGE_STATUS_LABELS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+              </Select>
+              <FlexRow justify="flex-end" style={{ marginTop: 8 }}>
+                <Btn size="sm" disabled={saving} onClick={saveProgress}>{saving ? 'Saving…' : 'Save Progress'}</Btn>
+              </FlexRow>
+            </>
           )}
-          <FlexRow justify="flex-end" style={{ marginTop: 8 }}>
-            <Btn size="sm" disabled={saving} onClick={saveProgress}>{saving ? 'Saving…' : 'Save Progress'}</Btn>
-          </FlexRow>
         </div>
 
         <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
