@@ -254,17 +254,14 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
           <SectionLabel>Progress</SectionLabel>
           {kind === 'quantity' ? (
             <>
-              <div style={{ background: '#f8fafc', borderRadius: 10, border: `1px solid ${T.border}`, padding: '12px 14px' }}>
-                <FlexRow justify="space-between" style={{ alignItems: 'center', gap: 12 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 6 }}>
-                      {stage.unitsDone} / {stage.totalUnits} units
-                      {stage.totalUnits > 0 && <span style={{ color: T.textLight }}> ({Math.round(stage.unitsDone / stage.totalUnits * 100)}%)</span>}
-                    </div>
-                    <div style={{ height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
-                      <div style={{ height: 6, background: T.primary, borderRadius: 3, width: `${stage.totalUnits > 0 ? (stage.unitsDone / stage.totalUnits) * 100 : 0}%`, transition: 'width 0.3s' }} />
-                    </div>
+              <div style={{ background: '#f8fafc', borderRadius: 10, border: `1px solid ${T.border}`, padding: '10px 14px' }}>
+                <FlexRow gap={12} style={{ alignItems: 'center' }}>
+                  <div style={{ flex: 1, minWidth: 0, height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ height: 6, background: T.primary, borderRadius: 3, width: `${stage.totalUnits > 0 ? (stage.unitsDone / stage.totalUnits) * 100 : 0}%`, transition: 'width 0.3s' }} />
                   </div>
+                  {stage.totalUnits > 0 && (
+                    <span style={{ fontSize: 11, color: T.textMuted, flexShrink: 0 }}>{Math.round(stage.unitsDone / stage.totalUnits * 100)}%</span>
+                  )}
                   {isDone ? (
                     <Btn size="sm" variant="secondary" disabled={saving} onClick={undoMarkDone}>{saving ? 'Saving…' : 'Undo — Reopen Stage'}</Btn>
                   ) : (

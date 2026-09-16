@@ -282,17 +282,18 @@ export function MfrOrderDetail({ orderId, onBack }) {
 
             {stageKind === 'quantity' && (
               <>
-                <div style={{ background: '#f8fafc', borderRadius: 10, border: `1px solid ${T.border}`, padding: '12px 14px' }}>
-                  <FlexRow justify="space-between" style={{ alignItems: 'center', gap: 12 }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <FlexRow gap={10} style={{ marginBottom: 6 }}>
-                        {stages[stageIdx]?.startDate && stages[stageIdx].startDate !== 'NA' && <span style={{ fontSize: 11, color: T.info }}>Start: {fmtDate(stages[stageIdx].startDate)}</span>}
-                        {stages[stageIdx]?.eta && <span style={{ fontSize: 11, color: T.info }}>ETA: {fmtDate(stages[stageIdx].eta)}</span>}
-                      </FlexRow>
-                      <div style={{ height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
-                        <div style={{ width: `${modalPct()}%`, height: '100%', background: modalPct() >= 100 ? T.success : T.primary, borderRadius: 3, transition: 'width 0.2s' }} />
-                      </div>
+                {(stages[stageIdx]?.startDate && stages[stageIdx].startDate !== 'NA') || stages[stageIdx]?.eta ? (
+                  <FlexRow gap={10} style={{ marginBottom: 6 }}>
+                    {stages[stageIdx]?.startDate && stages[stageIdx].startDate !== 'NA' && <span style={{ fontSize: 11, color: T.info }}>Start: {fmtDate(stages[stageIdx].startDate)}</span>}
+                    {stages[stageIdx]?.eta && <span style={{ fontSize: 11, color: T.info }}>ETA: {fmtDate(stages[stageIdx].eta)}</span>}
+                  </FlexRow>
+                ) : null}
+                <div style={{ background: '#f8fafc', borderRadius: 10, border: `1px solid ${T.border}`, padding: '10px 14px' }}>
+                  <FlexRow gap={12} style={{ alignItems: 'center' }}>
+                    <div style={{ flex: 1, minWidth: 0, height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{ width: `${modalPct()}%`, height: '100%', background: modalPct() >= 100 ? T.success : T.primary, borderRadius: 3, transition: 'width 0.2s' }} />
                     </div>
+                    <span style={{ fontSize: 11, color: T.textMuted, flexShrink: 0 }}>{modalPct()}%</span>
                     {stageDone ? (
                       <Btn size="sm" variant="secondary" disabled={saving} onClick={undoMarkDone}>{saving ? 'Saving…' : 'Undo — Reopen Stage'}</Btn>
                     ) : (

@@ -1071,21 +1071,16 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
       detail: `${orderId}: ${stageName} — ${nextStatus}${kind === 'quantity' ? ` (${nextUnits}/${totalUnits} units)` : ''} by ${req.user.name}${isMasterOverride ? ' [MASTER OVERRIDE]' : ''}`,
     })
 
-    // Advisory only — what the sequential reset used to enforce destructively.
-    // Genuinely parallel plans will trip this legitimately, so it never blocks.
-    const warnings = []
-    if (nextStatus === 'done') {
-      const openEarlier = (updatedAsgn?.stages || [])
-        .slice(0, stageIndex)
-        .map((s, i) => ({ s, i }))
-        .filter(({ s }) => deriveStageStatus(s) !== 'done')
-      if (openEarlier.length) {
-        const names = openEarlier.slice(0, 3).map(({ s, i }) => `${i + 1}. ${s.name}`).join(', ')
-        warnings.push(`"${stageName}" is marked done while ${openEarlier.length} earlier step(s) are still open: ${names}${openEarlier.length > 3 ? '…' : ''}`)
-      }
-    }
-
-    res.json({ ...enrichOrder(order), warnings })
+    // Real TNA plans aren't strictly sequential — FPT/PP/GPT approvals
+    // legitimately overlap, and only some stages are actual hard gates
+    // (e.g. production can't start before PP/GPT/FPT approval). That real
+    // dependency graph isn't modeled yet, so there's no reliable way to
+    // tell a genuine out-of-order close from a normal parallel one — an
+    // "earlier stage still open" warning here was just noise/false
+    // positives until that graph exists. `warnings` stays in the response
+    // shape (frontend callers already check it) for whenever it's worth
+    // populating again.
+    res.json({ ...enrichOrder(order), warnings: [] })
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })

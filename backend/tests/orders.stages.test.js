@@ -199,16 +199,17 @@ describe('parallel stages — no sequential reset', () => {
     assert.equal(stages[2].status, 'in_progress')
   })
 
-  // Advisory, not enforcement — a genuinely parallel plan trips this legitimately.
-  test('completing a stage out of order returns a non-blocking warning', async () => {
+  // Real TNA plans aren't strictly sequential (approvals legitimately
+  // overlap) — completing a stage out of order is never blocked, and
+  // doesn't warn either (no reliable way to distinguish a genuine
+  // out-of-order close from a normal parallel one without the real
+  // stage-dependency graph).
+  test('completing a stage out of order is never blocked and returns no warning', async () => {
     const { api, stageUrl, readStages } = await arrange({ totalQty: 100 })
 
     const { status, body } = await api.post(stageUrl(2), { unitsDone: 100 })
     assert.equal(status, 200)
-    assert.equal(body.warnings.length, 1)
-    assert.match(body.warnings[0], /marked done while 2 earlier step\(s\) are still open/)
-
-    // The write still happened — nothing was blocked or reverted.
+    assert.deepEqual(body.warnings, [])
     assert.equal((await readStages())[2].status, 'done')
   })
 
