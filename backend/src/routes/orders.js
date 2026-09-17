@@ -2046,7 +2046,7 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
       // all, and the order silently violated its own invariant.
       const asgns = existing.assignments || []
       const currentSum = asgns.reduce((n, a) => n + (a.qty || 0), 0)
-      if (qty !== currentSum) {
+      if (qty !== currentSum && asgns.length > 0) {
         if (asgns.length === 1) {
           updates['assignments.0.qty'] = qty
           // Stage targets that were defaulted to the assignment qty follow it.

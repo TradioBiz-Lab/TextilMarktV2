@@ -666,6 +666,9 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
               {order.styleNumber && (
                 <Mono style={{ fontSize: 12, color: T.textMuted }}>Style {order.styleNumber}</Mono>
               )}
+              {order.ecommerceLink && (
+                <a href={order.ecommerceLink} target="_blank" rel="noreferrer" style={{ display: 'block', marginTop: 4, fontSize: 11, fontWeight: 600, color: T.primaryDeep }}>{order.ecommerceLink} ↗</a>
+              )}
 
               {/* Ruled spec table */}
               <div className="grid-responsive-2" style={{ gap: 0, marginTop: 16, border: `1px solid ${T.border}`, borderRadius: 8, overflow: 'hidden' }}>
@@ -716,9 +719,6 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                 </div>
               )}
 
-              {order.ecommerceLink && (
-                <a href={order.ecommerceLink} target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginTop: 14, fontSize: 12, fontWeight: 600, color: T.primaryDeep }}>{order.ecommerceLink} ↗</a>
-              )}
             </div>
           </div>
         </Card>
@@ -1297,13 +1297,10 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                       const csvValid = csvRows.filter(r => r.errors.length === 0)
                       const csvInvalid = csvRows.filter(r => r.errors.length > 0)
                       return (
-                        <div style={{ margin: '14px 18px 0', background: '#f8fafc', border: `1px dashed ${T.border}`, borderRadius: 10, padding: '14px 16px' }}>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 2 }}>Upload CSV</div>
-                          <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 10 }}>
-                            {stages.length > 0 ? 'New rows are appended after the existing plan.' : 'Import a whole plan at once.'}
-                          </div>
+                        <Modal title="Upload CSV" subtitle={stages.length > 0 ? 'New rows are appended after the existing plan.' : 'Import a whole plan at once.'}
+                          onClose={() => setTnaCsvOpen(p => ({ ...p, [a.mid]: false }))}>
                           <FlexRow gap={10} style={{ marginBottom: 10 }}>
-                            <label style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 10px', fontSize: 11, fontWeight: 700, color: T.text, background: '#fff', border: `1px solid ${T.border}`, borderRadius: 8, cursor: 'pointer' }}>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 10px', fontSize: 11, fontWeight: 700, color: T.text, background: '#f8fafc', border: `1px solid ${T.border}`, borderRadius: 8, cursor: 'pointer' }}>
                               Choose CSV file
                               <input type="file" accept=".csv" style={{ display: 'none' }}
                                 onChange={e => { setTnaCsvErr(p => ({ ...p, [a.mid]: '' })); if (e.target.files[0]) parseTnaCsv(a.mid, e.target.files[0]) }} />
@@ -1324,12 +1321,14 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                                   </div>
                                 ))}
                               </div>
-                              <Btn size="sm" style={{ marginTop: 8 }} disabled={csvValid.length === 0 || tnaCsvImporting === a.mid} onClick={() => importTnaCsv(a.mid)}>
-                                {tnaCsvImporting === a.mid ? 'Importing…' : `Import ${csvValid.length} Stage${csvValid.length !== 1 ? 's' : ''}`}
-                              </Btn>
+                              <FlexRow justify="flex-end" style={{ marginTop: 10 }}>
+                                <Btn size="sm" disabled={csvValid.length === 0 || tnaCsvImporting === a.mid} onClick={() => importTnaCsv(a.mid)}>
+                                  {tnaCsvImporting === a.mid ? 'Importing…' : `Import ${csvValid.length} Stage${csvValid.length !== 1 ? 's' : ''}`}
+                                </Btn>
+                              </FlexRow>
                             </div>
                           )}
-                        </div>
+                        </Modal>
                       )
                     })()}
 
@@ -1337,7 +1336,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                     <div style={{ padding: '14px 18px' }}>
                       {stages.length > 0 && <StageTimeline stages={stages} />}
 
-                      {stages.length === 0 && !tnaCsvOpen[a.mid] && (
+                      {stages.length === 0 && (
                         <div style={{ background: '#f8fafc', border: `1px dashed ${T.border}`, borderRadius: 10, padding: '14px 16px', marginBottom: 14 }}>
                           <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 2 }}>No TNA yet</div>
                           <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Add stages one at a time below, or click "Upload CSV" above for a whole plan at once.</div>
