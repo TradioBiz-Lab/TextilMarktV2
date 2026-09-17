@@ -31,6 +31,7 @@ export function useVoiceRecorder() {
   // like the persistent <audio> element does for playback.
   const recAudioCtxRef = useRef(null)
   const analyserRef = useRef(null)
+  const sourceRef = useRef(null)
   // setInterval, deliberately NOT requestAnimationFrame — this loop drives
   // a real functional decision (when to auto-stop recording), not just a
   // visual. rAF throttles hard (often to near-zero) whenever
@@ -61,6 +62,13 @@ export function useVoiceRecorder() {
   // recording's tick timer are torn down.
   const cleanupAnalyser = () => {
     if (tickTimerRef.current) { clearInterval(tickTimerRef.current); tickTimerRef.current = null }
+    // Explicitly disconnect rather than relying solely on the stopped
+    // MediaStreamTrack to silence these — belt-and-suspenders so a prior
+    // recording's source/analyser can never keep feeding stale data into
+    // the persistent audioCtx's graph across a retry.
+    try { sourceRef.current?.disconnect() } catch { /* already disconnected */ }
+    try { analyserRef.current?.disconnect() } catch { /* already disconnected */ }
+    sourceRef.current = null
     analyserRef.current = null
     ampRef.current = 0
   }
@@ -81,6 +89,26 @@ export function useVoiceRecorder() {
   const releaseStream = () => {
     streamRef.current?.getTracks().forEach(t => t.stop())
     streamRef.current = null
+  }
+
+  // The hands-free loop calls start() again immediately after the previous
+  // stream's tracks were just .stop()'d (releaseStream, via the prior
+  // recorder's onstop). On some OS/driver combos the audio device isn't
+  // released instantly, so that immediate re-acquisition can throw a
+  // transient NotReadableError ("device in use") rather than a real
+  // permission problem — indistinguishable from NotAllowedError in the UI
+  // otherwise, and with no recovery path: every subsequent "Try again"
+  // repeats the same instant re-acquire and can hit the same transient
+  // failure again. One short-delay retry absorbs that race instead of
+  // surfacing a permanent-looking error for what's actually a timing issue.
+  const acquireStream = async () => {
+    try {
+      return await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch (err) {
+      if (err?.name !== 'NotReadableError' && err?.name !== 'TrackStartError') throw err
+      await new Promise(r => setTimeout(r, 300))
+      return await navigator.mediaDevices.getUserMedia({ audio: true })
+    }
   }
 
   // Shared by the public stop() and the silence-detection auto-stop path.
@@ -129,7 +157,7 @@ export function useVoiceRecorder() {
       return
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const stream = await acquireStream()
       streamRef.current = stream
       // Browser default mimeType — audio/webm;codecs=opus on Chrome/Firefox,
       // audio/mp4 on Safari. Sarvam's speech-to-text accepts both directly,
@@ -165,6 +193,7 @@ export function useVoiceRecorder() {
         const analyser = audioCtx.createAnalyser()
         analyser.fftSize = 512
         source.connect(analyser)
+        sourceRef.current = source
         analyserRef.current = analyser
 
         const buf = new Float32Array(analyser.fftSize)
@@ -205,7 +234,21 @@ export function useVoiceRecorder() {
         }, 100)
       }
     } catch (err) {
+      // getUserMedia can have already succeeded (stream assigned to
+      // streamRef.current) before something later in this try block throws
+      // (e.g. AudioContext/analyser setup) — without this, that stream was
+      // never released, so the mic stayed open while the UI said 'error',
+      // and a "Try again" click's fresh start() piled a second live stream
+      // on top of it instead of cleanly replacing it.
+      cleanupAnalyser()
+      releaseStream()
       setState('error')
+      // err.name logged (not shown) — the UI message stays a plain sentence
+      // per this app's error-copy convention, but a masked NotReadableError
+      // ("device still in use" after acquireStream's one retry already
+      // failed) vs. NotAllowedError vs. anything else is otherwise
+      // indistinguishable from the browser console alone.
+      console.error('[voice] getUserMedia failed:', err?.name, err?.message)
       setErrorMsg(err?.name === 'NotAllowedError'
         ? 'Microphone access was denied. Allow it in your browser settings to use voice input.'
         : 'Could not access the microphone.')

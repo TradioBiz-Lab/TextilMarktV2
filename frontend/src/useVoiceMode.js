@@ -177,11 +177,24 @@ export function useVoiceMode() {
     startListening()
   }, [phase, playback])
 
+  // Called synchronously from the "Try again" button's onClick — a real
+  // user gesture, same as enter(). Spending it on rec.unlock() forces the
+  // persistent recording AudioContext back to 'running' if it had been
+  // suspended (OS audio-focus handoff right after Kriyaa's own TTS played
+  // through the speaker, screen lock, tab backgrounding — see
+  // useVoiceRecorder.js's per-tick resume() comment). Without this, the
+  // only resume() calls after the very first enter() happen from inside a
+  // setInterval callback, not a gesture — if the browser ever silently
+  // refuses one of those, the analyser reads ~0 RMS forever and every
+  // retry loops straight back into the same "didn't hear anything" error,
+  // exactly the behaviour reported: works once, then "try again" no longer
+  // actually listens.
   const retryFromError = useCallback(() => {
+    rec.unlock()
     emptyStreakRef.current = 0
     setErrorMsg(null)
     startListening()
-  }, [])
+  }, [rec])
 
   return {
     isOpen, phase, errorMsg, lastTranscript, lastReplyText,
