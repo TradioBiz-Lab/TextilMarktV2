@@ -804,7 +804,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
     <>
       {viewer}
       {editModal}
-      <div style={{ background: T.surface, borderRadius: 10, border: `1px solid ${exp || expd ? T.warningBorder : T.border}`, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+      <div style={{ background: T.surface, borderRadius: 10, border: `1px solid ${exp || expd ? T.warningBorder : T.border}`, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
         <div style={{ width: 38, height: 38, borderRadius: T.radius.sm, background: T.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><DocIcon size={17} color={T.primaryDark} /></div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div onClick={hasFile ? openFile : undefined} role={hasFile ? 'button' : undefined} tabIndex={hasFile ? 0 : undefined} onKeyDown={hasFile ? activateOnKey(openFile) : undefined} style={{ fontSize: 13, fontWeight: 700, color: hasFile ? T.primary : T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: hasFile ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 5 }} title={hasFile ? (hasExternal ? 'Click to open link' : 'Click to view') : undefined}>{doc.name}{hasExternal && <Link2 size={11} style={{ opacity: 0.7, flexShrink: 0 }} />}</div>

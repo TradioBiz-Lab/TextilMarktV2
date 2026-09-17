@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, List, LayoutGrid, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, ChevronUp, ArrowRight, FileSpreadsheet } from 'lucide-react'
+import { Plus, List, LayoutGrid, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react'
 import {
   T, SEASONS, ORDER_STATUSES,
   isStageDone, stageIsOverdue, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct, fmtStageDate, effectiveEta,
@@ -10,7 +10,6 @@ import { useApp } from '../../context.jsx'
 import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
-import { BulkUploadCsvPanel } from './BulkUploadCsvPanel.jsx'
 import { QuickStageModal } from './QuickStageModal.jsx'
 import { CreateStyleWizard } from './CreateStyleWizard.jsx'
 
@@ -83,11 +82,6 @@ export function AdminOrders({ onOpen, initialStatus }) {
 
   // ── Create Style wizard state ──
   const [showWizard, setShowWizard] = useState(false)
-  // ── Bulk CSV upload state — separate from the wizard; still creates orders
-  // WITH manufacturer assignments + a full TNA in one shot, for teams that
-  // already keep their plan in a spreadsheet.
-  const [showBulkCsv, setShowBulkCsv] = useState(false)
-  const [bulkCsvMoId, setBulkCsvMoId] = useState('')
 
   // ── Create Master Order state ──
   const [showMO, setShowMO] = useState(false)
@@ -218,32 +212,6 @@ export function AdminOrders({ onOpen, initialStatus }) {
         />
       )}
 
-      {showBulkCsv && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }} onClick={e => e.target === e.currentTarget && (setShowBulkCsv(false), setBulkCsvMoId(''))}>
-          <div style={{ background: '#fff', borderRadius: 14, border: `1px solid ${T.border}`, width: '100%', maxWidth: 720, maxHeight: '94vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '20px 24px 16px', borderBottom: `1px solid ${T.border}` }}>
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>Bulk Upload CSV</div>
-                <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>Creates styles WITH manufacturer assignments and a full TNA plan from a spreadsheet</div>
-              </div>
-              <button onClick={() => { setShowBulkCsv(false); setBulkCsvMoId('') }} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: T.textMuted }}>×</button>
-            </div>
-            <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <Select label="Master Order *" value={bulkCsvMoId} onChange={e => setBulkCsvMoId(e.target.value)}>
-                <option value="">— Select Master Order —</option>
-                {masterOrders.map(m => <option key={m.id} value={m.id}>{m.id} — {m.orderName} ({m.buyerCompany})</option>)}
-              </Select>
-              {bulkCsvMoId && (
-                <BulkUploadCsvPanel
-                  masterOrder={masterOrders.find(m => m.id === bulkCsvMoId)}
-                  onDone={() => { setShowBulkCsv(false); setBulkCsvMoId('') }}
-                />
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── Create Master Order Modal ── */}
       {showMO && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }} onClick={e => e.target === e.currentTarget && (setShowMO(false), resetMoForm())}>
@@ -310,7 +278,6 @@ export function AdminOrders({ onOpen, initialStatus }) {
       <PageHeader title="Order Management" subtitle="Create styles, assign manufacturers, and manage the full order lifecycle" action={
         <FlexRow gap={8}>
           <Btn variant="secondary" onClick={() => setShowMO(true)} icon="📁">New Master Order</Btn>
-          <Btn variant="secondary" onClick={() => setShowBulkCsv(true)} icon={<FileSpreadsheet size={13} />}>Bulk Upload CSV</Btn>
           <Btn onClick={() => setShowWizard(true)} icon={<Plus size={13} />}>Create Style</Btn>
         </FlexRow>
       } />

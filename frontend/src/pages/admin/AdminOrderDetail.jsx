@@ -5,7 +5,7 @@ import {
   T, ORDER_STATUSES, STAGE_DOC_MAP, DOC_ICONS,
   stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
   stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber,
-  PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS,
+  PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor,
 } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -690,7 +690,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                   <FlexRow gap={8} style={{ flexWrap: 'wrap' }}>
                     {order.colourways.map(c => (
                       <span key={c.name} style={{ display: 'inline-flex', alignItems: 'stretch', fontSize: 12, fontWeight: 700, color: T.text, background: '#fff', border: `1px solid ${T.border}`, borderRadius: 6, overflow: 'hidden' }}>
-                        <span style={{ width: 8, background: c.hex || '#cbd5e1', flexShrink: 0 }} />
+                        <span style={{ width: 8, background: c.hex || resolveNamedColor(c.name) || '#cbd5e1', flexShrink: 0 }} />
                         <span style={{ padding: '5px 10px' }}>
                           {c.name}{c.code ? <span style={{ color: T.textLight, fontWeight: 500 }}> · {c.code}</span> : ''}
                         </span>
@@ -736,7 +736,11 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
             {checklist.map(item => {
               const isOpen = expandedDocKey === item.key
               return (
-                <div key={item.key} style={{ border: `1px solid ${item.uploaded ? T.border : T.warningBorder}`, background: item.uploaded ? T.surface : T.warningBg, borderRadius: 8 }}>
+                // Spans both grid columns once open — a DocCard's action row
+                // (View/Download/Edit/Delete) needs real width; squeezed into
+                // one ~280px column it overlapped its own text instead of
+                // wrapping cleanly.
+                <div key={item.key} style={{ gridColumn: isOpen ? '1 / -1' : undefined, border: `1px solid ${item.uploaded ? T.border : T.warningBorder}`, background: item.uploaded ? T.surface : T.warningBg, borderRadius: 8 }}>
                   <FlexRow justify="space-between" gap={10}
                     onClick={() => setExpandedDocKey(isOpen ? null : item.key)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setExpandedDocKey(isOpen ? null : item.key))}
                     style={{ padding: '9px 12px', cursor: 'pointer' }}>

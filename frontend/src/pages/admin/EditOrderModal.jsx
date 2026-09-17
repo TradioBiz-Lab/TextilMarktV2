@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
-import { T, SEASONS, CATEGORIES } from '../../constants.js'
+import { T, SEASONS, CATEGORIES, resolveNamedColor } from '../../constants.js'
 import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload, ProductThumb } from '../../components/ui.jsx'
 
 let _cwKeySeq = 1
@@ -165,7 +165,7 @@ export function EditOrderModal({ order, onClose, onSave }) {
             </FlexRow>
             {colourways.map(c => (
               <div key={c._key} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-                <input type="color" value={c.hex || '#cbd5e1'} onChange={e => updateCw(c._key, { hex: e.target.value })}
+                <input type="color" value={c.hex || resolveNamedColor(c.name) || '#cbd5e1'} onChange={e => updateCw(c._key, { hex: e.target.value })}
                   title="Swatch colour (approximate)"
                   style={{ width: 32, height: 32, padding: 0, border: `1px solid ${T.border}`, borderRadius: 6, cursor: 'pointer', flexShrink: 0 }} />
                 <input value={c.name} onChange={e => updateCw(c._key, { name: e.target.value })}

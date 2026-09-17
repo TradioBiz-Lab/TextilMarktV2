@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { X, Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
-import { T, CATEGORIES, PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS } from '../../constants.js'
+import { T, CATEGORIES, PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor } from '../../constants.js'
 import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
@@ -215,7 +215,7 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
                     </FlexRow>
                     {s.colourways.map(c => (
                       <div key={c._key} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-                        <input type="color" value={c.hex || '#cbd5e1'} onChange={e => updateColourway(s._key, c._key, { hex: e.target.value })}
+                        <input type="color" value={c.hex || resolveNamedColor(c.name) || '#cbd5e1'} onChange={e => updateColourway(s._key, c._key, { hex: e.target.value })}
                           title="Swatch colour (approximate)"
                           style={{ width: 32, height: 32, padding: 0, border: `1px solid ${T.border}`, borderRadius: 6, cursor: 'pointer', flexShrink: 0 }} />
                         <input value={c.name} onChange={e => updateColourway(s._key, c._key, { name: e.target.value })}

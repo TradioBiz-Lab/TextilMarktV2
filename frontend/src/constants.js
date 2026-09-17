@@ -365,6 +365,27 @@ export const deliveryOverrunDays = (order, assignment) => {
   return last > deliveryDay ? last - deliveryDay : null
 }
 
+// A colourway swatch shows this when nobody has picked an explicit hex yet —
+// most colour names given in practice ARE plain colour words ("Red",
+// "Navy", "Olive"), so resolving them through the browser's own CSS colour
+// table (140+ named colours, incl. things like "cornflowerblue") gets a
+// real swatch for free instead of a flat grey placeholder. A brand/fashion
+// name that isn't a recognized CSS colour ("Peacot") falls through to null,
+// same as before — the explicit hex picker is still there for those.
+export function resolveNamedColor(name) {
+  if (!name || typeof document === 'undefined') return null
+  const probe = document.createElement('span')
+  probe.style.color = ''
+  probe.style.color = name.trim()
+  if (!probe.style.color) return null // invalid CSS colour keyword
+  document.body.appendChild(probe)
+  const rgb = getComputedStyle(probe).color
+  document.body.removeChild(probe)
+  const m = rgb.match(/\d+/g)
+  if (!m || m.length < 3) return null
+  return '#' + m.slice(0, 3).map(n => Number(n).toString(16).padStart(2, '0')).join('')
+}
+
 // Extra FileUpload props for the two upload slots that need more than the
 // component's PDF/JPG/PNG default — spread onto <FileUpload {...X}>. Kept
 // here (not duplicated per call site) since the backend's own allowlist
