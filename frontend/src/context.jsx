@@ -402,12 +402,27 @@ export function AppProvider({ children }) {
     const order = await ordersApi.create(data)
     setOrders(p => [order, ...p])
     await pushNotif(data.buyerId, 'order', `New order created: ${data.id}`, data.id)
-    for (const a of data.assignments) {
+    for (const a of (data.assignments || [])) {
       await pushNotif(a.mid, 'order', `New order assigned to you: ${data.id}`, data.id)
     }
     await addAudit('Order Created', `${data.id} — ${data.product}`)
     return order
   }, [pushNotif, addAudit])
+
+  const addAssignment = useCallback(async (orderId, { mfrId, qty, sub }) => {
+    const order = await ordersApi.addAssignment(orderId, { mfrId, qty, sub })
+    setOrders(p => p.map(o => o.id === orderId ? order : o))
+    await pushNotif(mfrId, 'order', `New order assigned to you: ${orderId}`, orderId)
+    await addAudit('Manufacturer Assigned', `${orderId}: manufacturer added, qty ${qty}`)
+    return order
+  }, [pushNotif, addAudit])
+
+  const insertStage = useCallback(async (orderId, mfrId, data) => {
+    const order = await ordersApi.insertStage(orderId, mfrId, data)
+    setOrders(p => p.map(o => o.id === orderId ? order : o))
+    await addAudit('Stage Inserted', `${orderId}: added stage "${data.name}"`)
+    return order
+  }, [addAudit])
 
   const editOrder = useCallback(async (id, data) => {
     const updated = await ordersApi.update(id, data)
@@ -611,7 +626,7 @@ export function AppProvider({ children }) {
       login, logout,
       updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial, bulkUploadMaterials,
       bulkUpdateStages, addStageItem, updateStageItem, removeStageItem,
-      updateAssignment, uploadDoc, updateDoc, deleteDoc, createOrder, bulkCreateOrders, createMasterOrder, deleteMasterOrder,
+      updateAssignment, addAssignment, insertStage, uploadDoc, updateDoc, deleteDoc, createOrder, bulkCreateOrders, createMasterOrder, deleteMasterOrder,
       editOrder, deleteOrder,
       createUser, updateUser, toggleUser, resetUserPw,
       markAllRead, markOneRead, getDocData, addAudit, pushNotif,

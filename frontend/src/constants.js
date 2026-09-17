@@ -301,9 +301,9 @@ export const cellState = stage => {
 export const buildMatrixSpine = entries => {
   const spine = []
   const seen = new Set()
-  const ordered = [...entries].sort((a, b) => (b.asgn.stages?.length || 0) - (a.asgn.stages?.length || 0))
+  const ordered = [...entries].sort((a, b) => (b.asgn?.stages?.length || 0) - (a.asgn?.stages?.length || 0))
   for (const { asgn } of ordered) {
-    for (const s of asgn.stages || []) {
+    for (const s of asgn?.stages || []) {
       const key = s.name.trim().toLowerCase()
       if (seen.has(key)) continue
       seen.add(key)

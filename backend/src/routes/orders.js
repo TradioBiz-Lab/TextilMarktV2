@@ -109,12 +109,14 @@ const enrichOrder = (o, viewerMfrId = null) => {
   id: o._id, masterOrderId: o.masterOrderId || null,
   buyerId: buyer ? buyer._id.toString() : (o.buyerId?.toString?.() ?? o.buyerId),
   buyerCompany: buyer?.company ?? null, buyerName: buyer?.name ?? null, buyerCode: buyer?.code ?? null,
-  product: o.product, category: o.category,
+  product: o.product, styleNumber: o.styleNumber || '', category: o.category,
   imageDataUrl: o.imageDataUrl || null, imageUrl: o.imageUrl || null,
   season: o.season, totalQty: o.totalQty, delivery: o.delivery, createdAt: o.createdAt,
   baselineDelivery: o.baselineDelivery || null,
   deliveryVarianceDays: deliveryVarianceDays(o),
-  colourways: (o.colourways || []).map(c => ({ name: c.name, code: c.code || '' })),
+  colourways: (o.colourways || []).map(c => ({ name: c.name, code: c.code || '', hex: c.hex || '' })),
+  fabricDetails: (o.fabricDetails || []).map(f => ({ name: f.name, composition: f.composition || '', gsm: f.gsm || '', supplier: f.supplier || '' })),
+  ecommerceLink: o.ecommerceLink || '',
   callout: o.callout || '',
   assignments: visibleAssignments.map(a => {
     const mfr = a.mfrId && typeof a.mfrId === 'object' && a.mfrId.company ? a.mfrId : null
@@ -223,7 +225,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 // and creates it if valid. Centralizes rules (including the B1 required-end-date
 // check) so both call sites can't drift out of sync. Returns the raw created
 // Mongoose doc on success (not populated/enriched — that's caller-specific).
-async function validateAndCreateOrder({ id, buyerId, product, category, season, totalQty, delivery, createdAt, masterOrderId, assignments: asgns, stageEtas, stageStartDates, stageNames: customStages, stageResponsibleIds, stageDescriptions, stageTotalUnits, stageKinds, colourways, callout, imageDataUrl, imageUrl }) {
+async function validateAndCreateOrder({ id, buyerId, product, styleNumber, category, season, totalQty, delivery, createdAt, masterOrderId, assignments: asgns, stageEtas, stageStartDates, stageNames: customStages, stageResponsibleIds, stageDescriptions, stageTotalUnits, stageKinds, colourways, fabricDetails, callout, imageDataUrl, imageUrl, ecommerceLink }) {
   if (!id || !buyerId || !product || !totalQty || !delivery)
     return { ok: false, error: 'Missing required fields' }
   if (typeof id !== 'string' || typeof product !== 'string')
@@ -232,6 +234,8 @@ async function validateAndCreateOrder({ id, buyerId, product, category, season, 
     return { ok: false, error: 'Input too long' }
   if (!/^[A-Z0-9\-]+$/i.test(id))
     return { ok: false, error: 'Order ID may only contain letters, numbers, and hyphens' }
+  if (styleNumber && typeof styleNumber === 'string' && styleNumber.length > 60)
+    return { ok: false, error: 'Style number too long' }
   if (category && typeof category === 'string' && category.length > 50)
     return { ok: false, error: 'Category too long' }
   if (season && !VALID_SEASONS.includes(season))
@@ -239,8 +243,16 @@ async function validateAndCreateOrder({ id, buyerId, product, category, season, 
   const deliveryDate = new Date(delivery)
   if (isNaN(deliveryDate.getTime()))
     return { ok: false, error: 'Invalid delivery date' }
-  if (!asgns || !Array.isArray(asgns) || asgns.length === 0)
-    return { ok: false, error: 'At least one assignment required' }
+  // Manufacturer assignment is optional at creation — a style can be created
+  // "unassigned" (see the creation wizard) and get its manufacturer + TNA
+  // added later from the Style Detail page. When assignments ARE given (the
+  // legacy single-order form and CSV bulk-upload path), they're validated in
+  // full exactly as before.
+  const hasAssignments = Array.isArray(asgns) && asgns.length > 0
+  if (ecommerceLink !== undefined && ecommerceLink !== null) {
+    if (typeof ecommerceLink !== 'string') return { ok: false, error: 'E-commerce link must be text' }
+    if (ecommerceLink.trim().length > 2000) return { ok: false, error: 'E-commerce link too long' }
+  }
   if (!mongoose.Types.ObjectId.isValid(buyerId)) return { ok: false, error: 'Invalid buyer ID' }
   const buyerCheck = await User.findById(buyerId, 'role isActive').lean()
   if (!buyerCheck || buyerCheck.role !== 'buyer') return { ok: false, error: 'Buyer not found' }
@@ -253,121 +265,128 @@ async function validateAndCreateOrder({ id, buyerId, product, category, season, 
     if (mo.buyerId.toString() !== buyerId) return { ok: false, error: 'Master order does not belong to the selected buyer' }
   }
 
-  // Validate each assignment has valid mid and qty
-  for (const a of asgns) {
-    if (!a.mid) return { ok: false, error: 'Each assignment must have a manufacturer' }
-    const aqty = parseInt(a.qty, 10)
-    if (isNaN(aqty) || aqty < 1) return { ok: false, error: 'Each assignment quantity must be a positive number' }
-    if (!mongoose.Types.ObjectId.isValid(a.mid)) return { ok: false, error: `Invalid manufacturer ID: ${a.mid}` }
-  }
+  // Everything below (assignment + stage validation) only applies when
+  // assignments were actually submitted — a style created unassigned skips
+  // all of it and gets manufacturer + TNA added later from Style Detail.
+  let stages = [], etas = [], startDates = []
+  let stageResponsibleIdsResolved = [], stageDescriptionsResolved = [], stageTotalUnitsResolved = [], stageKindsResolved = []
+  if (hasAssignments) {
+    // Validate each assignment has valid mid and qty
+    for (const a of asgns) {
+      if (!a.mid) return { ok: false, error: 'Each assignment must have a manufacturer' }
+      const aqty = parseInt(a.qty, 10)
+      if (isNaN(aqty) || aqty < 1) return { ok: false, error: 'Each assignment quantity must be a positive number' }
+      if (!mongoose.Types.ObjectId.isValid(a.mid)) return { ok: false, error: `Invalid manufacturer ID: ${a.mid}` }
+    }
 
-  // Batch-fetch all manufacturer users in one query instead of N individual lookups
-  const mfrIds = asgns.map(a => a.mid)
-  const mfrUsers = await User.find({ _id: { $in: mfrIds } }, 'role isActive').lean()
-  const mfrMap = Object.fromEntries(mfrUsers.map(u => [u._id.toString(), u]))
-  for (const a of asgns) {
-    const mfrUser = mfrMap[a.mid]
-    if (!mfrUser || mfrUser.role !== 'manufacturer') return { ok: false, error: `User ${a.mid} is not a manufacturer` }
-    if (!mfrUser.isActive) return { ok: false, error: `Manufacturer ${a.mid} is inactive` }
-  }
+    // Batch-fetch all manufacturer users in one query instead of N individual lookups
+    const mfrIds = asgns.map(a => a.mid)
+    const mfrUsers = await User.find({ _id: { $in: mfrIds } }, 'role isActive').lean()
+    const mfrMap = Object.fromEntries(mfrUsers.map(u => [u._id.toString(), u]))
+    for (const a of asgns) {
+      const mfrUser = mfrMap[a.mid]
+      if (!mfrUser || mfrUser.role !== 'manufacturer') return { ok: false, error: `User ${a.mid} is not a manufacturer` }
+      if (!mfrUser.isActive) return { ok: false, error: `Manufacturer ${a.mid} is inactive` }
+    }
 
-  // Validate sum of assignment quantities equals totalQty
-  const assignedTotal = asgns.reduce((sum, a) => sum + parseInt(a.qty, 10), 0)
-  if (assignedTotal !== parseInt(totalQty, 10)) {
-    return { ok: false, error: `Assignment quantities (${assignedTotal}) must sum to total quantity (${totalQty})` }
-  }
+    // Validate sum of assignment quantities equals totalQty
+    const assignedTotal = asgns.reduce((sum, a) => sum + parseInt(a.qty, 10), 0)
+    if (assignedTotal !== parseInt(totalQty, 10)) {
+      return { ok: false, error: `Assignment quantities (${assignedTotal}) must sum to total quantity (${totalQty})` }
+    }
 
-  // Dynamic stages: admin can define custom stage names, or fall back to defaults
-  const stages = (Array.isArray(customStages) && customStages.length > 0)
-    ? customStages.filter(s => typeof s === 'string' && s.trim()).map(s => s.trim().slice(0, 100))
-    : DEFAULT_STAGE_NAMES
-  if (stages.length === 0)
-    return { ok: false, error: 'At least one production stage is required' }
-  if (stages.length > 50)
-    return { ok: false, error: 'Too many stages (max 50)' }
+    // Dynamic stages: admin can define custom stage names, or fall back to defaults
+    stages = (Array.isArray(customStages) && customStages.length > 0)
+      ? customStages.filter(s => typeof s === 'string' && s.trim()).map(s => s.trim().slice(0, 100))
+      : DEFAULT_STAGE_NAMES
+    if (stages.length === 0)
+      return { ok: false, error: 'At least one production stage is required' }
+    if (stages.length > 50)
+      return { ok: false, error: 'Too many stages (max 50)' }
 
-  const etas = stageEtas || stages.map(() => null)
-  const startDates = stageStartDates || stages.map(() => null)
+    etas = stageEtas || stages.map(() => null)
+    startDates = stageStartDates || stages.map(() => null)
 
-  // Every stage requires an explicit start date AND end date — a valid date string or
-  // literal 'NA'. No more blank/null — a stage with no enforced date is exactly the gap
-  // that caused a real missed-deadline incident (see docs/MIGRATION_PLAN.md context).
-  // When both sides are real (non-'NA') dates, start must be on or before end.
-  for (let i = 0; i < stages.length; i++) {
-    const startVal = startDates[i]
-    const endVal = etas[i]
-    if (!startVal) return { ok: false, error: `Stage "${stages[i]}" is missing a start date` }
-    if (startVal !== 'NA' && isNaN(new Date(startVal).getTime()))
-      return { ok: false, error: `Stage "${stages[i]}" has an invalid start date` }
-    if (!endVal) return { ok: false, error: `Stage "${stages[i]}" is missing an end date` }
-    if (endVal !== 'NA' && isNaN(new Date(endVal).getTime()))
-      return { ok: false, error: `Stage "${stages[i]}" has an invalid end date` }
-    if (startVal !== 'NA' && endVal !== 'NA' && new Date(startVal) > new Date(endVal))
-      return { ok: false, error: `Stage "${stages[i]}" start date must be on or before its end date` }
-  }
+    // Every stage requires an explicit start date AND end date — a valid date string or
+    // literal 'NA'. No more blank/null — a stage with no enforced date is exactly the gap
+    // that caused a real missed-deadline incident (see docs/MIGRATION_PLAN.md context).
+    // When both sides are real (non-'NA') dates, start must be on or before end.
+    for (let i = 0; i < stages.length; i++) {
+      const startVal = startDates[i]
+      const endVal = etas[i]
+      if (!startVal) return { ok: false, error: `Stage "${stages[i]}" is missing a start date` }
+      if (startVal !== 'NA' && isNaN(new Date(startVal).getTime()))
+        return { ok: false, error: `Stage "${stages[i]}" has an invalid start date` }
+      if (!endVal) return { ok: false, error: `Stage "${stages[i]}" is missing an end date` }
+      if (endVal !== 'NA' && isNaN(new Date(endVal).getTime()))
+        return { ok: false, error: `Stage "${stages[i]}" has an invalid end date` }
+      if (startVal !== 'NA' && endVal !== 'NA' && new Date(startVal) > new Date(endVal))
+        return { ok: false, error: `Stage "${stages[i]}" start date must be on or before its end date` }
+    }
 
-  // Optional per-stage responsible person (admin or manufacturer), index-aligned with
-  // stages. Applied identically across every manufacturer split — one accountable
-  // person per stage, not per split.
-  const stageResponsibleIdsResolved = stages.map(() => null)
-  if (Array.isArray(stageResponsibleIds)) {
-    const ids = stageResponsibleIds.filter(Boolean)
-    if (ids.length > 0) {
-      if (!ids.every(rid => mongoose.Types.ObjectId.isValid(rid)))
-        return { ok: false, error: 'Invalid responsible person ID' }
-      const respUsers = await User.find({ _id: { $in: ids } }, 'role isActive').lean()
-      const respMap = Object.fromEntries(respUsers.map(u => [u._id.toString(), u]))
+    // Optional per-stage responsible person (admin or manufacturer), index-aligned with
+    // stages. Applied identically across every manufacturer split — one accountable
+    // person per stage, not per split.
+    stageResponsibleIdsResolved = stages.map(() => null)
+    if (Array.isArray(stageResponsibleIds)) {
+      const ids = stageResponsibleIds.filter(Boolean)
+      if (ids.length > 0) {
+        if (!ids.every(rid => mongoose.Types.ObjectId.isValid(rid)))
+          return { ok: false, error: 'Invalid responsible person ID' }
+        const respUsers = await User.find({ _id: { $in: ids } }, 'role isActive').lean()
+        const respMap = Object.fromEntries(respUsers.map(u => [u._id.toString(), u]))
+        for (let i = 0; i < stages.length; i++) {
+          const rid = stageResponsibleIds[i]
+          if (!rid) continue
+          const u = respMap[rid]
+          if (!u || !RESPONSIBLE_ROLES.includes(u.role))
+            return { ok: false, error: `Responsible person for stage "${stages[i]}" must be an admin, manufacturer, or buyer` }
+          if (!u.isActive)
+            return { ok: false, error: `Responsible person for stage "${stages[i]}" is inactive` }
+          stageResponsibleIdsResolved[i] = rid
+        }
+      }
+    }
+
+    // Optional per-stage description, index-aligned with stages.
+    stageDescriptionsResolved = stages.map(() => '')
+    if (Array.isArray(stageDescriptions)) {
       for (let i = 0; i < stages.length; i++) {
-        const rid = stageResponsibleIds[i]
-        if (!rid) continue
-        const u = respMap[rid]
-        if (!u || !RESPONSIBLE_ROLES.includes(u.role))
-          return { ok: false, error: `Responsible person for stage "${stages[i]}" must be an admin, manufacturer, or buyer` }
-        if (!u.isActive)
-          return { ok: false, error: `Responsible person for stage "${stages[i]}" is inactive` }
-        stageResponsibleIdsResolved[i] = rid
+        const d = stageDescriptions[i]
+        if (typeof d === 'string' && d.trim()) {
+          if (d.trim().length > 1000) return { ok: false, error: `Description for stage "${stages[i]}" is too long (max 1000 characters)` }
+          stageDescriptionsResolved[i] = d.trim()
+        }
       }
     }
-  }
 
-  // Optional per-stage description, index-aligned with stages.
-  const stageDescriptionsResolved = stages.map(() => '')
-  if (Array.isArray(stageDescriptions)) {
-    for (let i = 0; i < stages.length; i++) {
-      const d = stageDescriptions[i]
-      if (typeof d === 'string' && d.trim()) {
-        if (d.trim().length > 1000) return { ok: false, error: `Description for stage "${stages[i]}" is too long (max 1000 characters)` }
-        stageDescriptionsResolved[i] = d.trim()
+    // Optional per-stage target quantity — not every stage tracks the full order qty
+    // (e.g. "Lab Dip Approval" might target 3 dips, not 600 pieces). Defaults to the
+    // assignment's qty when not provided.
+    stageTotalUnitsResolved = stages.map(() => null)
+    if (Array.isArray(stageTotalUnits)) {
+      for (let i = 0; i < stages.length; i++) {
+        const t = stageTotalUnits[i]
+        if (t === undefined || t === null || t === '') continue
+        const parsed = parseInt(t, 10)
+        if (isNaN(parsed) || parsed < 1) return { ok: false, error: `Target quantity for stage "${stages[i]}" must be a positive number` }
+        stageTotalUnitsResolved[i] = parsed
       }
     }
-  }
 
-  // Optional per-stage target quantity — not every stage tracks the full order qty
-  // (e.g. "Lab Dip Approval" might target 3 dips, not 600 pieces). Defaults to the
-  // assignment's qty when not provided.
-  const stageTotalUnitsResolved = stages.map(() => null)
-  if (Array.isArray(stageTotalUnits)) {
-    for (let i = 0; i < stages.length; i++) {
-      const t = stageTotalUnits[i]
-      if (t === undefined || t === null || t === '') continue
-      const parsed = parseInt(t, 10)
-      if (isNaN(parsed) || parsed < 1) return { ok: false, error: `Target quantity for stage "${stages[i]}" must be a positive number` }
-      stageTotalUnitsResolved[i] = parsed
-    }
-  }
-
-  // Optional per-stage kind. Absent means 'quantity' — identical to how every
-  // order behaved before this field existed. Deliberately NOT inferred from
-  // whether stageTotalUnits was supplied: the single-order form sends no target
-  // quantities at all, so inference would silently make every form-created order
-  // all-milestone. One rule, no inference.
-  const stageKindsResolved = stages.map(() => 'quantity')
-  if (Array.isArray(stageKinds)) {
-    for (let i = 0; i < stages.length; i++) {
-      const k = stageKinds[i]
-      if (k === undefined || k === null || k === '') continue
-      if (!STAGE_KINDS.includes(k)) return { ok: false, error: `Invalid kind "${k}" for stage "${stages[i]}" — must be one of: ${STAGE_KINDS.join(', ')}` }
-      stageKindsResolved[i] = k
+    // Optional per-stage kind. Absent means 'quantity' — identical to how every
+    // order behaved before this field existed. Deliberately NOT inferred from
+    // whether stageTotalUnits was supplied: the single-order form sends no target
+    // quantities at all, so inference would silently make every form-created order
+    // all-milestone. One rule, no inference.
+    stageKindsResolved = stages.map(() => 'quantity')
+    if (Array.isArray(stageKinds)) {
+      for (let i = 0; i < stages.length; i++) {
+        const k = stageKinds[i]
+        if (k === undefined || k === null || k === '') continue
+        if (!STAGE_KINDS.includes(k)) return { ok: false, error: `Invalid kind "${k}" for stage "${stages[i]}" — must be one of: ${STAGE_KINDS.join(', ')}` }
+        stageKindsResolved[i] = k
+      }
     }
   }
 
@@ -380,9 +399,29 @@ async function validateAndCreateOrder({ id, buyerId, product, category, season, 
       if (!name) continue
       if (name.length > 60) return { ok: false, error: `Colourway name too long: "${name.slice(0, 20)}…"` }
       if (colourwaysResolved.some(x => x.name.toLowerCase() === name.toLowerCase())) continue
-      colourwaysResolved.push({ name, code: (typeof c === 'object' && c?.code ? String(c.code).trim() : '') })
+      const hex = (typeof c === 'object' && c?.hex ? String(c.hex).trim() : '')
+      if (hex && !/^#[0-9a-fA-F]{6}$/.test(hex)) return { ok: false, error: `Invalid swatch colour for "${name}" — must be a hex colour like #2C3E50` }
+      colourwaysResolved.push({ name, code: (typeof c === 'object' && c?.code ? String(c.code).trim() : ''), hex })
     }
     if (colourwaysResolved.length > 40) return { ok: false, error: 'Too many colourways (max 40)' }
+  }
+
+  // Optional fabric list — a style can carry more than one (shell + trim/rib).
+  const fabricDetailsResolved = []
+  if (Array.isArray(fabricDetails)) {
+    for (const f of fabricDetails) {
+      const name = (typeof f === 'string' ? f : f?.name || '').trim()
+      if (!name) continue
+      if (name.length > 100) return { ok: false, error: `Fabric name too long: "${name.slice(0, 20)}…"` }
+      const composition = (typeof f === 'object' && f?.composition ? String(f.composition).trim() : '')
+      const gsm = (typeof f === 'object' && f?.gsm ? String(f.gsm).trim() : '')
+      const supplier = (typeof f === 'object' && f?.supplier ? String(f.supplier).trim() : '')
+      if (composition.length > 100) return { ok: false, error: `Fabric composition too long for "${name}"` }
+      if (gsm.length > 20) return { ok: false, error: `Fabric GSM too long for "${name}"` }
+      if (supplier.length > 100) return { ok: false, error: `Fabric supplier too long for "${name}"` }
+      fabricDetailsResolved.push({ name, composition, gsm, supplier })
+    }
+    if (fabricDetailsResolved.length > 20) return { ok: false, error: 'Too many fabrics (max 20)' }
   }
 
   if (callout !== undefined && callout !== null) {
@@ -406,14 +445,16 @@ async function validateAndCreateOrder({ id, buyerId, product, category, season, 
 
   try {
     const created = await Order.create({
-      _id: id, buyerId, product, category, season, totalQty, masterOrderId: masterOrderId || null,
+      _id: id, buyerId, product, styleNumber: styleNumber ? styleNumber.trim() : '', category, season, totalQty, masterOrderId: masterOrderId || null,
       imageDataUrl: imageDataUrl || null, imageUrl: imageUrl ? imageUrl.trim() : null,
       delivery: new Date(delivery),
       baselineDelivery: new Date(delivery),
       colourways: colourwaysResolved,
+      fabricDetails: fabricDetailsResolved,
+      ecommerceLink: ecommerceLink ? ecommerceLink.trim() : '',
       callout: callout ? callout.trim() : '',
       createdAt: createdAt ? new Date(createdAt) : undefined,
-      assignments: asgns.map((a, i) => ({
+      assignments: !hasAssignments ? [] : asgns.map((a, i) => ({
         mfrId: a.mid, qty: a.qty, status: 'Processing',
         sub: a.sub || `M${i + 1}`, note: '',
         stages: stages.map((name, si) => {
@@ -575,6 +616,51 @@ router.post('/:orderId/assignments/:mfrId', requireAuth, updateLimiter, async (r
     })
 
     res.json(enrichOrder(order))
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/orders/:orderId/assignments — add a manufacturer to a style (admin
+// only). The creation wizard leaves new styles unassigned; this is how the
+// first (or an additional) manufacturer split gets added afterwards, from the
+// Style Detail page, with an empty stage list — TNA is built separately via
+// /stages/insert or /stages/bulk once the assignment exists.
+router.post('/:orderId/assignments', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
+  try {
+    const { orderId } = req.params
+    const { mfrId, qty, sub } = req.body
+    if (!mfrId || !mongoose.Types.ObjectId.isValid(mfrId))
+      return res.status(400).json({ error: 'Invalid manufacturer ID' })
+    const aqty = parseInt(qty, 10)
+    if (isNaN(aqty) || aqty < 1)
+      return res.status(400).json({ error: 'Quantity must be a positive number' })
+
+    const mfrUser = await User.findById(mfrId, 'role isActive').lean()
+    if (!mfrUser || mfrUser.role !== 'manufacturer') return res.status(400).json({ error: 'Manufacturer not found' })
+    if (!mfrUser.isActive) return res.status(400).json({ error: 'Manufacturer account is inactive' })
+
+    const existing = await Order.findById(orderId).lean()
+    if (!existing) return res.status(404).json({ error: 'Order not found' })
+    if ((existing.assignments || []).some(a => a.mfrId?.toString() === mfrId))
+      return res.status(400).json({ error: 'This manufacturer is already assigned to this style' })
+
+    const nextSub = sub && typeof sub === 'string' && sub.trim() ? sub.trim().slice(0, 20) : `M${(existing.assignments || []).length + 1}`
+
+    const order = await Order.findByIdAndUpdate(
+      orderId,
+      { $push: { assignments: { mfrId, qty: aqty, status: 'Processing', sub: nextSub, note: '', stages: [] } } },
+      { new: true }
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Manufacturer Assigned',
+      detail: `${orderId}: added manufacturer ${mfrUser._id} (${nextSub}, qty ${aqty}) by ${req.user.name}`,
+    })
+
+    res.status(201).json(enrichOrder(order))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -1913,7 +1999,7 @@ router.post('/materials/bulk', requireAuth, requireAdmin, materialsBulkLimiter, 
 // PATCH /api/orders/:id — edit order top-level fields (admin only)
 router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
   try {
-    const { product, category, season, totalQty, delivery, imageDataUrl, imageUrl, colourways, callout } = req.body
+    const { product, styleNumber, category, season, totalQty, delivery, imageDataUrl, imageUrl, colourways, fabricDetails, callout, ecommerceLink } = req.body
     const orderId = req.params.id
 
     const existing = await Order.findById(orderId).lean()
@@ -1925,6 +2011,18 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
       if (typeof product !== 'string' || !product.trim()) return res.status(400).json({ error: 'Product name is required' })
       if (product.length > 300) return res.status(400).json({ error: 'Product name too long' })
       updates.product = product.trim()
+    }
+
+    if (styleNumber !== undefined) {
+      if (typeof styleNumber === 'string' && styleNumber.length > 60) return res.status(400).json({ error: 'Style number too long' })
+      updates.styleNumber = (styleNumber || '').trim()
+    }
+
+    if (ecommerceLink !== undefined) {
+      if (ecommerceLink !== null && typeof ecommerceLink !== 'string') return res.status(400).json({ error: 'E-commerce link must be text' })
+      const link = (ecommerceLink || '').trim()
+      if (link.length > 2000) return res.status(400).json({ error: 'E-commerce link too long' })
+      updates.ecommerceLink = link
     }
 
     if (category !== undefined) {
@@ -1993,10 +2091,31 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
         if (!name) continue
         if (name.length > 60) return res.status(400).json({ error: `Colourway name too long: "${name.slice(0, 20)}…"` })
         if (next.some(x => x.name.toLowerCase() === name.toLowerCase())) continue
-        next.push({ name, code: (typeof c === 'object' && c?.code ? String(c.code).trim() : '') })
+        const hex = (typeof c === 'object' && c?.hex ? String(c.hex).trim() : '')
+        if (hex && !/^#[0-9a-fA-F]{6}$/.test(hex)) return res.status(400).json({ error: `Invalid swatch colour for "${name}" — must be a hex colour like #2C3E50` })
+        next.push({ name, code: (typeof c === 'object' && c?.code ? String(c.code).trim() : ''), hex })
       }
       if (next.length > 40) return res.status(400).json({ error: 'Too many colourways (max 40)' })
       updates.colourways = next
+    }
+
+    if (fabricDetails !== undefined) {
+      if (!Array.isArray(fabricDetails)) return res.status(400).json({ error: 'Fabric details must be a list' })
+      const next = []
+      for (const f of fabricDetails) {
+        const name = (typeof f === 'string' ? f : f?.name || '').trim()
+        if (!name) continue
+        if (name.length > 100) return res.status(400).json({ error: `Fabric name too long: "${name.slice(0, 20)}…"` })
+        const composition = (typeof f === 'object' && f?.composition ? String(f.composition).trim() : '')
+        const gsm = (typeof f === 'object' && f?.gsm ? String(f.gsm).trim() : '')
+        const supplier = (typeof f === 'object' && f?.supplier ? String(f.supplier).trim() : '')
+        if (composition.length > 100) return res.status(400).json({ error: `Fabric composition too long for "${name}"` })
+        if (gsm.length > 20) return res.status(400).json({ error: `Fabric GSM too long for "${name}"` })
+        if (supplier.length > 100) return res.status(400).json({ error: `Fabric supplier too long for "${name}"` })
+        next.push({ name, composition, gsm, supplier })
+      }
+      if (next.length > 20) return res.status(400).json({ error: 'Too many fabrics (max 20)' })
+      updates.fabricDetails = next
     }
 
     if (callout !== undefined) {

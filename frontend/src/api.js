@@ -70,6 +70,10 @@ export const ordersApi = {
   delete: id => api.post(`/orders/${id}/delete`),
   updateAssignment: (orderId, mfrId, status, note) =>
     api.post(`/orders/${orderId}/assignments/${mfrId}`, { status, note }),
+  // Adds a manufacturer to a style that has none yet (or a second split) —
+  // starts with an empty stage list; TNA is built separately afterward.
+  addAssignment: (orderId, { mfrId, qty, sub }) =>
+    api.post(`/orders/${orderId}/assignments`, { mfrId, qty, sub }),
   updateStage: (orderId, mfrId, stageIndex, data) =>
     api.post(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}`, data),
   updateStageDates: (orderId, mfrId, stageIndex, dates) =>

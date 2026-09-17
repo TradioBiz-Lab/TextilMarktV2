@@ -4,6 +4,8 @@ const DOC_TYPES = [
   'PO', 'buyer_order', 'tech_pack', 'cost_sheet', 'RFQ', 'terms',
   'compliance_cert', 'factory_audit', 'chemical_cert',
   'environmental_cert', 'insurance',
+  // Style-level reference documents (creation wizard's Documents step)
+  'measurements', 'pattern', 'lab_dip', 'test_report',
   // Manufacturer profile PDF
   'mfr_profile',
   // Production stage evidence documents

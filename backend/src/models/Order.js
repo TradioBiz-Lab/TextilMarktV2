@@ -199,6 +199,19 @@ const assignmentSchema = new mongoose.Schema({
 const colourwaySchema = new mongoose.Schema({
   name: { type: String, required: true, maxlength: 60 },
   code: { type: String, default: '' },
+  // Optional swatch for a quick visual cue on the matrix/detail pages —
+  // a Pantone TPX/TCX code (`code`) isn't renderable without a lookup
+  // table, so this is a separate, admin-picked approximate hex colour.
+  hex:  { type: String, default: '' },
+}, { _id: false })
+
+// One fabric used on this style — a shirt might carry a shell fabric and a
+// separate rib/trim fabric, so this is a list, not a single spec.
+const fabricSchema = new mongoose.Schema({
+  name:        { type: String, required: true, maxlength: 100 }, // e.g. "Shell Fabric — Single Jersey"
+  composition: { type: String, default: '', maxlength: 100 },    // e.g. "100% Cotton"
+  gsm:         { type: String, default: '', maxlength: 20 },
+  supplier:    { type: String, default: '', maxlength: 100 },
 }, { _id: false })
 
 // Orders use a custom human-readable string _id: ZAR-TPR-TSHRT-SS26-001
@@ -207,6 +220,7 @@ const orderSchema = new mongoose.Schema({
   masterOrderId: { type: String, default: null }, // links to MasterOrder._id
   buyerId:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   product:  { type: String, required: true, trim: true },
+  styleNumber: { type: String, default: '', trim: true, maxlength: 60 },
   category: { type: String, trim: true },  // free-text (not enum-restricted)
   season:   { type: String, enum: SEASONS },
   totalQty: { type: Number, required: true, min: 1 },
@@ -219,6 +233,8 @@ const orderSchema = new mongoose.Schema({
   // revision (see the edit-order route), never backdated by hand.
   baselineDelivery: { type: Date, default: null },
   colourways: [colourwaySchema],
+  fabricDetails: [fabricSchema],
+  ecommerceLink: { type: String, default: '', trim: true, maxlength: 2000 },
   // Order-level risk/escalation note — the "Callouts" column the team maintains
   // by hand today (e.g. "delayed by a week due to lab dip submission delay").
   callout:  { type: String, default: '', maxlength: 500 },

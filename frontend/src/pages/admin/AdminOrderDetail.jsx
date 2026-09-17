@@ -1,5 +1,6 @@
 import { useState, useMemo, Fragment } from 'react'
-import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight } from 'lucide-react'
+import Papa from 'papaparse'
+import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight } from 'lucide-react'
 import {
   T, ORDER_STATUSES, STAGE_DOC_MAP, DOC_ICONS,
   stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
@@ -23,7 +24,7 @@ function fmtDate(d) {
 export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   const { currentUser, orders, docs, users, loading, updateAssignment, updateStage, uploadDoc, getDocData, refreshOrders, editOrder, deleteOrder,
     addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
-    addStageItem, updateStageItem, removeStageItem } = useApp()
+    addStageItem, updateStageItem, removeStageItem, addAssignment, insertStage } = useApp()
   const toast = useToast()
   const isMaster = currentUser?.adminType === 'master'
 
@@ -112,6 +113,99 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
 
   const [saving, setSaving] = useState(false)
   const [selectedMid, setSelectedMid] = useState(initialMid || null)
+
+  // ── Unassigned style: "Add Manufacturer" + lightweight document upload ──
+  const [newMfrId, setNewMfrId] = useState('')
+  const [newMfrQty, setNewMfrQty] = useState('')
+  const [addingMfr, setAddingMfr] = useState(false)
+  const [refDocFiles, setRefDocFiles] = useState({ measurements: null, tech_pack: null, pattern: null })
+  const [refDocErrs, setRefDocErrs] = useState({})
+  const [refDocUploading, setRefDocUploading] = useState(null) // which type is mid-upload
+  const [heroPhotoFile, setHeroPhotoFile] = useState(null)
+  const [heroPhotoErr, setHeroPhotoErr] = useState('')
+  const [heroPhotoUploading, setHeroPhotoUploading] = useState(false)
+  const [expandedDocKey, setExpandedDocKey] = useState(null) // which pending checklist row is open for upload
+
+  // ── Manual TNA builder — one stage at a time, for an assignment that has
+  // none yet. Keyed by mfrId so each assignment card keeps its own draft.
+  const [newStageDrafts, setNewStageDrafts] = useState({})
+  const [addingStage, setAddingStage] = useState(null) // mfrId mid-add
+  const newStageDraft = mid => newStageDrafts[mid] || { name: '', startDate: '', eta: '', kind: 'quantity' }
+  const setNewStageDraft = (mid, patch) => setNewStageDrafts(p => ({ ...p, [mid]: { ...newStageDraft(mid), ...patch } }))
+
+  // ── TNA builder mode + CSV import — alternative to the manual one-at-a-time
+  // form above, for pasting in a whole plan at once. Keyed by mfrId.
+  const [tnaCsvOpen, setTnaCsvOpen] = useState({}) // mid -> bool — always-available bulk upload, any TNA size
+  const [tnaCsvRows, setTnaCsvRows] = useState({}) // mid -> parsed+validated rows
+  const [tnaCsvErr, setTnaCsvErr] = useState({}) // mid -> file-level error
+  const [tnaCsvImporting, setTnaCsvImporting] = useState(null) // mid mid-import
+  const TNA_CSV_HEADERS = ['name', 'kind', 'start_date', 'end_date', 'target_qty', 'description', 'responsible_email']
+
+  const downloadTnaCsvTemplate = () => {
+    const sample = [
+      ['Lab Dip Approval', 'checklist', '2026-01-05', '2026-01-12', '', 'Get lab dips approved for all colourways', ''],
+      ['Material Sourcing', 'quantity', '2026-01-10', '2026-01-25', '', '', ''],
+    ]
+    const csv = [TNA_CSV_HEADERS, ...sample].map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = 'tna-template.csv'; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const parseTnaCsv = (mid, file) => {
+    Papa.parse(file, {
+      header: true, skipEmptyLines: true,
+      complete: (results) => {
+        const rows = results.data.map((raw, i) => {
+          const name = (raw.name || '').trim()
+          const startDate = (raw.start_date || '').trim()
+          const endDate = (raw.end_date || '').trim()
+          const kind = (raw.kind || '').trim().toLowerCase() || 'quantity'
+          const targetQty = (raw.target_qty || '').trim()
+          const description = (raw.description || '').trim()
+          const responsibleEmail = (raw.responsible_email || '').trim()
+          const errors = []
+          if (!name) errors.push('missing name')
+          if (!startDate) errors.push('missing start_date')
+          if (!endDate) errors.push('missing end_date')
+          if (!['quantity', 'milestone', 'checklist'].includes(kind)) errors.push(`invalid kind "${kind}"`)
+          let responsibleId = null
+          if (responsibleEmail) {
+            const u = users.find(x => (x.email || '').toLowerCase() === responsibleEmail.toLowerCase())
+            if (!u) errors.push(`unknown responsible_email "${responsibleEmail}"`)
+            else responsibleId = u.id
+          }
+          return { row: i + 2, name, kind, startDate, eta: endDate, targetQty, description, responsibleId, errors }
+        }).filter(r => r.name || r.startDate || r.eta) // skip fully blank rows
+        setTnaCsvRows(p => ({ ...p, [mid]: rows }))
+      },
+      error: (err) => setTnaCsvErr(p => ({ ...p, [mid]: err.message || 'Failed to read CSV' })),
+    })
+  }
+
+  const importTnaCsv = async (mid) => {
+    const rows = (tnaCsvRows[mid] || []).filter(r => r.errors.length === 0)
+    if (rows.length === 0) return
+    setTnaCsvImporting(mid)
+    let imported = 0
+    try {
+      for (const r of rows) {
+        await insertStage(order.id, mid, {
+          name: r.name, kind: r.kind, startDate: r.startDate, eta: r.eta,
+          totalUnits: r.targetQty || undefined, description: r.description || undefined,
+          responsibleId: r.responsibleId || undefined,
+        })
+        imported++
+      }
+      toast(`${imported} stage${imported !== 1 ? 's' : ''} imported`, 'success')
+      setTnaCsvRows(p => ({ ...p, [mid]: [] }))
+      setTnaCsvOpen(p => ({ ...p, [mid]: false }))
+    } catch (e) {
+      toast(`Imported ${imported} of ${rows.length} before failing: ${typeof e === 'string' ? e : (e?.message || 'error')}`, 'error')
+    } finally { setTnaCsvImporting(null) }
+  }
 
   const order = (orders || []).find(o => o.id === orderId)
 
@@ -457,8 +551,296 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   const overallStatus = () => {
     if (order.assignments.some(a => a.status === 'Delayed')) return 'Delayed'
     if (order.assignments.some(a => a.status === 'On Hold')) return 'On Hold'
-    if (order.assignments.every(a => a.status === 'Delivered')) return 'Delivered'
+    if (order.assignments.length > 0 && order.assignments.every(a => a.status === 'Delivered')) return 'Delivered'
     return 'Processing'
+  }
+
+  const mfrUsers = users.filter(u => u.role === 'manufacturer' && u.isActive)
+  const refDocLabels = { measurements: 'Measurements', tech_pack: 'Tech Pack', pattern: 'Patterns / DXF', lab_dip: 'Lab Dip Receipts', test_report: 'Test Reports (FPT/GPT)' }
+
+  const uploadRefDoc = async (type) => {
+    const file = refDocFiles[type]
+    if (!file) return
+    setRefDocUploading(type)
+    try {
+      await uploadDoc({
+        type, name: `${refDocLabels[type]} — ${order.id}`, issuer: '', issueDate: new Date().toISOString().slice(0, 10),
+        expiryDate: null, orderId: order.id, mfrId: null,
+        ...fileUploadPayload(file),
+      })
+      setRefDocFiles(p => ({ ...p, [type]: null }))
+      toast(`${refDocLabels[type]} uploaded`, 'success')
+    } catch (e) {
+      toast(typeof e === 'string' ? e : (e?.message || 'Upload failed'), 'error')
+    } finally { setRefDocUploading(null) }
+  }
+
+  const uploadHeroPhoto = async () => {
+    if (!heroPhotoFile) return
+    setHeroPhotoUploading(true)
+    try {
+      const p = fileUploadPayload(heroPhotoFile)
+      await editOrder(order.id, { imageDataUrl: p.dataUrl || null, imageUrl: p.externalUrl || null })
+      setHeroPhotoFile(null)
+      toast('Product image updated', 'success')
+    } catch (e) {
+      toast(typeof e === 'string' ? e : (e?.message || 'Upload failed'), 'error')
+    } finally { setHeroPhotoUploading(false) }
+  }
+
+  // ── Amazon-PDP-style summary: hero (image / facts / actions), a spec
+  // table, and a documents checklist that always shows Pending vs Uploaded.
+  // Shared by the unassigned and assigned states so a style's own data never
+  // disappears or gets reshuffled depending on whether a manufacturer exists.
+  const renderSummary = ({ unassigned }) => {
+    const heroImgUrl = order.imageDataUrl || order.imageUrl
+    const checklist = [
+      {
+        key: 'image', label: 'Product Image', uploaded: !!heroImgUrl,
+        preview: heroImgUrl ? <img src={heroImgUrl} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover' }} /> : null,
+        file: heroPhotoFile, err: heroPhotoErr, uploading: heroPhotoUploading,
+        onFile: f => { setHeroPhotoFile(f); setHeroPhotoErr('') }, onErr: setHeroPhotoErr, onUpload: uploadHeroPhoto,
+      },
+      ...Object.keys(refDocLabels).map(type => {
+        const doc = orderDocs.find(d => d.type === type)
+        return {
+          key: type, label: refDocLabels[type], uploaded: !!doc, doc,
+          file: refDocFiles[type], err: refDocErrs[type], uploading: refDocUploading === type,
+          onFile: f => setRefDocFiles(p => ({ ...p, [type]: f })),
+          onErr: e => setRefDocErrs(p => ({ ...p, [type]: e })),
+          onUpload: () => uploadRefDoc(type),
+        }
+      }),
+    ]
+    const pendingCount = checklist.filter(c => !c.uploaded).length
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* ── Page header: identity + actions ── */}
+        <FlexRow style={{ flexWrap: 'wrap' }} gap={10}>
+          <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
+          <div style={{ flex: 1 }} />
+          {!unassigned && order.assignments?.length > 1 && (
+            <Btn variant="secondary" size="sm" onClick={() => setSelectedMid(null)} icon={<ArrowLeftRight size={13} />}>Change Mfr</Btn>
+          )}
+          <Btn variant="secondary" size="sm" onClick={() => setShowEdit(true)} icon={<Pencil size={13} />}>Edit Style</Btn>
+          <button
+            onClick={() => setShowDelete(true)}
+            style={{ padding: '7px 14px', fontSize: 12, fontWeight: 700, borderRadius: 8, border: `1px solid ${T.dangerBorder}`, background: T.dangerBg, color: T.danger, cursor: 'pointer', fontFamily: 'inherit' }}
+          >Delete Style</button>
+        </FlexRow>
+
+        {/* ── Style spec sheet — modelled on the paper swatch/trim card that
+            pins to a sample garment: photo + tear line, then a ruled spec
+            table (mono labels, like a measurement chart) and real colour
+            chips instead of a loose grid of stats. ── */}
+        <Card pad={false}>
+          <div style={{ display: 'flex', flexWrap: 'wrap' }}>
+            {/* Photo + tear line */}
+            <div style={{ display: 'flex', flexShrink: 0 }}>
+              <div style={{ width: 128, padding: 18, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                <div onClick={() => setShowEdit(true)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setShowEdit(true))}
+                  title="Change photo"
+                  style={{ width: 92, height: 92, borderRadius: 6, overflow: 'hidden', background: '#f8fafc', border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                  {heroImgUrl ? (
+                    <img src={heroImgUrl} alt={order.product} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <ImageIcon size={22} color={T.textLight} />
+                  )}
+                </div>
+                {unassigned
+                  ? <span style={{ fontSize: 10, fontWeight: 800, color: T.textLight, background: '#f1f5f9', padding: '2px 8px', borderRadius: 999, letterSpacing: '0.06em' }}>TBD</span>
+                  : <Badge status={overallStatus()} />}
+              </div>
+              <div style={{ width: 0, borderLeft: `1px dashed ${T.border}`, margin: '18px 0' }} />
+            </div>
+
+            {/* Spec sheet */}
+            <div style={{ flex: '1 1 420px', padding: '18px 22px', minWidth: 300 }}>
+              <Mono style={{ fontSize: 11, color: T.textLight, letterSpacing: '0.04em' }}>{order.id}</Mono>
+              <h1 style={{ fontSize: 26, fontWeight: 800, color: T.info, margin: '2px 0 2px', lineHeight: 1.15, letterSpacing: '-0.01em' }}>
+                {order.product}
+              </h1>
+              {order.styleNumber && (
+                <Mono style={{ fontSize: 12, color: T.textMuted }}>Style {order.styleNumber}</Mono>
+              )}
+
+              {/* Ruled spec table */}
+              <div className="grid-responsive-2" style={{ gap: 0, marginTop: 16, border: `1px solid ${T.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                {[
+                  ['Category', order.category || '—'],
+                  ['Season', order.season || '—'],
+                  ['Buyer', order.buyerCompany ? `${order.buyerCompany}${order.buyerCode ? ` (${order.buyerCode})` : ''}` : '—'],
+                  ['Quantity', `${order.totalQty?.toLocaleString()} pcs`],
+                  ['Delivery', fmtDate(order.delivery)],
+                  ['Created', fmtDate(order.createdAt)],
+                ].map(([label, value], i) => (
+                  <div key={label} style={{ padding: '8px 12px', borderTop: i > 1 ? `1px solid ${T.border}` : 'none', borderLeft: i % 2 === 1 ? `1px solid ${T.border}` : 'none', background: i % 2 === 0 ? '#fbfcfe' : '#fff' }}>
+                    <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, fontWeight: 700, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginTop: 2 }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+
+              {(order.colourways || []).length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, fontWeight: 700, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 7 }}>Colourways</div>
+                  <FlexRow gap={8} style={{ flexWrap: 'wrap' }}>
+                    {order.colourways.map(c => (
+                      <span key={c.name} style={{ display: 'inline-flex', alignItems: 'stretch', fontSize: 12, fontWeight: 700, color: T.text, background: '#fff', border: `1px solid ${T.border}`, borderRadius: 6, overflow: 'hidden' }}>
+                        <span style={{ width: 8, background: c.hex || '#cbd5e1', flexShrink: 0 }} />
+                        <span style={{ padding: '5px 10px' }}>
+                          {c.name}{c.code ? <span style={{ color: T.textLight, fontWeight: 500 }}> · {c.code}</span> : ''}
+                        </span>
+                      </span>
+                    ))}
+                  </FlexRow>
+                </div>
+              )}
+
+              {(order.fabricDetails || []).length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, fontWeight: 700, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 7 }}>Fabric</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    {order.fabricDetails.map(fb => (
+                      <div key={fb.name} style={{ fontSize: 12.5, color: T.text }}>
+                        <span style={{ fontWeight: 700 }}>{fb.name}</span>
+                        {[fb.composition, fb.gsm && `${fb.gsm} GSM`, fb.supplier].filter(Boolean).length > 0 && (
+                          <span style={{ color: T.textMuted }}> — {[fb.composition, fb.gsm && `${fb.gsm} GSM`, fb.supplier].filter(Boolean).join(' · ')}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {order.ecommerceLink && (
+                <a href={order.ecommerceLink} target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginTop: 14, fontSize: 12, fontWeight: 600, color: T.primaryDeep }}>{order.ecommerceLink} ↗</a>
+              )}
+            </div>
+          </div>
+        </Card>
+
+        {/* ── Documents & Assets — collapsed checklist; only the row you're
+            working on expands, so 4 items cost 4 lines, not 4 dropzones. ── */}
+        <Card>
+          <FlexRow justify="space-between">
+            <SectionLabel>Documents & Assets</SectionLabel>
+            <span style={{ fontSize: 11, fontWeight: 700, color: pendingCount > 0 ? T.warning : T.successDeep }}>
+              {pendingCount > 0 ? `${pendingCount} pending` : 'All uploaded'}
+            </span>
+          </FlexRow>
+          <div className="grid-responsive-2" style={{ gap: 8, marginTop: 10 }}>
+            {checklist.map(item => {
+              const isOpen = expandedDocKey === item.key
+              return (
+                <div key={item.key} style={{ border: `1px solid ${item.uploaded ? T.border : T.warningBorder}`, background: item.uploaded ? T.surface : T.warningBg, borderRadius: 8 }}>
+                  <FlexRow justify="space-between" gap={10}
+                    onClick={() => setExpandedDocKey(isOpen ? null : item.key)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setExpandedDocKey(isOpen ? null : item.key))}
+                    style={{ padding: '9px 12px', cursor: 'pointer' }}>
+                    <FlexRow gap={10}>
+                      {item.preview}
+                      <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{item.label}</span>
+                    </FlexRow>
+                    <FlexRow gap={8}>
+                      <span style={{ fontSize: 11, fontWeight: 800, color: item.uploaded ? T.successDeep : T.warning, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        {item.uploaded ? <Check size={12} strokeWidth={3} /> : 'Pending'}
+                      </span>
+                      <ChevronRight size={14} color={T.textLight} style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
+                    </FlexRow>
+                  </FlexRow>
+                  {isOpen && (
+                    <div style={{ padding: '0 12px 12px' }}>
+                      {item.uploaded && item.doc ? (
+                        <DocCard doc={item.doc} users={users} onGetData={getDocData} />
+                      ) : (
+                        <>
+                          <FileUpload file={item.file} onFile={item.onFile} error={item.err} onError={item.onErr} />
+                          {item.file && (
+                            <Btn size="sm" style={{ marginTop: 6 }} disabled={item.uploading} onClick={item.onUpload}>
+                              {item.uploading ? 'Uploading…' : `Upload ${item.label}`}
+                            </Btn>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Anything uploaded via "Upload Document" that isn't one of the four
+              checklist types (PO, cost sheet, RFQ, terms, buyer order, …) —
+              folded in here instead of a separate tab. */}
+          {(() => {
+            const otherDocs = orderDocs.filter(d => d.stageIndex == null && !Object.keys(refDocLabels).includes(d.type))
+            return (
+              <div style={{ borderTop: `1px solid ${T.border}`, marginTop: 10, paddingTop: 12 }}>
+                <FlexRow justify="space-between">
+                  <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Other Documents</span>
+                  <Btn size="sm" variant="ghost" onClick={() => setShowUp(true)} icon={<Paperclip size={12} />}>Upload</Btn>
+                </FlexRow>
+                {otherDocs.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
+                    {otherDocs.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} />)}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+        </Card>
+      </div>
+    )
+  }
+
+  // ── Unassigned style — no manufacturer/TNA yet. Same summary as the
+  // assigned page, plus the one action that matters here.
+  if ((order.assignments?.length || 0) === 0) {
+    return (
+      <div>
+        {showEdit && (
+          <EditOrderModal order={order} onClose={() => setShowEdit(false)}
+            onSave={async (id, data) => { await editOrder(id, data); toast(`Style ${id} updated`, 'success'); setShowEdit(false) }} />
+        )}
+        {showDelete && (
+          <DeleteOrderModal order={order} onClose={() => setShowDelete(false)}
+            onConfirm={async (id) => { await deleteOrder(id); toast(`Style ${id} deleted`, 'success'); setShowDelete(false); onBack() }} />
+        )}
+
+        {renderSummary({ unassigned: true })}
+
+        <div style={{ marginTop: 16 }}>
+          <Card>
+            <SectionLabel>Add Manufacturer</SectionLabel>
+            <div style={{ fontSize: 12, color: T.textMuted, margin: '6px 0 12px' }}>
+              This style has no manufacturer yet — production can't start until one is assigned. TNA (production stages) can be built or uploaded once it is.
+            </div>
+            <div className="form-grid-2" style={{ gap: 12, alignItems: 'flex-end' }}>
+              <Select label="Manufacturer *" value={newMfrId} onChange={e => setNewMfrId(e.target.value)}>
+                <option value="">Select manufacturer…</option>
+                {mfrUsers.map(m => <option key={m.id} value={m.id}>{m.company} ({m.code})</option>)}
+              </Select>
+              <Input label="Quantity *" type="number" value={newMfrQty} onChange={e => setNewMfrQty(e.target.value)} placeholder={String(order.totalQty || '')} />
+            </div>
+            <FlexRow justify="flex-end" style={{ marginTop: 12 }}>
+              <Btn
+                disabled={!newMfrId || !newMfrQty || Number(newMfrQty) <= 0 || addingMfr}
+                onClick={async () => {
+                  setAddingMfr(true)
+                  try {
+                    await addAssignment(order.id, { mfrId: newMfrId, qty: Math.floor(Number(newMfrQty)) })
+                    toast('Manufacturer assigned', 'success')
+                  } catch (e) {
+                    toast(typeof e === 'string' ? e : (e?.message || 'Failed to add manufacturer'), 'error')
+                  } finally { setAddingMfr(false) }
+                }}
+              >{addingMfr ? 'Adding…' : 'Add Manufacturer'}</Btn>
+            </FlexRow>
+          </Card>
+        </div>
+      </div>
+    )
   }
 
   // ── Assignment picker ──
@@ -474,7 +856,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
               <Badge status={overallStatus()} />
             </FlexRow>
             <div style={{ fontSize: 13, color: T.textMuted, marginTop: 3 }}>
-              {order.product} · {order.buyerCompany || '—'} · {order.totalQty?.toLocaleString()} pcs · Due {fmtDate(order.delivery)}
+              {order.product}{order.styleNumber ? ` — ${order.styleNumber}` : ''} · {order.buyerCompany || '—'} · {order.totalQty?.toLocaleString()} pcs · Due {fmtDate(order.delivery)}
             </div>
           </div>
           <Btn variant="secondary" onClick={() => setShowUp(true)} icon={<Paperclip size={13} />}>Upload Document</Btn>
@@ -518,10 +900,8 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
 
   const tabs = [
     { id: 'production', label: `Production` },
-    { id: 'documents', label: `Documents (${txnDocs.filter(d => d.stageIndex == null).length})` },
     { id: 'stage_evidence', label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><ImageIcon size={13} /> Stage Evidence ({stageDocs.length})</span> },
     { id: 'compliance', label: `Compliance (${mfrDocs.length})` },
-    { id: 'info', label: 'Order Info' },
   ]
 
   return (
@@ -851,34 +1231,10 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
         </div>
       )}
 
-      {/* ── Header ── */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-        <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
-        <ProductThumb order={order} size="lg" onClick={() => setShowEdit(true)} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <FlexRow gap={10} style={{ flexWrap: 'wrap' }}>
-            <Mono style={{ fontSize: 15 }}>{order.id}</Mono>
-            <Badge status={overallStatus()} />
-          </FlexRow>
-          <div style={{ fontSize: 13, color: T.textMuted, marginTop: 3 }}>
-            {order.product} · {order.buyerCompany || '—'} · {order.totalQty?.toLocaleString()} pcs · Due {fmtDate(order.delivery)}
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flexShrink: 0 }}>
-          {order.assignments?.length > 1 && (
-            <Btn variant="secondary" size="sm" onClick={() => setSelectedMid(null)} icon={<ArrowLeftRight size={13} />}>Change Mfr</Btn>
-          )}
-          <Btn variant="secondary" onClick={() => setShowUp(true)} icon={<Paperclip size={13} />}>Upload Document</Btn>
-          <Btn variant="secondary" onClick={() => setShowEdit(true)} icon={<Pencil size={13} />}>Edit Order</Btn>
-          <button
-            onClick={() => setShowDelete(true)}
-            style={{ padding: '8px 14px', fontSize: 12, fontWeight: 700, borderRadius: 8, border: `1px solid ${T.dangerBorder}`, background: T.dangerBg, color: T.danger, cursor: 'pointer', fontFamily: 'inherit' }}
-          >Delete Order</button>
-        </div>
-      </div>
+      {renderSummary({ unassigned: false })}
 
       {/* ── Tabs ── */}
-      <Card pad={false}>
+      <Card pad={false} style={{ marginTop: 16 }}>
         <Tabs tabs={tabs} active={tab} onChange={setTab} />
         <div style={{ padding: '20px 22px' }}>
 
@@ -912,6 +1268,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                           <Btn size="sm" variant="outline" onClick={() => openStageOverride(a.mid)} icon={<ShieldAlert size={12} />}>Override</Btn>
                         )}
                         <Btn size="sm" variant="secondary" onClick={() => openEtaAdjust(a.mid)} icon={<ClipboardEdit size={12} />}>Bulk Edit</Btn>
+                        <Btn size="sm" variant="secondary" onClick={() => setTnaCsvOpen(p => ({ ...p, [a.mid]: !p[a.mid] }))} icon={<FileSpreadsheet size={12} />}>Upload CSV</Btn>
                       </FlexRow>
                     </div>
 
@@ -926,9 +1283,101 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                       </div>
                     </div>
 
+                    {/* Bulk CSV import — always available, not just for an empty
+                        plan, so more stages can be added to an existing TNA
+                        the same way (appends after whatever's already there). */}
+                    {tnaCsvOpen[a.mid] && (() => {
+                      const csvRows = tnaCsvRows[a.mid] || []
+                      const csvValid = csvRows.filter(r => r.errors.length === 0)
+                      const csvInvalid = csvRows.filter(r => r.errors.length > 0)
+                      return (
+                        <div style={{ margin: '14px 18px 0', background: '#f8fafc', border: `1px dashed ${T.border}`, borderRadius: 10, padding: '14px 16px' }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 2 }}>Upload CSV</div>
+                          <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 10 }}>
+                            {stages.length > 0 ? 'New rows are appended after the existing plan.' : 'Import a whole plan at once.'}
+                          </div>
+                          <FlexRow gap={10} style={{ marginBottom: 10 }}>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 10px', fontSize: 11, fontWeight: 700, color: T.text, background: '#fff', border: `1px solid ${T.border}`, borderRadius: 8, cursor: 'pointer' }}>
+                              Choose CSV file
+                              <input type="file" accept=".csv" style={{ display: 'none' }}
+                                onChange={e => { setTnaCsvErr(p => ({ ...p, [a.mid]: '' })); if (e.target.files[0]) parseTnaCsv(a.mid, e.target.files[0]) }} />
+                            </label>
+                            <button onClick={downloadTnaCsvTemplate} style={{ fontSize: 11, fontWeight: 700, color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>Download template</button>
+                          </FlexRow>
+                          <div style={{ fontSize: 10, color: T.textLight, marginBottom: 8 }}>Columns: {TNA_CSV_HEADERS.join(', ')} — one row per stage, in order.</div>
+                          {tnaCsvErr[a.mid] && <div style={{ fontSize: 11, color: T.danger, marginBottom: 8 }}>⚠ {tnaCsvErr[a.mid]}</div>}
+                          {csvRows.length > 0 && (
+                            <div>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: T.text, marginBottom: 6 }}>
+                                {csvValid.length} ready to import{csvInvalid.length > 0 ? `, ${csvInvalid.length} with errors` : ''}
+                              </div>
+                              <div style={{ maxHeight: 180, overflowY: 'auto', border: `1px solid ${T.border}`, borderRadius: 6, background: '#fff' }}>
+                                {csvRows.map((r, i) => (
+                                  <div key={i} style={{ padding: '6px 10px', fontSize: 11, borderTop: i > 0 ? `1px solid ${T.border}` : 'none', color: r.errors.length ? T.danger : T.text }}>
+                                    Row {r.row}: {r.name || '(no name)'} {r.errors.length > 0 && `— ${r.errors.join(', ')}`}
+                                  </div>
+                                ))}
+                              </div>
+                              <Btn size="sm" style={{ marginTop: 8 }} disabled={csvValid.length === 0 || tnaCsvImporting === a.mid} onClick={() => importTnaCsv(a.mid)}>
+                                {tnaCsvImporting === a.mid ? 'Importing…' : `Import ${csvValid.length} Stage${csvValid.length !== 1 ? 's' : ''}`}
+                              </Btn>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
+
                     {/* Stage timeline */}
                     <div style={{ padding: '14px 18px' }}>
                       {stages.length > 0 && <StageTimeline stages={stages} />}
+
+                      {stages.length === 0 && !tnaCsvOpen[a.mid] && (
+                        <div style={{ background: '#f8fafc', border: `1px dashed ${T.border}`, borderRadius: 10, padding: '14px 16px', marginBottom: 14 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 2 }}>No TNA yet</div>
+                          <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Add stages one at a time below, or click "Upload CSV" above for a whole plan at once.</div>
+                          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+                            <div style={{ flex: '2 1 160px' }}>
+                              <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Stage Name</label>
+                              <input value={newStageDraft(a.mid).name} onChange={e => setNewStageDraft(a.mid, { name: e.target.value })}
+                                placeholder="e.g. Lab Dip Approval"
+                                style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                            </div>
+                            <div style={{ flex: '1 1 120px' }}>
+                              <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Start Date</label>
+                              <input type={newStageDraft(a.mid).startDate === 'NA' ? 'text' : 'date'} value={newStageDraft(a.mid).startDate} onChange={e => setNewStageDraft(a.mid, { startDate: e.target.value })}
+                                style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                            </div>
+                            <div style={{ flex: '1 1 120px' }}>
+                              <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>End Date</label>
+                              <input type={newStageDraft(a.mid).eta === 'NA' ? 'text' : 'date'} value={newStageDraft(a.mid).eta} onChange={e => setNewStageDraft(a.mid, { eta: e.target.value })}
+                                style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                            </div>
+                            <div style={{ flex: '1 1 110px' }}>
+                              <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Kind</label>
+                              <select value={newStageDraft(a.mid).kind} onChange={e => setNewStageDraft(a.mid, { kind: e.target.value })}
+                                style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 6px', fontSize: 12, fontFamily: 'inherit', background: '#fff' }}>
+                                <option value="quantity">Quantity</option>
+                                <option value="milestone">Milestone</option>
+                                <option value="checklist">Checklist</option>
+                              </select>
+                            </div>
+                            <Btn
+                              size="sm"
+                              disabled={!newStageDraft(a.mid).name.trim() || !newStageDraft(a.mid).startDate || !newStageDraft(a.mid).eta || addingStage === a.mid}
+                              onClick={async () => {
+                                const draft = newStageDraft(a.mid)
+                                setAddingStage(a.mid)
+                                try {
+                                  await insertStage(order.id, a.mid, { name: draft.name.trim(), startDate: draft.startDate, eta: draft.eta, kind: draft.kind })
+                                  setNewStageDraft(a.mid, { name: '', startDate: '', eta: '', kind: 'quantity' })
+                                } catch (e) {
+                                  toast(typeof e === 'string' ? e : (e?.message || 'Failed to add stage'), 'error')
+                                } finally { setAddingStage(null) }
+                              }}
+                            >{addingStage === a.mid ? 'Adding…' : '+ Add Stage'}</Btn>
+                          </div>
+                        </div>
+                      )}
 
                       {/* TNA table — one row per step, the same shape as the plan
                           the team keeps in Excel: step, owner, planned vs revised
@@ -1135,26 +1584,6 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
             </div>
           )}
 
-          {/* ── Documents Tab ── */}
-          {tab === 'documents' && (
-            <div>
-              <FlexRow justify="space-between" style={{ marginBottom: 14 }}>
-                <SectionLabel>Order Documents</SectionLabel>
-                <Btn size="sm" onClick={() => setShowUp(true)} icon={<Paperclip size={13} />}>Upload</Btn>
-              </FlexRow>
-              {txnDocs.filter(d => d.stageIndex == null).length === 0 ? (
-                <Alert type="info">No documents uploaded for this order yet.</Alert>
-              ) : (
-                <StageDocGroup
-                  docs={txnDocs.filter(d => d.stageIndex == null)}
-                  stages={selectedAsgn?.stages || order.assignments[0]?.stages || []}
-                  users={users}
-                  onGetData={getDocData}
-                />
-              )}
-            </div>
-          )}
-
           {tab === 'stage_evidence' && (
             <div>
               {stageDocs.length === 0 ? (
@@ -1205,34 +1634,6 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
             </div>
           )}
 
-          {/* ── Order Info Tab ── */}
-          {tab === 'info' && (
-            <div className="grid-responsive-2" style={{ gap: '14px 32px' }}>
-              <InfoRow label="Order ID" value={order.id} mono />
-              <InfoRow label="Product" value={order.product} />
-              <InfoRow label="Category" value={order.category} />
-              <InfoRow label="Season" value={order.season} />
-              <InfoRow label="Buyer" value={order.buyerCompany || '—'} />
-              <InfoRow label="Buyer Code" value={order.buyerCode || '—'} />
-              <InfoRow label="Total Quantity" value={order.totalQty?.toLocaleString()} />
-              <InfoRow label="Delivery Date" value={fmtDate(order.delivery)} />
-              <InfoRow label="Created" value={fmtDate(order.createdAt)} />
-              <InfoRow label="Overall Status" value={overallStatus()} badge />
-              <div style={{ gridColumn: '1 / -1' }}>
-                <SectionLabel>Manufacturer Assignments</SectionLabel>
-                <div className="grid-responsive-2" style={{ gap: 10 }}>
-                  {order.assignments.map(a => (
-                    <div key={a.sub} style={{ background: '#f8fafc', borderRadius: 8, border: `1px solid ${T.border}`, padding: '10px 14px' }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}><MfrProfileLink mfrId={a.mid} mfrName={a.mfrCompany || '—'} docs={docs} onGetData={getDocData} /> <span style={{ color: T.textLight }}>({a.sub})</span></div>
-                      <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>
-                        {a.qty?.toLocaleString()} pcs · <Badge status={a.status} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </Card>
     </div>

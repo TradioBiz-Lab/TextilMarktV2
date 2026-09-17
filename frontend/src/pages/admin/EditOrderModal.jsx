@@ -3,16 +3,37 @@ import { AlertTriangle } from 'lucide-react'
 import { T, SEASONS, CATEGORIES } from '../../constants.js'
 import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload, ProductThumb } from '../../components/ui.jsx'
 
+let _cwKeySeq = 1
+let _fabKeySeq = 1
+
 export function EditOrderModal({ order, onClose, onSave }) {
   const [f, setF] = useState({
     product: order.product || '',
+    styleNumber: order.styleNumber || '',
     category: order.category || '',
     season: order.season || '',
     totalQty: order.totalQty != null ? String(order.totalQty) : '',
     delivery: order.delivery ? new Date(order.delivery).toISOString().slice(0, 10) : '',
-    colourways: (order.colourways || []).map(c => c.name).join(', '),
+    ecommerceLink: order.ecommerceLink || '',
     callout: order.callout || '',
   })
+  const [colourways, setColourways] = useState(
+    (order.colourways || []).length > 0
+      ? order.colourways.map(c => ({ _key: _cwKeySeq++, name: c.name, code: c.code || '', hex: c.hex || '' }))
+      : [{ _key: _cwKeySeq++, name: '', code: '', hex: '' }]
+  )
+  const updateCw = (key, patch) => setColourways(p => p.map(c => c._key === key ? { ...c, ...patch } : c))
+  const addCw = () => setColourways(p => [...p, { _key: _cwKeySeq++, name: '', code: '', hex: '' }])
+  const removeCw = key => setColourways(p => p.length > 1 ? p.filter(c => c._key !== key) : p)
+
+  const [fabrics, setFabrics] = useState(
+    (order.fabricDetails || []).length > 0
+      ? order.fabricDetails.map(f => ({ _key: _fabKeySeq++, name: f.name, composition: f.composition || '', gsm: f.gsm || '', supplier: f.supplier || '' }))
+      : [{ _key: _fabKeySeq++, name: '', composition: '', gsm: '', supplier: '' }]
+  )
+  const updateFab = (key, patch) => setFabrics(p => p.map(f => f._key === key ? { ...f, ...patch } : f))
+  const addFab = () => setFabrics(p => [...p, { _key: _fabKeySeq++, name: '', composition: '', gsm: '', supplier: '' }])
+  const removeFab = key => setFabrics(p => p.length > 1 ? p.filter(f => f._key !== key) : p)
   const hasExistingPhoto = !!(order.imageDataUrl || order.imageUrl)
   const [photoFile, setPhotoFile] = useState(null)
   const [photoErr, setPhotoErr] = useState('')
@@ -31,11 +52,14 @@ export function EditOrderModal({ order, onClose, onSave }) {
 
     const payload = {
       product: f.product.trim(),
+      styleNumber: f.styleNumber.trim(),
       category: f.category || undefined,
       season: f.season || undefined,
       totalQty: qty,
       delivery: f.delivery,
-      colourways: f.colourways.split(',').map(c => c.trim()).filter(Boolean),
+      colourways: colourways.filter(c => c.name.trim()).map(c => ({ name: c.name.trim(), code: c.code.trim(), hex: c.hex.trim() })),
+      fabricDetails: fabrics.filter(fb => fb.name.trim()).map(fb => ({ name: fb.name.trim(), composition: fb.composition.trim(), gsm: fb.gsm.trim(), supplier: fb.supplier.trim() })),
+      ecommerceLink: f.ecommerceLink.trim(),
       callout: f.callout.trim(),
     }
     if (clearPhoto) {
@@ -73,12 +97,20 @@ export function EditOrderModal({ order, onClose, onSave }) {
 
         {/* Body */}
         <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <Input
-            label="Product Name *"
-            value={f.product}
-            onChange={set('product')}
-            placeholder="e.g. Classic T-Shirt"
-          />
+          <div className="form-grid-2" style={{ gap: 12 }}>
+            <Input
+              label="Product Name *"
+              value={f.product}
+              onChange={set('product')}
+              placeholder="e.g. Classic T-Shirt"
+            />
+            <Input
+              label="Style Number"
+              value={f.styleNumber}
+              onChange={set('styleNumber')}
+              placeholder="e.g. STY-2026-014"
+            />
+          </div>
 
           <div>
             <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Product Photo (optional)</label>
@@ -126,12 +158,58 @@ export function EditOrderModal({ order, onClose, onSave }) {
             />
           </div>
 
+          <div>
+            <FlexRow justify="space-between" style={{ marginBottom: 6 }}>
+              <label style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Colourways</label>
+              <button onClick={addCw} style={{ fontSize: 11, color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontFamily: 'inherit' }}>+ Add colourway</button>
+            </FlexRow>
+            {colourways.map(c => (
+              <div key={c._key} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                <input type="color" value={c.hex || '#cbd5e1'} onChange={e => updateCw(c._key, { hex: e.target.value })}
+                  title="Swatch colour (approximate)"
+                  style={{ width: 32, height: 32, padding: 0, border: `1px solid ${T.border}`, borderRadius: 6, cursor: 'pointer', flexShrink: 0 }} />
+                <input value={c.name} onChange={e => updateCw(c._key, { name: e.target.value })}
+                  placeholder="Colour (e.g. Peacot)"
+                  style={{ flex: 2, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
+                <input value={c.code} onChange={e => updateCw(c._key, { code: e.target.value })}
+                  placeholder="Pantone TPX/TCX (optional)"
+                  style={{ flex: 1, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
+                {colourways.length > 1 && (
+                  <button onClick={() => removeCw(c._key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textLight }}>×</button>
+                )}
+              </div>
+            ))}
+          </div>
+          <div>
+            <FlexRow justify="space-between" style={{ marginBottom: 6 }}>
+              <label style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Fabric Details</label>
+              <button onClick={addFab} style={{ fontSize: 11, color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontFamily: 'inherit' }}>+ Add fabric</button>
+            </FlexRow>
+            {fabrics.map(fb => (
+              <div key={fb._key} style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
+                <input value={fb.name} onChange={e => updateFab(fb._key, { name: e.target.value })}
+                  placeholder="Fabric (e.g. Shell — Single Jersey)"
+                  style={{ flex: '2 1 150px', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
+                <input value={fb.composition} onChange={e => updateFab(fb._key, { composition: e.target.value })}
+                  placeholder="Composition"
+                  style={{ flex: '2 1 130px', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
+                <input value={fb.gsm} onChange={e => updateFab(fb._key, { gsm: e.target.value })}
+                  placeholder="GSM"
+                  style={{ flex: '0 1 60px', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
+                <input value={fb.supplier} onChange={e => updateFab(fb._key, { supplier: e.target.value })}
+                  placeholder="Supplier"
+                  style={{ flex: '1 1 100px', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
+                {fabrics.length > 1 && (
+                  <button onClick={() => removeFab(fb._key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textLight }}>×</button>
+                )}
+              </div>
+            ))}
+          </div>
           <Input
-            label="Colourways"
-            value={f.colourways}
-            onChange={set('colourways')}
-            placeholder="e.g. Peacot, Brown, Olivine"
-            hint="Comma-separated. Checklist steps generate one line per colour from this."
+            label="E-commerce Link"
+            value={f.ecommerceLink}
+            onChange={set('ecommerceLink')}
+            placeholder="https://…"
           />
           <Input
             label="Callout"

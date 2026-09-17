@@ -69,20 +69,30 @@ Uses a human-readable custom string `_id` for traceability.
   masterOrderId String | null     → masterorders._id, optional grouping
   buyerId       ObjectId → users  required
   product       String            required (e.g. "Classic T-Shirt"), max 300 chars
+  styleNumber   String            default: "", max 60 chars — the buyer/factory's own style
+                                  reference, distinct from the generated order _id
   category      String            free-text (trimmed) — NOT enum-restricted server-side;
                                   frontend suggests: TSHRT, JEANS, BEDSH, SHIRT, DRESS,
                                   JACKET, POLO, SHORTS, HOODIE
   season        String            enum: ["SS26","FW26","SS27","FW27","SS28"]
   totalQty      Number            required, min: 1
   delivery      Date              required — target delivery date
-  colourways    [{name, code}]    max 40 — the colours this style is made in. Held at order
-                                  level so per-colour stages (dyeing, lab dips, FPT/GPT)
-                                  generate their checklist items from one list instead of the
-                                  names being retyped per step. Names only — a qty-per-colour-
-                                  per-size grid is deliberately out of scope.
+  colourways    [{name, code}]    max 40 — the colours this style is made in. `code` optionally
+                                  carries a Pantone TPX/TCX reference. Held at order level so
+                                  per-colour stages (dyeing, lab dips, FPT/GPT) generate their
+                                  checklist items from one list instead of the names being
+                                  retyped per step. A qty-per-colour-per-size grid is
+                                  deliberately out of scope.
+  ecommerceLink String            default: "", max 2000 chars — optional public product-page URL
   callout       String            default: "", max 500 chars — order-level risk/escalation
                                   note, e.g. "delayed a week — lab dip submission slipped"
-  assignments   [Assignment]      embedded array, one entry per manufacturer split
+  assignments   [Assignment]      embedded array, one entry per manufacturer split — MAY be
+                                  empty: the creation wizard leaves a new style "unassigned"
+                                  (no manufacturer, no stages) until an admin adds a
+                                  manufacturer from the Style Detail page (POST
+                                  /:orderId/assignments), which starts that assignment with
+                                  stages: [] — TNA is then built via /stages/insert (one at a
+                                  time) or /stages/bulk (CSV import) after that.
   createdAt     Date              auto
   updatedAt     Date              auto
 }
