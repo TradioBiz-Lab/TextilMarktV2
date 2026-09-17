@@ -874,7 +874,7 @@ export function AdminOrders({ onOpen, initialStatus }) {
 
                   {isOpen && (
                     <div className="table-scroll">
-                      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 340 + entries.length * 150 }}>
+                      <table style={{ borderCollapse: 'collapse', minWidth: 340 + entries.length * 150 }}>
                         <thead>
                           <tr style={{ background: '#f8fafc' }}>
                             <th style={{ padding: '9px 14px', textAlign: 'left', fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.07em', position: 'sticky', left: 0, zIndex: 2, background: '#f8fafc', minWidth: 220 }}>
