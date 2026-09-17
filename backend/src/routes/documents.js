@@ -13,21 +13,39 @@ const uploadLimiter = rateLimit({
 })
 
 const CERT_TYPES = ['compliance_cert', 'factory_audit', 'chemical_cert', 'environmental_cert', 'insurance']
-const ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg']
+const ALLOWED_MIME = [
+  'application/pdf', 'image/jpeg', 'image/png', 'image/jpg',
+  // Pattern files (DXF) — there is no registered MIME type for DXF, so
+  // browsers report all of these, or nothing, depending on OS/browser.
+  // 'application/octet-stream' is only accepted when the filename ends in
+  // .dxf (see EXT_FALLBACK_ALLOWED below) — it's too generic to allow for
+  // every upload without that check.
+  'application/dxf', 'image/vnd.dxf', 'application/octet-stream',
+  // Measurement sheets
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+  'application/vnd.ms-excel', // .xls
+  'text/csv',
+]
+// Extensions allowed to fall back to a blank/generic mime type in the checks
+// below — only DXF needs this; xlsx/xls/csv are reliably typed by every
+// major browser.
+const EXT_FALLBACK_ALLOWED = ['.dxf']
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 
 // Shared by create (POST /) and edit (POST /:id) — validates an inline base64
 // data URL the same way in both places, since this is the XSS-relevant check
 // (rejects arbitrary `data:text/html,...` payloads that would render in the
 // document viewer). Returns an error string, or null if valid.
-function validateFilePayload(dataUrl, mimeType, fileSize) {
+function validateFilePayload(dataUrl, mimeType, fileSize, fileName) {
   if (typeof dataUrl !== 'string') return 'Invalid file payload'
-  const dataUrlMatch = /^data:([^;,]+);base64,/i.exec(dataUrl)
+  const dataUrlMatch = /^data:([^;,]*);base64,/i.exec(dataUrl)
   if (!dataUrlMatch) return 'Invalid file payload — must be a base64 data URL'
   const embeddedMime = dataUrlMatch[1].toLowerCase()
-  if (!ALLOWED_MIME.includes(embeddedMime)) return 'Only PDF, JPG, PNG files are allowed'
-  if (mimeType && !ALLOWED_MIME.includes(mimeType)) return 'Only PDF, JPG, PNG files are allowed'
-  if (mimeType && mimeType.toLowerCase() !== embeddedMime) return 'File payload does not match declared mime type'
+  const extFallbackOk = EXT_FALLBACK_ALLOWED.some(ext => (fileName || '').toLowerCase().endsWith(ext))
+  const mimeOk = m => !!m && (ALLOWED_MIME.includes(m) || (extFallbackOk && (m === '' || m === 'application/octet-stream')))
+  if (!mimeOk(embeddedMime) && !(extFallbackOk && embeddedMime === '')) return 'Only PDF, JPG, PNG, DXF, XLS/XLSX, or CSV files are allowed'
+  if (mimeType && !mimeOk(mimeType)) return 'Only PDF, JPG, PNG, DXF, XLS/XLSX, or CSV files are allowed'
+  if (mimeType && embeddedMime && mimeType.toLowerCase() !== embeddedMime) return 'File payload does not match declared mime type'
   if (fileSize && fileSize > MAX_FILE_SIZE) return 'File exceeds 10MB limit'
   if (Buffer.byteLength(dataUrl, 'utf8') > MAX_FILE_SIZE * 1.4) return 'File payload too large'
   return null
@@ -367,7 +385,7 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
 
     // Inline-file checks (skipped when uploading via link)
     if (hasFile) {
-      const err = validateFilePayload(dataUrl, mimeType, fileSize)
+      const err = validateFilePayload(dataUrl, mimeType, fileSize, fileName)
       if (err) return res.status(400).json({ error: err })
     }
 
@@ -460,7 +478,7 @@ router.post('/:id', requireAuth, uploadLimiter, async (req, res) => {
     if (hasFile && hasUrl) return res.status(400).json({ error: 'Provide either a file OR a link, not both' })
 
     if (hasFile) {
-      const err = validateFilePayload(dataUrl, mimeType, fileSize)
+      const err = validateFilePayload(dataUrl, mimeType, fileSize, fileName)
       if (err) return res.status(400).json({ error: err })
       if (fileName && typeof fileName === 'string' && fileName.length > 500)
         return res.status(400).json({ error: 'File name too long (max 500 chars)' })

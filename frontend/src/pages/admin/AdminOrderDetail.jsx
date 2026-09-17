@@ -5,6 +5,7 @@ import {
   T, ORDER_STATUSES, STAGE_DOC_MAP, DOC_ICONS,
   stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
   stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber,
+  PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS,
 } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -603,8 +604,9 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
       },
       ...Object.keys(refDocLabels).map(type => {
         const doc = orderDocs.find(d => d.type === type)
+        const uploadProps = type === 'pattern' ? PATTERN_FILE_PROPS : type === 'measurements' ? MEASUREMENTS_FILE_PROPS : {}
         return {
-          key: type, label: refDocLabels[type], uploaded: !!doc, doc,
+          key: type, label: refDocLabels[type], uploaded: !!doc, doc, uploadProps,
           file: refDocFiles[type], err: refDocErrs[type], uploading: refDocUploading === type,
           onFile: f => setRefDocFiles(p => ({ ...p, [type]: f })),
           onErr: e => setRefDocErrs(p => ({ ...p, [type]: e })),
@@ -755,7 +757,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                         <DocCard doc={item.doc} users={users} onGetData={getDocData} />
                       ) : (
                         <>
-                          <FileUpload file={item.file} onFile={item.onFile} error={item.err} onError={item.onErr} />
+                          <FileUpload {...item.uploadProps} file={item.file} onFile={item.onFile} error={item.err} onError={item.onErr} />
                           {item.file && (
                             <Btn size="sm" style={{ marginTop: 6 }} disabled={item.uploading} onClick={item.onUpload}>
                               {item.uploading ? 'Uploading…' : `Upload ${item.label}`}

@@ -362,17 +362,31 @@ export function fileUploadPayload(fileData) {
 //   1. Inline file (≤10MB) — emits { name, size, mimeType, dataUrl }
 //   2. External link (e.g. Zoho/GDrive share URL for files >10MB) — emits { externalUrl, name }
 // The selected payload shape is passed back through onFile; callers forward it to uploadDoc().
-export function FileUpload({ file, onFile, error, onError }) {
+//
+// `mimeTypes`/`extensions`/`accept`/`label` let a caller widen what's
+// accepted beyond the PDF/JPG/PNG default (e.g. Patterns wants .dxf, which
+// has no registered MIME type at all — browsers report it as empty or
+// application/octet-stream depending on OS, so it's matched by extension;
+// Measurements wants Excel/CSV, which browsers DO type reliably). The
+// backend's own allowlist (documents.js) is the real gate — this is just
+// matching UI copy/validation to what it will actually accept.
+export function FileUpload({ file, onFile, error, onError, mimeTypes, extensions, accept, label }) {
   const inputRef = useRef(null)
   const [drag, setDrag] = useState(false)
   const [mode, setMode] = useState('file') // 'file' | 'link'
   const [urlInput, setUrlInput] = useState('')
-  const ALLOWED = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg']
+  const ALLOWED = mimeTypes || ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg']
+  const ALLOWED_EXT = extensions || ['.pdf', '.jpg', '.jpeg', '.png']
+  const ACCEPT = accept || '.pdf,.jpg,.jpeg,.png'
+  const LABEL = label || 'PDF, JPG, PNG'
   const MAX_MB = 10
 
   const process = f => {
     if (!f) return
-    if (!ALLOWED.includes(f.type)) { onError && onError('Only PDF, JPG, PNG files are allowed.'); return }
+    const nameLower = (f.name || '').toLowerCase()
+    const extOk = ALLOWED_EXT.some(ext => nameLower.endsWith(ext))
+    const mimeOk = !!f.type && ALLOWED.includes(f.type)
+    if (!extOk && !mimeOk) { onError && onError(`Only ${LABEL} files are allowed.`); return }
     if (f.size > MAX_MB * 1024 * 1024) { onError && onError(`File exceeds ${MAX_MB}MB limit. Paste a drive link instead.`); return }
     onError && onError('')
     const reader = new FileReader()
@@ -448,10 +462,10 @@ export function FileUpload({ file, onFile, error, onError }) {
             style={{ border: `2px dashed ${drag ? T.primary : error ? T.danger : T.border}`, borderRadius: 10, padding: '28px', textAlign: 'center', cursor: 'pointer', background: drag ? T.primaryLight : '#fafbff', transition: 'all 0.15s' }}>
             <Upload size={26} color={drag ? T.primary : T.textLight} style={{ marginBottom: 8 }} />
             <div style={{ fontWeight: 600, color: drag ? T.primary : T.textMuted, marginBottom: 4 }}>Click to upload or drag & drop</div>
-            <div style={{ fontSize: 12, color: T.textLight }}>PDF, JPG, PNG · Max 10MB</div>
+            <div style={{ fontSize: 12, color: T.textLight }}>{LABEL} · Max {MAX_MB}MB</div>
             <div style={{ fontSize: 11, color: T.textLight, marginTop: 6 }}>Larger file? Use <strong>Paste link</strong> above.</div>
           </div>
-          <input ref={inputRef} type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} onChange={e => process(e.target.files[0])} />
+          <input ref={inputRef} type="file" accept={ACCEPT} style={{ display: 'none' }} onChange={e => process(e.target.files[0])} />
         </>
       ) : (
         <div style={{ border: `1px dashed ${error ? T.danger : T.border}`, borderRadius: 10, padding: '16px', background: '#fafbff' }}>

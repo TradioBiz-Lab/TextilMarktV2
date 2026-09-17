@@ -365,6 +365,27 @@ export const deliveryOverrunDays = (order, assignment) => {
   return last > deliveryDay ? last - deliveryDay : null
 }
 
+// Extra FileUpload props for the two upload slots that need more than the
+// component's PDF/JPG/PNG default — spread onto <FileUpload {...X}>. Kept
+// here (not duplicated per call site) since the backend's own allowlist
+// (documents.js) must stay in sync with whatever these actually accept.
+export const PATTERN_FILE_PROPS = {
+  extensions: ['.dxf'],
+  mimeTypes: ['application/dxf', 'image/vnd.dxf', 'application/octet-stream'],
+  accept: '.dxf',
+  label: 'DXF',
+}
+export const MEASUREMENTS_FILE_PROPS = {
+  extensions: ['.xlsx', '.xls', '.csv'],
+  mimeTypes: [
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-excel',
+    'text/csv',
+  ],
+  accept: '.xlsx,.xls,.csv',
+  label: 'Excel/CSV',
+}
+
 /** The single stage to show when only one fits — earliest ETA among those in flight. */
 export const primaryStage = assignment => {
   const live = inFlightStages(assignment)

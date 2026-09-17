@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { X, Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
-import { T, CATEGORIES } from '../../constants.js'
+import { T, CATEGORIES, PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS } from '../../constants.js'
 import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
@@ -276,7 +276,7 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
                     </div>
                     <div>
                       <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Measurements</label>
-                      <FileUpload file={s.measurementsFile} onFile={f => updateStyle(s._key, { measurementsFile: f, measurementsErr: '' })} error={s.measurementsErr} onError={e => updateStyle(s._key, { measurementsErr: e })} />
+                      <FileUpload {...MEASUREMENTS_FILE_PROPS} file={s.measurementsFile} onFile={f => updateStyle(s._key, { measurementsFile: f, measurementsErr: '' })} error={s.measurementsErr} onError={e => updateStyle(s._key, { measurementsErr: e })} />
                     </div>
                     <div>
                       <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Tech Pack</label>
@@ -284,7 +284,7 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
                     </div>
                     <div>
                       <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Patterns / DXF</label>
-                      <FileUpload file={s.patternFile} onFile={f => updateStyle(s._key, { patternFile: f, patternErr: '' })} error={s.patternErr} onError={e => updateStyle(s._key, { patternErr: e })} />
+                      <FileUpload {...PATTERN_FILE_PROPS} file={s.patternFile} onFile={f => updateStyle(s._key, { patternFile: f, patternErr: '' })} error={s.patternErr} onError={e => updateStyle(s._key, { patternErr: e })} />
                     </div>
                   </div>
                   <Input label="E-commerce Link" value={s.ecommerceLink} onChange={e => updateStyle(s._key, { ecommerceLink: e.target.value })} placeholder="https://…" />
