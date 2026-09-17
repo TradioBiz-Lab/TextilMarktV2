@@ -56,35 +56,6 @@ export function AdminOrders({ onOpen, initialStatus }) {
   // expandedGroups Set, keyed by master-order id — so a group left open in one
   // view stays open switching to the other; only the rendering changes.
   const [view, setView] = useState('matrix')
-  // THROWAWAY local prototype — not wired to real data, do not ship. Just
-  // for eyeballing the split-by-colourway + majority-rollup design inside
-  // the actual matrix table's real CSS/layout before building it for real.
-  const [demoSplit, setDemoSplit] = useState(false)
-  const DEMO_COLOURWAYS = [
-    { name: 'Charcoal', color: '#2C3E50', state: 'done', date: '2026-07-12', pct: 100 },
-    { name: 'Navy', color: '#1B2A4A', state: 'done', date: '2026-07-12', pct: 100 },
-    { name: 'Brown', color: '#6B4226', state: 'done', date: '2026-07-13', pct: 100 },
-    { name: 'Peacot', color: '#0F5F5F', state: 'active', date: '2026-07-14', pct: 40 },
-    { name: 'Olivine', color: '#5B7553', state: 'blocked', date: '2026-07-12', pct: 0 },
-  ]
-  // A step that hasn't actually diverged still shouldn't show all 5 colours
-  // landing on the exact same day — that reads as fake data, not "on track."
-  // Small fixed per-colour offsets instead of a literal repeat.
-  const DEMO_DATE_OFFSETS = [0, 0, 1, 0, -1]
-  const demoAddDays = (iso, n) => {
-    if (!iso || !n) return iso
-    const d = new Date(iso + 'T00:00:00Z')
-    d.setUTCDate(d.getUTCDate() + n)
-    return d.toISOString().slice(0, 10)
-  }
-  const demoMajority = (() => {
-    const counts = {}
-    DEMO_COLOURWAYS.forEach(c => { counts[c.state] = (counts[c.state] || 0) + 1 })
-    let best = null, bestN = -1
-    Object.entries(counts).forEach(([k, v]) => { if (v > bestN) { best = k; bestN = v } })
-    const date = DEMO_COLOURWAYS.find(c => c.state === best)?.date
-    return { state: best, count: bestN, total: DEMO_COLOURWAYS.length, date }
-  })()
   // Native `title` tooltips are slow to appear (~1s browser delay) and easy to
   // miss entirely — a custom one shows the instant the cursor lands, following
   // the mouse so it never gets clipped by the scrolling matrix container.
@@ -903,18 +874,16 @@ export function AdminOrders({ onOpen, initialStatus }) {
 
                   {isOpen && (
                     <div className="table-scroll">
-                      <table style={{ borderCollapse: 'collapse', minWidth: 340 + entries.length * 150 + (demoSplit && g === groupedOrders[0] ? DEMO_COLOURWAYS.length * 92 - 150 : 0) }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 340 + entries.length * 150 }}>
                         <thead>
                           <tr style={{ background: '#f8fafc' }}>
                             <th style={{ padding: '9px 14px', textAlign: 'left', fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.07em', position: 'sticky', left: 0, zIndex: 2, background: '#f8fafc', minWidth: 220 }}>
                               Step
                             </th>
-                            {entries.map(({ order, asgn }, entryIdx) => {
-                              const isDemoTarget = g === groupedOrders[0] && entryIdx === 0
-                              return (
+                            {entries.map(({ order, asgn }) => (
                               <th key={`${order.id}-${asgn.mid}`} onClick={() => onOpen(order.id, asgn.mid)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => onOpen(order.id, asgn.mid))}
                                 title={`${order.product} — ${order.id}`}
-                                style={{ padding: '9px 10px', textAlign: 'left', minWidth: 150, width: (isDemoTarget && demoSplit) ? DEMO_COLOURWAYS.length * 92 : undefined, cursor: 'pointer', borderLeft: `1px solid ${T.border}` }}>
+                                style={{ padding: '9px 10px', textAlign: 'left', minWidth: 150, cursor: 'pointer', borderLeft: `1px solid ${T.border}` }}>
                                 <FlexRow gap={6}>
                                   <ProductThumb order={order} size="sm" />
                                   <div style={{ minWidth: 0 }}>
@@ -923,34 +892,9 @@ export function AdminOrders({ onOpen, initialStatus }) {
                                     </div>
                                     <Mono style={{ fontSize: 9 }}>{asgn.qty?.toLocaleString()} pcs</Mono>
                                   </div>
-                                  {isDemoTarget && (
-                                    <button
-                                      onClick={e => { e.stopPropagation(); setDemoSplit(p => !p) }}
-                                      title="Split by colourway (prototype)"
-                                      style={{
-                                        marginLeft: 'auto', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 3,
-                                        background: demoSplit ? '#ede9fe' : 'none', border: `1px solid ${demoSplit ? '#c4b5fd' : T.border}`,
-                                        borderRadius: 6, padding: '3px 6px', fontFamily: 'inherit', fontSize: 9, fontWeight: 700,
-                                        color: demoSplit ? '#6d28d9' : T.textLight, cursor: 'pointer', whiteSpace: 'nowrap',
-                                      }}>
-                                      <ChevronDown size={9} style={{ transform: demoSplit ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
-                                      {demoSplit ? 'Collapse' : 'Split by colour'}
-                                    </button>
-                                  )}
                                 </FlexRow>
-                                {isDemoTarget && demoSplit && (
-                                  // Colour names shown ONCE here, not re-labeled on every step row below.
-                                  <FlexRow gap={3} style={{ marginTop: 6 }}>
-                                    {DEMO_COLOURWAYS.map(c => (
-                                      <div key={c.name} style={{ flex: 1, minWidth: 0, fontSize: 8, fontWeight: 700, color: T.textMuted, textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                        <span style={{ width: 7, height: 7, borderRadius: 2, background: c.color, display: 'inline-block', marginRight: 2, verticalAlign: -1 }} />{c.name}
-                                      </div>
-                                    ))}
-                                  </FlexRow>
-                                )}
                               </th>
-                              )
-                            })}
+                            ))}
                           </tr>
                         </thead>
                         <tbody>
@@ -961,10 +905,7 @@ export function AdminOrders({ onOpen, initialStatus }) {
                                 <td style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, color: T.text, position: 'sticky', left: 0, zIndex: 1, background: T.surface, whiteSpace: 'nowrap' }}>
                                   <span style={{ color: T.textLight, fontSize: 10, marginRight: 6 }}>{ri + 1}</span>{step}
                                 </td>
-                                {entries.map(({ order, asgn }, entryIdx) => {
-                                  const isDemoTargetCol = g === groupedOrders[0] && entryIdx === 0
-                                  const isDemoRow = isDemoTargetCol && ri === Math.min(2, spine.length - 1)
-                                  const demoColWidth = (isDemoTargetCol && demoSplit) ? DEMO_COLOURWAYS.length * 92 : undefined
+                                {entries.map(({ order, asgn }) => {
                                   const stageIdx = (asgn.stages || []).findIndex(s => s.name.trim().toLowerCase() === key)
                                   const stage = stageIdx >= 0 ? asgn.stages[stageIdx] : null
                                   const state = cellState(stage)
@@ -990,72 +931,12 @@ export function AdminOrders({ onOpen, initialStatus }) {
                                     `Progress: ${stageProgressLabel(stage)}`,
                                     stage.blockedReason ? `Blocked: ${stage.blockedReason}` : null,
                                   ].filter(Boolean) : null
-                                  // THROWAWAY prototype: the one row with real divergence data, shown
-                                  // collapsed (not split) — majority state, small dot flagging the split.
-                                  if (isDemoRow && !demoSplit && stage) {
-                                    return (
-                                      <td key={`${order.id}-${asgn.mid}`} style={{ padding: '5px 8px', borderLeft: `1px solid ${T.border}`, verticalAlign: 'top' }}>
-                                        <div style={{ background: CELL_STATE[demoMajority.state].bg, borderRadius: 5, padding: '4px 7px' }}>
-                                          <span style={{ fontSize: 12, fontWeight: 800, color: CELL_STATE[demoMajority.state].fg, whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono',monospace" }}>
-                                            {demoMajority.state === 'done' ? <Check size={10} strokeWidth={3} style={{ verticalAlign: -1 }} /> : ''} {fmtStageDate(demoMajority.date)}
-                                            <span title="Colours have diverged on this step" style={{ width: 5, height: 5, borderRadius: '50%', background: '#8b5cf6', display: 'inline-block', marginLeft: 4 }} />
-                                          </span>
-                                          <div style={{ fontSize: 9, color: CELL_STATE[demoMajority.state].fg, opacity: 0.75, marginTop: 1 }}>
-                                            {demoMajority.count} of {demoMajority.total} colours
-                                          </div>
-                                        </div>
-                                      </td>
-                                    )
-                                  }
-                                  // THROWAWAY prototype: when this style is split, every step in its
-                                  // column shows one sub-cell per colourway — not just the one step
-                                  // with real divergence data — so a uniform step (all colours at the
-                                  // same point) reads as a plain repeated row instead of switching
-                                  // shape row to row, which read as inconsistent/messy.
-                                  if (isDemoTargetCol && demoSplit && stage) {
-                                    const baseDate = done ? stage.actualEnd : effectiveEta(stage)
-                                    const subCells = isDemoRow
-                                      ? DEMO_COLOURWAYS
-                                      : DEMO_COLOURWAYS.map((c, i) => ({
-                                          name: c.name, color: c.color, state,
-                                          date: demoAddDays(baseDate, DEMO_DATE_OFFSETS[i]),
-                                          pct: stagePct(stage),
-                                        }))
-                                    return (
-                                      // Opens the same real stage editor every other cell does — there's
-                                      // no per-colourway backend yet, so this can't isolate to just the
-                                      // clicked colour, but it should still go somewhere real rather than
-                                      // do nothing.
-                                      <td key={`${order.id}-${asgn.mid}`} onClick={() => setQuickStage({ orderId: order.id, mfrId: asgn.mid, stageIndex: stageIdx })} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setQuickStage({ orderId: order.id, mfrId: asgn.mid, stageIndex: stageIdx }))}
-                                        style={{ padding: '5px 2px', width: demoColWidth, borderLeft: `1px solid ${T.border}`, cursor: 'pointer', verticalAlign: 'top' }}>
-                                        <FlexRow gap={3} style={{ alignItems: 'stretch' }}>
-                                          {subCells.map(c => {
-                                            const cst = CELL_STATE[c.state]
-                                            return (
-                                              <div key={c.name} style={{ flex: 1, minWidth: 0 }}>
-                                                <div style={{ background: cst.bg, borderRadius: 4, padding: '3px 4px' }}>
-                                                  <span style={{ fontSize: 9, fontWeight: 800, color: cst.fg, fontFamily: "'JetBrains Mono',monospace", whiteSpace: 'nowrap' }}>
-                                                    {c.state === 'done' ? <Check size={8} strokeWidth={3} style={{ verticalAlign: -1 }} /> : c.state === 'blocked' ? <Ban size={8} style={{ verticalAlign: -1 }} /> : c.state === 'overdue' ? <AlertTriangle size={8} style={{ verticalAlign: -1 }} /> : ''} {fmtStageDate(c.date).slice(0, 5)}
-                                                  </span>
-                                                  {/* Reserved even when unused (visibility:hidden, not
-                                                      omitted) so every sub-cell in the row is the same
-                                                      height — one taller "active" cell with a % line
-                                                      otherwise makes the row's bottom edge jagged. */}
-                                                  <div style={{ fontSize: 8, color: cst.fg, opacity: 0.75, visibility: c.pct != null ? 'visible' : 'hidden' }}>{c.pct ?? 0}%</div>
-                                                </div>
-                                              </div>
-                                            )
-                                          })}
-                                        </FlexRow>
-                                      </td>
-                                    )
-                                  }
                                   return (
                                     <td key={`${order.id}-${asgn.mid}`} onClick={() => stage && setQuickStage({ orderId: order.id, mfrId: asgn.mid, stageIndex: stageIdx })} role={stage ? 'button' : undefined} tabIndex={stage ? 0 : undefined} onKeyDown={stage ? activateOnKey(() => setQuickStage({ orderId: order.id, mfrId: asgn.mid, stageIndex: stageIdx })) : undefined}
                                       onMouseEnter={e => tipLines && showMatrixTip(e.clientX, e.clientY, tipLines)}
                                       onMouseMove={e => tipLines && setMatrixTip(tip => tip && { ...tip, x: e.clientX, y: e.clientY })}
                                       onMouseLeave={hideMatrixTip}
-                                      style={{ padding: '5px 8px', width: demoColWidth, borderLeft: `1px solid ${T.border}`, cursor: stage ? 'pointer' : 'default', verticalAlign: 'top' }}>
+                                      style={{ padding: '5px 8px', borderLeft: `1px solid ${T.border}`, cursor: stage ? 'pointer' : 'default', verticalAlign: 'top' }}>
                                       {!stage ? (
                                         <span style={{ fontSize: 11, color: '#cbd5e1' }}>NA</span>
                                       ) : (
