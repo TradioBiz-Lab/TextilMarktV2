@@ -75,8 +75,13 @@ export function useVoiceMode() {
       // dead-silent room doesn't look broken forever.
       emptyStreakRef.current += 1
       if (emptyStreakRef.current < MAX_EMPTY_STREAK) { startListening(); return }
+      // Say WHY when we can: a near-zero peak with a running context is a
+      // muted/dead mic input, a small-but-nonzero one is a quiet mic, a
+      // suspended context is the browser refusing audio — three different
+      // fixes, and "didn't hear anything" alone can't tell them apart.
+      const d = rec.getDiag?.()
       setPhase('error')
-      setErrorMsg("Didn't hear anything — try again or exit.")
+      setErrorMsg(`Didn't hear anything${d ? ` (mic level ${d.peak.toFixed(3)}, audio ${d.ctx})` : ''} — try again or exit.`)
       return
     }
     emptyStreakRef.current = 0
@@ -191,6 +196,7 @@ export function useVoiceMode() {
   // actually listens.
   const retryFromError = useCallback(() => {
     rec.unlock()
+    rec.cancel()
     emptyStreakRef.current = 0
     setErrorMsg(null)
     startListening()

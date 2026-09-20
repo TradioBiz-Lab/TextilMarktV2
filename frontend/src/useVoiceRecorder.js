@@ -53,6 +53,14 @@ export function useVoiceRecorder() {
   // voiceApi.transcribe at all when auto-stopped on silence/max-duration,
   // rather than relying on the model to self-report "nothing was said."
   const hadSpeechRef = useRef(false)
+  // Diagnostics for the most recent listen: loudest sample seen, the
+  // threshold in force, and the AudioContext state — surfaced in the
+  // "didn't hear anything" message and console so a recurring failure says
+  // WHICH way it failed (quiet mic vs. dead analyser vs. real silence).
+  const peakRef = useRef(0)
+  const ctxStateRef = useRef(null)
+  const thrRef = useRef(null)
+  const lastDiagRef = useRef(null)
 
   // Deliberately does NOT close recAudioCtxRef — that context is
   // persistent/reused across every recording (see its comment above);
@@ -132,8 +140,21 @@ export function useVoiceRecorder() {
       // hadSpeechRef was never tracked) always trusts the recorded blob.
       // An auto-stop only counts as a real result if some sample actually
       // crossed thresholdRms during the recording — see hadSpeechRef above.
-      const hasRealSpeech = !reason || hadSpeechRef.current
+      //
+      // Exception: a peak of essentially exactly zero means the analyser
+      // never received a single sample (suspended/interrupted context, or
+      // a stream the analyser wasn't actually fed) — that says nothing
+      // about whether anyone spoke, so trust the recording and let the
+      // transcriber decide (an empty transcript is already handled
+      // upstream) instead of looping on "didn't hear anything" forever.
+      const analyserDead = !!reason && peakRef.current < 1e-6
+      const hasRealSpeech = !reason || hadSpeechRef.current || analyserDead
       const result = (blob.size > 0 && hasRealSpeech) ? { blob, mimeType: blob.type } : null
+      lastDiagRef.current = {
+        reason, peak: peakRef.current, thr: thrRef.current?.() ?? null, ctx: ctxStateRef.current?.() ?? null,
+        blobKB: Math.round(blob.size / 102.4) / 10, hadSpeech: hadSpeechRef.current, analyserDead,
+      }
+      if (reason) console.info('[voice] listen ended', lastDiagRef.current)
       resolve(result)
       if (reason) onAutoStopRef.current?.(result, reason)
     }
@@ -179,16 +200,31 @@ export function useVoiceRecorder() {
         // that grace period too meant it could auto-stop as "silent" before
         // they'd even started, especially first thing in a hands-free loop.
         const { thresholdRms = 0.012, silenceMs = 1500, initialSilenceMs = 4000, minSpeechMs = 300, maxDurationMs = 30000 } = opts.silence
+        peakRef.current = 0
+        const AudioCtxClass = window.AudioContext || window.webkitAudioContext
         // Falls back to creating+resuming one here if the caller never
-        // called unlock() from a real gesture (defensive only — every
-        // known call site does call it) — same best-effort resume as
-        // before for that fallback path only.
-        if (!recAudioCtxRef.current) {
-          const AudioCtxClass = window.AudioContext || window.webkitAudioContext
+        // called unlock() from a real gesture, or if the persistent one
+        // was closed — same best-effort resume as before for that path.
+        if (!recAudioCtxRef.current || recAudioCtxRef.current.state === 'closed') {
           recAudioCtxRef.current = new AudioCtxClass()
         }
-        const audioCtx = recAudioCtxRef.current
-        audioCtx.resume().catch(() => {})
+        let audioCtx = recAudioCtxRef.current
+        // The persistent context can be left suspended/interrupted by the
+        // OS after Kriyaa's own reply played through the speaker (audio
+        // focus handoff), and a suspended context feeds the analyser
+        // nothing but zeros — every later listen then looks like silence.
+        // Give resume() a moment, and if it still isn't running, swap in
+        // a fresh context (allowed under the page's sticky user
+        // activation in Chrome/Firefox) rather than listening through a
+        // dead one.
+        const sleep = ms => new Promise(r => setTimeout(r, ms))
+        if (audioCtx.state !== 'running') await Promise.race([audioCtx.resume().catch(() => {}), sleep(400)])
+        if (audioCtx.state !== 'running') {
+          try { audioCtx.close().catch(() => {}) } catch { /* already closed */ }
+          audioCtx = new AudioCtxClass()
+          recAudioCtxRef.current = audioCtx
+          await Promise.race([audioCtx.resume().catch(() => {}), sleep(400)])
+        }
         const source = audioCtx.createMediaStreamSource(stream)
         const analyser = audioCtx.createAnalyser()
         analyser.fftSize = 512
@@ -199,6 +235,9 @@ export function useVoiceRecorder() {
         const buf = new Float32Array(analyser.fftSize)
         const startTime = performance.now()
         let lastLoudTime = startTime
+        let floorSum = 0, floorN = 0, thrUsed = thresholdRms
+        ctxStateRef.current = () => audioCtx.state
+        thrRef.current = () => thrUsed
 
         // 100ms is plenty of resolution for a 1500ms-scale silence
         // threshold, and keeps this well clear of Chrome's ~1s minimum
@@ -220,8 +259,21 @@ export function useVoiceRecorder() {
           ampRef.current = rms
 
           const now = performance.now()
-          if (rms > thresholdRms) { lastLoudTime = now; hadSpeechRef.current = true }
           const elapsed = now - startTime
+          if (rms > peakRef.current) peakRef.current = rms
+          // Adaptive threshold: a fixed 0.02 assumed a loud mic. A quiet
+          // laptop/headset mic (or auto-gain that hasn't ramped up yet on
+          // a freshly reopened stream) can peak well under that while the
+          // person IS speaking, which read as endless silence. Sample the
+          // noise floor over the first ~500ms and set the bar relative to
+          // it, capped at the configured threshold so a noisy room or
+          // someone who starts talking immediately behaves exactly as
+          // before.
+          if (elapsed < 500) { floorSum += rms; floorN++ }
+          const floor = floorN ? floorSum / floorN : 0
+          const effThreshold = elapsed < 500 ? thresholdRms : Math.max(0.006, Math.min(thresholdRms, floor * 3 + 0.004))
+          thrUsed = effThreshold
+          if (rms > effThreshold) { lastLoudTime = now; hadSpeechRef.current = true }
 
           // maxDurationMs is a hard backstop independent of amplitude — a
           // noisy room that never drops below thresholdRms would otherwise
@@ -271,6 +323,7 @@ export function useVoiceRecorder() {
   }, [])
 
   const getAmplitude = useCallback(() => ampRef.current, [])
+  const getDiag = useCallback(() => lastDiagRef.current, [])
 
   // Safety net for KriyaaVoiceMode's fullscreen mode, whose host page
   // (KriyaaPage) can genuinely unmount mid-recording on navigation —
@@ -283,5 +336,5 @@ export function useVoiceRecorder() {
     recAudioCtxRef.current?.close().catch(() => {})
   }, [])
 
-  return { state, errorMsg, start, stop, cancel, unlock, getAmplitude }
+  return { state, errorMsg, start, stop, cancel, unlock, getAmplitude, getDiag }
 }
