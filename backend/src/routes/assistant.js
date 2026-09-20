@@ -110,6 +110,47 @@ export const TOOL_HANDLERS = {
 
   list_orders: (input, ctx) => loopbackOrderFetch(ctx.cookie, 'GET', '/api/orders'),
 
+  // Resolves "the Zara jeans" style references to real order IDs without the
+  // admin ever having to know or say one. Reuses the same loopback list as
+  // list_orders (so it inherits identical permissions/enrichment) but returns
+  // a compact projection instead of the full TNA payload, which keeps this
+  // cheap in tokens and fast enough for a spoken conversation.
+  find_orders: async (input, ctx) => {
+    const result = await loopbackOrderFetch(ctx.cookie, 'GET', '/api/orders')
+    if (!result.ok) return result
+    const tokens = String(input.query || '').toLowerCase().split(/\s+/).filter(Boolean)
+    const rows = result.data.map(o => ({
+      o,
+      hay: [
+        o.buyerCompany, o.buyerName, o.buyerCode, o.product, o.styleNumber, o.category, o.season,
+        ...(o.colourways || []).map(c => c.name),
+        ...(o.assignments || []).flatMap(a => [a.mfrCompany, a.mfrName]),
+      ].filter(Boolean).join(' ').toLowerCase(),
+    }))
+    let matches = rows.filter(r => tokens.every(t => r.hay.includes(t)))
+    // Speech-to-text often garbles a name ("Zaara", "H and M") so a strict
+    // all-words match can miss; fall back to any-word matches, flagged so the
+    // model confirms with the admin rather than assuming.
+    let partialMatch = false
+    if (matches.length === 0 && tokens.length > 1) {
+      matches = rows.filter(r => tokens.some(t => r.hay.includes(t)))
+      partialMatch = matches.length > 0
+    }
+    const MAX_RESULTS = 25
+    return {
+      ok: true, status: 200,
+      data: {
+        total: matches.length, partialMatch,
+        orders: matches.slice(0, MAX_RESULTS).map(({ o }) => ({
+          orderId: o.id, buyerCompany: o.buyerCompany, product: o.product, styleNumber: o.styleNumber,
+          category: o.category, season: o.season, totalQty: o.totalQty, delivery: o.delivery,
+          colourways: (o.colourways || []).map(c => c.name),
+          manufacturers: (o.assignments || []).map(a => ({ company: a.mfrCompany, status: a.status })),
+        })),
+      },
+    }
+  },
+
   get_order: (input, ctx) => loopbackOrderFetch(ctx.cookie, 'GET', `/api/orders/${input.orderId}`),
 
   post_stage_update: (input, ctx) => loopbackOrderFetch(ctx.cookie, 'POST',
@@ -180,8 +221,18 @@ const TOOLS = [
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
+    name: 'find_orders',
+    description: "Find orders by plain words: buyer/customer company name, product name, style number, category, colourway, season, or manufacturer name (e.g. 'zara jeans', 'H&M denim FW26'). All words must match somewhere on the order; if none do, it falls back to orders matching any word and sets partialMatch: true. Returns a compact list including each order's orderId, so you can then call get_order / check_delivery_risk / the write tools. This is how you turn what the admin SAYS into an order ID - use it instead of asking the admin for an ID, and instead of list_orders whenever the admin refers to a specific customer or product. An empty query returns every order (compact).",
+    input_schema: {
+      type: 'object',
+      properties: { query: { type: 'string', description: "Free words, e.g. a buyer name plus a product." } },
+      required: ['query'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'list_orders',
-    description: 'List every order with full TNA detail: buyer, every manufacturer assignment, and every production stage per assignment (name, kind, status, unitsDone/totalUnits, startDate, eta, baselineEta, etaVarianceDays, actualEnd, responsible person, updates, materials, checklist items). This is a large payload — prefer get_order once you know the order ID, and only call this for genuinely cross-order questions (\'what\'s overdue across every order\', \'which orders are behind\'). Do not call it out of habit on every turn.',
+    description: 'List every order with full TNA detail: buyer, every manufacturer assignment, and every production stage per assignment (name, kind, status, unitsDone/totalUnits, startDate, eta, baselineEta, etaVarianceDays, actualEnd, responsible person, updates, materials, checklist items). This is a large payload - prefer find_orders then get_order for anything about a specific customer or product, and only call this for genuinely cross-order questions (\'what\'s overdue across every order\', \'which orders are behind\'). Do not call it out of habit on every turn.',
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
@@ -314,6 +365,10 @@ When the admin marks a stage done and mentions it actually finished earlier than
 After moving a stage's eta later, proactively call check_delivery_risk (or reason from data you already have) and state, in exact days, whether the change now overruns the order's promised delivery date.
 
 An order's own \`delivery\` date can itself be corrected to stay honest with the current TNA plan — when that happens, deliveryOverrunDays reads null (the plan and the promise agree again) but the promise has still moved from what was first committed. deliveryVarianceDays is what tracks that: if the admin asks "how much has this order slipped" or "what was originally promised," use deliveryVarianceDays (vs baselineDelivery), not deliveryOverrunDays (vs the current delivery) — they answer different questions, and a realigned order will show one as null/zero and the other as a real number.
+
+IDENTIFYING ORDERS: ${user.name} thinks in customers and products, not order IDs. They will say things like "the Zara jeans", "H&M denim", or "Fitleasure's bedsheets". Resolve these yourself with find_orders (buyer company, product, style number, colourway, manufacturer) and then get_order - NEVER ask ${user.name} for an order ID. If find_orders returns several plausible matches, ask which one using names only ("Zara India's slim jeans or their cotton shirts?"), and if partialMatch is true confirm the name you matched before writing anything. Only ask a clarifying question when the words genuinely fit more than one order; never for an ID.
+
+REFERRING TO ORDERS: in every reply, name an order by buyer company and product (and style number or colourway if that disambiguates), for example "Zara India's Slim Fit Jeans". Never read out, spell out, or write the order ID (the long code like ZAR-TPR-TSHRT-SS26-001) unless ${user.name} explicitly asks for it. This matters most for spoken replies, where an ID is unpleasant to listen to. Likewise write dates in a natural spoken form ("20 November") rather than ISO format, and keep numbers easy to say aloud.
 
 Keep replies short and concrete — this is a fast working chat with one admin, not a written report.
 

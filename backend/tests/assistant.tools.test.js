@@ -232,3 +232,41 @@ describe('check_delivery_risk', () => {
     assert.equal(result.status, 404)
   })
 })
+
+describe('find_orders', () => {
+  test('resolves an order by buyer company and product words, no ID needed', async () => {
+    const { ctx, buyer } = await arrange()
+    const word = buyer.company.split(/\s+/)[0]
+    const result = await TOOL_HANDLERS.find_orders({ query: `${word} ${orderPayload({}).product}` }, ctx)
+    assert.equal(result.ok, true)
+    assert.equal(result.data.partialMatch, false)
+    assert.equal(result.data.orders.length, 1)
+    assert.equal(result.data.orders[0].orderId, ORDER_ID)
+    assert.equal(result.data.orders[0].buyerCompany, buyer.company)
+  })
+
+  test('returns a compact projection without stages or images', async () => {
+    const { ctx } = await arrange()
+    const result = await TOOL_HANDLERS.find_orders({ query: '' }, ctx)
+    assert.equal(result.data.total, 1)
+    const o = result.data.orders[0]
+    assert.equal(o.assignments, undefined)
+    assert.equal(o.imageDataUrl, undefined)
+    assert.ok(Array.isArray(o.manufacturers))
+  })
+
+  test('falls back to any-word matches and flags them as partial', async () => {
+    const { ctx, buyer } = await arrange()
+    const word = buyer.company.split(/\s+/)[0]
+    const result = await TOOL_HANDLERS.find_orders({ query: `${word} nonexistentgarment` }, ctx)
+    assert.equal(result.data.partialMatch, true)
+    assert.equal(result.data.orders[0].orderId, ORDER_ID)
+  })
+
+  test('no match at all returns an empty list', async () => {
+    const { ctx } = await arrange()
+    const result = await TOOL_HANDLERS.find_orders({ query: 'zzzz' }, ctx)
+    assert.equal(result.data.total, 0)
+    assert.deepEqual(result.data.orders, [])
+  })
+})
