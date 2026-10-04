@@ -7,7 +7,7 @@ export async function transcribeAudio(buffer, mimeType) {
   const form = new FormData()
   form.append('file', new Blob([buffer], { type: mimeType }), 'audio')
   form.append('model', 'saaras:v3')
-  // language_code intentionally omitted — auto-detects Hindi/English/Kannada/Bengali.
+  // language_code intentionally omitted - auto-detects Hindi/English/Kannada/Bengali.
   const res = await fetch(SARVAM_STT_URL, {
     method: 'POST',
     headers: { 'api-subscription-key': process.env.SARVAM_API_KEY },

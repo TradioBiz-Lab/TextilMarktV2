@@ -17,6 +17,7 @@ import { AdminDocuments } from './pages/admin/AdminDocuments.jsx'
 import { AdminAuditLog } from './pages/admin/AdminAuditLog.jsx'
 import { UserSetup } from './pages/admin/UserSetup.jsx'
 import { KriyaaPage } from './pages/admin/KriyaaPage.jsx'
+import { ReviewQueuePage } from './pages/admin/ReviewQueuePage.jsx'
 import { KriyaaChatProvider } from './kriyaaChatContext.jsx'
 import { ReportingPage } from './pages/shared/ReportingPage.jsx'
 import { ActionItemsPage } from './pages/shared/ActionItemsPage.jsx'
@@ -132,6 +133,7 @@ function Inner() {
       if (view === 'reports') return <ReportingPage onOpen={openOrder} />
       if (view === 'audit') return <AdminAuditLog />
       if (view === 'kriyaa') return <KriyaaPage />
+      if (view === 'review') return <ReviewQueuePage />
       if (view === 'users' && user.adminType === 'master') return <UserSetup />
     }
     return <div style={{ textAlign: 'center', padding: '60px', color: T.textLight }}>Page not found</div>

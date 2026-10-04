@@ -16,6 +16,7 @@ import { Order, DEFAULT_STAGE_NAMES } from '../models/Order.js'
 import { Document }     from '../models/Document.js'
 import { Notification } from '../models/Notification.js'
 import { AuditLog }     from '../models/AuditLog.js'
+import { InboundMessage } from '../models/InboundMessage.js'
 
 // This script deletes every User/Order/Document/Notification/AuditLog in
 // whatever database MONGO_DB_URI resolves to, then inserts fake data. Local
@@ -79,6 +80,7 @@ async function seed() {
     Document.deleteMany({}),
     Notification.deleteMany({}),
     AuditLog.deleteMany({}),
+    InboundMessage.deleteMany({}),
   ])
   console.log(`Collections cleared in sandbox db "${dbName}".`)
 
@@ -266,6 +268,48 @@ async function seed() {
     { byUser: tiruppur._id, action: 'Document Uploaded', detail: 'SA8000 Social Audit uploaded',                                       createdAt: new Date('2025-11-05T10:00:00') },
   ])
   console.log('Audit logs seeded: 6')
+
+  // ── Cava demo (Zero Entry Capture) ─────────────────────────────────────────
+  // One brand, two factories, four orders: two on track, one delayed at
+  // Material Sourcing, one with a shade-variation issue. Dates are relative to
+  // today so the demo always reads as live. Factory WhatsApp numbers are
+  // placeholders; the mock webhook matches senders by these.
+  const cavaBuyer = await User.create({ email: 'sourcing@cava.demo', passwordHash: h('Buyer@123'), role: 'buyer', company: 'Cava', name: 'Cava Sourcing', phone: '+91-9000000001', code: 'CAV', isActive: true, mustChangePw: false })
+  const jaipur = await User.create({ email: 'unit@jaipur.demo', passwordHash: h('Mfr@12345'), role: 'manufacturer', company: 'Jaipur Apparel Unit', name: 'Lalit Ji', phone: '+91-9000000002', code: 'JPR', whatsappNumber: '+91 90000 00002', language: 'hi', isActive: true, mustChangePw: false })
+  const tirKnits = await User.create({ email: 'unit@tiruppur.demo', passwordHash: h('Mfr@12345'), role: 'manufacturer', company: 'Tiruppur Knits Unit', name: 'Murugan', phone: '+91-9000000003', code: 'TRK', whatsappNumber: '+91 90000 00003', language: 'hi', isActive: true, mustChangePw: false })
+
+  const day = n => new Date(Date.now() + 5.5 * 3600e3 + n * 86400e3).toISOString().slice(0, 10)
+  // statuses: one entry per stage (done | in_progress | undefined). Each stage
+  // is a 6-day window; the plan is anchored so the first not-done stage's
+  // window contains today (done stages sit in the past, the rest ahead).
+  const cavaStages = (qty, _unused, statuses, extra = {}) => {
+    const active = Math.max(0, statuses.length - 1)
+    const startOffset = -(6 * active) - 2
+    return mkStages(DEFAULT_STAGE_NAMES, qty,
+    Object.fromEntries(DEFAULT_STAGE_NAMES.map((_, i) => {
+      const st = statuses[i]
+      const startDate = day(startOffset + i * 6), eta = day(startOffset + i * 6 + 5)
+      return [i, {
+        kind: i < 2 ? 'milestone' : 'quantity', status: st || 'not_started', startDate, eta,
+        unitsDone: st === 'done' ? qty : (st === 'in_progress' && i >= 2 ? Math.round(qty * 0.4) : 0),
+        actualEnd: st === 'done' ? day(startOffset + i * 6 + 4) : null,
+        ...(extra[i] || {}),
+      }]
+    })))
+  }
+  const D = 'done', P = 'in_progress'
+  await Order.insertMany([
+    { _id: 'CAV-JPR-COORD-SS27-001', buyerId: cavaBuyer._id, product: 'Co-ord Set', styleNumber: 'CAVA-COORD-01', category: 'DRESS', season: 'SS27', totalQty: 1200, delivery: new Date(day(70)), createdAt: new Date(day(-30)),
+      assignments: [{ mfrId: jaipur._id, qty: 1200, status: 'Processing', sub: 'M1', stages: cavaStages(1200, -26, [D, D, D, D, D, D, P]) }] },
+    { _id: 'CAV-JPR-KURTA-SS27-001', buyerId: cavaBuyer._id, product: 'Printed Kurta', styleNumber: 'CAVA-KURTA-02', category: 'SHIRT', season: 'SS27', totalQty: 800, delivery: new Date(day(55)), createdAt: new Date(day(-35)),
+      assignments: [{ mfrId: jaipur._id, qty: 800, status: 'Processing', sub: 'M1', stages: cavaStages(800, -34, [D, D, D, D, D, D, D, P]) }] },
+    { _id: 'CAV-TRK-SHIRT-SS27-001', buyerId: cavaBuyer._id, product: 'Cotton Shirt', styleNumber: 'CAVA-SHIRT-03', category: 'SHIRT', season: 'SS27', totalQty: 1500, delivery: new Date(day(60)), createdAt: new Date(day(-25)),
+      callout: 'Fabric lot late from the mill, Material Sourcing past its planned date.',
+      assignments: [{ mfrId: tirKnits._id, qty: 1500, status: 'Delayed', sub: 'M1', stages: cavaStages(1500, -22, [D, D, P], { 2: { eta: day(-6), baselineEta: day(-6), blocked: false } }) }] },
+    { _id: 'CAV-TRK-LINEN-SS27-001', buyerId: cavaBuyer._id, product: 'Linen Dress', styleNumber: 'CAVA-LINEN-04', category: 'DRESS', season: 'SS27', totalQty: 600, delivery: new Date(day(65)), createdAt: new Date(day(-20)),
+      assignments: [{ mfrId: tirKnits._id, qty: 600, status: 'Processing', sub: 'M1', stages: cavaStages(600, -12, [D, D, P], { 2: { blocked: true, blockedReason: 'Shade variation across fabric lot', note: 'Fabric inspected: shade variation between rolls' } }) }] },
+  ])
+  console.log('Cava demo seeded: 1 buyer, 2 factories, 4 orders')
 
   console.log('\n✓ Sandbox seed complete.')
   await mongoose.disconnect()
