@@ -8,6 +8,9 @@ const userSchema = new mongoose.Schema({
   company:      { type: String, required: true, trim: true },
   name:         { type: String, required: true, trim: true },
   phone:        { type: String, default: null },
+  // Zero Entry Capture: a manufacturer is identified on inbound messages by WhatsApp number.
+  whatsappNumber:   { type: String, default: null, trim: true },
+  language:         { type: String, default: 'hi' },
   code:         { type: String, required: true, maxlength: 5, uppercase: true },
   isActive:     { type: Boolean, default: true },
   mustChangePw:      { type: Boolean, default: false },

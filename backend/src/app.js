@@ -20,6 +20,9 @@ import signupRouter         from './routes/signup.js'
 import actionItemsRouter   from './routes/actionItems.js'
 import assistantRouter     from './routes/assistant.js'
 import voiceRouter         from './routes/voice.js'
+import inboundRouter from './routes/inbound.js'
+import reviewRouter from './routes/review.js'
+import floorRouter from './routes/floor.js'
 
 // ── Validate required env vars at startup ──────────────────────────────────
 const isProd = process.env.NODE_ENV === 'production'
@@ -171,6 +174,9 @@ app.use('/api/assistant',     assistantRouter)
 app.use('/api/voice',         voiceRouter)
 app.use('/api/master-orders', masterOrdersRouter)
 app.use('/api/signup',        signupRouter)
+app.use('/api/inbound',       inboundRouter)
+app.use('/api/review',        reviewRouter)
+app.use('/api/floor',         floorRouter)
 
 // ── Health check ────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

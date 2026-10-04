@@ -22,7 +22,8 @@
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.23.0",
-    "resend": "^6.9.4"
+    "resend": "^6.9.4",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "mongodb-memory-server": "^11.2.0"
