@@ -6,6 +6,7 @@ import { startServer, stopServer, as } from './helpers/client.js'
 import { makeAdmin, makeBuyer, makeMfr, orderPayload } from './helpers/factories.js'
 import { DEFAULT_STAGE_NAMES, Order } from '../src/models/Order.js'
 import { InboundMessage } from '../src/models/InboundMessage.js'
+import { Document } from '../src/models/Document.js'
 
 let ingestMessage, setPipelineDeps
 before(async () => {
@@ -46,6 +47,14 @@ describe('ingestMessage', () => {
     const saved = await InboundMessage.findById(msg._id).lean()
     assert.ok(saved.dataUrl.startsWith('data:image/jpeg;base64,'))
     assert.equal(saved.parsed.stage, 'cutting')
+    // Evidence is filed against the exact TNA stage, not a separate surface.
+    const ev = await Document.find({ sourceMessageId: msg._id }).lean()
+    assert.equal(ev.length, 1)
+    assert.equal(ev[0].type, 'floor_evidence')
+    assert.equal(ev[0].orderId, ids[0])
+    assert.equal(ev[0].stageIndex, DEFAULT_STAGE_NAMES.indexOf('Cutting'))
+    assert.equal(String(ev[0].mfrId), String(mfr._id))
+    assert.ok(ev[0].dataUrl.startsWith('data:image/jpeg'))
   })
 
   test('low confidence never changes the order', async () => {
@@ -53,6 +62,7 @@ describe('ingestMessage', () => {
     const msg = await ingestMessage({ ...img, factoryId: mfr._id }, photo({ confidence: 0.5 }))
     assert.equal(msg.state, 'needs_review')
     assert.notEqual((await stageOf(ids[0], 'Cutting')).status, 'done')
+    assert.equal(await Document.countDocuments({ sourceMessageId: msg._id }), 0)   // no evidence until a human approves
   })
 
   test('unmatched with two active orders goes to review, nothing written', async () => {
@@ -125,6 +135,7 @@ describe('review + webhook + feed routes', () => {
     const rej = await as(admin).post(`/api/review/${m1._id}/reject`, {})
     assert.equal(rej.status, 200)
     assert.equal((await stageOf(ids[0], 'Material Sourcing')).blocked, false)
+    assert.equal(await Document.countDocuments({ sourceMessageId: m1._id, isActive: true }), 0)   // evidence retracted
 
     const m2 = await ingestMessage({ ...img, factoryId: mfr._id }, photo({ confidence: 0.3 }))
     const q = await as(admin).get('/api/review/queue')
@@ -132,6 +143,8 @@ describe('review + webhook + feed routes', () => {
     const cor = await as(admin).post(`/api/review/${m2._id}/correct`, { orderId: ids[0], stage: 'Stitching', status: 'in_progress' })
     assert.equal(cor.status, 200, JSON.stringify(cor.body))
     assert.equal((await stageOf(ids[0], 'Stitching')).status, 'in_progress')
+    const ev = await Document.findOne({ sourceMessageId: m2._id, isActive: true }).lean()
+    assert.equal(ev.stageIndex, DEFAULT_STAGE_NAMES.indexOf('Stitching'))
     assert.equal((await as(admin).get('/api/review/queue')).body.length, 0)
   })
 

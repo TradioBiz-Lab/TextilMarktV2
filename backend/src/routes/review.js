@@ -6,6 +6,7 @@ import { deriveStageStatus } from '../models/Order.js'
 import { applyStageChange, revertStageChange } from '../lib/inbound/applyStage.js'
 import { loadActiveOrders } from '../lib/inbound/pipeline.js'
 import { mapStageIndex } from '../lib/inbound/matching.js'
+import { createEvidence, retractEvidence } from '../lib/inbound/evidence.js'
 
 const router = Router()
 const LIGHT = '-dataUrl'
@@ -78,6 +79,8 @@ async function applyForReview(msg, orderId, canonicalOrName, status) {
   const r = await applyStageChange({ orderId, mfrId: msg.factoryId, stageIndex: idx, status, note: msg.parsed?.description || msg.rawText?.slice(0, 200) })
   if (r.error) return r
   msg.orderId = orderId; msg.stageApplied = r.stageName
+  const factory = await User.findById(msg.factoryId, '_id').lean()
+  await createEvidence({ msg, factory, orderId, stageIndex: idx, stageName: r.stageName, note: msg.parsed?.description })
   msg.changes.push({ orderId, mfrId: msg.factoryId, stageIndex: idx, stageName: r.stageName, before: r.before, after: r.after })
   return r
 }
@@ -93,6 +96,7 @@ router.post('/:id/correct', requireAuth, requireAdmin, async (req, res) => {
   // Undo anything the AI applied before applying the coordinator's version.
   for (const c of msg.changes) await revertStageChange({ orderId: c.orderId, mfrId: c.mfrId, stageIndex: c.stageIndex, before: c.before })
   msg.changes = []
+  await retractEvidence(msg._id)
   const r = await applyForReview(msg, orderId, stage, status)
   if (r.error) return res.status(400).json({ error: r.error })
   await finish(msg, req, 'applied', `Corrected inbound message ${msg._id} to ${orderId} / ${r.stageName}`)
@@ -104,6 +108,7 @@ router.post('/:id/reject', requireAuth, requireAdmin, async (req, res) => {
   const msg = await InboundMessage.findOne({ _id: req.params.id, state: 'needs_review' })
   if (!msg) return res.status(404).json({ error: 'Message not found or already reviewed' })
   for (const c of msg.changes) await revertStageChange({ orderId: c.orderId, mfrId: c.mfrId, stageIndex: c.stageIndex, before: c.before })
+  await retractEvidence(msg._id)
   await finish(msg, req, 'rejected', `Rejected inbound message ${msg._id}`)
   res.json({ ok: true })
 })

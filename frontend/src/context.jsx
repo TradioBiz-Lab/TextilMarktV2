@@ -487,6 +487,12 @@ export function AppProvider({ children }) {
     setOrders(o)
   }, [])
 
+  // Stage evidence is created server-side by the inbound pipeline, so the
+  // document list needs an external refresh path too.
+  const refreshDocs = useCallback(async () => {
+    setDocs(await documentsApi.list())
+  }, [])
+
   // actionItems is otherwise only fetched once at bootstrap (line ~38) — every
   // existing mutation below refetches inline, but nothing external (like the
   // AI assistant, which can also change ActionItem records) had a way to ask
@@ -630,7 +636,7 @@ export function AppProvider({ children }) {
       editOrder, deleteOrder,
       createUser, updateUser, toggleUser, resetUserPw,
       markAllRead, markOneRead, getDocData, addAudit, pushNotif,
-      refreshOrders, listAllRibbons, createRibbon, updateRibbon, removeRibbon,
+      refreshOrders, refreshDocs, listAllRibbons, createRibbon, updateRibbon, removeRibbon,
       createActionItem, updateActionItem, addActionItemUpdate, removeActionItem, refreshActionItems,
     }}>
       {children}

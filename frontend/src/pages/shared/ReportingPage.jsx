@@ -6,7 +6,6 @@ import {
 } from '../../constants.js'
 import { Btn, Card, EmptyState, FlexRow, Modal, Mono, LoadingScreen, PageHeader, ProductThumb, StatCard, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
-import { FloorFeed } from '../../components/FloorFeed.jsx'
 
 // This page answers one question per row: WHERE IS THIS ORDER?
 //
@@ -304,8 +303,6 @@ export function ReportingPage({ onOpen }) {
         subtitle="Where every order stands right now — what's open, what's stuck, what's next"
         action={<Btn variant="secondary" icon={<Download size={16} />} onClick={exportCsv} disabled={filtered.length === 0}>Export CSV</Btn>}
       />
-
-      <FloorFeed />
 
       <div style={{ gap: 12, marginBottom: 14 }} className="grid-responsive-5">
         <StatCard icon={<Package size={19} color={T.primary} />} label="Live orders" value={stats.orders} color={T.primary} />

@@ -7,6 +7,7 @@ import { transcribeAudio } from '../sarvam.js'
 import { matchOrder, mapStageIndex, gateChange } from './matching.js'
 import { applyStageChange } from './applyStage.js'
 import { outbound } from './adapters.js'
+import { createEvidence } from './evidence.js'
 
 const IMAGE_MIME = ['image/jpeg', 'image/png', 'image/webp']
 const DOC_MIME = [...IMAGE_MIME, 'application/pdf']
@@ -134,13 +135,17 @@ export async function ingestMessage(input, deps = {}) {
       msg.orderId = p.orderId
       msg.stageApplied = orders.find(o => o.id === p.orderId).stages[p.stageIndex].name
       if (p.u.issue) msg.hasDefect = true
-      if (p.noop && !p.u.issue) continue
+      if (p.noop && !p.u.issue) {
+        await createEvidence({ msg, factory, orderId: p.orderId, stageIndex: p.stageIndex, stageName: msg.stageApplied, note: p.u.note })
+        continue
+      }
       const r = await applyStageChange({
         orderId: p.orderId, mfrId: factory._id, stageIndex: p.stageIndex,
         status: p.u.status, issue: p.u.issue, note: p.u.note,
       })
       if (r.error) return toReview(r.error)
       msg.changes.push({ orderId: p.orderId, mfrId: factory._id, stageIndex: p.stageIndex, stageName: r.stageName, before: r.before, after: r.after })
+      await createEvidence({ msg, factory, orderId: p.orderId, stageIndex: p.stageIndex, stageName: r.stageName, issue: p.u.issue, note: p.u.note })
       await AuditLog.create({ byUser: factory._id, action: 'Stage Updated', detail: `${p.orderId}: ${r.stageName} - ${p.u.status}${p.u.issue ? ' (issue flagged)' : ''} by AI from ${type} message from ${factory.company}` }).catch(() => {})
     }
     msg.state = msg.hasDefect ? 'needs_review' : 'auto_applied'

@@ -18,6 +18,7 @@ import { AdminAuditLog } from './pages/admin/AdminAuditLog.jsx'
 import { UserSetup } from './pages/admin/UserSetup.jsx'
 import { KriyaaPage } from './pages/admin/KriyaaPage.jsx'
 import { ReviewQueuePage } from './pages/admin/ReviewQueuePage.jsx'
+import { LiveRefresh } from './components/LiveRefresh.jsx'
 import { KriyaaChatProvider } from './kriyaaChatContext.jsx'
 import { ReportingPage } from './pages/shared/ReportingPage.jsx'
 import { ActionItemsPage } from './pages/shared/ActionItemsPage.jsx'
@@ -141,6 +142,7 @@ function Inner() {
 
   return (
     <KriyaaChatProvider>
+      <LiveRefresh />
       <Shell view={view} setView={navTo} onOpenOrder={openOrder}>
         {renderView()}
       </Shell>
