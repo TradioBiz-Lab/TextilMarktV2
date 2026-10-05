@@ -111,7 +111,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
           {sidebarCollapsed
             ? <div style={{ display: 'flex', justifyContent: 'center', color: roleColor }}><Hexagon size={18} strokeWidth={2.5} /></div>
             : <>
-                <div style={{ fontSize: 20, fontWeight: 800, color: roleColor, textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'center', lineHeight: 1.2 }}>{roleLabel}</div>
+                <div style={{ fontSize: roleLabel.length > 14 ? 13 : 20, fontWeight: 800, color: roleColor, textTransform: 'uppercase', letterSpacing: roleLabel.length > 14 ? '0.03em' : '0.06em', textAlign: 'center', lineHeight: 1.2, whiteSpace: 'nowrap' }}>{roleLabel}</div>
                 <ViewAsPicker />
               </>
           }
