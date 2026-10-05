@@ -28,13 +28,12 @@ export function AppProvider({ children }) {
     try {
       // Single batch: fetch everything in parallel
       const isAdmin = user.role === 'admin'
-      const isMfr   = user.role === 'manufacturer'
       const promises = [
         ordersApi.list(),
         documentsApi.list(),
         notificationsApi.list(),
         ribbonsApi.list(),
-        isMfr ? Promise.resolve([]) : masterOrdersApi.list(), // manufacturers cannot access master orders
+        masterOrdersApi.list(), // scoped by the server: customers see their own, manufacturers only those their orders belong to
         ...(isAdmin ? [usersApi.list(), auditApi.list(), actionItemsApi.list()] : []),
       ]
       const results = await Promise.all(promises)
@@ -498,8 +497,10 @@ export function AppProvider({ children }) {
   // AI assistant, which can also change ActionItem records) had a way to ask
   // for a refresh until now.
   const refreshActionItems = useCallback(async () => {
+    // The action-item task list is the admin team's; other roles have none to refresh.
+    if (currentUser?.role !== 'admin') return
     setActionItems(await actionItemsApi.list())
-  }, [])
+  }, [currentUser?.role])
 
   const addStageUpdate = useCallback(async (orderId, mfrId, stageIndex, text) => {
     const updated = await ordersApi.addStageUpdate(orderId, mfrId, stageIndex, text)

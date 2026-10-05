@@ -3,13 +3,7 @@ import { CheckCircle2, AlertTriangle } from 'lucide-react'
 import { AppProvider, useApp } from './context.jsx'
 import { Shell } from './components/Shell.jsx'
 import { LoginPage } from './pages/LoginPage.jsx'
-import { BuyerDashboard } from './pages/buyer/BuyerDashboard.jsx'
-import { BuyerOrderDetail } from './pages/buyer/BuyerOrderDetail.jsx'
-import { BuyerDocuments } from './pages/buyer/BuyerDocuments.jsx'
 import { BuyerSubmitReq } from './pages/buyer/BuyerSubmitReq.jsx'
-import { MfrDashboard } from './pages/manufacturer/MfrDashboard.jsx'
-import { MfrOrderDetail } from './pages/manufacturer/MfrOrderDetail.jsx'
-import { MfrCerts } from './pages/manufacturer/MfrCerts.jsx'
 import { AdminDashboard } from './pages/admin/AdminDashboard.jsx'
 import { AdminOrders } from './pages/admin/AdminOrders.jsx'
 import { AdminOrderDetail } from './pages/admin/AdminOrderDetail.jsx'
@@ -112,30 +106,18 @@ function Inner() {
     // viewer may act on, and the server enforces the same boundary.
     if (view === 'action_items' || view === 'daily') return <ActionItemsPage onOpen={openOrder} onNavigate={navTo} />
 
-    if (user.role === 'buyer') {
-      // Swapped on purpose: Dashboard (homepage) shows the KPI/Gantt reporting
-      // view; Reports shows the order List/Matrix table. See git history if
-      // this ever needs to go back the other way.
-      if (view === 'dashboard') return <ReportingPage onOpen={openOrder} />
-      if (view === 'order_detail' && selOid) return <BuyerOrderDetail orderId={selOid} initialMid={selMid} onBack={() => navTo('dashboard')} />
-      if (view === 'submit_req') return <BuyerSubmitReq />
-      if (view === 'documents') return <BuyerDocuments />
-      if (view === 'reports') return <BuyerDashboard onOpen={openOrder} onSubmitReq={() => navTo('submit_req')} />
-    }
-    if (user.role === 'manufacturer') {
-      if (view === 'dashboard') return <MfrDashboard onOpen={openOrder} />
-      if (view === 'order_detail' && selOid) return <MfrOrderDetail orderId={selOid} onBack={() => navTo('dashboard')} />
-      if (view === 'certs') return <MfrCerts />
-    }
+    // One set of screens for every role. Each reads only what the server returns for the
+    // signed-in user, and hides the controls that role cannot use (see caps.js).
+    if (view === 'dashboard') return <AdminDashboard onNavigate={navTo} onOpen={openOrder} />
+    if (view === 'kriyaa') return <KriyaaPage />
+    if (view === 'orders') return <AdminOrders key={ordersMo || 'all'} onOpen={openOrder} initialStatus={ordersStatus} initialMo={ordersMo} onSubmitReq={user.role === 'buyer' ? () => navTo('submit_req') : undefined} />
+    if (view === 'order_detail' && selOid) return <AdminOrderDetail orderId={selOid} initialMid={selMid} onBack={() => navTo('orders', { mo: orders?.find(o => o.id === selOid)?.masterOrderId || '__none__' })} />
+    if (view === 'documents') return <AdminDocuments />
+    if (view === 'reports') return <ReportingPage onOpen={openOrder} />
+    if (user.role === 'buyer' && view === 'submit_req') return <BuyerSubmitReq />
     if (user.role === 'admin') {
-      if (view === 'dashboard') return <AdminDashboard onNavigate={navTo} onOpen={openOrder} />
-      if (view === 'orders') return <AdminOrders key={ordersMo || 'all'} onOpen={openOrder} initialStatus={ordersStatus} initialMo={ordersMo} />
-      if (view === 'order_detail' && selOid) return <AdminOrderDetail orderId={selOid} initialMid={selMid} onBack={() => navTo('orders', { mo: orders?.find(o => o.id === selOid)?.masterOrderId || '__none__' })} />
-      if (view === 'documents') return <AdminDocuments />
-      if (view === 'reports') return <ReportingPage onOpen={openOrder} />
-      if (view === 'audit') return <AdminAuditLog />
-      if (view === 'kriyaa') return <KriyaaPage />
       if (view === 'review') return <ReviewQueuePage />
+      if (view === 'audit') return <AdminAuditLog />
       if (view === 'users' && user.adminType === 'master') return <UserSetup />
     }
     return <div style={{ textAlign: 'center', padding: '60px', color: T.textLight }}>Page not found</div>

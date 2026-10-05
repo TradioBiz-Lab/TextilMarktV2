@@ -7,6 +7,7 @@ import {
 } from '../../constants.js'
 import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, FileUpload, LoadingScreen, useToast, fileUploadPayload, ProductThumb, Modal, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
+import { capsFor } from '../../caps.js'
 import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
@@ -34,8 +35,10 @@ function groupDisplayLabel(g) {
   return withBuyerPrefix(base, g.orders)
 }
 
-export function AdminOrders({ onOpen, initialStatus, initialMo }) {
-  const { orders, users, loading, createOrder, uploadDoc, masterOrders, createMasterOrder, editOrder, deleteOrder } = useApp()
+export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
+  const { orders, users, loading, createOrder, uploadDoc, masterOrders, createMasterOrder, editOrder, deleteOrder, currentUser } = useApp()
+  // One Orders page for every role; caps decides which actions each sees (see caps.js).
+  const caps = capsFor(currentUser)
   const toast = useToast()
   const [q, setQ] = useState('')
   const [showSugg, setShowSugg] = useState(false)
@@ -277,12 +280,17 @@ export function AdminOrders({ onOpen, initialStatus, initialMo }) {
         </div>
       )}
 
-      <PageHeader title="Order Management" subtitle="Create styles, assign manufacturers, and manage the full order lifecycle" action={
-        <FlexRow gap={8}>
-          <Btn variant="secondary" onClick={() => setShowMO(true)} icon="📁">New Master Order</Btn>
-          <Btn onClick={() => setShowWizard(true)} icon={<Plus size={13} />}>Create Style</Btn>
-        </FlexRow>
-      } />
+      <PageHeader
+        title="Order Management"
+        subtitle={caps.createOrders ? 'Create styles, assign manufacturers, and manage the full order lifecycle'
+          : caps.isBuyer ? 'Every style you have placed, and where each one stands'
+          : 'Every style assigned to your factory, and where each one stands'}
+        action={caps.createOrders ? (
+          <FlexRow gap={8}>
+            <Btn variant="secondary" onClick={() => setShowMO(true)} icon="📁">New Master Order</Btn>
+            <Btn onClick={() => setShowWizard(true)} icon={<Plus size={13} />}>Create Style</Btn>
+          </FlexRow>
+        ) : (caps.submitRequirement && onSubmitReq ? <Btn onClick={onSubmitReq} icon={<Plus size={13} />}>Submit Requirement</Btn> : null)} />
 
       {/* List = one row per order, for day-to-day management. Matrix = styles
           across the top, TNA steps down the side, for "where does the whole
@@ -415,7 +423,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo }) {
                         <Mono style={{ fontSize: 11 }}>{o.id}{a ? `-${a.sub}` : ''}</Mono>
                       </td>
                       <td style={{ padding: '11px 16px', fontWeight: 600, color: T.text, fontSize: 13 }}>
-                        <FlexRow gap={10}><ProductThumb order={o} size="sm" onClick={e => { e.stopPropagation(); setEditTarget(o) }} />{o.product}</FlexRow>
+                        <FlexRow gap={10}><ProductThumb order={o} size="sm" onClick={caps.editOrders ? (e => { e.stopPropagation(); setEditTarget(o) }) : undefined} />{o.product}</FlexRow>
                       </td>
                       <td style={{ padding: '11px 16px', color: T.textMuted, fontSize: 13 }}>{o.buyerCompany || '—'}</td>
                       <td style={{ padding: '11px 16px' }}>
@@ -440,12 +448,12 @@ export function AdminOrders({ onOpen, initialStatus, initialMo }) {
                       </td>
                       <td style={{ padding: '11px 16px' }}>
                         <FlexRow gap={6}>
-                          <Btn size="sm" onClick={(e) => { e.stopPropagation(); onOpen(o.id, a?.mid) }}>Manage <ArrowRight size={12} style={{ marginLeft: -2 }} /></Btn>
-                          <Btn size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); setEditTarget(o) }}>Edit</Btn>
-                          <button
+                          <Btn size="sm" onClick={(e) => { e.stopPropagation(); onOpen(o.id, a?.mid) }}>{caps.isAdmin ? 'Manage' : 'Open'} <ArrowRight size={12} style={{ marginLeft: -2 }} /></Btn>
+                          {caps.editOrders && <Btn size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); setEditTarget(o) }}>Edit</Btn>}
+                          {caps.deleteOrders && <button
                             onClick={(e) => { e.stopPropagation(); setDeleteTarget(o) }}
                             style={{ padding: '4px 10px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: `1px solid ${T.dangerBorder}`, background: T.dangerBg, color: T.danger, cursor: 'pointer', fontFamily: 'inherit' }}
-                          >Delete</button>
+                          >Delete</button>}
                         </FlexRow>
                       </td>
                     </tr>
@@ -453,7 +461,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo }) {
                 })
                 return [spacerRow, headerRow, ...rows].filter(Boolean)
               })}
-              {filtered.length === 0 && <tr><td colSpan={8}><EmptyState icon={<Package size={26} color={T.textLight} />} title="No orders" desc="Create your first order above" /></td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={8}><EmptyState icon={<Package size={26} color={T.textLight} />} title="No orders" desc={caps.createOrders ? "Create your first order above" : "Orders will appear here once they are placed"} /></td></tr>}
             </tbody>
           </table>
         </div>
@@ -466,7 +474,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo }) {
           // is a glanceable summary of exactly that.
           <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-            {groupedOrders.length === 0 && <EmptyState icon={<Package size={26} color={T.textLight} />} title="No orders" desc="Create your first order above" />}
+            {groupedOrders.length === 0 && <EmptyState icon={<Package size={26} color={T.textLight} />} title="No orders" desc={caps.createOrders ? "Create your first order above" : "Orders will appear here once they are placed"} />}
 
             {groupedOrders.map(g => {
               // Earliest delivery first — the style due soonest is the one that

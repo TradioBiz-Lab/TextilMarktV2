@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { DashboardSummary } from '../../components/DashboardSummary.jsx'
+import { capsFor } from '../../caps.js'
 import { ShoppingBag, Factory, Package, Siren, Target, Check, ClipboardList, Megaphone, ChevronRight } from 'lucide-react'
 import { T, ST, isExpiringSoon, isExpired, getToday, dayNumber, withBuyerPrefix } from '../../constants.js'
 import { StatCard, Card, Grid, EmptyState, Mono, PageHeader, Badge, Btn, FlexRow, Modal, Select, Textarea, Input, Alert, LoadingScreen, DocCard } from '../../components/ui.jsx'
@@ -72,6 +73,8 @@ export function AdminDashboard({ onNavigate, onOpen }) {
   // state it already knows. Requests/ribbons stay collapsed: they're reference,
   // not triage, and keep the page scannable. Same open-by-default posture
   // ReportingPage already uses.
+  // One dashboard for every role; caps decides which sections each sees (see caps.js).
+  const caps = capsFor(currentUser)
   const [openSections, setOpenSections] = useState({ orders: false, actions: false, requests: false, alerts: false, ribbons: false })
   const toggleSection = id => setOpenSections(p => ({ ...p, [id]: !p[id] }))
 
@@ -101,6 +104,10 @@ export function AdminDashboard({ onNavigate, onOpen }) {
   const buyerRequests = docs.filter(d => d.isActive !== false && ['RFQ', 'tech_pack', 'buyer_order'].includes(d.type) && users.find(u => String(u.id) === String(d.uploadedBy) && u.role === 'buyer')).sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))
 
   const buyers = users.filter(u => u.role === 'buyer' && u.isActive)
+  // For a customer or manufacturer the users list is just themselves, so count the other side from their own orders.
+  const counterparties = caps.isBuyer
+    ? new Set(orders.flatMap(o => (o.assignments || []).map(a => a.mid))).size
+    : new Set(orders.map(o => o.buyerId)).size
   const mfrs = users.filter(u => u.role === 'manufacturer' && u.isActive)
   const delayed = orders.filter(o => (o.assignments || []).some(a => a.status === 'Delayed' || a.status === 'On Hold'))
   const expDocs = docs.filter(d => d.isActive !== false && (isExpiringSoon(d.expiryDate) || isExpired(d.expiryDate)))
@@ -181,7 +188,11 @@ export function AdminDashboard({ onNavigate, onOpen }) {
 
   return (
     <div>
-      <PageHeader title="Admin Dashboard" subtitle="Platform overview, alerts, and ribbon notifications" />
+      <PageHeader
+        title={caps.isAdmin ? 'Admin Dashboard' : 'Dashboard'}
+        subtitle={caps.isAdmin ? 'Platform overview, alerts, and ribbon notifications'
+          : caps.isBuyer ? 'Your orders, what needs you, and any alerts'
+          : 'Your assigned orders, what needs you, and any alerts'} />
 
       {/* ── Ribbon Publish Modal ── */}
       {showRibbon && (
@@ -236,8 +247,18 @@ export function AdminDashboard({ onNavigate, onOpen }) {
 
       {/* ── Stat Cards ── */}
       <Grid cols={4} style={{ marginBottom: 22 }}>
-        <StatCard label="Active Buyers" value={buyers.length} icon={<ShoppingBag size={19} color="#1d4ed8" />} bg="#dbeafe" />
-        <StatCard label="Manufacturers" value={mfrs.length} icon={<Factory size={19} color="#92400e" />} bg="#fef9c3" />
+        {caps.isAdmin ? (
+          <>
+            <StatCard label="Active Buyers" value={buyers.length} icon={<ShoppingBag size={19} color="#1d4ed8" />} bg="#dbeafe" />
+            <StatCard label="Manufacturers" value={mfrs.length} icon={<Factory size={19} color="#92400e" />} bg="#fef9c3" />
+          </>
+        ) : (
+          <>
+            {/* The other side of the relationship: a customer's factories, a factory's customers. */}
+            <StatCard label={caps.isBuyer ? 'Factories' : 'Customers'} value={counterparties} icon={caps.isBuyer ? <Factory size={19} color="#92400e" /> : <ShoppingBag size={19} color="#1d4ed8" />} bg={caps.isBuyer ? '#fef9c3' : '#dbeafe'} />
+            <StatCard label="Delivered" value={allTxns.filter(t => t.status === 'Delivered').length} icon={<Check size={19} color={T.success} strokeWidth={2.5} />} bg={T.successBg} />
+          </>
+        )}
         <StatCard label="Total Orders" value={allTxns.length} icon={<Package size={19} color={T.primaryDark} />} bg={T.primaryLight} />
         <StatCard label="Active Alerts" value={delayed.length + expDocs.length} icon={<Siren size={19} color={T.danger} />} bg={T.dangerBg} />
       </Grid>
@@ -317,6 +338,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
         )}
       </Card>
 
+      {caps.seeBuyerRequests && (<>
       {/* ── Buyer Requests ── */}
       <Card pad={false} style={{ marginBottom: 14 }}>
         <SectionHeader icon={<ClipboardList size={15} />} label="Buyer Requests" count={buyerRequests.length} open={openSections.requests} onToggle={() => toggleSection('requests')} />
@@ -332,6 +354,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
           </div>
         )}
       </Card>
+      </>)}
 
       {/* ── Active Alerts ── */}
       <Card pad={false} style={{ marginBottom: 14 }}>
@@ -357,6 +380,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
         )}
       </Card>
 
+      {caps.seeRibbonsAdmin && (<>
       {/* ── Ribbon Notifications ── */}
       <Card pad={false} style={{ marginBottom: 14 }}>
         <SectionHeader icon={<Megaphone size={15} />} label="Ribbons" count={allRibbons.length} open={openSections.ribbons} onToggle={() => toggleSection('ribbons')} />
@@ -404,6 +428,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
           </div>
         )}
       </Card>
+      </>)}
     </div>
   )
 }

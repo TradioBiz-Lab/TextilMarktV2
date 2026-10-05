@@ -69,31 +69,19 @@ export function Shell({ view, setView, children, onOpenOrder }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
-  const nav = {
-    buyer: [
-      { id: 'dashboard', icon: Home, label: 'Dashboard' },
-      { id: 'action_items', icon: ListChecks, label: 'Action Items' },
-      { id: 'submit_req', icon: ClipboardList, label: 'Submit Requirement' },
-      { id: 'documents', icon: Folder, label: 'Documents' },
-      { id: 'reports', icon: BarChart3, label: 'Reports' },
-    ],
-    manufacturer: [
-      { id: 'dashboard', icon: Home, label: 'Dashboard' },
-      { id: 'action_items', icon: ListChecks, label: 'Action Items' },
-      { id: 'certs', icon: ShieldCheck, label: 'Certificates' },
-    ],
-    admin: [
-      { id: 'dashboard', icon: Home, label: 'Dashboard' },
-      { id: 'action_items', icon: ListChecks, label: 'Action Items' },
-      { id: 'kriyaa',    icon: Bot, label: 'Kriyaa' },
-      { id: 'orders',    icon: Package, label: 'Orders' },
-      { id: 'review',    icon: Inbox, label: 'Review Queue' },
-      { id: 'documents', icon: Folder, label: 'Documents' },
-      { id: 'reports',   icon: BarChart3, label: 'Reports' },
-      { id: 'audit',     icon: History, label: 'Audit Log' },
-      ...(user?.adminType === 'master' ? [{ id: 'users', icon: Users, label: 'User Setup' }] : []),
-    ],
-  }[user?.role] || []
+  // Every role gets the same six tabs, in the same order. Admins get three extra
+  // management tabs; what each tab shows is scoped to the signed-in user's own data.
+  const nav = !user ? [] : [
+    { id: 'dashboard', icon: Home, label: 'Dashboard' },
+    { id: 'action_items', icon: ListChecks, label: 'Action Items' },
+    { id: 'kriyaa', icon: Bot, label: 'Kriyaa' },
+    { id: 'orders', icon: Package, label: 'Orders' },
+    ...(user.role === 'admin' ? [{ id: 'review', icon: Inbox, label: 'Review Queue' }] : []),
+    { id: 'documents', icon: Folder, label: 'Documents' },
+    { id: 'reports', icon: BarChart3, label: 'Reports' },
+    ...(user.role === 'admin' ? [{ id: 'audit', icon: History, label: 'Audit Log' }] : []),
+    ...(user.role === 'admin' && user.adminType === 'master' ? [{ id: 'users', icon: Users, label: 'User Setup' }] : []),
+  ]
 
   const roleLabel = user?.role === 'admin'
     ? (user?.adminType === 'master' ? 'Master Admin' : 'Admin Portal')
@@ -131,7 +119,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
 
         <nav style={{ flex: 1, padding: sidebarCollapsed ? '8px 4px' : '8px', display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto' }}>
           {nav.map(n => {
-            const active = view === n.id || (user?.role === 'admin' && n.id === 'orders' && view === 'order_detail')
+            const active = view === n.id || (n.id === 'orders' && (view === 'order_detail' || view === 'submit_req'))
             const Icon = n.icon
             return (
               <button key={n.id} onClick={() => handleNav(n.id)} title={sidebarCollapsed ? n.label : undefined}
@@ -219,7 +207,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
       {/* Floating AI assistant — admin-only (matches the backend's requireAdmin
           gate), rendered unconditionally so its conversation survives
           navigating between pages within the session. */}
-      {user?.role === 'admin' && <KriyaaWidget />}
+      {user && <KriyaaWidget />}
     </div>
   )
 }

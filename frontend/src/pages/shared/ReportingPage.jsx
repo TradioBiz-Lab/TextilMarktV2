@@ -6,7 +6,6 @@ import {
 } from '../../constants.js'
 import { Btn, Card, EmptyState, FlexRow, Modal, Mono, LoadingScreen, PageHeader, ProductThumb, StatCard, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
-import { DashboardSummary } from '../../components/DashboardSummary.jsx'
 import { rowCallout } from '../../dashboardSummary.js'
 
 // This page answers one question per row: WHERE IS THIS ORDER?
@@ -314,9 +313,6 @@ export function ReportingPage({ onOpen }) {
         <StatCard icon={<AlertTriangle size={19} color={T.warning} />} label="At risk" value={stats.risk} color={T.warning} />
         <StatCard icon={<CheckCircle2 size={19} color={T.success} />} label="On track" value={stats.ontrack} color={T.success} />
       </div>
-
-      {/* The customer's dashboard is this page; for admins it is the Reports page, which keeps no summary. */}
-      {isBuyer && <DashboardSummary />}
 
       <FlexRow gap={8} style={{ marginBottom: 14 }}>
         <div style={{ position: 'relative', flex: 1 }}>
