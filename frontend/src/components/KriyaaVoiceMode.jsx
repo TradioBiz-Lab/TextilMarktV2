@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { X, Mic } from 'lucide-react'
+import { X, Mic } from '../icons.jsx'
 import { T } from '../constants.js'
 
 const PHASE_LABEL = {

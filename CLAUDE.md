@@ -73,6 +73,13 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
 
 ## Architecture notes
 
+- **Icons come from `frontend/src/icons.jsx` only** (Phosphor under the hood). Never import an
+  icon library directly or use emoji/text glyphs (✓ ⚠ × and so on) as icons in the UI. The wrapper
+  keeps the old `size` / `strokeWidth` / `fill` props, picks a weight automatically (bold when tiny,
+  fill when a `fill` colour is given), and accepts `weight="duotone"` for large decorative icons.
+  To use a new icon, add one line to `icons.jsx`; to change the whole look or swap the library,
+  change that one file.
+
 - **One portal for every role.** Customers, manufacturers and admins see the same six tabs
   (Dashboard, Action Items, Kriyaa, Orders, Documents, Reports) and the same screens; admins
   also get Review Queue, Audit Log and User Setup. The server returns only the signed-in

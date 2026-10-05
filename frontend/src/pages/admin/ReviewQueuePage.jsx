@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Camera, Mic, FileText, MessageSquare, Check, X, Send } from 'lucide-react'
+import { Camera, Mic, FileText, MessageSquare, Check, X, Send } from '../../icons.jsx'
 import { reviewApi, inboundApi } from '../../api.js'
 import { useApp } from '../../context.jsx'
 import { T } from '../../constants.js'

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X, Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { X, Plus, Trash2, ChevronLeft, ChevronRight, AlertTriangle } from '../../icons.jsx'
 import { T, CATEGORIES, PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor } from '../../constants.js'
 import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -173,7 +173,7 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
                         <Select label="Category *" value={s.category} onChange={e => updateStyle(s._key, { category: e.target.value })}>
                           <option value="">— Select —</option>
                           {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                          <option value="__custom__">✏️ Custom…</option>
+                          <option value="__custom__">Custom…</option>
                         </Select>
                         {s.category === '__custom__' && (
                           <input value={s.customCategory} onChange={e => updateStyle(s._key, { customCategory: e.target.value.toUpperCase() })}
@@ -211,7 +211,7 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
                   <div>
                     <FlexRow justify="space-between" style={{ marginBottom: 6 }}>
                       <label style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Colourways</label>
-                      <button onClick={() => addColourway(s._key)} style={{ fontSize: 11, color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontFamily: 'inherit' }}>+ Add colourway</button>
+                      <button onClick={() => addColourway(s._key)} style={{ fontSize: 11, color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontFamily: 'inherit' }}><Plus size={11} style={{ verticalAlign: -1, marginRight: 3 }} />Add colourway</button>
                     </FlexRow>
                     {s.colourways.map(c => (
                       <div key={c._key} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
@@ -234,7 +234,7 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
                   <div>
                     <FlexRow justify="space-between" style={{ marginBottom: 6 }}>
                       <label style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Fabric Details</label>
-                      <button onClick={() => addFabric(s._key)} style={{ fontSize: 11, color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontFamily: 'inherit' }}>+ Add fabric</button>
+                      <button onClick={() => addFabric(s._key)} style={{ fontSize: 11, color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontFamily: 'inherit' }}><Plus size={11} style={{ verticalAlign: -1, marginRight: 3 }} />Add fabric</button>
                     </FlexRow>
                     {s.fabrics.map(f => (
                       <div key={f._key} style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
@@ -293,7 +293,7 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
             </>
           )}
 
-          {err && <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}>⚠ {err}</div>}
+          {err && <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {err}</div>}
 
           <FlexRow justify="space-between" style={{ marginTop: 4 }}>
             <Btn variant="secondary" onClick={step === 1 ? onClose : () => setStep(step - 1)}>

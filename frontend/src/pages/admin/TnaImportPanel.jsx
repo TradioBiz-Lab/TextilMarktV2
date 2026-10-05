@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from 'react'
 import Papa from 'papaparse'
-import { FileText, BarChart3, ArrowRight } from 'lucide-react'
+import { FileText, BarChart3, ArrowRight } from '../../icons.jsx'
 import { T } from '../../constants.js'
 import { Btn, FlexRow, EmptyState } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'

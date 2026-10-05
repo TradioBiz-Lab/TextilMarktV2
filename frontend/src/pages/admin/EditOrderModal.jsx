@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, X, Plus } from '../../icons.jsx'
 import { T, SEASONS, CATEGORIES, resolveNamedColor } from '../../constants.js'
 import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload, ProductThumb } from '../../components/ui.jsx'
 
@@ -92,7 +92,7 @@ export function EditOrderModal({ order, onClose, onSave }) {
             <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>Edit Order</div>
             <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3, fontFamily: "'JetBrains Mono',monospace" }}>{order.id}</div>
           </div>
-          <button onClick={onClose} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: T.textMuted }}>×</button>
+          <button onClick={onClose} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: T.textMuted }} aria-label="Close"><X size={14} /></button>
         </div>
 
         {/* Body */}
@@ -161,7 +161,7 @@ export function EditOrderModal({ order, onClose, onSave }) {
           <div>
             <FlexRow justify="space-between" style={{ marginBottom: 6 }}>
               <label style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Colourways</label>
-              <button onClick={addCw} style={{ fontSize: 11, color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontFamily: 'inherit' }}>+ Add colourway</button>
+              <button onClick={addCw} style={{ fontSize: 11, color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontFamily: 'inherit' }}><Plus size={11} style={{ verticalAlign: -1, marginRight: 3 }} />Add colourway</button>
             </FlexRow>
             {colourways.map(c => (
               <div key={c._key} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
@@ -175,7 +175,7 @@ export function EditOrderModal({ order, onClose, onSave }) {
                   placeholder="Pantone TPX/TCX (optional)"
                   style={{ flex: 1, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
                 {colourways.length > 1 && (
-                  <button onClick={() => removeCw(c._key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textLight }}>×</button>
+                  <button onClick={() => removeCw(c._key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textLight }} aria-label="Close"><X size={14} /></button>
                 )}
               </div>
             ))}
@@ -183,7 +183,7 @@ export function EditOrderModal({ order, onClose, onSave }) {
           <div>
             <FlexRow justify="space-between" style={{ marginBottom: 6 }}>
               <label style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Fabric Details</label>
-              <button onClick={addFab} style={{ fontSize: 11, color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontFamily: 'inherit' }}>+ Add fabric</button>
+              <button onClick={addFab} style={{ fontSize: 11, color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontFamily: 'inherit' }}><Plus size={11} style={{ verticalAlign: -1, marginRight: 3 }} />Add fabric</button>
             </FlexRow>
             {fabrics.map(fb => (
               <div key={fb._key} style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
@@ -200,7 +200,7 @@ export function EditOrderModal({ order, onClose, onSave }) {
                   placeholder="Supplier"
                   style={{ flex: '1 1 100px', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
                 {fabrics.length > 1 && (
-                  <button onClick={() => removeFab(fb._key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textLight }}>×</button>
+                  <button onClick={() => removeFab(fb._key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textLight }} aria-label="Close"><X size={14} /></button>
                 )}
               </div>
             ))}

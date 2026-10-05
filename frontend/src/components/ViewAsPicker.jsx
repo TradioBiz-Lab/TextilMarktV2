@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Eye, LogOut } from 'lucide-react'
+import { Eye, LogOut } from '../icons.jsx'
 import { viewAsApi, setAuthToken, setStoredToken } from '../api.js'
 import { useApp } from '../context.jsx'
 import { T } from '../constants.js'

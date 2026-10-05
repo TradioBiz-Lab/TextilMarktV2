@@ -1,7 +1,7 @@
 import {
   ClipboardList, ShoppingCart, Ruler, Wallet, Mail, FileText, ShieldCheck, Search,
   FlaskConical, Leaf, ShieldPlus, Package, Layers, CheckCircle2, Palette, Settings2,
-  Scissors, Shirt, Trophy, Truck, Factory, Camera } from 'lucide-react'
+  Scissors, Shirt, Trophy, Truck, Factory, Camera } from './icons.jsx'
 
 // Legacy status flow (kept for admin/mfr pages not yet migrated)
 export const STATUS_FLOW = [

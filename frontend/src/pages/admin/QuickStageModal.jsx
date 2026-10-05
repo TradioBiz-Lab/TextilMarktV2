@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, X, AlertTriangle, Paperclip, Plus } from '../../icons.jsx'
 import { T, STAGE_DOC_MAP, stageKindOf, stageStatusOf, stageVariance, stageActualVariance, STAGE_STATUS_LABELS, fmtStageDate } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, FlexRow, Input, FileUpload, DocCard, useToast, fileUploadPayload, SectionLabel } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -443,7 +443,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
                     {m.status}
                   </button>
                   {canMaterials && <button onClick={() => deleteMaterial(mi)}
-                    style={{ background: T.dangerBg, border: 'none', borderRadius: 6, cursor: 'pointer', width: 20, height: 20, color: T.danger, flexShrink: 0 }}>×</button>}
+                    style={{ background: T.dangerBg, border: 'none', borderRadius: 6, cursor: 'pointer', width: 20, height: 20, color: T.danger, flexShrink: 0 }} aria-label="Close"><X size={12} /></button>}
                 </FlexRow>
               )
             })}
@@ -453,7 +453,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
               style={{ flex: 1, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit' }} />
             <input type="number" value={matDraft.requiredQty} placeholder="Qty" onChange={e => setMatDraft(d => ({ ...d, requiredQty: e.target.value }))}
               style={{ width: 70, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit' }} />
-            <Btn size="sm" disabled={saving || !matDraft.name.trim() || !matDraft.requiredQty} onClick={addMaterial}>+ Add</Btn>
+            <Btn size="sm" disabled={saving || !matDraft.name.trim() || !matDraft.requiredQty} onClick={addMaterial} icon={<Plus size={12} />}>Add</Btn>
           </FlexRow>}
         </div>
 
@@ -467,9 +467,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
               ))}
             </div>
           )}
-          {canEvidence && <Btn size="sm" variant="outline" onClick={openStageDocUpload}>
-            📎 Upload Evidence
-          </Btn>}
+          {canEvidence && <Btn size="sm" variant="outline" onClick={openStageDocUpload} icon={<Paperclip size={12} />}>Upload Evidence</Btn>}
         </div>
 
         <FlexRow justify="flex-end" gap={8}>
@@ -490,7 +488,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
           {sdItems.map((item, idx) => (
             <div key={idx} style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 16px', background: '#f8fafc', position: 'relative' }}>
               {sdItems.length > 1 && (
-                <button onClick={() => removeSdItem(idx)} style={{ position: 'absolute', top: 10, right: 10, background: '#fee2e2', border: 'none', borderRadius: 6, cursor: 'pointer', width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: T.danger }}>×</button>
+                <button onClick={() => removeSdItem(idx)} style={{ position: 'absolute', top: 10, right: 10, background: '#fee2e2', border: 'none', borderRadius: 6, cursor: 'pointer', width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: T.danger }} aria-label="Close"><X size={12} /></button>
               )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <Input label="Document Name *" value={item.name} onChange={e => updateSdItem(idx, { name: e.target.value, fileErr: '' })} placeholder={`e.g. ${stage?.name || `Stage ${stageIndex + 1}`} GRN - Batch ${idx + 1}`} />
@@ -505,9 +503,9 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
               </div>
             </div>
           ))}
-          {sdErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500 }}>⚠ {sdErr}</div>}
+          {sdErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500 }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {sdErr}</div>}
           <FlexRow justify="space-between" gap={8}>
-            <Btn variant="secondary" size="sm" onClick={addSdItem}>+ Add Another Document</Btn>
+            <Btn variant="secondary" size="sm" onClick={addSdItem} icon={<Plus size={12} />}>Add Another Document</Btn>
             <FlexRow gap={8}>
               <Btn variant="secondary" onClick={() => setShowStageDocs(false)}>Cancel</Btn>
               <Btn disabled={saving} onClick={submitStageDoc}>{saving ? 'Uploading…' : `Upload ${sdItems.length > 1 ? `${sdItems.length} Documents` : 'Evidence'}`}</Btn>

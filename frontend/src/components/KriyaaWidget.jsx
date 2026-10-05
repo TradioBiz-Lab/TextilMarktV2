@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Bot, X, Mic, Square, Volume2, AudioLines } from 'lucide-react'
+import { Bot, X, Mic, Square, Volume2, AudioLines } from '../icons.jsx'
 import { T } from '../constants.js'
 import { Btn, Textarea } from './ui.jsx'
 import { useKriyaaChat } from '../kriyaaChatContext.jsx'

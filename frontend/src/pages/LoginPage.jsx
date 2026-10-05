@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Eye, EyeOff, AlertTriangle } from 'lucide-react'
+import { Eye, EyeOff, AlertTriangle } from '../icons.jsx'
 import { T } from '../constants.js'
 import { Input } from '../components/ui.jsx'
 import { useApp } from '../context.jsx'

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { CheckCircle2, AlertTriangle } from 'lucide-react'
+import { CheckCircle2, AlertTriangle } from './icons.jsx'
 import { AppProvider, useApp } from './context.jsx'
 import { Shell } from './components/Shell.jsx'
 import { LoginPage } from './pages/LoginPage.jsx'

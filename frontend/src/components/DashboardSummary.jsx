@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Sparkles, RefreshCw } from 'lucide-react'
+import { Sparkles, RefreshCw } from '../icons.jsx'
 import { useApp } from '../context.jsx'
 import { generateSummary } from '../dashboardSummary.js'
 import { T } from '../constants.js'

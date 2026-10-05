@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Bell, AlertTriangle, RefreshCw, Package } from 'lucide-react'
+import { Bell, AlertTriangle, RefreshCw, Package, X } from '../icons.jsx'
 import { T } from '../constants.js'
 import { EmptyState, activateOnKey } from './ui.jsx'
 import { useApp } from '../context.jsx'
@@ -39,7 +39,7 @@ export function NotifPanel({ onClose, onOpenOrder }) {
         <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>Notifications</span>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <button onClick={markAllRead} style={{ fontSize: 11, color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Mark all read</button>
-          <button onClick={onClose} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 24, height: 24, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, color: T.textMuted }}>×</button>
+          <button onClick={onClose} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 24, height: 24, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, color: T.textMuted }} aria-label="Close"><X size={12} /></button>
         </div>
       </div>
       <div style={{ maxHeight: 360, overflowY: 'auto' }}>

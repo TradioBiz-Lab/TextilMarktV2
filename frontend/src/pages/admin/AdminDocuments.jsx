@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Factory, ClipboardList, CheckCircle2, AlertTriangle, XCircle, Paperclip, Shield, Folder, Inbox, FileText, ChevronRight } from 'lucide-react'
+import { Factory, ClipboardList, CheckCircle2, AlertTriangle, XCircle, Paperclip, Shield, Folder, Inbox, FileText, ChevronRight } from '../../icons.jsx'
 import { T, DOC_TYPES, DOC_ICONS, isExpiringSoon, isExpired } from '../../constants.js'
 import { Modal, Select, Input, Btn, Card, Alert, EmptyState, FlexRow, PageHeader, DocCard, FileUpload, StatCard, LoadingScreen, useToast, fileUploadPayload, Grid } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'

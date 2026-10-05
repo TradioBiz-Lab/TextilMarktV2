@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react'
-import { Bot, Sparkles, ShieldAlert, PenLine, ListTodo, Mic, Square, Volume2, AudioLines } from 'lucide-react'
+import { Bot, Sparkles, ShieldAlert, PenLine, ListTodo, Mic, Square, Volume2, AudioLines } from '../../icons.jsx'
 import { T } from '../../constants.js'
 import { PageHeader, Card, Textarea, Btn } from '../../components/ui.jsx'
 import { useKriyaaChat } from '../../kriyaaChatContext.jsx'

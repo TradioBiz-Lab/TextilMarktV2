@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { DashboardSummary } from '../../components/DashboardSummary.jsx'
 import { capsFor } from '../../caps.js'
-import { ShoppingBag, Factory, Package, Siren, Target, Check, ClipboardList, Megaphone, ChevronRight } from 'lucide-react'
+import { ShoppingBag, Factory, Package, Siren, Target, Check, ClipboardList, Megaphone, ChevronRight } from '../../icons.jsx'
 import { T, ST, isExpiringSoon, isExpired, getToday, dayNumber, withBuyerPrefix } from '../../constants.js'
 import { StatCard, Card, Grid, EmptyState, Mono, PageHeader, Badge, Btn, FlexRow, Modal, Select, Textarea, Input, Alert, LoadingScreen, DocCard } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'

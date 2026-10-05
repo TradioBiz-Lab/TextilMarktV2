@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react'
-import { Link2, Package, Factory, Eye, Download, FileText, StickyNote, AlertTriangle, CheckCircle2, Info, X, Image as ImageIcon, Paperclip, Upload, ChevronLeft, ChevronRight, Crown } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback, createContext, useContext, isValidElement, cloneElement } from 'react'
+import { Link2, Package, Factory, Eye, Download, FileText, StickyNote, AlertTriangle, CheckCircle2, Info, X, Image as ImageIcon, Paperclip, Upload, ChevronLeft, ChevronRight, Crown, Check, Pencil, Trash2 } from '../icons.jsx'
 import { T, ST, DOC_TYPES, STAGE_DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired } from '../constants.js'
 import { useApp } from '../context.jsx'
 import * as pdfjsLib from 'pdfjs-dist'
@@ -265,7 +265,7 @@ export function Btn({ children, onClick, variant = 'primary', size = 'md', disab
     <button type={type} disabled={disabled} onClick={onClick}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{ background: hov && !disabled ? v.hover : v.bg, color: v.color, border: v.border, padding: sz.p, borderRadius: 8, fontSize: sz.fs, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, whiteSpace: 'nowrap', width: block ? '100%' : undefined, transition: 'background 0.12s', fontFamily: 'inherit' }}>
-      {icon && <span style={{ fontSize: (sz.fs || 13) + 1 }}>{icon}</span>}{children}
+      {icon && <span style={{ fontSize: (sz.fs || 13) + 1, display: 'inline-flex', alignItems: 'center', lineHeight: 0, flexShrink: 0 }}>{icon}</span>}{children}
     </button>
   )
 }
@@ -275,7 +275,7 @@ export function Input({ label, error, hint, style: s, inputStyle, ...p }) {
     <div style={s}>
       {label && <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>{label}</label>}
       <input {...p} style={{ width: '100%', border: `1px solid ${error ? T.danger : T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit', ...inputStyle }} />
-      {error && <div style={{ fontSize: 11, color: T.danger, marginTop: 3 }}>⚠ {error}</div>}
+      {error && <div style={{ fontSize: 11, color: T.danger, marginTop: 3 }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {error}</div>}
       {hint && !error && <div style={{ fontSize: 11, color: T.textLight, marginTop: 3 }}>{hint}</div>}
     </div>
   )
@@ -326,7 +326,7 @@ export function Modal({ title, subtitle, onClose, children, size = 'md' }) {
             <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>{title}</div>
             {subtitle && <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>{subtitle}</div>}
           </div>
-          <button onClick={onClose} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: T.textMuted, flexShrink: 0, marginTop: 1 }}>×</button>
+          <button onClick={onClose} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: T.textMuted, flexShrink: 0, marginTop: 1 }} aria-label="Close"><X size={14} /></button>
         </div>
         <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>{children}</div>
       </div>
@@ -347,12 +347,16 @@ export function Tabs({ tabs, active, onChange }) {
   )
 }
 
+// Large decorative icons read better as duotone (a tinted body plus the outline) than as a
+// hairline outline; this only applies to icons from our own set (they accept `weight`).
+const duotone = (icon, size) => (isValidElement(icon) && typeof icon.type !== 'string' ? cloneElement(icon, { weight: 'duotone', ...(size ? { size } : {}) }) : icon)
+
 export function StatCard({ label, value, icon, bg, trend }) {
   return (
     // height:100% so every card in a grid row matches the tallest, rather than
     // each shrink-wrapping its own label and leaving a ragged row edge.
     <div style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.border}`, padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 14, height: '100%' }}>
-      <div style={{ width: 46, height: 46, borderRadius: 12, background: bg || T.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>{icon}</div>
+      <div style={{ width: 46, height: 46, borderRadius: 12, background: bg || T.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>{duotone(icon, 24)}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 26, fontWeight: 800, color: T.text, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
         {/* labels are short ("Active Buyers"); balance keeps a 2-word wrap from
@@ -614,7 +618,7 @@ function DocEditModal({ doc, onClose, onSaved }) {
             </>
           )}
         </div>
-        {err && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500 }}>⚠ {err}</div>}
+        {err && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500 }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {err}</div>}
         <FlexRow justify="flex-end" gap={8}>
           <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
           <Btn disabled={saving || (replacing && !newFile)} onClick={save}>{saving ? 'Saving…' : 'Save Changes'}</Btn>
@@ -643,8 +647,8 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
 
   const manageButtons = canManage && (
     <>
-      <Btn size="sm" variant="secondary" onClick={e => { e.stopPropagation(); setShowEdit(true) }}>✎ Edit</Btn>
-      <Btn size="sm" variant="danger" onClick={handleDelete}>🗑 Delete</Btn>
+      <Btn size="sm" variant="secondary" icon={<Pencil size={12} />} onClick={e => { e.stopPropagation(); setShowEdit(true) }}>Edit</Btn>
+      <Btn size="sm" variant="danger" icon={<Trash2 size={12} />} onClick={handleDelete}>Delete</Btn>
     </>
   )
   const editModal = showEdit && <DocEditModal doc={doc} onClose={() => setShowEdit(false)} />
@@ -744,9 +748,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
             </button>
           )}
           <button onClick={closeViewer}
-            style={{ background: '#ef4444', border: 'none', color: '#fff', borderRadius: 7, width: 32, height: 32, fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}>
-            ×
-          </button>
+            style={{ background: '#ef4444', border: 'none', color: '#fff', borderRadius: 7, width: 32, height: 32, fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }} aria-label="Close"><X size={16} /></button>
         </div>
       </div>
       {/* Loading overlay */}
@@ -924,7 +926,7 @@ export function MfrProfileLink({ mfrId, mfrName, docs, onGetData }) {
                   style={{ background: '#1e293b', border: '1px solid #334155', color: '#e2e8f0', borderRadius: 7, padding: '0 12px', height: 32, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>⬇ Download</button>
               )}
               <button onClick={closeViewer}
-                style={{ background: '#ef4444', border: 'none', color: '#fff', borderRadius: 7, width: 32, height: 32, fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}>×</button>
+                style={{ background: '#ef4444', border: 'none', color: '#fff', borderRadius: 7, width: 32, height: 32, fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }} aria-label="Close"><X size={16} /></button>
             </div>
           </div>
           {viewerLoading && (
@@ -967,7 +969,7 @@ export function StatusTimeline({ status }) {
           return (
             <span key={s} style={{ display: 'contents' }}>
               <div title={s} style={{ width: 26, height: 26, borderRadius: '50%', background: cur ? T.primary : done ? T.success : '#f1f5f9', border: cur ? `2px solid ${T.primaryDark}` : done ? `2px solid ${T.successBorder}` : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, color: (done || cur) ? '#fff' : T.textLight, flexShrink: 0, transition: 'all 0.2s' }}>
-                {done ? '✓' : i + 1}
+                {done ? <Check size={13} strokeWidth={3} /> : i + 1}
               </div>
               {i < STATUS_FLOW.length - 1 && <div style={{ width: 30, height: 2, background: i < idx ? T.success : T.border, transition: 'background 0.2s' }} />}
             </span>
@@ -997,7 +999,7 @@ export function StageTimeline({ stages = [] }) {
           return (
             <span key={i} style={{ display: 'contents' }}>
               <div title={s.name} style={{ width: 26, height: 26, borderRadius: '50%', background: bg, border, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, color, flexShrink: 0, transition: 'all 0.2s' }}>
-                {done ? '✓' : i + 1}
+                {done ? <Check size={13} strokeWidth={3} /> : i + 1}
               </div>
               {i < stages.length - 1 && (
                 <div style={{ width: 24, height: 2, background: done ? T.success : T.border, transition: 'background 0.2s' }} />
@@ -1040,7 +1042,7 @@ export function EmptyState({ icon, title, desc, compact }) {
     : { pad: '48px 24px', iconFs: 36, titleFs: 15, bodyFs: 13 }
   return (
     <div style={{ textAlign: 'center', padding: dim.pad, color: T.textLight }}>
-      <div style={{ fontSize: dim.iconFs, marginBottom: 12 }}>{icon}</div>
+      <div style={{ fontSize: dim.iconFs, marginBottom: 12 }}>{duotone(icon, compact ? 28 : 38)}</div>
       <div style={{ fontSize: dim.titleFs, fontWeight: 700, color: T.textMuted, marginBottom: 6 }}>{title}</div>
       <div style={{ fontSize: dim.bodyFs }}>{desc}</div>
     </div>
@@ -1070,7 +1072,7 @@ export function RibbonBanner({ ribbons = [] }) {
             <span style={{ width: 7, height: 7, borderRadius: '50%', background: s.dot, flexShrink: 0 }} />
             <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: s.text, lineHeight: 1.4 }}>{r.msg}</span>
             <button onClick={() => setDismissed(p => new Set([...p, r.id]))}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, color: s.text, opacity: 0.45, padding: '0 2px', lineHeight: 1, fontFamily: 'inherit' }}>×</button>
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, color: s.text, opacity: 0.45, padding: '0 2px', lineHeight: 1, fontFamily: 'inherit' }} aria-label="Close"><X size={14} /></button>
           </div>
         )
       })}
@@ -1193,7 +1195,7 @@ export function StageDocGroup({ docs = [], stages = [], users, onGetData, mfrLab
                       color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: 10, fontWeight: 800,
                     }}>
-                      {st?.done ? '✓' : idx + 1}
+                      {st?.done ? <Check size={13} strokeWidth={3} /> : idx + 1}
                     </span>
 
                     <span style={{ fontSize: 13, fontWeight: 700, color: T.text, flex: 1, textAlign: 'left' }}>{name}</span>

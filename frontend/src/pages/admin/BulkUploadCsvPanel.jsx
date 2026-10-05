@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import Papa from 'papaparse'
-import { FileText, Download, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { FileText, Download, AlertTriangle, CheckCircle2 } from '../../icons.jsx'
 import { T } from '../../constants.js'
 import { Btn, FlexRow, EmptyState, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'

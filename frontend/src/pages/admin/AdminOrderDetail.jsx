@@ -1,6 +1,6 @@
 import { useState, useMemo, Fragment } from 'react'
 import Papa from 'papaparse'
-import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight } from 'lucide-react'
+import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight } from '../../icons.jsx'
 import {
   T, ORDER_STATUSES, STAGE_DOC_MAP, DOC_ICONS,
   stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
@@ -1171,7 +1171,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
             {sdItems.map((item, idx) => (
               <div key={idx} style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 16px', background: '#f8fafc', position: 'relative' }}>
                 {sdItems.length > 1 && (
-                  <button onClick={() => removeSdItem(idx)} style={{ position: 'absolute', top: 10, right: 10, background: '#fee2e2', border: 'none', borderRadius: 6, cursor: 'pointer', width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: T.danger }}>×</button>
+                  <button onClick={() => removeSdItem(idx)} style={{ position: 'absolute', top: 10, right: 10, background: '#fee2e2', border: 'none', borderRadius: 6, cursor: 'pointer', width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: T.danger }} aria-label="Close"><X size={12} /></button>
                 )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <Input label="Document Name *" value={item.name} onChange={e => updateSdItem(idx, { name: e.target.value, fileErr: '' })} placeholder={`e.g. ${(order.assignments.find(a => String(a.mid) === String(sdMfrId))?.stages?.[sdStageIdx]?.name) || `Stage ${sdStageIdx + 1}`} GRN - Batch ${idx + 1}`} />
@@ -1188,7 +1188,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
             ))}
             {sdErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={12} /> {sdErr}</div>}
             <FlexRow justify="space-between" gap={8}>
-              <Btn variant="secondary" size="sm" onClick={addSdItem}>+ Add Another Document</Btn>
+              <Btn variant="secondary" size="sm" onClick={addSdItem} icon={<Plus size={12} />}>Add Another Document</Btn>
               <FlexRow gap={8}>
                 <Btn variant="secondary" onClick={() => setShowStageDocs(false)}>Cancel</Btn>
                 <Btn disabled={saving} onClick={submitStageDoc}>{saving ? 'Uploading…' : `Upload ${sdItems.length > 1 ? `${sdItems.length} Documents` : 'Evidence'}`}</Btn>
@@ -1226,7 +1226,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                   style={{ background: '#1e293b', border: '1px solid #334155', color: '#e2e8f0', borderRadius: 7, padding: '0 12px', height: 32, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6 }}><Download size={13} /> Download</button>
               )}
               <button onClick={closeViewer}
-                style={{ background: '#ef4444', border: 'none', color: '#fff', borderRadius: 7, width: 32, height: 32, fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}>×</button>
+                style={{ background: '#ef4444', border: 'none', color: '#fff', borderRadius: 7, width: 32, height: 32, fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }} aria-label="Close"><X size={16} /></button>
             </div>
           </div>
           {viewerLoading && (
@@ -1322,7 +1322,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                             <button onClick={downloadTnaCsvTemplate} style={{ fontSize: 11, fontWeight: 700, color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>Download template</button>
                           </FlexRow>
                           <div style={{ fontSize: 10, color: T.textLight, marginBottom: 8 }}>Columns: {TNA_CSV_HEADERS.join(', ')} — one row per stage, in order.</div>
-                          {tnaCsvErr[a.mid] && <div style={{ fontSize: 11, color: T.danger, marginBottom: 8 }}>⚠ {tnaCsvErr[a.mid]}</div>}
+                          {tnaCsvErr[a.mid] && <div style={{ fontSize: 11, color: T.danger, marginBottom: 8 }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {tnaCsvErr[a.mid]}</div>}
                           {csvRows.length > 0 && (
                             <div>
                               <div style={{ fontSize: 11, fontWeight: 700, color: T.text, marginBottom: 6 }}>
@@ -1386,6 +1386,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                               </select>
                             </div>
                             <Btn
+                              icon={<Plus size={12} />}
                               size="sm"
                               disabled={!newStageDraft(a.mid).name.trim() || !newStageDraft(a.mid).startDate || !newStageDraft(a.mid).eta || addingStage === a.mid}
                               onClick={async () => {
@@ -1398,7 +1399,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                                   toast(typeof e === 'string' ? e : (e?.message || 'Failed to add stage'), 'error')
                                 } finally { setAddingStage(null) }
                               }}
-                            >{addingStage === a.mid ? 'Adding…' : '+ Add Stage'}</Btn>
+                            >{addingStage === a.mid ? 'Adding…' : 'Add Stage'}</Btn>
                           </div>
                         </div>
                       )}

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, List, LayoutGrid, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react'
+import { Plus, List, LayoutGrid, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, ChevronUp, ArrowRight, X } from '../../icons.jsx'
 import {
   T, SEASONS, ORDER_STATUSES,
   isStageDone, stageIsOverdue, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct, fmtStageDate, effectiveEta,
@@ -226,7 +226,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
                 <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>Create Master Order</div>
                 <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>A master order groups all products for a buyer's order</div>
               </div>
-              <button onClick={() => { setShowMO(false); resetMoForm() }} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: T.textMuted }}>×</button>
+              <button onClick={() => { setShowMO(false); resetMoForm() }} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: T.textMuted }} aria-label="Close"><X size={14} /></button>
             </div>
             <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
               <Select label="Buyer *" value={mo.buyerId} onChange={e => setMo({ ...mo, buyerId: e.target.value })}>
@@ -247,7 +247,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
                   <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: T.primaryDark }}>{genMoId()}</span>
                 </div>
               )}
-              {moErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}>⚠ {moErr}</div>}
+              {moErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {moErr}</div>}
               <FlexRow justify="flex-end" gap={8}>
                 <Btn variant="secondary" onClick={() => { setShowMO(false); resetMoForm() }}>Cancel</Btn>
                 <Btn disabled={!mo.buyerId || !mo.orderName.trim() || moSaving} onClick={async () => {
@@ -287,7 +287,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
           : 'Every style assigned to your factory, and where each one stands'}
         action={caps.createOrders ? (
           <FlexRow gap={8}>
-            <Btn variant="secondary" onClick={() => setShowMO(true)} icon="📁">New Master Order</Btn>
+            <Btn variant="secondary" onClick={() => setShowMO(true)} icon={<Folder size={13} />}>New Master Order</Btn>
             <Btn onClick={() => setShowWizard(true)} icon={<Plus size={13} />}>Create Style</Btn>
           </FlexRow>
         ) : (caps.submitRequirement && onSubmitReq ? <Btn onClick={onSubmitReq} icon={<Plus size={13} />}>Submit Requirement</Btn> : null)} />

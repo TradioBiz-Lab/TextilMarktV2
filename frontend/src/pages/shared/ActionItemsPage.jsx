@@ -1,5 +1,5 @@
 import { useMemo, useState, Fragment } from 'react'
-import { AlertTriangle, Plus, RotateCw, Ban, CircleDot, CalendarClock, Search, User, Building2, Package, MessageCircle, Check, ChevronUp, ChevronDown } from 'lucide-react'
+import { AlertTriangle, Plus, RotateCw, Ban, CircleDot, CalendarClock, Search, User, Building2, Package, MessageCircle, Check, ChevronUp, ChevronDown } from '../../icons.jsx'
 import {
   T, dayNumber, getToday, fmtN,
   stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, inFlightStages,
