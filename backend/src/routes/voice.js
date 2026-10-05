@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
-import { requireAuth, requireAdmin } from '../middleware/auth.js'
+import { requireAuth } from '../middleware/auth.js'
 import { transcribeAudio } from '../lib/sarvam.js'
 
 const router = Router()
@@ -76,7 +76,7 @@ function decodeAudioPayload(audioDataUrl) {
   return { buffer, mimeType }
 }
 
-router.post('/transcribe', requireAuth, requireAdmin, voiceLimiter, async (req, res) => {
+router.post('/transcribe', requireAuth, voiceLimiter, async (req, res) => {
   if (!process.env.SARVAM_API_KEY)
     return res.status(503).json({ error: 'Voice is not configured on this server.' })
 
@@ -97,7 +97,7 @@ router.post('/transcribe', requireAuth, requireAdmin, voiceLimiter, async (req, 
   }
 })
 
-router.post('/speak', requireAuth, requireAdmin, voiceLimiter, async (req, res) => {
+router.post('/speak', requireAuth, voiceLimiter, async (req, res) => {
   if (!process.env.SARVAM_API_KEY)
     return res.status(503).json({ error: 'Voice is not configured on this server.' })
 

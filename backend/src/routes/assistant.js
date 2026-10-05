@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
 import Anthropic from '@anthropic-ai/sdk'
-import { requireAuth, requireAdmin } from '../middleware/auth.js'
+import { requireAuth } from '../middleware/auth.js'
 import { Order } from '../db/index.js'
 import { stageEtaVarianceDays, deliveryVarianceDays } from '../models/Order.js'
 import { getToday, stageActualVariance, deliveryOverrunDays } from '../lib/stageMath.js'
@@ -180,10 +180,21 @@ export const TOOL_HANDLERS = {
   // Deterministic date-math helper — NOT a loopback call. Runs in-process
   // against the already-open Mongoose connection so the model gets exact
   // arithmetic instead of estimating dates itself.
-  check_delivery_risk: async (input) => {
+  check_delivery_risk: async (input, ctx = {}) => {
+    // Non-admins go through the normal (role-filtered) order route first, so
+    // this can only ever describe an order, and the assignments of it, that
+    // the caller could already open in the portal.
+    let visibleMfrIds = null
+    if (ctx.user && ctx.user.role !== 'admin') {
+      const seen = await loopbackOrderFetch(ctx.cookie, 'GET', `/api/orders/${input.orderId}`)
+      if (!seen.ok) return { ok: false, status: seen.status || 404, data: { error: 'Order not found' } }
+      visibleMfrIds = new Set((seen.data.assignments || []).map(a => String(a.mid)))
+    }
     const order = await Order.findById(input.orderId).lean()
     if (!order) return { ok: false, status: 404, data: { error: 'Order not found' } }
-    const assignments = (order.assignments || []).map(a => ({
+    const assignments = (order.assignments || [])
+      .filter(a => !visibleMfrIds || visibleMfrIds.has(String(a.mfrId)))
+      .map(a => ({
       mfrId: a.mfrId?.toString?.() ?? a.mfrId,
       deliveryOverrunDays: deliveryOverrunDays(order, a),
       stages: (a.stages || []).map(s => ({
@@ -341,11 +352,26 @@ const TOOLS = [
   },
 ]
 
+// Which tools each role may use. The tools act through the caller's own
+// session (see loopbackFetch), so the server's permission checks still apply
+// on every call; this list just keeps the model from being offered, or
+// attempting, things that role can never do. Action items are the admin task
+// list; moving stage dates is admin-only on the server.
+const ADMIN_ONLY_TOOLS = new Set(['list_action_items', 'add_action_item_update', 'update_action_item', 'update_stage_dates'])
+export const toolsFor = user => (user?.role === 'admin' ? TOOLS : TOOLS.filter(t => !ADMIN_ONLY_TOOLS.has(t.name)))
+
+const ROLE_SCOPE = {
+  buyer: `ROLE SCOPE: you are talking with a CUSTOMER (a buyer), not a Tradio admin. You can only see this customer's own orders, and only read them, plus comment on or update a production stage that is assigned to them (usually an approval step such as Lab Dip or PP Sample). You have no access to the action-item task list, to other customers, or to moving stage dates. If asked to do something outside that, say plainly that it is outside what their account can do and suggest contacting their Tradio coordinator. Where the instructions below mention action items or admin-only tools you do not have, ignore those parts.`,
+  manufacturer: `ROLE SCOPE: you are talking with a MANUFACTURER, not a Tradio admin. You can only see the orders assigned to this factory, and only this factory's own assignment on each. You may log progress notes and update stage status on this factory's own stages. You have no access to the action-item task list, to other factories or customers' commercial details, or to moving stage dates (the Tradio coordinator does that). If asked to do something outside that, say plainly that it is outside what their account can do and suggest contacting their Tradio coordinator. Where the instructions below mention action items or admin-only tools you do not have, ignore those parts.`,
+}
+
 function buildSystemPrompt(user) {
   const today = getToday()
-  const who = user.adminType === 'master' ? 'the master admin' : 'an admin'
-  return `You are Kriyaa, TextilMarkt's production-tracking assistant, talking with ${user.name}, ${who} of the platform. Introduce yourself as Kriyaa if asked who you are.
-
+  const who = user.role === 'buyer' ? `a customer (${user.company})`
+    : user.role === 'manufacturer' ? `a manufacturer (${user.company})`
+    : user.adminType === 'master' ? 'the master admin of the platform' : 'an admin of the platform'
+  return `You are Kriyaa, TextilMarkt's production-tracking assistant, talking with ${user.name}, ${who}. Introduce yourself as Kriyaa if asked who you are.
+${ROLE_SCOPE[user.role] ? `\n${ROLE_SCOPE[user.role]}\n` : ''}
 CAPABILITY BOUNDARY: your tools only cover order/stage production tracking and the action-item task list — that is the entire scope of what this system tracks. There is no performance, KPI, staffing, HR, or team-comparison data anywhere here, and no tool that could surface it. If a question is not about a specific order, stage, or action item — career advice, "how do I become the best X", team rankings, anything outside production tracking — say so directly in your very first reply and stop there. Do not call a tool hoping it might contain something relevant to a question like that; list_orders/list_action_items/get_order have no such data, so calling them just burns time and produces no answer.
 
 Today's date is ${today} (India Standard Time). Use it to resolve any relative date the admin mentions ("next Friday", "yesterday", "in 3 days").
@@ -375,7 +401,7 @@ Keep replies short and concrete — this is a fast working chat with one admin, 
 Reply in PLAIN TEXT only — no markdown (no **bold**, no #headings, no markdown bullet/numbered list syntax). The chat UI renders your text verbatim, so markdown punctuation would show up literally instead of being formatted. Use line breaks and plain "1. 2. 3." or "-" prefixes for lists if needed, without any other markdown styling.`
 }
 
-router.post('/chat', requireAuth, requireAdmin, assistantLimiter, async (req, res) => {
+router.post('/chat', requireAuth, assistantLimiter, async (req, res) => {
   if (!process.env.ANTHROPIC_API_KEY)
     return res.status(503).json({ error: 'AI assistant is not configured on this server.' })
 
@@ -414,7 +440,7 @@ router.post('/chat', requireAuth, requireAdmin, assistantLimiter, async (req, re
   try {
     for (let i = 0; i < MAX_TOOL_LOOP_ITERATIONS; i++) {
       const response = await getClient().messages.create({
-        model: ANTHROPIC_MODEL, max_tokens: 4096, system, messages, tools: TOOLS,
+        model: ANTHROPIC_MODEL, max_tokens: 4096, system, messages, tools: toolsFor(req.user),
       })
       const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('\n\n')
       if (text) finalText = text
@@ -432,9 +458,9 @@ router.post('/chat', requireAuth, requireAdmin, assistantLimiter, async (req, re
         const handler = TOOL_HANDLERS[block.name]
         let content, isError = false
         try {
-          if (!handler) { content = `Unknown tool: ${block.name}`; isError = true }
+          if (!handler || !toolsFor(req.user).some(t => t.name === block.name)) { content = `Unknown tool: ${block.name}`; isError = true }
           else {
-            const result = await handler(block.input, { cookie })
+            const result = await handler(block.input, { cookie, user: req.user })
             isError = !result.ok
             content = JSON.stringify(result.data)
             // Backstop, not the primary fix (that's stripOrderImages above) —

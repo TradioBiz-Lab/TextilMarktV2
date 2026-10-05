@@ -21,11 +21,16 @@ const enrich = (mo) => ({
   createdAt: mo.createdAt,
 })
 
-// GET /api/master-orders — list all (admin sees all, buyer sees theirs, manufacturer blocked)
+// GET /api/master-orders — list (admin sees all, buyer sees theirs, a manufacturer sees
+// only the master orders that their own assigned orders belong to, read-only)
 router.get('/', requireAuth, async (req, res) => {
   try {
-    if (req.user.role === 'manufacturer') return res.status(403).json({ error: 'Forbidden' })
-    const filter = req.user.role === 'buyer' ? { buyerId: req.user.id } : {}
+    let filter = {}
+    if (req.user.role === 'buyer') filter = { buyerId: req.user.id }
+    else if (req.user.role === 'manufacturer') {
+      const ids = await Order.distinct('masterOrderId', { 'assignments.mfrId': req.user.id, masterOrderId: { $ne: null } })
+      filter = { _id: { $in: ids } }
+    }
     const mos = await MasterOrder.find(filter)
       .populate('buyerId', 'name company code')
       .populate('createdBy', 'name')
