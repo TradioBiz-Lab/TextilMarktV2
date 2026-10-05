@@ -61,7 +61,6 @@ import {
   Plus as P_Plus,
   Prohibit as P_Prohibit,
   RadioButton as P_RadioButton,
-  ChatTeardropDots as P_ChatTeardropDots,
   Ruler as P_Ruler,
   Scissors as P_Scissors,
   Shield as P_Shield,
@@ -129,8 +128,28 @@ export const AudioLines = make(P_Waveform, 'AudioLines')
 export const Ban = make(P_Prohibit, 'Ban')
 export const BarChart3 = make(P_ChartBar, 'BarChart3')
 export const Bell = make(P_Bell, 'Bell')
-// Kriyaa's mark is a friendly speech bubble, not a robot face (that read as unsettling).
-export const Bot = make(P_ChatTeardropDots, 'Bot')
+// Kriyaa's mark: a robot head with two round eyes, ears and an antenna, deliberately with NO mouth.
+// Phosphor's own robot has a wide grin that reads as creepy at size, so this one is drawn here and
+// follows the same weight rules as the rest of the set (bold when tiny, duotone/fill add a tint).
+export const Bot = forwardRef(function Bot({ size = 16, strokeWidth, fill, color = 'currentColor', weight, style, ...rest }, ref) {
+  const w = weight || weightFor({ size, strokeWidth, fill })
+  const stroke = w === 'bold' ? 2.2 : w === 'light' ? 1.2 : 1.6
+  const tint = w === 'fill' ? 0.38 : w === 'duotone' ? 0.22 : 0
+  const ink = fill && fill !== 'none' ? fill : color
+  return (
+    <svg ref={ref} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={ink} strokeWidth={stroke}
+      strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, ...style }} aria-hidden="true" {...rest}>
+      <path d="M12 7.2V4.2" />
+      <circle cx="12" cy="3.1" r="1" fill={ink} stroke="none" />
+      <rect x="4.2" y="7.2" width="15.6" height="12.6" rx="4.2" fill={ink} fillOpacity={tint} />
+      <path d="M2 12.8v3" />
+      <path d="M22 12.8v3" />
+      <circle cx="9" cy="13.2" r="1.25" fill={ink} stroke="none" />
+      <circle cx="15" cy="13.2" r="1.25" fill={ink} stroke="none" />
+    </svg>
+  )
+})
+Bot.displayName = 'Bot'
 export const Building2 = make(P_Buildings, 'Building2')
 export const Calendar = make(P_CalendarBlank, 'Calendar')
 export const CalendarClock = make(P_CalendarDots, 'CalendarClock')
