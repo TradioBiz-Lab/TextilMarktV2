@@ -139,24 +139,24 @@ async function main() {
   const blr  = await upsertUser('unit@bangaloresports.demo', { ...base, passwordHash: hash('Mfr@12345'), role: 'manufacturer', company: 'Bangalore Sportswear Unit', name: 'Ravi Gowda', phone: '+91-9000000014', code: 'BSW', whatsappNumber: '+91 90000 00014', language: 'hi' })
 
   const orders = [
-    { id: 'STR-NCR-JACKT-SS27-001', buyer: stride, mfr: ncr, product: 'Zip Up Recovery Jacket', style: 'STR-ZRJ-01', cat: 'JACKET', qty: 1200, slug: 'zip-up-recovery-jacket', active: 6, delivery: 70 },
-    { id: 'STR-NCR-JOGGR-SS27-001', buyer: stride, mfr: ncr, product: 'Cuffed Joggers', style: 'STR-CJ-02', cat: 'SHORTS', qty: 1500, slug: 'cuffed-joggers', active: 7, delivery: 55 },
-    { id: 'STR-BSW-TSHRT-SS27-001', buyer: stride, mfr: blr, product: 'Recovery Tee', style: 'STR-RT-03', cat: 'TSHRT', qty: 2000, slug: 'recovery-tee', active: 2, delivery: 60,
+    { id: 'STR-NCR-JACKT-SS27-001', buyer: stride, mfr: ncr, product: 'Zip Up Recovery Jacket', style: 'STR-ZRJ-01', cat: 'JACKET', qty: 1200, colours: ['Teal'], slug: 'zip-up-recovery-jacket', active: 6, delivery: 70 },
+    { id: 'STR-NCR-JOGGR-SS27-001', buyer: stride, mfr: ncr, product: 'Cuffed Joggers', style: 'STR-CJ-02', cat: 'SHORTS', qty: 1500, colours: ['Charcoal'], slug: 'cuffed-joggers', active: 7, delivery: 55 },
+    { id: 'STR-BSW-TSHRT-SS27-001', buyer: stride, mfr: blr, product: 'Recovery Tee', style: 'STR-RT-03', cat: 'TSHRT', qty: 2000, colours: ['White'], slug: 'recovery-tee', active: 2, delivery: 60,
       callout: 'Fabric lot late from the mill, Material Sourcing past its planned date.', status: 'Delayed', extra: { 2: { eta: day(-6), baselineEta: day(-12), note: 'Fabric lot delayed at the mill, revised ETA pushed.' } } },
-    { id: 'AER-BSW-HOODI-SS27-001', buyer: aero, mfr: blr, product: 'Hooded Tank', style: 'AER-HT-01', cat: 'HOODIE', qty: 900, slug: 'hooded-tank', active: 2, delivery: 65,
+    { id: 'AER-BSW-HOODI-SS27-001', buyer: aero, mfr: blr, product: 'Hooded Tank', style: 'AER-HT-01', cat: 'HOODIE', qty: 900, colours: ['White'], slug: 'hooded-tank', active: 2, delivery: 65,
       extra: { 2: { blocked: true, blockedReason: 'Shade variation across fabric lot', note: 'Fabric inspected: shade variation between rolls' } } },
     { id: 'AER-NCR-JACKT-SS27-001', buyer: aero, mfr: ncr, product: 'Baggy Active Jacket', style: 'AER-BAJ-02', cat: 'JACKET', qty: 800, slug: 'baggy-active-jacket', active: 12, delivery: -3, delivered: true, colours: ['Olive Green', 'Black'], fabric: 'Nylon-poly stretch woven 135 GSM', supplier: 'Surat Technical Fabrics' },
-    { id: 'AER-BSW-JOGGR-SS27-001', buyer: aero, mfr: blr, product: 'Drifit Joggers', style: 'AER-DJ-03', cat: 'SHORTS', qty: 1100, slug: 'drifit-joggers', active: 1, delivery: 80 },
+    { id: 'AER-BSW-JOGGR-SS27-001', buyer: aero, mfr: blr, product: 'Drifit Joggers', style: 'AER-DJ-03', cat: 'SHORTS', qty: 1100, colours: ['Black'], slug: 'drifit-joggers', active: 1, delivery: 80 },
     // More range per customer
-    { id: 'STR-NCR-LEGGN-SS27-001', buyer: stride, mfr: ncr, product: 'Studio Leggings', style: 'STR-SL-04', cat: 'LEGGINGS', qty: 2400, slug: 'studio-leggings', active: 8, delivery: 35, fabric: 'Nylon-spandex brushed jersey 260 GSM', colours: ['Black', 'Plum'] },
-    { id: 'STR-BSW-SHORT-SS27-001', buyer: stride, mfr: blr, product: 'Pace Running Shorts', style: 'STR-PRS-05', cat: 'SHORTS', qty: 1800, slug: 'pace-running-shorts', active: 3, delivery: 62, fabric: 'Recycled poly micro-mesh 110 GSM', colours: ['Navy', 'Lime'] },
-    { id: 'STR-NCR-SWEAT-SS27-001', buyer: stride, mfr: ncr, product: 'Core Crew Sweatshirt', style: 'STR-CCS-06', cat: 'SWEATSHIRT', qty: 1000, slug: 'core-crew-sweatshirt', active: 6, delivery: 48, fabric: 'Cotton-poly fleece 320 GSM', colours: ['Heather Grey'] },
+    { id: 'STR-NCR-LEGGN-SS27-001', buyer: stride, mfr: ncr, product: 'Studio Leggings', style: 'STR-SL-04', cat: 'LEGGINGS', qty: 2400, slug: 'studio-leggings', active: 8, delivery: 35, fabric: 'Nylon-spandex brushed jersey 260 GSM', colours: ['Black'] },
+    { id: 'STR-BSW-SHORT-SS27-001', buyer: stride, mfr: blr, product: 'Pace Running Shorts', style: 'STR-PRS-05', cat: 'SHORTS', qty: 1800, slug: 'pace-running-shorts', active: 3, delivery: 62, fabric: 'Recycled poly micro-mesh 110 GSM', colours: ['Orange Red'] },
+    { id: 'STR-NCR-SWEAT-SS27-001', buyer: stride, mfr: ncr, product: 'Core Crew Sweatshirt', style: 'STR-CCS-06', cat: 'SWEATSHIRT', qty: 1000, slug: 'core-crew-sweatshirt', active: 6, delivery: 48, fabric: 'Cotton-poly fleece 320 GSM', colours: ['Navy'] },
     { id: 'STR-BSW-TRACK-SS27-001', buyer: stride, mfr: blr, product: 'Stride Track Jacket', style: 'STR-STJ-07', cat: 'JACKET', qty: 700, slug: 'stride-track-jacket', active: 2, delivery: 78, status: 'Delayed',
-      callout: 'Tricot fabric lot rejected on shade, resubmitted. Material Sourcing pushed.', fabric: 'Poly tricot 190 GSM', colours: ['Royal Blue'], extra: { 2: { eta: day(-4), baselineEta: day(-10), note: 'First fabric lot rejected on shade, resubmitted.' } } },
-    { id: 'AER-BSW-BRA00-SS27-001', buyer: aero, mfr: blr, product: 'Flex Sports Bra', style: 'AER-FSB-04', cat: 'SPORTSBRA', qty: 1600, slug: 'flex-sports-bra', active: 9, delivery: 28, fabric: 'Nylon-spandex double knit 240 GSM', colours: ['Dusty Rose', 'Black'] },
-    { id: 'AER-NCR-WINDB-SS27-001', buyer: aero, mfr: ncr, product: 'Aero Windbreaker', style: 'AER-AWB-05', cat: 'JACKET', qty: 900, slug: 'aero-windbreaker', active: 5, delivery: 52, fabric: 'Nylon ripstop 70D, PU coated', colours: ['Burnt Orange', 'Black'] },
-    { id: 'AER-BSW-LSTEE-SS27-001', buyer: aero, mfr: blr, product: 'Long Sleeve Training Tee', style: 'AER-LST-06', cat: 'TSHRT', qty: 1400, slug: 'long-sleeve-training-tee', active: 1, delivery: 85, fabric: 'Poly-spandex interlock 180 GSM', colours: ['Sage'] },
-    { id: 'AER-NCR-CROPH-SS27-001', buyer: aero, mfr: ncr, product: 'Cropped Fleece Hoodie', style: 'AER-CFH-07', cat: 'HOODIE', qty: 750, slug: 'cropped-fleece-hoodie', active: 7, delivery: 40, fabric: 'Cotton-poly fleece 300 GSM', colours: ['Lilac'],
+      callout: 'Tricot fabric lot rejected on shade, resubmitted. Material Sourcing pushed.', fabric: 'Poly tricot 190 GSM', colours: ['Royal Blue', 'Red'], extra: { 2: { eta: day(-4), baselineEta: day(-10), note: 'First fabric lot rejected on shade, resubmitted.' } } },
+    { id: 'AER-BSW-BRA00-SS27-001', buyer: aero, mfr: blr, product: 'Flex Sports Bra', style: 'AER-FSB-04', cat: 'SPORTSBRA', qty: 1600, slug: 'flex-sports-bra', active: 9, delivery: 28, fabric: 'Nylon-spandex double knit 240 GSM', colours: ['Black'] },
+    { id: 'AER-NCR-WINDB-SS27-001', buyer: aero, mfr: ncr, product: 'Aero Windbreaker', style: 'AER-AWB-05', cat: 'JACKET', qty: 900, slug: 'aero-windbreaker', active: 5, delivery: 52, fabric: 'Nylon ripstop 70D, PU coated', colours: ['Black Floral'] },
+    { id: 'AER-BSW-LSTEE-SS27-001', buyer: aero, mfr: blr, product: 'Long Sleeve Training Tee', style: 'AER-LST-06', cat: 'TSHRT', qty: 1400, slug: 'long-sleeve-training-tee', active: 1, delivery: 85, fabric: 'Poly-spandex interlock 180 GSM', colours: ['Black'] },
+    { id: 'AER-NCR-CROPH-SS27-001', buyer: aero, mfr: ncr, product: 'Cropped Fleece Hoodie', style: 'AER-CFH-07', cat: 'HOODIE', qty: 750, slug: 'cropped-fleece-hoodie', active: 7, delivery: 40, fabric: 'Cotton-poly fleece 300 GSM', colours: ['Orange'],
       extra: { 7: { blocked: true, blockedReason: 'Skipped stitches on hood seam', note: 'Inline QC: skipped stitches found on hood seam, line rework under way.' } } },
   ]
 
@@ -187,6 +187,11 @@ async function main() {
       console.log(`    model order: ${n} documents and floor messages filed`)
     }
     console.log(`  ${o.id}  ${o.product}${photo(o.slug) ? '' : '  (no photo found)'}`)
+  }
+  // The two older H&M seed orders get photos too, so no customer shows blank thumbnails.
+  for (const [id, slug] of [['HMX-BLR-JEANS-FW26-001', 'slim-fit-jeans'], ['HMX-TPR-POLO-SS26-001', 'polo-tshirt']]) {
+    const img = photo(slug)
+    if (img) console.log(`  ${id}  photo ${(await Order.updateOne({ _id: id }, { $set: { imageDataUrl: img } })).matchedCount ? 'set' : 'skipped (order not found)'}`)
   }
   console.log('\nDemo data ready. Logins:')
   console.log('  clients:   sourcing@stridelab.demo, sourcing@aeroactive.demo  (Buyer@123)')
