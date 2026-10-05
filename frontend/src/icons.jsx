@@ -1,4 +1,4 @@
-import { forwardRef } from 'react'
+import { forwardRef, useState } from 'react'
 import {
   ArrowClockwise as P_ArrowClockwise,
   ArrowLeft as P_ArrowLeft,
@@ -131,8 +131,14 @@ export const Bell = make(P_Bell, 'Bell')
 // Kriyaa's mark: a robot head with two round eyes, ears and an antenna, deliberately with NO mouth.
 // Phosphor's own robot has a wide grin that reads as creepy at size, so this one is drawn here and
 // follows the same weight rules as the rest of the set (bold when tiny, duotone/fill add a tint).
-export const Bot = forwardRef(function Bot({ size = 16, strokeWidth, fill, color = 'currentColor', weight, style, ...rest }, ref) {
+// It blinks (a quick eyelid-close every few seconds, see .kriyaa-eye in index.css) when it is big enough
+// to notice, never in the small sidebar slot, and `blink={false}` turns it off. Each robot starts at a
+// random point in the cycle so several on one screen do not blink in unison.
+export const Bot = forwardRef(function Bot({ size = 16, strokeWidth, fill, color = 'currentColor', weight, style, blink, ...rest }, ref) {
   const w = weight || weightFor({ size, strokeWidth, fill })
+  const doBlink = blink ?? size >= 22
+  const [phase] = useState(() => `-${(Math.random() * 5.5).toFixed(2)}s`)
+  const eye = doBlink ? { className: 'kriyaa-eye', style: { animationDelay: phase } } : {}
   const stroke = w === 'bold' ? 2.2 : w === 'light' ? 1.2 : 1.6
   const tint = w === 'fill' ? 0.38 : w === 'duotone' ? 0.22 : 0
   const ink = fill && fill !== 'none' ? fill : color
@@ -144,8 +150,8 @@ export const Bot = forwardRef(function Bot({ size = 16, strokeWidth, fill, color
       <rect x="4.2" y="7.2" width="15.6" height="12.6" rx="4.2" fill={ink} fillOpacity={tint} />
       <path d="M2 12.8v3" />
       <path d="M22 12.8v3" />
-      <circle cx="9" cy="13.2" r="1.25" fill={ink} stroke="none" />
-      <circle cx="15" cy="13.2" r="1.25" fill={ink} stroke="none" />
+      <circle cx="9" cy="13.2" r="1.25" fill={ink} stroke="none" {...eye} />
+      <circle cx="15" cy="13.2" r="1.25" fill={ink} stroke="none" {...eye} />
     </svg>
   )
 })

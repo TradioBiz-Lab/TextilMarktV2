@@ -266,3 +266,18 @@ table { border-collapse: collapse; width: 100%; }
   from { opacity: 0; transform: translateY(10px) scale(0.97); }
   to   { opacity: 1; transform: translateY(0)   scale(1); }
 }
+
+/* Kriyaa's robot: a brief blink every ~5.5s (eyes squash to a thin line and back). The per-icon
+   animation-delay is set in icons.jsx so multiple robots are out of phase. */
+@keyframes kriyaa-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95.5% { transform: scaleY(0.08); }
+}
+.kriyaa-eye {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: kriyaa-blink 5.5s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .kriyaa-eye { animation: none; }
+}
