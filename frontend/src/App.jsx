@@ -77,11 +77,12 @@ function ForceChangePassword() {
 }
 
 function Inner() {
-  const { currentUser: user, loading } = useApp()
+  const { currentUser: user, loading, orders } = useApp()
   const [view, setView] = useState('dashboard')
   const [selOid, setSelOid] = useState(null)
   const [selMid, setSelMid] = useState(null)
   const [ordersStatus, setOrdersStatus] = useState(null)
+  const [ordersMo, setOrdersMo] = useState(null)
   // Always start at dashboard on login or session restore
   useEffect(() => {
     if (user?.id) {
@@ -102,7 +103,7 @@ function Inner() {
 
   if (user.mustChangePw) return <ForceChangePassword />
 
-  const navTo = (v, params) => { setView(v); setSelOid(null); setOrdersStatus(params?.status ?? null) }
+  const navTo = (v, params) => { setView(v); setSelOid(null); setOrdersStatus(params?.status ?? null); setOrdersMo(params?.mo ?? null) }
   const openOrder = (id, mid) => { setSelOid(id); setSelMid(mid ? String(mid) : null); setView('order_detail') }
 
   const renderView = () => {
@@ -128,8 +129,8 @@ function Inner() {
     }
     if (user.role === 'admin') {
       if (view === 'dashboard') return <AdminDashboard onNavigate={navTo} onOpen={openOrder} />
-      if (view === 'orders') return <AdminOrders onOpen={openOrder} initialStatus={ordersStatus} />
-      if (view === 'order_detail' && selOid) return <AdminOrderDetail orderId={selOid} initialMid={selMid} onBack={() => navTo('orders')} />
+      if (view === 'orders') return <AdminOrders key={ordersMo || 'all'} onOpen={openOrder} initialStatus={ordersStatus} initialMo={ordersMo} />
+      if (view === 'order_detail' && selOid) return <AdminOrderDetail orderId={selOid} initialMid={selMid} onBack={() => navTo('orders', { mo: orders?.find(o => o.id === selOid)?.masterOrderId || '__none__' })} />
       if (view === 'documents') return <AdminDocuments />
       if (view === 'reports') return <ReportingPage onOpen={openOrder} />
       if (view === 'audit') return <AdminAuditLog />

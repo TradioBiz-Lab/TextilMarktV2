@@ -127,7 +127,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
 
         <nav style={{ flex: 1, padding: sidebarCollapsed ? '8px 4px' : '8px', display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto' }}>
           {nav.map(n => {
-            const active = view === n.id
+            const active = view === n.id || (user?.role === 'admin' && n.id === 'orders' && view === 'order_detail')
             const Icon = n.icon
             return (
               <button key={n.id} onClick={() => handleNav(n.id)} title={sidebarCollapsed ? n.label : undefined}

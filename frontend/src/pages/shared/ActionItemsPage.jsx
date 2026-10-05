@@ -86,7 +86,8 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
   const [onlyMine, setOnlyMine] = useState(false)
   const [edits, setEdits] = useState({})
   const [saving, setSaving] = useState(false)
-  const [collapsed, setCollapsed] = useState({})
+  // Buyer groups start collapsed; a search, owner filter or "mine only" opens them so results are never hidden.
+  const [expanded, setExpanded] = useState({})
   const [showCreate, setShowCreate] = useState(false)
   const [customDrafts, setCustomDrafts] = useState({})
   const [busy, setBusy] = useState(false)
@@ -338,10 +339,10 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
             desc={q || onlyMine || owner !== 'all' ? 'Try widening the search, owner, or date range.' : 'No steps are open, blocked, or due in this window.'} />
         </Card>
       ) : groups.map(g => {
-        const open = !collapsed[g.key]
+        const open = !!expanded[g.key] || !!q || owner !== 'all' || onlyMine
         return (
           <Card key={g.key} pad={false} style={{ marginBottom: 14 }}>
-            <FlexRow gap={10} onClick={() => setCollapsed(p => ({ ...p, [g.key]: open }))}
+            <FlexRow gap={10} onClick={() => setExpanded(p => ({ ...p, [g.key]: !open }))}
               style={{ padding: '11px 16px', background: '#eef2f7', borderRadius: '12px 12px 0 0', cursor: 'pointer' }}>
               <span style={{ color: T.textMuted, transform: open ? 'none' : 'rotate(-90deg)', display: 'inline-flex' }}><ChevronDown size={13} /></span>
               <span style={{ fontSize: 14, fontWeight: 800, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Building2 size={14} /> {g.buyerCompany}</span>

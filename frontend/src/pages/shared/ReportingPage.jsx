@@ -182,7 +182,8 @@ export function ReportingPage({ onOpen }) {
   const { orders, masterOrders, currentUser, loading, loadError } = useApp()
   const [q, setQ] = useState('')
   const [healthFilter, setHealthFilter] = useState('All')
-  const [collapsed, setCollapsed] = useState({})
+  // Groups start collapsed; a search or filter opens them so results are never hidden.
+  const [expanded, setExpanded] = useState({})
   const [ganttTarget, setGanttTarget] = useState(null)
   const isBuyer = currentUser?.role === 'buyer'
   const todayNum = dayNumber(getToday())
@@ -333,12 +334,12 @@ export function ReportingPage({ onOpen }) {
       {groups.length === 0 ? (
         <Card><EmptyState icon={<BarChart3 size={26} color={T.textLight} />} title={q || healthFilter !== 'All' ? 'No matching orders' : 'No orders'} desc={q || healthFilter !== 'All' ? 'Try adjusting the search or filter' : 'Orders will appear here'} /></Card>
       ) : groups.map(g => {
-        const isOpen = !collapsed[g.key]
+        const isOpen = !!expanded[g.key] || !!q || healthFilter !== 'All'
         return (
           <Card key={g.key} pad={false} style={{ marginBottom: 12 }}>
             <FlexRow
               gap={10}
-              onClick={() => setCollapsed(p => ({ ...p, [g.key]: isOpen }))}
+              onClick={() => setExpanded(p => ({ ...p, [g.key]: !isOpen }))}
               style={{ padding: '10px 16px', background: '#f1f5f9', borderRadius: '12px 12px 0 0', cursor: 'pointer' }}
             >
               <span style={{ color: T.textMuted, transform: isOpen ? 'none' : 'rotate(-90deg)', display: 'inline-flex' }}><ChevronDown size={13} /></span>

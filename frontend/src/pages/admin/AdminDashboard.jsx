@@ -71,7 +71,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
   // state it already knows. Requests/ribbons stay collapsed: they're reference,
   // not triage, and keep the page scannable. Same open-by-default posture
   // ReportingPage already uses.
-  const [openSections, setOpenSections] = useState({ orders: true, requests: false, alerts: true, ribbons: false })
+  const [openSections, setOpenSections] = useState({ orders: false, actions: false, requests: false, alerts: false, ribbons: false })
   const toggleSection = id => setOpenSections(p => ({ ...p, [id]: !p[id] }))
 
   // ── Ribbon management state ──
@@ -260,7 +260,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
                   const st = ST[overallStatus] || { bg: '#f1f5f9', c: '#475569' }
                   return (
                     <div key={group.key}
-                      onClick={() => onNavigate && onNavigate('orders')}
+                      onClick={() => onNavigate && onNavigate('orders', { mo: group.key === '__unassigned__' ? '__none__' : group.key })}
                       style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: '12px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, transition: 'all 0.15s', background: T.surface }}
                       onMouseEnter={e => { e.currentTarget.style.background = st.bg; e.currentTarget.style.borderColor = st.c + '55' }}
                       onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.borderColor = T.border }}
@@ -279,11 +279,15 @@ export function AdminDashboard({ onNavigate, onOpen }) {
 
       {/* ── Action Items Summary ── */}
       <Card style={{ marginBottom: 14 }}>
-        <FlexRow justify="space-between" style={{ marginBottom: 14 }}>
-          <span style={{ fontSize: 14, fontWeight: 700, color: T.text, display: 'flex', alignItems: 'center', gap: 7 }}><Target size={15} /> My Action Items</span>
-          <Btn size="sm" variant="secondary" onClick={() => onNavigate && onNavigate('action_items')}>Open Action Items →</Btn>
+        <FlexRow justify="space-between" onClick={() => toggleSection('actions')} style={{ marginBottom: openSections.actions ? 14 : 0, cursor: 'pointer' }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: T.text, display: 'flex', alignItems: 'center', gap: 7 }}>
+            <span style={{ color: T.textMuted, transition: 'transform 0.2s', transform: openSections.actions ? 'rotate(90deg)' : 'rotate(0deg)', display: 'flex' }}><ChevronRight size={14} /></span>
+            <Target size={15} /> My Action Items
+            <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, background: '#f1f5f9', border: `1px solid ${T.border}`, borderRadius: 10, padding: '2px 9px' }}>{combinedOpen.length}</span>
+          </span>
+          <Btn size="sm" variant="secondary" onClick={e => { e.stopPropagation(); onNavigate && onNavigate('action_items') }}>Open Action Items →</Btn>
         </FlexRow>
-        {combinedOpen.length === 0 ? (
+        {!openSections.actions ? null : combinedOpen.length === 0 ? (
           <EmptyState icon={<Check size={26} color={T.success} strokeWidth={2.5} />} compact title="All caught up" desc="No open action items assigned to you" />
         ) : (
           <>

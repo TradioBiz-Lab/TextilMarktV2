@@ -34,7 +34,7 @@ function groupDisplayLabel(g) {
   return withBuyerPrefix(base, g.orders)
 }
 
-export function AdminOrders({ onOpen, initialStatus }) {
+export function AdminOrders({ onOpen, initialStatus, initialMo }) {
   const { orders, users, loading, createOrder, uploadDoc, masterOrders, createMasterOrder, editOrder, deleteOrder } = useApp()
   const toast = useToast()
   const [q, setQ] = useState('')
@@ -143,12 +143,14 @@ export function AdminOrders({ onOpen, initialStatus }) {
   // rather than a tidy one. Auto-expand once, on first load, only when the list
   // is short enough that the scroll argument above doesn't apply. Runs a single
   // time so every later toggle is purely the user's.
-  const [autoExpanded, setAutoExpanded] = useState(false)
+  // Everything starts collapsed. The one exception is arriving from the
+  // dashboard on a specific master order: open that group (only) and scroll to it.
   useEffect(() => {
-    if (autoExpanded || groupedOrders.length === 0) return
-    if (groupedOrders.length <= 3) setExpandedGroups(new Set(groupedOrders.map(g => g.moId)))
-    setAutoExpanded(true)
-  }, [groupedOrders.length, autoExpanded])
+    if (!initialMo || !groupedOrders.some(g => g.moId === initialMo)) return
+    setExpandedGroups(new Set([initialMo]))
+    const t = setTimeout(() => document.getElementById(`mo-group-${initialMo}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 80)
+    return () => clearTimeout(t)
+  }, [initialMo, groupedOrders.length])
 
   const genMoId = () => {
     const b = users.find(u => u.id === mo.buyerId)
@@ -386,7 +388,7 @@ export function AdminOrders({ onOpen, initialStatus }) {
                   <tr key={`sp-${g.moId}`} aria-hidden="true"><td colSpan={8} style={{ padding: 0, height: 12, border: 'none', background: T.bg }} /></tr>
                 ) : null
                 const headerRow = (
-                  <tr key={`h-${g.moId}`} onClick={() => toggleGroup(g.moId)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => toggleGroup(g.moId))} style={{ cursor: 'pointer', background: '#f1f5f9' }}>
+                  <tr key={`h-${g.moId}`} id={`mo-group-${g.moId}`} onClick={() => toggleGroup(g.moId)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => toggleGroup(g.moId))} style={{ cursor: 'pointer', background: '#f1f5f9' }}>
                     <td colSpan={8} style={{ padding: '10px 16px' }}>
                       <FlexRow gap={10}>
                         <span style={{ color: T.textMuted, transition: 'transform 0.15s', transform: collapsed ? 'rotate(-90deg)' : 'none', display: 'inline-flex' }}><ChevronDown size={13} /></span>
