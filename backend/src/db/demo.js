@@ -16,6 +16,7 @@ import bcrypt from 'bcryptjs'
 import { connectDB } from './index.js'
 import { User } from '../models/User.js'
 import { Order, DEFAULT_STAGE_NAMES } from '../models/Order.js'
+import { MasterOrder } from '../models/MasterOrder.js'
 
 const SANDBOX_DB_NAME = 'textilmarkt_sandbox'
 const IMG_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'demo-images')
@@ -145,10 +146,22 @@ async function main() {
     { id: 'AER-BSW-JOGGR-SS27-001', buyer: aero, mfr: blr, product: 'Drifit Joggers', style: 'AER-DJ-03', cat: 'SHORTS', qty: 1100, slug: 'drifit-joggers', active: 1, delivery: 80 },
   ]
 
+  // One master order per customer, as on prod: the dashboard groups a
+  // customer's styles under it and prefixes the buyer name.
+  const masters = {
+    [stride._id]: { id: 'MO-STR-SS27-001', name: 'SS27 Core Training Capsule' },
+    [aero._id]:   { id: 'MO-AER-SS27-001', name: 'SS27 Launch Drop' },
+  }
+  for (const b of [stride, aero]) {
+    const m = masters[b._id]
+    await MasterOrder.deleteOne({ _id: m.id })
+    await MasterOrder.create({ _id: m.id, buyerId: b._id, orderName: m.name, season: 'SS27', createdBy: admin._id })
+  }
+
   for (const o of orders) {
     await Order.deleteOne({ _id: o.id })
     await Order.create({
-      _id: o.id, buyerId: o.buyer._id, product: o.product, styleNumber: o.style, category: o.cat, season: 'SS27',
+      _id: o.id, masterOrderId: masters[o.buyer._id].id, buyerId: o.buyer._id, product: o.product, styleNumber: o.style, category: o.cat, season: 'SS27',
       totalQty: o.qty, delivery: new Date(day(o.delivery)), createdAt: new Date(day(-30)),
       callout: o.callout || '',
       colourways: (o.colours || ['Black', 'Charcoal']).map(n => ({ name: n })),
