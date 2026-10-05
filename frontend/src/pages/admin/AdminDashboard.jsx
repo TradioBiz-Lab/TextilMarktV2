@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { DashboardSummary } from '../../components/DashboardSummary.jsx'
 import { ShoppingBag, Factory, Package, Siren, Target, Check, ClipboardList, Megaphone, ChevronRight } from 'lucide-react'
 import { T, ST, isExpiringSoon, isExpired, getToday, dayNumber, withBuyerPrefix } from '../../constants.js'
 import { StatCard, Card, Grid, EmptyState, Mono, PageHeader, Badge, Btn, FlexRow, Modal, Select, Textarea, Input, Alert, LoadingScreen, DocCard } from '../../components/ui.jsx'
@@ -240,6 +241,8 @@ export function AdminDashboard({ onNavigate, onOpen }) {
         <StatCard label="Total Orders" value={allTxns.length} icon={<Package size={19} color={T.primaryDark} />} bg={T.primaryLight} />
         <StatCard label="Active Alerts" value={delayed.length + expDocs.length} icon={<Siren size={19} color={T.danger} />} bg={T.dangerBg} />
       </Grid>
+
+      <DashboardSummary />
 
       {/* ── Orders by Status — one overall status per Master Order, not a per-item breakdown ── */}
       <Card pad={false} style={{ marginBottom: 14 }}>

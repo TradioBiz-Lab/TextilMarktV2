@@ -3,6 +3,7 @@ import { Package, Settings2, PauseCircle, AlertTriangle, CheckCircle2, User, Sea
 import { T, ORDER_STATUSES, getToday, dayNumber } from '../../constants.js'
 import { StatCard, Card, Badge, EmptyState, Mono, Grid, PageHeader, LoadingScreen, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
+import { DashboardSummary } from '../../components/DashboardSummary.jsx'
 
 
 function fmtDate(d) {
@@ -95,6 +96,8 @@ export function MfrDashboard({ onOpen }) {
         <StatCard label="Delayed"         value={stats.delayed}      icon={<AlertTriangle size={19} color={T.danger} />} bg={T.dangerBg} />
         <StatCard label="Delivered"       value={stats.delivered}    icon={<CheckCircle2 size={19} color={T.success} />} bg={T.successBg} />
       </Grid>
+
+      <DashboardSummary />
 
       {/* ── My Pending Steps ── */}
       <Card style={{ marginBottom: 24 }}>
