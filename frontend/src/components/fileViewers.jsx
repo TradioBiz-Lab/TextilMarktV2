@@ -62,10 +62,9 @@ export function XlsxTable({ bytes, onReady }) {
     let live = true
     ;(async () => {
       try {
-        const { default: readXlsx, readSheetNames } = await import('read-excel-file/browser')
-        const names = await readSheetNames(new Blob([bytes]))
-        const out = []
-        for (const name of names) out.push({ name, rows: (await readXlsx(new Blob([bytes]), { sheet: name })).slice(0, 1000) })
+        const { default: readXlsx } = await import('read-excel-file/browser')
+        const all = await readXlsx(new Blob([bytes]))
+        const out = all.map(sh => ({ name: sh.sheet, rows: sh.data.slice(0, 1000) }))
         if (live) setSheets(out)
       } catch { if (live) setErr(true) }
       onReady?.()
