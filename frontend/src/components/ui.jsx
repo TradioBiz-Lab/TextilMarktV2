@@ -3,6 +3,7 @@ import { Link2, Package, Factory, Eye, Download, FileText, StickyNote, AlertTria
 import { T, ST, DOC_TYPES, STAGE_DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired } from '../constants.js'
 import { useApp } from '../context.jsx'
 import * as pdfjsLib from 'pdfjs-dist'
+import { CsvTable, DxfPreview, AudioPlayer, Msg } from './fileViewers.jsx'
 // Imported as a Vite worker (not `?url`) so the build emits a plain .js chunk —
 // Zoho Catalyst Slate serves .mjs assets as application/octet-stream with
 // nosniff, which makes Chrome refuse to execute it as a module worker.
@@ -33,6 +34,13 @@ export function activateOnKey(onClick) {
 // document types below.
 const VIEWER_ALLOWED_MIME = new Set([
   'application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'audio/wav',
+  // Inline-previewed document types: text/CSV is rendered as a table and DXF
+  // as an SVG (both through React elements, never innerHTML), voice notes as
+  // audio. octet-stream is the generic type browsers give .dxf files; the
+  // viewer only draws it when the file extension is .dxf. None of these is
+  // ever interpreted as markup or script.
+  'text/csv', 'application/vnd.ms-excel', 'application/octet-stream', 'image/vnd.dxf',
+  'audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/mp4',
 ])
 
 // Shared parsing: data URL -> raw bytes + mimeType. Used both for the Blob/object-URL
@@ -87,6 +95,32 @@ export function blobToDataUrl(blob) {
 // Renders PDF bytes onto a <canvas> client-side via pdf.js — no iframe/sandbox
 // involved, so it sidesteps Chrome's native PDF viewer refusing to load inside a
 // sandboxed iframe (and the resulting blocked fallback-download behavior).
+// Chooses the inline preview for a document's decoded file. `doc.fileName`
+// disambiguates generic mime types (.csv/.dxf). Anything we cannot preview
+// gets a clear message and the Download button stays available in the toolbar.
+function DocBody({ blob, doc, onReady }) {
+  const ext = (doc.fileName || '').toLowerCase().split('.').pop()
+  const mime = blob.mimeType
+  const ready = useCallback(() => onReady(), [onReady])
+  if (mime.startsWith('image/') && ext !== 'dxf') {
+    return (
+      <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <img src={blob.url} alt={doc.name} onLoad={ready} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 4 }} />
+      </div>
+    )
+  }
+  if (mime.startsWith('audio/')) return <AudioPlayer url={blob.url} onReady={ready} />
+  if (mime === 'application/pdf') return <div style={{ flex: 1, overflow: 'hidden', display: 'flex', minHeight: 0 }}><PdfPageViewer bytes={blob.bytes} onReady={ready} /></div>
+  if (mime === 'text/csv' || ext === 'csv') return <CsvTable bytes={blob.bytes} onReady={ready} />
+  if (ext === 'dxf') return <DxfPreview bytes={blob.bytes} onReady={ready} />
+  return <ReadyMsg onReady={ready}>No inline preview for .{ext || 'this'} files yet. Use Download to open it.</ReadyMsg>
+}
+
+function ReadyMsg({ onReady, children }) {
+  useEffect(() => { onReady() }, [onReady])
+  return <Msg>{children}</Msg>
+}
+
 function PdfPageViewer({ bytes, onReady }) {
   const canvasRef = useRef(null)
   const [pdf, setPdf] = useState(null)
@@ -724,17 +758,9 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
       )}
       {/* Content — rendered behind loading overlay, becomes visible on load */}
       {viewerBlob && (
-        viewerBlob.mimeType.startsWith('image/') ? (
-          <div style={{ flex: 1, overflow: 'auto', display: viewerLoading ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-            <img src={viewerBlob.url} alt={doc.name}
-              onLoad={() => setViewerLoading(false)}
-              style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 4 }} />
-          </div>
-        ) : (
-          <div style={{ flex: 1, overflow: 'hidden', display: viewerLoading ? 'none' : 'flex', minHeight: 0 }}>
-            <PdfPageViewer bytes={viewerBlob.bytes} onReady={() => setViewerLoading(false)} />
-          </div>
-        )
+        <div style={{ flex: 1, minHeight: 0, display: viewerLoading ? 'none' : 'flex', flexDirection: 'column' }}>
+          <DocBody blob={viewerBlob} doc={doc} onReady={() => setViewerLoading(false)} />
+        </div>
       )}
     </div>
   )

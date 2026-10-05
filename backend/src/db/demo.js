@@ -147,6 +147,17 @@ async function main() {
       extra: { 2: { blocked: true, blockedReason: 'Shade variation across fabric lot', note: 'Fabric inspected: shade variation between rolls' } } },
     { id: 'AER-NCR-JACKT-SS27-001', buyer: aero, mfr: ncr, product: 'Baggy Active Jacket', style: 'AER-BAJ-02', cat: 'JACKET', qty: 800, slug: 'baggy-active-jacket', active: 12, delivery: -3, delivered: true, colours: ['Olive Green', 'Black'], fabric: 'Nylon-poly stretch woven 135 GSM', supplier: 'Surat Technical Fabrics' },
     { id: 'AER-BSW-JOGGR-SS27-001', buyer: aero, mfr: blr, product: 'Drifit Joggers', style: 'AER-DJ-03', cat: 'SHORTS', qty: 1100, slug: 'drifit-joggers', active: 1, delivery: 80 },
+    // More range per customer
+    { id: 'STR-NCR-LEGGN-SS27-001', buyer: stride, mfr: ncr, product: 'Studio Leggings', style: 'STR-SL-04', cat: 'LEGGINGS', qty: 2400, slug: 'studio-leggings', active: 8, delivery: 35, fabric: 'Nylon-spandex brushed jersey 260 GSM', colours: ['Black', 'Plum'] },
+    { id: 'STR-BSW-SHORT-SS27-001', buyer: stride, mfr: blr, product: 'Pace Running Shorts', style: 'STR-PRS-05', cat: 'SHORTS', qty: 1800, slug: 'pace-running-shorts', active: 3, delivery: 62, fabric: 'Recycled poly micro-mesh 110 GSM', colours: ['Navy', 'Lime'] },
+    { id: 'STR-NCR-SWEAT-SS27-001', buyer: stride, mfr: ncr, product: 'Core Crew Sweatshirt', style: 'STR-CCS-06', cat: 'SWEATSHIRT', qty: 1000, slug: 'core-crew-sweatshirt', active: 6, delivery: 48, fabric: 'Cotton-poly fleece 320 GSM', colours: ['Heather Grey'] },
+    { id: 'STR-BSW-TRACK-SS27-001', buyer: stride, mfr: blr, product: 'Stride Track Jacket', style: 'STR-STJ-07', cat: 'JACKET', qty: 700, slug: 'stride-track-jacket', active: 2, delivery: 78, status: 'Delayed',
+      callout: 'Tricot fabric lot rejected on shade, resubmitted. Material Sourcing pushed.', fabric: 'Poly tricot 190 GSM', colours: ['Royal Blue'], extra: { 2: { eta: day(-4), baselineEta: day(-10), note: 'First fabric lot rejected on shade, resubmitted.' } } },
+    { id: 'AER-BSW-BRA00-SS27-001', buyer: aero, mfr: blr, product: 'Flex Sports Bra', style: 'AER-FSB-04', cat: 'SPORTSBRA', qty: 1600, slug: 'flex-sports-bra', active: 9, delivery: 28, fabric: 'Nylon-spandex double knit 240 GSM', colours: ['Dusty Rose', 'Black'] },
+    { id: 'AER-NCR-WINDB-SS27-001', buyer: aero, mfr: ncr, product: 'Aero Windbreaker', style: 'AER-AWB-05', cat: 'JACKET', qty: 900, slug: 'aero-windbreaker', active: 5, delivery: 52, fabric: 'Nylon ripstop 70D, PU coated', colours: ['Burnt Orange', 'Black'] },
+    { id: 'AER-BSW-LSTEE-SS27-001', buyer: aero, mfr: blr, product: 'Long Sleeve Training Tee', style: 'AER-LST-06', cat: 'TSHRT', qty: 1400, slug: 'long-sleeve-training-tee', active: 1, delivery: 85, fabric: 'Poly-spandex interlock 180 GSM', colours: ['Sage'] },
+    { id: 'AER-NCR-CROPH-SS27-001', buyer: aero, mfr: ncr, product: 'Cropped Fleece Hoodie', style: 'AER-CFH-07', cat: 'HOODIE', qty: 750, slug: 'cropped-fleece-hoodie', active: 7, delivery: 40, fabric: 'Cotton-poly fleece 300 GSM', colours: ['Lilac'],
+      extra: { 7: { blocked: true, blockedReason: 'Skipped stitches on hood seam', note: 'Inline QC: skipped stitches found on hood seam, line rework under way.' } } },
   ]
 
   // One master order per customer, as on prod: the dashboard groups a
