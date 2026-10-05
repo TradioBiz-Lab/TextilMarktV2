@@ -153,3 +153,46 @@ function build({ role, user, orders, actionItems }) {
 export async function generateSummary(ctx) {
   return { lines: build(ctx), generatedAt: new Date().toISOString(), source: 'rules' }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-order one-liner for the Reporting page's "AI summary" column.
+// PLACEHOLDER: rule-based like the dashboard summary above. `r` is a Reporting
+// page row ({ order, asgn, stages, live, blocked, late, working, upcoming,
+// health, doneCount, daysToDelivery }). To plug in a real model, replace this
+// function (or fetch one line per row and look it up by order id).
+// ─────────────────────────────────────────────────────────────────────────────
+export function rowCallout(r) {
+  const { order, stages, live, blocked, late, working, upcoming, health, doneCount, daysToDelivery } = r
+  const total = stages.length
+  const deliveryBit = daysToDelivery == null ? ''
+    : daysToDelivery < 0 ? `delivery was due ${shortDate(order.delivery)}`
+    : `delivery ${shortDate(order.delivery)} (${daysToDelivery === 0 ? 'today' : `${daysToDelivery}d`})`
+
+  if (health === 'done') return `Delivered, all ${total} steps complete${order.delivery ? ` (due ${shortDate(order.delivery)})` : ''}.`
+
+  if (health === 'blocked') {
+    const s = blocked[0].stage
+    const why = s.blockedReason ? `: ${s.blockedReason}` : ''
+    return `Blocked at ${s.name}${why}. Needs a decision before it can move${deliveryBit ? `, ${deliveryBit}` : ''}.`
+  }
+
+  if (health === 'late') {
+    const worst = late[0]?.stage
+    const days = late.length ? Math.max(...late.map(({ stage }) => dayNumber(getToday()) - dayNumber(effectiveEta(stage)))) : 0
+    // A manual callout only rides along when it is short enough to keep this a one-liner.
+    const cause = order.callout && order.callout.length <= 50 ? ` ${order.callout}` : ''
+    if (worst) return `${plural(days, 'day')} behind at ${worst.name}${deliveryBit ? `, ${deliveryBit} at risk` : ''}.${cause}`
+    return `Past its delivery date.${cause}`
+  }
+
+  const w = working[0]?.stage
+  if (w) {
+    const pct = Math.round(((w.unitsDone || 0) / Math.max(w.totalUnits || 1, 1)) * 100)
+    const due = effectiveEta(w) ? `, due ${shortDate(effectiveEta(w))}` : ''
+    const prog = w.kind === 'quantity' || !w.kind ? ` ${pct}% done` : ' in progress'
+    return `On track: ${w.name}${prog}${due}${deliveryBit ? `; ${deliveryBit}` : ''}.`
+  }
+  if (live.length === 0 && doneCount === 0) return `Not started yet${stages[0]?.startDate && stages[0].startDate !== 'NA' ? `, first step ${stages[0].name} begins ${shortDate(stages[0].startDate)}` : ''}.`
+  if (upcoming) return `On track: next up ${upcoming.stage.name} on ${shortDate(effectiveEta(upcoming.stage))}${deliveryBit ? `; ${deliveryBit}` : ''}.`
+  return `${doneCount} of ${total} steps done${deliveryBit ? `, ${deliveryBit}` : ''}.`
+}

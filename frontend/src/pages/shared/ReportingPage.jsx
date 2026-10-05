@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { CalendarClock, AlertTriangle, Package, Ban, CircleDot, CheckCircle2, Search, BarChart3, Folder, MessageCircle, Calendar, ChevronDown, ChevronRight, Play, Download, ArrowRight } from 'lucide-react'
+import { CalendarClock, AlertTriangle, Package, Ban, CircleDot, CheckCircle2, Search, BarChart3, Folder, MessageCircle, Calendar, ChevronDown, ChevronRight, Play, Download, ArrowRight, Sparkles } from 'lucide-react'
 import {
   T, dayNumber, getToday, fmtN,
   stageStatusOf, stageIsOverdue, isStageDone, inFlightStages, stageProgressLabel, stageVariance,
@@ -7,6 +7,7 @@ import {
 import { Btn, Card, EmptyState, FlexRow, Modal, Mono, LoadingScreen, PageHeader, ProductThumb, StatCard, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { DashboardSummary } from '../../components/DashboardSummary.jsx'
+import { rowCallout } from '../../dashboardSummary.js'
 
 // This page answers one question per row: WHERE IS THIS ORDER?
 //
@@ -356,10 +357,10 @@ export function ReportingPage({ onOpen }) {
 
             {isOpen && (
               <div className="table-scroll">
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1020 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 880 }}>
                   <thead>
                     <tr style={{ background: '#f8fafc' }}>
-                      {['Style', 'Progress', 'Open right now', 'Next due', 'Delivery', ''].map(h => (
+                      {['Style', 'Progress', 'AI summary', 'Delivery', ''].map(h => (
                         <th key={h} style={{ padding: '9px 14px', textAlign: 'left', fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.07em', whiteSpace: 'nowrap' }}>{h}</th>
                       ))}
                     </tr>
@@ -398,55 +399,16 @@ export function ReportingPage({ onOpen }) {
                             <div style={{ fontSize: 10, color: T.textLight, marginTop: 3 }}>{r.doneCount}/{r.stages.length} steps done</div>
                           </td>
 
-                          <td style={{ padding: '10px 14px', minWidth: 260 }}>
-                            {r.live.length === 0 ? (
-                              <span style={{ fontSize: 11, color: T.textLight, fontStyle: 'italic' }}>Nothing open</span>
-                            ) : (
-                              <>
-                                <FlexRow gap={4} style={{ flexWrap: 'wrap' }}>
-                                  {r.blocked.length > 0 && <Chip tone={HEALTH.blocked} title={r.blocked.map(({ stage }) => stage.blockedReason || stage.name).join('\n')}><Ban size={9} style={{ marginRight: 3, verticalAlign: -1 }} />{r.blocked.length} blocked</Chip>}
-                                  {r.late.length > 0 && <Chip tone={HEALTH.late}><CircleDot size={9} style={{ marginRight: 3, verticalAlign: -1 }} />{r.late.length} past deadline</Chip>}
-                                  {r.working.length > 0 && <Chip tone={{ bg: '#dbeafe', fg: '#1d4ed8' }}><Play size={8} style={{ marginRight: 3, verticalAlign: -1 }} fill="#1d4ed8" />{r.working.length} in progress</Chip>}
-                                </FlexRow>
-                                <div style={{ fontSize: 11, color: T.text, marginTop: 4, lineHeight: 1.45 }}>
-                                  {r.live.slice(0, 2).map(({ stage, index }) => {
-                                    const v = stageVariance(stage)
-                                    const dueStr = stage.eta && stage.eta !== 'NA' ? fmtDate(stage.eta) : null
-                                    return (
-                                      <div key={index} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 250 }}>
-                                        · {stage.name} <span style={{ color: T.textLight }}>({stageProgressLabel(stage)})</span>
-                                        {dueStr && (
-                                          <span style={{ color: T.textLight }}>
-                                            {' '}— due {dueStr}{v != null && v !== 0 ? `, ${v > 0 ? '+' : ''}${v}d` : ''}
-                                          </span>
-                                        )}
-                                      </div>
-                                    )
-                                  })}
-                                  {r.live.length > 2 && <div style={{ color: T.textLight }}>+{r.live.length - 2} more</div>}
+                          <td style={{ padding: '10px 14px', minWidth: 300, maxWidth: 420 }}>
+                            {(() => {
+                              const text = rowCallout(r)
+                              return (
+                                <div title={text} style={{ display: 'flex', gap: 7, alignItems: 'flex-start', fontSize: 12, lineHeight: 1.45, color: r.health === 'blocked' || r.health === 'late' ? T.danger : T.text }}>
+                                  <Sparkles size={12} color="#f97316" style={{ flexShrink: 0, marginTop: 2 }} />
+                                  <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{text}</span>
                                 </div>
-                              </>
-                            )}
-                            {r.order.callout && (
-                              <div style={{ fontSize: 10, color: '#b45309', background: '#fef3c7', borderRadius: 4, padding: '3px 6px', marginTop: 5, display: 'flex', alignItems: 'flex-start', gap: 3 }} title={r.order.callout}>
-                                <AlertTriangle size={10} style={{ flexShrink: 0, marginTop: 1 }} /> {r.order.callout.length > 60 ? `${r.order.callout.slice(0, 60)}…` : r.order.callout}
-                              </div>
-                            )}
-                            {r.lastUpdate && (
-                              <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 250, display: 'flex', alignItems: 'center', gap: 3 }}
-                                title={`${r.lastUpdate.stageName}: ${r.lastUpdate.text}`}>
-                                <MessageCircle size={10} style={{ flexShrink: 0 }} /> {r.lastUpdate.text.length > 60 ? `${r.lastUpdate.text.slice(0, 60)}…` : r.lastUpdate.text}
-                              </div>
-                            )}
-                          </td>
-
-                          <td style={{ padding: '10px 14px', minWidth: 170 }}>
-                            {r.upcoming ? (
-                              <>
-                                <div style={{ fontSize: 12, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 160 }}>{r.upcoming.stage.name}</div>
-                                <div style={{ fontSize: 11, color: T.textMuted, fontFamily: "'JetBrains Mono',monospace" }}>{fmtDate(r.upcoming.stage.eta)}</div>
-                              </>
-                            ) : <span style={{ fontSize: 11, color: T.textLight }}>—</span>}
+                              )
+                            })()}
                           </td>
 
                           <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
