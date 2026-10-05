@@ -1,19 +1,3 @@
-Demo product photos, downloaded from Unsplash (free to use under the Unsplash License, no attribution required).
-Source of each file: https://unsplash.com/photos/<id>
-
-zip-up-recovery-jacket.jpg  <-  nURuKILz7ZE
-cuffed-joggers.jpg  <-  lzspjWhVdxo
-recovery-tee.jpg  <-  elbKS4DY21g
-hooded-tank.jpg  <-  WX7FSaiYxK8
-baggy-active-jacket.jpg  <-  mpPfqvh04Fc
-drifit-joggers.jpg  <-  GtkWU292vLQ
-studio-leggings.jpg  <-  FeIxTBB1Iww
-pace-running-shorts.jpg  <-  5Jx_ZjT8ikU
-core-crew-sweatshirt.jpg  <-  dyW-gQ6GcIY
-stride-track-jacket.jpg  <-  CW0gguDWNbc
-flex-sports-bra.jpg  <-  4gcqRf3-f2I
-aero-windbreaker.jpg  <-  YBHmeoDzS0U
-long-sleeve-training-tee.jpg  <-  lH9iuGmTAAI
-cropped-fleece-hoodie.jpg  <-  laoIjgDIdoI
-slim-fit-jeans.jpg  <-  UP9DtTjRYpI
-polo-tshirt.jpg  <-  QuwQYDBI6sI
+Product images (16 demo styles) were generated with Grok from the prompts in GENERATE_IMAGES.md,
+then trimmed, centred on a square white canvas and resized to 720px by prepare_images.py.
+Originals live in incoming/ (not committed). The lab dip cards (labdip-*.jpg) are drawn by script.
