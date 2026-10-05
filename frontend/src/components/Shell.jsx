@@ -1,4 +1,4 @@
-import { ViewAsPicker, ViewAsBanner } from './ViewAsPicker.jsx'  // sandbox-only, remove with the feature
+import { ViewAsPicker } from './ViewAsPicker.jsx'  // sandbox-only, remove with the feature
 import { useState, useEffect } from 'react'
 import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot, Hexagon, Inbox } from '../icons.jsx'
 import { T } from '../constants.js'
@@ -197,8 +197,6 @@ export function Shell({ view, setView, children, onOpenOrder }) {
 
         {/* Notification panel */}
         {notifOpen && <NotifPanel onClose={() => setNotifOpen(false)} onOpenOrder={onOpenOrder} />}
-
-        <ViewAsBanner />
 
         {/* Page content */}
         <main className="main-content" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>{children}</main>

@@ -762,7 +762,19 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                   </FlexRow>
                   {isOpen && (
                     <div style={{ padding: '0 12px 12px' }}>
-                      {item.uploaded && item.doc ? (
+                      {item.key === 'image' && item.uploaded ? (
+                        // The product photo lives on the order itself (not as a document), so show it here
+                        // rather than falling through to the empty-upload state.
+                        <div>
+                          <img src={heroImgUrl} alt={order.product} style={{ display: 'block', maxWidth: '100%', maxHeight: 360, borderRadius: 8, border: `1px solid ${T.border}` }} />
+                          {item.canUpload && (
+                            <div style={{ marginTop: 10 }}>
+                              <FileUpload {...item.uploadProps} file={item.file} onFile={item.onFile} error={item.err} onError={item.onErr} />
+                              {item.file && <Btn size="sm" style={{ marginTop: 6 }} disabled={item.uploading} onClick={item.onUpload}>{item.uploading ? 'Uploading…' : 'Replace photo'}</Btn>}
+                            </div>
+                          )}
+                        </div>
+                      ) : item.uploaded && item.doc ? (
                         <DocCard doc={item.doc} users={users} onGetData={getDocData} />
                       ) : !item.canUpload ? (
                         <div style={{ fontSize: 12, color: T.textMuted, padding: '4px 2px' }}>Not uploaded yet. {caps.isMfr ? 'The customer or Tradio uploads this.' : ''}</div>

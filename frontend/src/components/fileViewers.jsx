@@ -1,4 +1,4 @@
-import { useMemo, useEffect } from 'react'
+import { useMemo, useEffect, useState } from 'react'
 import { T } from '../constants.js'
 
 // Inline viewers for the document types the portal accepts beyond PDF and
@@ -47,6 +47,52 @@ export function CsvTable({ bytes, onReady }) {
         </tbody>
       </table>
       {rows.length >= 1000 && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 8 }}>Showing the first 1,000 rows. Download for the full file.</div>}
+    </div>
+  )
+}
+
+// ── XLSX (Excel workbooks) ───────────────────────────────────────────────────
+// read-excel-file reads cell values only (no macros or formulas run); each
+// sheet is drawn as a plain table through React elements.
+export function XlsxTable({ bytes, onReady }) {
+  const [sheets, setSheets] = useState(null)
+  const [active, setActive] = useState(0)
+  const [err, setErr] = useState(false)
+  useEffect(() => {
+    let live = true
+    ;(async () => {
+      try {
+        const { default: readXlsx, readSheetNames } = await import('read-excel-file/browser')
+        const names = await readSheetNames(new Blob([bytes]))
+        const out = []
+        for (const name of names) out.push({ name, rows: (await readXlsx(new Blob([bytes]), { sheet: name })).slice(0, 1000) })
+        if (live) setSheets(out)
+      } catch { if (live) setErr(true) }
+      onReady?.()
+    })()
+    return () => { live = false }
+  }, [bytes])
+  if (err) return <Msg>Could not read this workbook. Use Download to open it in Excel.</Msg>
+  if (!sheets) return <Msg>Loading workbook...</Msg>
+  const rows = sheets[active]?.rows || []
+  const cols = Math.max(0, ...rows.map(r => r.length))
+  const fmt = v => (v == null ? '' : v instanceof Date ? v.toLocaleDateString('en-IN') : String(v))
+  return (
+    <div style={{ flex: 1, overflow: 'auto', background: '#fff', padding: 16 }}>
+      {sheets.length > 1 && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+          {sheets.map((sh, i) => <button key={i} onClick={() => setActive(i)} style={{ padding: '4px 12px', borderRadius: 999, border: `1px solid ${T.border}`, background: i === active ? '#0f172a' : '#fff', color: i === active ? '#fff' : T.text, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>{sh.name}</button>)}
+        </div>
+      )}
+      {!rows.length ? <Msg>This sheet is empty.</Msg> : (
+        <table style={{ borderCollapse: 'collapse', fontSize: 13, minWidth: '60%' }}>
+          <tbody>
+            {rows.map((r, ri) => <tr key={ri}>{Array.from({ length: cols }, (_, ci) => ri === 0
+              ? <th key={ci} style={{ background: '#f1f5f9', border: `1px solid ${T.border}`, padding: '6px 10px', textAlign: 'left', fontWeight: 700 }}>{fmt(r[ci])}</th>
+              : <td key={ci} style={{ border: `1px solid ${T.border}`, padding: '5px 10px' }}>{fmt(r[ci])}</td>)}</tr>)}
+          </tbody>
+        </table>
+      )}
     </div>
   )
 }

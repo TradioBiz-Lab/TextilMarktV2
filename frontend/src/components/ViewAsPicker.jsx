@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Eye, LogOut } from '../icons.jsx'
+import { Eye } from '../icons.jsx'
 import { viewAsApi, setAuthToken, setStoredToken } from '../api.js'
 import { useApp } from '../context.jsx'
 import { T } from '../constants.js'
@@ -55,24 +55,6 @@ export function ViewAsPicker() {
         </optgroup>
       </select>
       {err && <div style={{ fontSize: 11, color: '#fca5a5', marginTop: 4 }}>{err}</div>}
-    </div>
-  )
-}
-
-/** Bar above the page content while viewing as someone else. */
-export function ViewAsBanner() {
-  const { currentUser: user } = useApp()
-  const [busy, setBusy] = useState(false)
-  if (!user?.viewAsBy) return null
-  const roleName = user.role === 'buyer' ? 'customer' : user.role
-  return (
-    <div style={{ flexShrink: 0, background: '#fef3c7', borderBottom: '1px solid #fcd34d', color: '#92400e', padding: '7px 16px', display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5, flexWrap: 'wrap' }}>
-      <Eye size={14} />
-      <span>Viewing as <strong>{user.name}</strong> ({user.company}, {roleName}). Signed in as {user.viewAsByName}. Actions you take are recorded under this user.</span>
-      <button disabled={busy} onClick={async () => { setBusy(true); try { await switchTo(viewAsApi.exit) } catch { setBusy(false) } }}
-        style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 5, background: '#92400e', color: '#fff', border: 'none', borderRadius: 7, padding: '5px 11px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-        <LogOut size={12} /> Exit view
-      </button>
     </div>
   )
 }

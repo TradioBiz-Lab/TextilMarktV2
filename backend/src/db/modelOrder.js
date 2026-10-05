@@ -12,9 +12,11 @@ import { DEFAULT_STAGE_NAMES } from '../models/Order.js'
 
 const IMG_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'demo-images')
 const URL_ = (buf, mime) => `data:${mime};base64,${buf.toString('base64')}`
+const DOCS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'demo-docs')
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 const inr = n => 'INR ' + n.toLocaleString('en-IN')
 
-export async function seedModelOrder({ orderId, qty, buyer, mfr, admin, day, startOffset }) {
+export async function seedModelOrder({ orderId, qty, buyer, mfr, admin, day, startOffset, slug = 'baggy-active-jacket' }) {
   const stageEnd = i => day(startOffset + i * 6 + 4)          // when stage i finished
   const at = dayStr => new Date(dayStr + 'T11:00:00+05:30')
   await Document.deleteMany({ orderId })
@@ -44,16 +46,9 @@ export async function seedModelOrder({ orderId, qty, buyer, mfr, admin, day, sta
     'Style        Description             Qty   Unit price     Amount', `AER-BAJ-02    Baggy Active Jacket     ${String(qty).padStart(3)}   ${inr(1120).padEnd(12)}   ${inr(qty * 1120)}`, '',
     '  Olive Green  480 pcs   |   Black  320 pcs   |   Sizes S-XL, ratio 2:3:3:2', '', '# Terms', `Total value: ${inr(qty * 1120)}`, 'Payment: 30% advance, 70% against dispatch documents', 'Delivery: ex-factory, 90 days from PO', 'Packing: individual polybag, 20 pcs per carton', '', 'Authorised signatory: Aero Active Sourcing']) })
   add({ type: 'PO', name: 'Purchase Order AER-PO-2027-014 (Tradio acknowledgement)', by: admin, issued: d0, issuer: 'Tradio', content: pdf('Order Acknowledgement', ['# Confirmed', `PO AER-PO-2027-014 accepted for ${qty} pcs of AER-BAJ-02.`, 'Assigned manufacturer: NCR Active Unit', 'Planned dispatch window: see TNA.']) })
-  add({ type: 'tech_pack', name: 'Tech Pack - Baggy Active Jacket', by: buyer, issued: day(startOffset - 20), issuer: 'Aero Active', content: pdf('Tech Pack  AER-BAJ-02', [
-    '# Garment', 'Baggy Active Jacket, hooded, full front zip, dropped shoulder, boxy fit', 'Sizes: S M L XL     Colours: Olive Green, Black', '',
-    '# Fabric', 'Shell: Nylon-poly stretch woven, 135 GSM, DWR finish', 'Lining: none     Rib: 1x1 poly rib at cuffs and hem', '',
-    '# Trims', 'Front zip: #5 coil, matte black pull, auto-lock', 'Drawcord: 5 mm flat cord with metal tips', 'Labels: woven main label (neck), care label (side seam), size label', '',
-    '# Construction', 'Seams: overlock 4-thread, topstitch 6 mm at hood and hem', 'Stitch density: 12 SPI     Bartack at pocket corners and zip bottom', 'Pockets: two welt pockets with concealed zip', '',
-    '# Packing', 'Fold in thirds, tissue at chest, individual polybag with size sticker', 'Hangtag attached at left cuff']) })
-  const sizes = ['S', 'M', 'L', 'XL']
-  const pom = [['Chest (1 in below armhole)', 62, 64, 66, 68], ['Body length (HPS)', 70, 72, 74, 76], ['Shoulder drop', 6.5, 6.8, 7.1, 7.4], ['Sleeve length', 66, 67.5, 69, 70.5], ['Hood height', 36, 37, 38, 39], ['Hem (relaxed)', 60, 62, 64, 66]]
-  add({ type: 'measurements', name: 'Measurement Spec - Baggy Active Jacket', by: buyer, issued: day(startOffset - 20), issuer: 'Aero Active', ext: 'csv',
-    content: ['Point of measure,' + sizes.join(',') + ',Tolerance (cm)', ...pom.map(r => `${r[0]},${r.slice(1).join(',')},+/-1.0`)].join('\n') + '\n' })
+  const ref = f => fs.readFileSync(path.join(DOCS_DIR, f))
+  add({ type: 'tech_pack', name: 'Tech Pack - Baggy Active Jacket', by: buyer, issued: day(startOffset - 20), issuer: 'Aero Active', content: ref(`techpack-${slug}.pdf`) })
+  add({ type: 'measurements', name: 'Measurement Spec - Baggy Active Jacket', by: buyer, issued: day(startOffset - 20), issuer: 'Aero Active', ext: 'xlsx', mime: XLSX_MIME, content: ref(`measurements-${slug}.xlsx`) })
   const dxf = ['0\nSECTION\n2\nHEADER\n0\nENDSEC\n0\nSECTION\n2\nENTITIES']
   const poly = (pts, layer) => dxf.push(`0\nLWPOLYLINE\n8\n${layer}\n90\n${pts.length}\n70\n1\n` + pts.map(([x, y]) => `10\n${x}\n20\n${y}`).join('\n'))
   poly([[0, 0], [62, 0], [62, 72], [0, 72]], 'FRONT'); poly([[70, 0], [132, 0], [132, 72], [70, 72]], 'BACK'); poly([[140, 0], [210, 0], [205, 66], [145, 66]], 'SLEEVE'); poly([[220, 0], [258, 0], [258, 37], [220, 37]], 'HOOD')

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { CalendarClock, AlertTriangle, Package, Ban, CircleDot, CheckCircle2, Search, BarChart3, Folder, MessageCircle, Calendar, ChevronDown, ChevronRight, Play, Download, ArrowRight, Sparkles } from '../../icons.jsx'
 import {
   T, dayNumber, getToday, fmtN,
@@ -179,12 +179,14 @@ function GanttModal({ order, asgn, onClose, onOpen }) {
   )
 }
 
-export function ReportingPage({ onOpen }) {
+export function ReportingPage({ onOpen, initialMo }) {
   const { orders, masterOrders, currentUser, loading, loadError } = useApp()
   const [q, setQ] = useState('')
   const [healthFilter, setHealthFilter] = useState('All')
   // Groups start collapsed; a search or filter opens them so results are never hidden.
   const [expanded, setExpanded] = useState({})
+  // Arriving from the dashboard (or Back from a product page) on a specific master order: open just that
+  // group and scroll to it.
   const [ganttTarget, setGanttTarget] = useState(null)
   const isBuyer = currentUser?.role === 'buyer'
   const todayNum = dayNumber(getToday())
@@ -275,6 +277,15 @@ export function ReportingPage({ onOpen }) {
     return result
   }, [filtered, masterOrders])
 
+  useEffect(() => {
+    if (!initialMo) return
+    const hit = groups.filter(g => g.moId === initialMo)
+    if (!hit.length) return
+    setExpanded(Object.fromEntries(hit.map(g => [g.key, true])))
+    const t = setTimeout(() => document.getElementById(`rp-group-${initialMo}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 80)
+    return () => clearTimeout(t)
+  }, [initialMo, groups.length])
+
   const exportCsv = () => {
     const header = ['Customer', 'Master order', 'Order ID', 'Style', 'Manufacturer', 'Qty',
       'Steps done', 'Total steps', '% complete', 'Health', 'Open now', 'Blocked', 'Past deadline',
@@ -337,7 +348,7 @@ export function ReportingPage({ onOpen }) {
       ) : groups.map(g => {
         const isOpen = !!expanded[g.key] || !!q || healthFilter !== 'All'
         return (
-          <Card key={g.key} pad={false} style={{ marginBottom: 12 }}>
+          <Card key={g.key} pad={false} style={{ marginBottom: 12 }} id={`rp-group-${g.moId}`}>
             <FlexRow
               gap={10}
               onClick={() => setExpanded(p => ({ ...p, [g.key]: !isOpen }))}
@@ -422,7 +433,9 @@ export function ReportingPage({ onOpen }) {
                               title="View timeline"
                               style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, marginRight: 4, display: 'inline-flex', verticalAlign: 'middle', color: T.textMuted }}
                             ><Calendar size={15} /></button>
-                            <ChevronRight size={14} color={T.textLight} />
+                            <Btn size="sm" variant="secondary" onClick={e => { e.stopPropagation(); onOpen?.(r.order.id, r.asgn.mid) }}>
+                              Dive deeper <ArrowRight size={12} style={{ marginLeft: 2 }} />
+                            </Btn>
                           </td>
                         </tr>
                       )

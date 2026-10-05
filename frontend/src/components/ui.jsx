@@ -3,7 +3,7 @@ import { Link2, Package, Factory, Eye, Download, FileText, StickyNote, AlertTria
 import { T, ST, DOC_TYPES, STAGE_DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired } from '../constants.js'
 import { useApp } from '../context.jsx'
 import * as pdfjsLib from 'pdfjs-dist'
-import { CsvTable, DxfPreview, AudioPlayer, Msg } from './fileViewers.jsx'
+import { CsvTable, XlsxTable, DxfPreview, AudioPlayer, Msg } from './fileViewers.jsx'
 // Imported as a Vite worker (not `?url`) so the build emits a plain .js chunk —
 // Zoho Catalyst Slate serves .mjs assets as application/octet-stream with
 // nosniff, which makes Chrome refuse to execute it as a module worker.
@@ -39,7 +39,7 @@ const VIEWER_ALLOWED_MIME = new Set([
   // audio. octet-stream is the generic type browsers give .dxf files; the
   // viewer only draws it when the file extension is .dxf. None of these is
   // ever interpreted as markup or script.
-  'text/csv', 'application/vnd.ms-excel', 'application/octet-stream', 'image/vnd.dxf',
+  'text/csv', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/octet-stream', 'image/vnd.dxf',
   'audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/mp4',
 ])
 
@@ -112,6 +112,7 @@ function DocBody({ blob, doc, onReady }) {
   if (mime.startsWith('audio/')) return <AudioPlayer url={blob.url} onReady={ready} />
   if (mime === 'application/pdf') return <div style={{ flex: 1, overflow: 'hidden', display: 'flex', minHeight: 0 }}><PdfPageViewer bytes={blob.bytes} onReady={ready} /></div>
   if (mime === 'text/csv' || ext === 'csv') return <CsvTable bytes={blob.bytes} onReady={ready} />
+  if (ext === 'xlsx') return <XlsxTable bytes={blob.bytes} onReady={ready} />
   if (ext === 'dxf') return <DxfPreview bytes={blob.bytes} onReady={ready} />
   return <ReadyMsg onReady={ready}>No inline preview for .{ext || 'this'} files yet. Use Download to open it.</ReadyMsg>
 }
@@ -300,10 +301,10 @@ export function Textarea({ label, hint, ...p }) {
   )
 }
 
-export function Card({ children, style: s, pad = true, onClick }) {
+export function Card({ children, style: s, pad = true, onClick, id }) {
   const [hov, setHov] = useState(false)
   return (
-    <div onClick={onClick} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined} onKeyDown={activateOnKey(onClick)}
+    <div id={id} onClick={onClick} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined} onKeyDown={activateOnKey(onClick)}
       onMouseEnter={() => onClick && setHov(true)} onMouseLeave={() => onClick && setHov(false)}
       style={{ background: T.surface, borderRadius: 12, border: `1px solid ${hov ? T.borderHover : T.border}`, overflow: 'hidden', boxShadow: hov ? '0 4px 16px rgba(0,0,0,0.08)' : 'none', transition: 'box-shadow 0.15s, border-color 0.15s', cursor: onClick ? 'pointer' : undefined, ...s, padding: pad ? (s?.padding || '20px') : 0 }}>
       {children}

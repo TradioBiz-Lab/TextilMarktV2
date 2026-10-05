@@ -18,6 +18,9 @@ import { User } from '../models/User.js'
 import { Order, DEFAULT_STAGE_NAMES } from '../models/Order.js'
 import { MasterOrder } from '../models/MasterOrder.js'
 import { seedModelOrder } from './modelOrder.js'
+import { STYLES, MASTER_ORDERS } from './demoStyles.js'
+import { Document } from '../models/Document.js'
+import { InboundMessage } from '../models/InboundMessage.js'
 
 const SANDBOX_DB_NAME = 'textilmarkt_sandbox'
 const IMG_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'demo-images')
@@ -133,58 +136,66 @@ async function main() {
   const hash = pw => bcrypt.hashSync(pw, 10)
   const base = { isActive: true, mustChangePw: false }
 
-  const stride = await upsertUser('sourcing@stridelab.demo', { ...base, passwordHash: hash('Buyer@123'), role: 'buyer', company: 'Stride Lab', name: 'Stride Sourcing', phone: '+91-9000000011', code: 'STR' })
-  const aero   = await upsertUser('sourcing@aeroactive.demo', { ...base, passwordHash: hash('Buyer@123'), role: 'buyer', company: 'Aero Active', name: 'Aero Sourcing', phone: '+91-9000000012', code: 'AER' })
+  // One customer. (An earlier version of the demo also had a second customer, Stride Lab; it is
+  // folded into Aero Active, so remove it and everything that hung off it.)
+  const aero = await upsertUser('sourcing@aeroactive.demo', { ...base, passwordHash: hash('Buyer@123'), role: 'buyer', company: 'Aero Active', name: 'Aero Sourcing', phone: '+91-9000000012', code: 'AER' })
+  const stride = await User.findOne({ email: 'sourcing@stridelab.demo' })
+  if (stride) {
+    const old = (await Order.find({ buyerId: stride._id }, '_id').lean()).map(o => o._id)
+    await Document.deleteMany({ orderId: { $in: old } }); await InboundMessage.deleteMany({ orderId: { $in: old } })
+    await Order.deleteMany({ _id: { $in: old } }); await MasterOrder.deleteMany({ buyerId: stride._id }); await User.deleteOne({ _id: stride._id })
+    console.log(`  removed legacy customer Stride Lab (${old.length} orders)`)
+  }
   const ncr = await upsertUser('unit@ncractive.demo', { ...base, passwordHash: hash('Mfr@12345'), role: 'manufacturer', company: 'NCR Active Unit', name: 'Lalit Ji', phone: '+91-9000000013', code: 'NCR', whatsappNumber: '+91 90000 00013', language: 'hi' })
   const blr  = await upsertUser('unit@bangaloresports.demo', { ...base, passwordHash: hash('Mfr@12345'), role: 'manufacturer', company: 'Bangalore Sportswear Unit', name: 'Ravi Gowda', phone: '+91-9000000014', code: 'BSW', whatsappNumber: '+91 90000 00014', language: 'hi' })
+  const factory = { ncr, blr }
 
-  const orders = [
-    { id: 'STR-NCR-JACKT-SS27-001', buyer: stride, mfr: ncr, product: 'Zip Up Recovery Jacket', style: 'STR-ZRJ-01', cat: 'JACKET', qty: 1200, colours: ['Teal'], slug: 'zip-up-recovery-jacket', active: 6, delivery: 70 },
-    { id: 'STR-NCR-JOGGR-SS27-001', buyer: stride, mfr: ncr, product: 'Cuffed Joggers', style: 'STR-CJ-02', cat: 'SHORTS', qty: 1500, colours: ['Charcoal'], slug: 'cuffed-joggers', active: 7, delivery: 55 },
-    { id: 'STR-BSW-TSHRT-SS27-001', buyer: stride, mfr: blr, product: 'Recovery Tee', style: 'STR-RT-03', cat: 'TSHRT', qty: 2000, colours: ['White'], slug: 'recovery-tee', active: 2, delivery: 60,
-      callout: 'Fabric lot late from the mill, Material Sourcing past its planned date.', status: 'Delayed', extra: { 2: { eta: day(-6), baselineEta: day(-12), note: 'Fabric lot delayed at the mill, revised ETA pushed.' } } },
-    { id: 'AER-BSW-HOODI-SS27-001', buyer: aero, mfr: blr, product: 'Hooded Tank', style: 'AER-HT-01', cat: 'HOODIE', qty: 900, colours: ['White'], slug: 'hooded-tank', active: 2, delivery: 65,
-      extra: { 2: { blocked: true, blockedReason: 'Shade variation across fabric lot', note: 'Fabric inspected: shade variation between rolls' } } },
-    { id: 'AER-NCR-JACKT-SS27-001', buyer: aero, mfr: ncr, product: 'Baggy Active Jacket', style: 'AER-BAJ-02', cat: 'JACKET', qty: 800, slug: 'baggy-active-jacket', active: 12, delivery: -3, delivered: true, colours: ['Olive Green', 'Black'], fabric: 'Nylon-poly stretch woven 135 GSM', supplier: 'Surat Technical Fabrics' },
-    { id: 'AER-BSW-JOGGR-SS27-001', buyer: aero, mfr: blr, product: 'Drifit Joggers', style: 'AER-DJ-03', cat: 'SHORTS', qty: 1100, colours: ['Black'], slug: 'drifit-joggers', active: 1, delivery: 80 },
-    // More range per customer
-    { id: 'STR-NCR-LEGGN-SS27-001', buyer: stride, mfr: ncr, product: 'Studio Leggings', style: 'STR-SL-04', cat: 'LEGGINGS', qty: 2400, slug: 'studio-leggings', active: 8, delivery: 35, fabric: 'Nylon-spandex brushed jersey 260 GSM', colours: ['Black'] },
-    { id: 'STR-BSW-SHORT-SS27-001', buyer: stride, mfr: blr, product: 'Pace Running Shorts', style: 'STR-PRS-05', cat: 'SHORTS', qty: 1800, slug: 'pace-running-shorts', active: 3, delivery: 62, fabric: 'Recycled poly micro-mesh 110 GSM', colours: ['Orange Red'] },
-    { id: 'STR-NCR-SWEAT-SS27-001', buyer: stride, mfr: ncr, product: 'Core Crew Sweatshirt', style: 'STR-CCS-06', cat: 'SWEATSHIRT', qty: 1000, slug: 'core-crew-sweatshirt', active: 6, delivery: 48, fabric: 'Cotton-poly fleece 320 GSM', colours: ['Navy'] },
-    { id: 'STR-BSW-TRACK-SS27-001', buyer: stride, mfr: blr, product: 'Stride Track Jacket', style: 'STR-STJ-07', cat: 'JACKET', qty: 700, slug: 'stride-track-jacket', active: 2, delivery: 78, status: 'Delayed',
-      callout: 'Tricot fabric lot rejected on shade, resubmitted. Material Sourcing pushed.', fabric: 'Poly tricot 190 GSM', colours: ['Royal Blue', 'Red'], extra: { 2: { eta: day(-4), baselineEta: day(-10), note: 'First fabric lot rejected on shade, resubmitted.' } } },
-    { id: 'AER-BSW-BRA00-SS27-001', buyer: aero, mfr: blr, product: 'Flex Sports Bra', style: 'AER-FSB-04', cat: 'SPORTSBRA', qty: 1600, slug: 'flex-sports-bra', active: 9, delivery: 28, fabric: 'Nylon-spandex double knit 240 GSM', colours: ['Black'] },
-    { id: 'AER-NCR-WINDB-SS27-001', buyer: aero, mfr: ncr, product: 'Aero Windbreaker', style: 'AER-AWB-05', cat: 'JACKET', qty: 900, slug: 'aero-windbreaker', active: 5, delivery: 52, fabric: 'Nylon ripstop 70D, PU coated', colours: ['Black Floral'] },
-    { id: 'AER-BSW-LSTEE-SS27-001', buyer: aero, mfr: blr, product: 'Long Sleeve Training Tee', style: 'AER-LST-06', cat: 'TSHRT', qty: 1400, slug: 'long-sleeve-training-tee', active: 1, delivery: 85, fabric: 'Poly-spandex interlock 180 GSM', colours: ['Black'] },
-    { id: 'AER-NCR-CROPH-SS27-001', buyer: aero, mfr: ncr, product: 'Cropped Fleece Hoodie', style: 'AER-CFH-07', cat: 'HOODIE', qty: 750, slug: 'cropped-fleece-hoodie', active: 7, delivery: 40, fabric: 'Cotton-poly fleece 300 GSM', colours: ['Orange'],
-      extra: { 7: { blocked: true, blockedReason: 'Skipped stitches on hood seam', note: 'Inline QC: skipped stitches found on hood seam, line rework under way.' } } },
-  ]
-
-  // One master order per customer, as on prod: the dashboard groups a
-  // customer's styles under it and prefixes the buyer name.
-  const masters = {
-    [stride._id]: { id: 'MO-STR-SS27-001', name: 'SS27 Core Training Capsule' },
-    [aero._id]:   { id: 'MO-AER-SS27-001', name: 'SS27 Launch Drop' },
-  }
-  for (const b of [stride, aero]) {
-    const m = masters[b._id]
-    await MasterOrder.deleteOne({ _id: m.id })
-    await MasterOrder.create({ _id: m.id, buyerId: b._id, orderName: m.name, season: 'SS27', createdBy: admin._id })
+  // Per-order tweaks that depend on today's date (delays, blocks).
+  const EXTRAS = {
+    'AER-BSW-TSHRT-SS27-001': { 2: { eta: day(-6), baselineEta: day(-12), note: 'Fabric lot delayed at the mill, revised ETA pushed.' } },
+    'AER-BSW-TRACK-SS27-001': { 2: { eta: day(-4), baselineEta: day(-10), note: 'First fabric lot rejected on shade, resubmitted.' } },
+    'AER-BSW-HOODI-SS27-001': { 2: { blocked: true, blockedReason: 'Shade variation across fabric lot', note: 'Fabric inspected: shade variation between rolls' } },
+    'AER-NCR-CROPH-SS27-001': { 7: { blocked: true, blockedReason: 'Skipped stitches on hood seam', note: 'Inline QC: skipped stitches found on hood seam, line rework under way.' } },
   }
 
-  for (const o of orders) {
+  // Master orders: one per product family, all under the one customer. Anything left over from earlier
+  // versions of the demo for this customer is dropped first.
+  const keepIds = STYLES.map(x => x.id)
+  await Order.deleteMany({ buyerId: aero._id, _id: { $nin: keepIds } })
+  await MasterOrder.deleteMany({ buyerId: aero._id })
+  for (const m of MASTER_ORDERS) await MasterOrder.create({ _id: m.id, buyerId: aero._id, orderName: m.name, season: 'SS27', createdBy: admin._id })
+
+  const DOCS = path.join(path.dirname(fileURLToPath(import.meta.url)), 'demo-docs')
+  const fileDoc = (file, mime) => {
+    const f = path.join(DOCS, file)
+    if (!fs.existsSync(f)) return null
+    const buf = fs.readFileSync(f)
+    return { dataUrl: `data:${mime};base64,${buf.toString('base64')}`, fileName: file, fileSize: buf.length, mimeType: mime }
+  }
+  const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+  for (const st of STYLES) {
+    const o = { ...st, buyer: aero, mfr: factory[st.mfr] }
     await Order.deleteOne({ _id: o.id })
+    await Document.deleteMany({ orderId: o.id })
     await Order.create({
-      _id: o.id, masterOrderId: masters[o.buyer._id].id, buyerId: o.buyer._id, product: o.product, styleNumber: o.style, category: o.cat, season: 'SS27',
+      _id: o.id, masterOrderId: MASTER_ORDERS[o.mo - 1].id, buyerId: o.buyer._id, product: o.product, styleNumber: o.style, category: o.cat, season: 'SS27',
       totalQty: o.qty, delivery: new Date(day(o.delivery)), createdAt: new Date(day(o.delivered ? -95 : -30)),
       callout: o.callout || '',
       colourways: (o.colours || ['Black', 'Charcoal']).map(n => ({ name: n })),
       fabricDetails: [{ name: o.fabric || 'Poly-spandex interlock 220 GSM', composition: '88% Polyester 12% Elastane', gsm: '220', supplier: o.supplier || 'Sri Lakshmi Mills' }], imageDataUrl: photo(o.slug),
-      assignments: [{ mfrId: o.mfr._id, qty: o.qty, status: o.delivered ? 'Delivered' : (o.status || 'Processing'), sub: 'M1', stages: stages(o.qty, o.active, { buyer: o.buyer, mfr: o.mfr, admin, colours: o.colours || ['Black', 'Charcoal'], fabric: o.fabric || 'Poly-spandex interlock 220 GSM', supplier: o.supplier || 'Sri Lakshmi Mills', code: o.style }, o.extra) }],
+      assignments: [{ mfrId: o.mfr._id, qty: o.qty, status: o.delivered ? 'Delivered' : (o.status || 'Processing'), sub: 'M1', stages: stages(o.qty, o.active, { buyer: o.buyer, mfr: o.mfr, admin, colours: o.colours || ['Black', 'Charcoal'], fabric: o.fabric || 'Poly-spandex interlock 220 GSM', supplier: o.supplier || 'Sri Lakshmi Mills', code: o.style }, EXTRAS[o.id]) }],
     })
     if (o.delivered) {
-      const n = await seedModelOrder({ orderId: o.id, qty: o.qty, buyer: o.buyer, mfr: o.mfr, admin, day, startOffset: -(6 * o.active) - 2 })
+      const n = await seedModelOrder({ orderId: o.id, qty: o.qty, buyer: o.buyer, mfr: o.mfr, admin, day, startOffset: -(6 * o.active) - 2, slug: o.slug })
       console.log(`    model order: ${n} documents and floor messages filed`)
+    } else {
+      // Every other style gets its reference documents too: the (modified) tech pack and the Excel measurement sheet.
+      const refs = [
+        ['tech_pack', `Tech Pack - ${o.product}`, fileDoc(`techpack-${o.slug}.pdf`, 'application/pdf')],
+        ['measurements', `Measurement Spec - ${o.product}`, fileDoc(`measurements-${o.slug}.xlsx`, XLSX_MIME)],
+      ]
+      for (const [type, name, f] of refs) if (f) await Document.create({ type, name, orderId: o.id, mfrId: null, uploadedBy: o.buyer._id, issuer: 'Aero Active', issueDate: new Date(day(-26)), version: 1, isActive: true, ...f })
     }
     console.log(`  ${o.id}  ${o.product}${photo(o.slug) ? '' : '  (no photo found)'}`)
   }
@@ -194,7 +205,7 @@ async function main() {
     if (img) console.log(`  ${id}  photo ${(await Order.updateOne({ _id: id }, { $set: { imageDataUrl: img } })).matchedCount ? 'set' : 'skipped (order not found)'}`)
   }
   console.log('\nDemo data ready. Logins:')
-  console.log('  clients:   sourcing@stridelab.demo, sourcing@aeroactive.demo  (Buyer@123)')
+  console.log('  customer:  sourcing@aeroactive.demo  (Buyer@123)')
   console.log('  factories: unit@ncractive.demo, unit@bangaloresports.demo   (Mfr@12345)')
   console.log('  factory WhatsApp numbers: +91 90000 00013 (NCR), +91 90000 00014 (Bangalore)')
   await mongoose.disconnect()

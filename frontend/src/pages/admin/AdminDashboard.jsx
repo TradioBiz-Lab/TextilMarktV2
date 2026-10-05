@@ -284,7 +284,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
                   const st = ST[overallStatus] || { bg: '#f1f5f9', c: '#475569' }
                   return (
                     <div key={group.key}
-                      onClick={() => onNavigate && onNavigate('orders', { mo: group.key === '__unassigned__' ? '__none__' : group.key })}
+                      onClick={() => onNavigate && onNavigate('reports', { mo: group.key === '__unassigned__' ? '__none__' : group.key })}
                       style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: '12px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, transition: 'all 0.15s', background: T.surface }}
                       onMouseEnter={e => { e.currentTarget.style.background = st.bg; e.currentTarget.style.borderColor = st.c + '55' }}
                       onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.borderColor = T.border }}

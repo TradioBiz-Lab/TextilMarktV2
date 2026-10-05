@@ -300,7 +300,7 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
         <StatCard icon={<CalendarClock size={19} color={T.warning} />} label="Due today" value={stats.dueToday} color={T.warning} />
       </div>
 
-      <FlexRow gap={8} style={{ marginBottom: 8, flexWrap: 'wrap' }}>
+      {isAdmin && <FlexRow gap={8} style={{ marginBottom: 8, flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
           <Search size={14} color={T.textLight} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
           <input
@@ -315,14 +315,14 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
         </select>
         <Btn variant={includeOverdue ? 'primary' : 'secondary'} onClick={() => setIncludeOverdue(v => !v)} icon={<CircleDot size={13} />}>Past deadline</Btn>
         <Btn variant={onlyMine ? 'primary' : 'secondary'} onClick={() => setOnlyMine(v => !v)} icon={<User size={13} />}>Mine only</Btn>
-      </FlexRow>
+      </FlexRow>}
 
       {/* Whose action it is — Tradio, the factory, or the customer. A third of a
           real TNA sits with the buyer, so this is a first-class filter. */}
       <FlexRow gap={6} style={{ marginBottom: 14, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Owner:</span>
-        {OWNER_FILTERS.map(f => (
-          <button key={f.id} onClick={() => setOwner(f.id)}
+        <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{isAdmin ? 'Owner:' : 'Show only:'}</span>
+        {(isAdmin ? OWNER_FILTERS : OWNER_FILTERS.filter(f => f.id === currentUser?.role)).map(f => (
+          <button key={f.id} onClick={() => setOwner(isAdmin ? f.id : (owner === f.id ? 'all' : f.id))}
             style={{ fontSize: 11, fontWeight: 700, padding: '4px 11px', borderRadius: 14, cursor: 'pointer', fontFamily: 'inherit',
               border: `1px solid ${owner === f.id ? T.primary : T.border}`,
               background: owner === f.id ? T.primaryLight : T.surface,
@@ -339,7 +339,8 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
             desc={q || onlyMine || owner !== 'all' ? 'Try widening the search, owner, or date range.' : 'No steps are open, blocked, or due in this window.'} />
         </Card>
       ) : groups.map(g => {
-        const open = !!expanded[g.key] || !!q || owner !== 'all' || onlyMine
+        // Admins start with customers collapsed; customers and manufacturers see their list open.
+        const open = isAdmin ? (!!expanded[g.key] || !!q || owner !== 'all' || onlyMine) : expanded[g.key] !== false
         return (
           <Card key={g.key} pad={false} style={{ marginBottom: 14 }}>
             <FlexRow gap={10} onClick={() => setExpanded(p => ({ ...p, [g.key]: !open }))}
