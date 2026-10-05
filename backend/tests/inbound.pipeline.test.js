@@ -174,4 +174,13 @@ describe('review + webhook + feed routes', () => {
     assert.equal((await as(buyer).get('/api/floor/feed')).body.items.length, 1)
     assert.equal((await as(other).get('/api/floor/feed')).body.items.length, 0)
   })
+
+  test('a manufacturer\'s feed covers only their own orders', async () => {
+    const { mfr } = await arrange()
+    await ingestMessage({ ...img, factoryId: mfr._id }, photo())
+    const otherMfr = await makeMfr()
+    assert.equal((await as(mfr).get('/api/floor/feed')).status, 200)
+    assert.equal((await as(mfr).get('/api/floor/feed')).body.items.length, 1)
+    assert.equal((await as(otherMfr).get('/api/floor/feed')).body.items.length, 0)
+  })
 })

@@ -63,12 +63,24 @@ frontend/src/
   components/Shell.jsx # sidebar/nav shell shared across all three roles
   components/ui.jsx   # shared UI primitives (Btn, Modal, Card, DocCard/PDF viewer, etc.)
   constants.js        # T theme object (design tokens), STATUS_FLOW, DEFAULT_STAGE_NAMES
-  pages/{admin,buyer,manufacturer}/...
+  pages/admin/...      # the screens ALL roles use (Dashboard, Orders, Order detail, Documents, ...)
+  pages/shared/...     # Reports, Action Items
+  pages/buyer/BuyerSubmitReq.jsx  # customer-only 'Submit Requirement'
+  caps.js              # what each role may do in the shared screens (mirrors the server rules)
 docs/SCHEMA.md         # MongoDB schema reference (kept in sync with models/)
 docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
 ```
 
 ## Architecture notes
+
+- **One portal for every role.** Customers, manufacturers and admins see the same six tabs
+  (Dashboard, Action Items, Kriyaa, Orders, Documents, Reports) and the same screens; admins
+  also get Review Queue, Audit Log and User Setup. The server returns only the signed-in
+  user's own data, and `frontend/src/caps.js` decides which controls each role gets (it mirrors
+  the server's rules in `routes/orders.js` and `routes/documents.js`; the server is still the
+  real gate). When adding a button to a shared screen, gate it with `capsFor(user)` /
+  `canWriteStage(...)` instead of assuming the viewer is an admin. Kriyaa is open to every
+  role with a role-scoped toolset (`toolsFor` in `routes/assistant.js`).
 
 - **No router library.** `App.jsx` holds the current view in state and switch-renders the right
   page component per role; navigation is done by calling a passed-down `onNavigate(view, params)`
