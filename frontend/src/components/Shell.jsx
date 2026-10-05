@@ -207,7 +207,8 @@ export function Shell({ view, setView, children, onOpenOrder }) {
       {/* Floating AI assistant — admin-only (matches the backend's requireAdmin
           gate), rendered unconditionally so its conversation survives
           navigating between pages within the session. */}
-      {user && <KriyaaWidget />}
+      {/* Hidden on the Kriyaa page itself: the page IS the chat, and the floating button would sit on top of its Send button. The conversation lives in KriyaaChatProvider, so it carries over. */}
+      {user && view !== 'kriyaa' && <KriyaaWidget />}
     </div>
   )
 }

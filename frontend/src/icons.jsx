@@ -61,7 +61,7 @@ import {
   Plus as P_Plus,
   Prohibit as P_Prohibit,
   RadioButton as P_RadioButton,
-  Robot as P_Robot,
+  ChatTeardropDots as P_ChatTeardropDots,
   Ruler as P_Ruler,
   Scissors as P_Scissors,
   Shield as P_Shield,
@@ -129,7 +129,8 @@ export const AudioLines = make(P_Waveform, 'AudioLines')
 export const Ban = make(P_Prohibit, 'Ban')
 export const BarChart3 = make(P_ChartBar, 'BarChart3')
 export const Bell = make(P_Bell, 'Bell')
-export const Bot = make(P_Robot, 'Bot')
+// Kriyaa's mark is a friendly speech bubble, not a robot face (that read as unsettling).
+export const Bot = make(P_ChatTeardropDots, 'Bot')
 export const Building2 = make(P_Buildings, 'Building2')
 export const Calendar = make(P_CalendarBlank, 'Calendar')
 export const CalendarClock = make(P_CalendarDots, 'CalendarClock')
