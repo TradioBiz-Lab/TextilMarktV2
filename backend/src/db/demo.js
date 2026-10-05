@@ -17,6 +17,7 @@ import { connectDB } from './index.js'
 import { User } from '../models/User.js'
 import { Order, DEFAULT_STAGE_NAMES } from '../models/Order.js'
 import { MasterOrder } from '../models/MasterOrder.js'
+import { seedModelOrder } from './modelOrder.js'
 
 const SANDBOX_DB_NAME = 'textilmarkt_sandbox'
 const IMG_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'demo-images')
@@ -58,6 +59,8 @@ const NOTES_DONE = {
   'Stitching': 'Stitching completed on all lines.',
   'Finishing': 'Finishing and pressing completed.',
   'Packing': 'Packing completed to the buyer spec.',
+  'QC': 'Final inspection passed at AQL 2.5, released for dispatch.',
+  'Dispatch': 'Dispatched and delivered to the buyer warehouse.',
 }
 
 /**
@@ -142,7 +145,7 @@ async function main() {
       callout: 'Fabric lot late from the mill, Material Sourcing past its planned date.', status: 'Delayed', extra: { 2: { eta: day(-6), baselineEta: day(-12), note: 'Fabric lot delayed at the mill, revised ETA pushed.' } } },
     { id: 'AER-BSW-HOODI-SS27-001', buyer: aero, mfr: blr, product: 'Hooded Tank', style: 'AER-HT-01', cat: 'HOODIE', qty: 900, slug: 'hooded-tank', active: 2, delivery: 65,
       extra: { 2: { blocked: true, blockedReason: 'Shade variation across fabric lot', note: 'Fabric inspected: shade variation between rolls' } } },
-    { id: 'AER-NCR-JACKT-SS27-001', buyer: aero, mfr: ncr, product: 'Baggy Active Jacket', style: 'AER-BAJ-02', cat: 'JACKET', qty: 800, slug: 'baggy-active-jacket', active: 4, delivery: 75 },
+    { id: 'AER-NCR-JACKT-SS27-001', buyer: aero, mfr: ncr, product: 'Baggy Active Jacket', style: 'AER-BAJ-02', cat: 'JACKET', qty: 800, slug: 'baggy-active-jacket', active: 12, delivery: -3, delivered: true, colours: ['Olive Green', 'Black'], fabric: 'Nylon-poly stretch woven 135 GSM', supplier: 'Surat Technical Fabrics' },
     { id: 'AER-BSW-JOGGR-SS27-001', buyer: aero, mfr: blr, product: 'Drifit Joggers', style: 'AER-DJ-03', cat: 'SHORTS', qty: 1100, slug: 'drifit-joggers', active: 1, delivery: 80 },
   ]
 
@@ -162,12 +165,16 @@ async function main() {
     await Order.deleteOne({ _id: o.id })
     await Order.create({
       _id: o.id, masterOrderId: masters[o.buyer._id].id, buyerId: o.buyer._id, product: o.product, styleNumber: o.style, category: o.cat, season: 'SS27',
-      totalQty: o.qty, delivery: new Date(day(o.delivery)), createdAt: new Date(day(-30)),
+      totalQty: o.qty, delivery: new Date(day(o.delivery)), createdAt: new Date(day(o.delivered ? -95 : -30)),
       callout: o.callout || '',
       colourways: (o.colours || ['Black', 'Charcoal']).map(n => ({ name: n })),
       fabricDetails: [{ name: o.fabric || 'Poly-spandex interlock 220 GSM', composition: '88% Polyester 12% Elastane', gsm: '220', supplier: o.supplier || 'Sri Lakshmi Mills' }], imageDataUrl: photo(o.slug),
-      assignments: [{ mfrId: o.mfr._id, qty: o.qty, status: o.status || 'Processing', sub: 'M1', stages: stages(o.qty, o.active, { buyer: o.buyer, mfr: o.mfr, admin, colours: o.colours || ['Black', 'Charcoal'], fabric: o.fabric || 'Poly-spandex interlock 220 GSM', supplier: o.supplier || 'Sri Lakshmi Mills', code: o.style }, o.extra) }],
+      assignments: [{ mfrId: o.mfr._id, qty: o.qty, status: o.delivered ? 'Delivered' : (o.status || 'Processing'), sub: 'M1', stages: stages(o.qty, o.active, { buyer: o.buyer, mfr: o.mfr, admin, colours: o.colours || ['Black', 'Charcoal'], fabric: o.fabric || 'Poly-spandex interlock 220 GSM', supplier: o.supplier || 'Sri Lakshmi Mills', code: o.style }, o.extra) }],
     })
+    if (o.delivered) {
+      const n = await seedModelOrder({ orderId: o.id, qty: o.qty, buyer: o.buyer, mfr: o.mfr, admin, day, startOffset: -(6 * o.active) - 2 })
+      console.log(`    model order: ${n} documents and floor messages filed`)
+    }
     console.log(`  ${o.id}  ${o.product}${photo(o.slug) ? '' : '  (no photo found)'}`)
   }
   console.log('\nDemo data ready. Logins:')
