@@ -177,6 +177,13 @@ export const masterOrdersApi = {
   delete: id => api.post(`/master-orders/${id}/delete`),
 }
 
+// SANDBOX ONLY, TEMPORARY (see backend/src/routes/viewAs.js)
+export const viewAsApi = {
+  options: () => api.get('/auth/view-as/options'),
+  start: userId => api.post('/auth/view-as', { userId }),
+  exit: () => api.post('/auth/view-as/exit'),
+}
+
 export const inboundApi = {
   upload: data => api.post('/inbound/upload', data, { timeout: 90000 }),
 }

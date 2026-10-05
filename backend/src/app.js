@@ -23,6 +23,7 @@ import voiceRouter         from './routes/voice.js'
 import inboundRouter from './routes/inbound.js'
 import reviewRouter from './routes/review.js'
 import floorRouter from './routes/floor.js'
+import viewAsRouter from './routes/viewAs.js'  // sandbox-only, flag-gated (ENABLE_VIEW_AS)
 
 // ── Validate required env vars at startup ──────────────────────────────────
 const isProd = process.env.NODE_ENV === 'production'
@@ -162,6 +163,7 @@ app.use((req, res, next) => {
 })
 
 // ── Routes ──────────────────────────────────────────────────────────────────
+app.use('/api/auth/view-as',   viewAsRouter)
 app.use('/api/auth',          authRouter)
 app.use('/api/orders',        ordersRouter)
 app.use('/api/documents',     documentsRouter)

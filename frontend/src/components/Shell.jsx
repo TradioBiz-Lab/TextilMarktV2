@@ -1,3 +1,4 @@
+import { ViewAsPicker, ViewAsBanner } from './ViewAsPicker.jsx'  // sandbox-only, remove with the feature
 import { useState, useEffect } from 'react'
 import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot, Hexagon, Inbox } from 'lucide-react'
 import { T } from '../constants.js'
@@ -121,7 +122,10 @@ export function Shell({ view, setView, children, onOpenOrder }) {
         <div style={{ padding: sidebarCollapsed ? '20px 8px 16px' : '20px 16px 16px', borderBottom: `1px solid ${T.sidebarBorder}` }}>
           {sidebarCollapsed
             ? <div style={{ display: 'flex', justifyContent: 'center', color: roleColor }}><Hexagon size={18} strokeWidth={2.5} /></div>
-            : <div style={{ fontSize: 20, fontWeight: 800, color: roleColor, textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'center', lineHeight: 1.2 }}>{roleLabel}</div>
+            : <>
+                <div style={{ fontSize: 20, fontWeight: 800, color: roleColor, textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'center', lineHeight: 1.2 }}>{roleLabel}</div>
+                <ViewAsPicker />
+              </>
           }
         </div>
 
@@ -205,6 +209,8 @@ export function Shell({ view, setView, children, onOpenOrder }) {
 
         {/* Notification panel */}
         {notifOpen && <NotifPanel onClose={() => setNotifOpen(false)} onOpenOrder={onOpenOrder} />}
+
+        <ViewAsBanner />
 
         {/* Page content */}
         <main className="main-content" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>{children}</main>
