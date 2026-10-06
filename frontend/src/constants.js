@@ -83,6 +83,21 @@ export const STAGE_DOC_MAP = STAGE_DOC_TYPES.reduce((acc, d) => {
   return acc
 }, {})
 
+// STAGE_DOC_TYPES indices describe the 12-step default plan only. Imported or custom TNAs have
+// their own stage lists (7, 10, 17, 27 steps in live data), where an index says nothing about
+// what the stage is. The evidence form has no type selector, so the first type returned here is
+// what gets saved, and an empty list would save '' (the API rejects it). Anything off the default
+// plan, and the default plan's stages that have no specific type, therefore gets the generic type.
+const sameStageName = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase()
+export const isDefaultPlan = stages =>
+  Array.isArray(stages) && stages.length === DEFAULT_STAGE_NAMES.length &&
+  stages.every((s, i) => sameStageName(s?.name, DEFAULT_STAGE_NAMES[i]))
+const GENERIC_EVIDENCE_TYPE = STAGE_DOC_TYPES.find(d => d.v === 'floor_evidence')
+export const evidenceTypesFor = (stageIndex, stages) => {
+  const mapped = isDefaultPlan(stages) ? STAGE_DOC_MAP[stageIndex] : null
+  return mapped?.length ? mapped : [GENERIC_EVIDENCE_TYPE]
+}
+
 // Values are Lucide icon COMPONENTS, not emoji — render as <DOC_ICONS[type] size={..}/>.
 export const DOC_ICONS = {
   PO: ClipboardList, buyer_order: ShoppingCart, tech_pack: Ruler, cost_sheet: Wallet, RFQ: Mail, terms: FileText,

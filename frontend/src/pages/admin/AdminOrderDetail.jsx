@@ -2,7 +2,7 @@ import { useState, useMemo, Fragment } from 'react'
 import Papa from 'papaparse'
 import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight } from '../../icons.jsx'
 import {
-  T, ORDER_STATUSES, STAGE_DOC_MAP, DOC_ICONS,
+  T, ORDER_STATUSES, evidenceTypesFor, DOC_ICONS,
   stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
   stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber,
   PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor,
@@ -501,7 +501,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     order.assignments.find(a => String(a.mid) === String(mfrId))?.stages?.[stageIdx]?.name || `Stage ${stageIdx + 1}`
 
   const openStageDocUpload = (mfrId, stageIdx) => {
-    const types = STAGE_DOC_MAP[stageIdx] || []
+    const types = evidenceTypesFor(stageIdx, order.assignments.find(a => String(a.mid) === String(mfrId))?.stages)
     setSdMfrId(mfrId)
     setSdStageIdx(stageIdx)
     setSdItems([{ type: types[0]?.v || '', name: stageNameFor(mfrId, stageIdx), file: null, notes: '', fileErr: '' }])
@@ -512,7 +512,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   const updateSdItem = (idx, patch) => setSdItems(prev => prev.map((item, i) => i === idx ? { ...item, ...patch } : item))
 
   const addSdItem = () => {
-    const types = STAGE_DOC_MAP[sdStageIdx] || []
+    const types = evidenceTypesFor(sdStageIdx, order.assignments.find(a => String(a.mid) === String(sdMfrId))?.stages)
     setSdItems(prev => [...prev, { type: types[0]?.v || '', name: stageNameFor(sdMfrId, sdStageIdx), file: null, notes: '', fileErr: '' }])
   }
 

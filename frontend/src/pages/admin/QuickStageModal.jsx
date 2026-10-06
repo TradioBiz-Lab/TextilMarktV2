@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { ArrowRight, X, AlertTriangle, Paperclip, Plus } from '../../icons.jsx'
-import { T, STAGE_DOC_MAP, stageKindOf, stageStatusOf, stageVariance, stageActualVariance, STAGE_STATUS_LABELS, fmtStageDate } from '../../constants.js'
+import { T, evidenceTypesFor, stageKindOf, stageStatusOf, stageVariance, stageActualVariance, STAGE_STATUS_LABELS, fmtStageDate } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, FlexRow, Input, FileUpload, DocCard, useToast, fileUploadPayload, SectionLabel } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { capsFor, canWriteStage } from '../../caps.js'
@@ -72,7 +72,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
   // Document Name defaults to the stage's own name (e.g. "Lab Dip Approval")
   // rather than starting blank.
   const openStageDocUpload = () => {
-    const types = STAGE_DOC_MAP[stageIndex] || []
+    const types = evidenceTypesFor(stageIndex, asgn?.stages)
     setSdItems([{ type: types[0]?.v || '', name: stage?.name || `Stage ${stageIndex + 1}`, file: null, notes: '', fileErr: '' }])
     setSdErr('')
     setShowStageDocs(true)
@@ -81,7 +81,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
   const updateSdItem = (idx, patch) => setSdItems(prev => prev.map((item, i) => i === idx ? { ...item, ...patch } : item))
 
   const addSdItem = () => {
-    const types = STAGE_DOC_MAP[stageIndex] || []
+    const types = evidenceTypesFor(stageIndex, asgn?.stages)
     setSdItems(prev => [...prev, { type: types[0]?.v || '', name: stage?.name || `Stage ${stageIndex + 1}`, file: null, notes: '', fileErr: '' }])
   }
 
