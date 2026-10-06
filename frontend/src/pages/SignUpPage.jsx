@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CheckCircle2, AlertTriangle } from 'lucide-react'
+import { CheckCircle2, AlertTriangle } from '../icons.jsx'
 import { T } from '../constants.js'
 import { Input, Btn } from '../components/ui.jsx'
 import api from '../api.js'

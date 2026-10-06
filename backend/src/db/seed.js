@@ -16,6 +16,7 @@ import { Order, DEFAULT_STAGE_NAMES } from '../models/Order.js'
 import { Document }     from '../models/Document.js'
 import { Notification } from '../models/Notification.js'
 import { AuditLog }     from '../models/AuditLog.js'
+import { InboundMessage } from '../models/InboundMessage.js'
 
 // This script deletes every User/Order/Document/Notification/AuditLog in
 // whatever database MONGO_DB_URI resolves to, then inserts fake data. Local
@@ -79,6 +80,7 @@ async function seed() {
     Document.deleteMany({}),
     Notification.deleteMany({}),
     AuditLog.deleteMany({}),
+    InboundMessage.deleteMany({}),
   ])
   console.log(`Collections cleared in sandbox db "${dbName}".`)
 

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, List, LayoutGrid, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react'
+import { Plus, List, LayoutGrid, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, ChevronUp, ArrowRight, X } from '../../icons.jsx'
 import {
   T, SEASONS, ORDER_STATUSES,
   isStageDone, stageIsOverdue, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct, fmtStageDate, effectiveEta,
@@ -7,6 +7,7 @@ import {
 } from '../../constants.js'
 import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, FileUpload, LoadingScreen, useToast, fileUploadPayload, ProductThumb, Modal, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
+import { capsFor } from '../../caps.js'
 import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
@@ -34,8 +35,10 @@ function groupDisplayLabel(g) {
   return withBuyerPrefix(base, g.orders)
 }
 
-export function AdminOrders({ onOpen, initialStatus }) {
-  const { orders, users, loading, createOrder, uploadDoc, masterOrders, createMasterOrder, editOrder, deleteOrder } = useApp()
+export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
+  const { orders, users, loading, createOrder, uploadDoc, masterOrders, createMasterOrder, editOrder, deleteOrder, currentUser } = useApp()
+  // One Orders page for every role; caps decides which actions each sees (see caps.js).
+  const caps = capsFor(currentUser)
   const toast = useToast()
   const [q, setQ] = useState('')
   const [showSugg, setShowSugg] = useState(false)
@@ -143,12 +146,14 @@ export function AdminOrders({ onOpen, initialStatus }) {
   // rather than a tidy one. Auto-expand once, on first load, only when the list
   // is short enough that the scroll argument above doesn't apply. Runs a single
   // time so every later toggle is purely the user's.
-  const [autoExpanded, setAutoExpanded] = useState(false)
+  // Everything starts collapsed. The one exception is arriving from the
+  // dashboard on a specific master order: open that group (only) and scroll to it.
   useEffect(() => {
-    if (autoExpanded || groupedOrders.length === 0) return
-    if (groupedOrders.length <= 3) setExpandedGroups(new Set(groupedOrders.map(g => g.moId)))
-    setAutoExpanded(true)
-  }, [groupedOrders.length, autoExpanded])
+    if (!initialMo || !groupedOrders.some(g => g.moId === initialMo)) return
+    setExpandedGroups(new Set([initialMo]))
+    const t = setTimeout(() => document.getElementById(`mo-group-${initialMo}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 80)
+    return () => clearTimeout(t)
+  }, [initialMo, groupedOrders.length])
 
   const genMoId = () => {
     const b = users.find(u => u.id === mo.buyerId)
@@ -221,7 +226,7 @@ export function AdminOrders({ onOpen, initialStatus }) {
                 <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>Create Master Order</div>
                 <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>A master order groups all products for a buyer's order</div>
               </div>
-              <button onClick={() => { setShowMO(false); resetMoForm() }} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: T.textMuted }}>×</button>
+              <button onClick={() => { setShowMO(false); resetMoForm() }} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: T.textMuted }} aria-label="Close"><X size={14} /></button>
             </div>
             <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
               <Select label="Buyer *" value={mo.buyerId} onChange={e => setMo({ ...mo, buyerId: e.target.value })}>
@@ -242,7 +247,7 @@ export function AdminOrders({ onOpen, initialStatus }) {
                   <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: T.primaryDark }}>{genMoId()}</span>
                 </div>
               )}
-              {moErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}>⚠ {moErr}</div>}
+              {moErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {moErr}</div>}
               <FlexRow justify="flex-end" gap={8}>
                 <Btn variant="secondary" onClick={() => { setShowMO(false); resetMoForm() }}>Cancel</Btn>
                 <Btn disabled={!mo.buyerId || !mo.orderName.trim() || moSaving} onClick={async () => {
@@ -275,12 +280,17 @@ export function AdminOrders({ onOpen, initialStatus }) {
         </div>
       )}
 
-      <PageHeader title="Order Management" subtitle="Create styles, assign manufacturers, and manage the full order lifecycle" action={
-        <FlexRow gap={8}>
-          <Btn variant="secondary" onClick={() => setShowMO(true)} icon="📁">New Master Order</Btn>
-          <Btn onClick={() => setShowWizard(true)} icon={<Plus size={13} />}>Create Style</Btn>
-        </FlexRow>
-      } />
+      <PageHeader
+        title="Order Management"
+        subtitle={caps.createOrders ? 'Create styles, assign manufacturers, and manage the full order lifecycle'
+          : caps.isBuyer ? 'Every style you have placed, and where each one stands'
+          : 'Every style assigned to your factory, and where each one stands'}
+        action={caps.createOrders ? (
+          <FlexRow gap={8}>
+            <Btn variant="secondary" onClick={() => setShowMO(true)} icon={<Folder size={13} />}>New Master Order</Btn>
+            <Btn onClick={() => setShowWizard(true)} icon={<Plus size={13} />}>Create Style</Btn>
+          </FlexRow>
+        ) : (caps.submitRequirement && onSubmitReq ? <Btn onClick={onSubmitReq} icon={<Plus size={13} />}>Submit Requirement</Btn> : null)} />
 
       {/* List = one row per order, for day-to-day management. Matrix = styles
           across the top, TNA steps down the side, for "where does the whole
@@ -386,7 +396,7 @@ export function AdminOrders({ onOpen, initialStatus }) {
                   <tr key={`sp-${g.moId}`} aria-hidden="true"><td colSpan={8} style={{ padding: 0, height: 12, border: 'none', background: T.bg }} /></tr>
                 ) : null
                 const headerRow = (
-                  <tr key={`h-${g.moId}`} onClick={() => toggleGroup(g.moId)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => toggleGroup(g.moId))} style={{ cursor: 'pointer', background: '#f1f5f9' }}>
+                  <tr key={`h-${g.moId}`} id={`mo-group-${g.moId}`} onClick={() => toggleGroup(g.moId)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => toggleGroup(g.moId))} style={{ cursor: 'pointer', background: '#f1f5f9' }}>
                     <td colSpan={8} style={{ padding: '10px 16px' }}>
                       <FlexRow gap={10}>
                         <span style={{ color: T.textMuted, transition: 'transform 0.15s', transform: collapsed ? 'rotate(-90deg)' : 'none', display: 'inline-flex' }}><ChevronDown size={13} /></span>
@@ -413,7 +423,7 @@ export function AdminOrders({ onOpen, initialStatus }) {
                         <Mono style={{ fontSize: 11 }}>{o.id}{a ? `-${a.sub}` : ''}</Mono>
                       </td>
                       <td style={{ padding: '11px 16px', fontWeight: 600, color: T.text, fontSize: 13 }}>
-                        <FlexRow gap={10}><ProductThumb order={o} size="sm" onClick={e => { e.stopPropagation(); setEditTarget(o) }} />{o.product}</FlexRow>
+                        <FlexRow gap={10}><ProductThumb order={o} size="sm" onClick={caps.editOrders ? (e => { e.stopPropagation(); setEditTarget(o) }) : undefined} />{o.product}</FlexRow>
                       </td>
                       <td style={{ padding: '11px 16px', color: T.textMuted, fontSize: 13 }}>{o.buyerCompany || '—'}</td>
                       <td style={{ padding: '11px 16px' }}>
@@ -438,12 +448,12 @@ export function AdminOrders({ onOpen, initialStatus }) {
                       </td>
                       <td style={{ padding: '11px 16px' }}>
                         <FlexRow gap={6}>
-                          <Btn size="sm" onClick={(e) => { e.stopPropagation(); onOpen(o.id, a?.mid) }}>Manage <ArrowRight size={12} style={{ marginLeft: -2 }} /></Btn>
-                          <Btn size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); setEditTarget(o) }}>Edit</Btn>
-                          <button
+                          <Btn size="sm" onClick={(e) => { e.stopPropagation(); onOpen(o.id, a?.mid) }}>{caps.isAdmin ? 'Manage' : 'Open'} <ArrowRight size={12} style={{ marginLeft: -2 }} /></Btn>
+                          {caps.editOrders && <Btn size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); setEditTarget(o) }}>Edit</Btn>}
+                          {caps.deleteOrders && <button
                             onClick={(e) => { e.stopPropagation(); setDeleteTarget(o) }}
                             style={{ padding: '4px 10px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: `1px solid ${T.dangerBorder}`, background: T.dangerBg, color: T.danger, cursor: 'pointer', fontFamily: 'inherit' }}
-                          >Delete</button>
+                          >Delete</button>}
                         </FlexRow>
                       </td>
                     </tr>
@@ -451,7 +461,7 @@ export function AdminOrders({ onOpen, initialStatus }) {
                 })
                 return [spacerRow, headerRow, ...rows].filter(Boolean)
               })}
-              {filtered.length === 0 && <tr><td colSpan={8}><EmptyState icon={<Package size={26} color={T.textLight} />} title="No orders" desc="Create your first order above" /></td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={8}><EmptyState icon={<Package size={26} color={T.textLight} />} title="No orders" desc={caps.createOrders ? "Create your first order above" : "Orders will appear here once they are placed"} /></td></tr>}
             </tbody>
           </table>
         </div>
@@ -464,7 +474,7 @@ export function AdminOrders({ onOpen, initialStatus }) {
           // is a glanceable summary of exactly that.
           <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-            {groupedOrders.length === 0 && <EmptyState icon={<Package size={26} color={T.textLight} />} title="No orders" desc="Create your first order above" />}
+            {groupedOrders.length === 0 && <EmptyState icon={<Package size={26} color={T.textLight} />} title="No orders" desc={caps.createOrders ? "Create your first order above" : "Orders will appear here once they are placed"} />}
 
             {groupedOrders.map(g => {
               // Earliest delivery first — the style due soonest is the one that

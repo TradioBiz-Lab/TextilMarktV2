@@ -26,17 +26,19 @@ describe('POST /api/assistant/chat', () => {
     assert.equal(status, 401)
   })
 
-  test('403 for a buyer', async () => {
-    const buyer = await makeBuyer()
-    const { status } = await as(buyer).post('/api/assistant/chat', { messages: [{ role: 'user', content: 'hi' }] })
-    assert.equal(status, 403)
-  })
-
-  test('403 for a manufacturer', async () => {
-    const mfr = await makeMfr()
-    const { status } = await as(mfr).post('/api/assistant/chat', { messages: [{ role: 'user', content: 'hi' }] })
-    assert.equal(status, 403)
-  })
+  // Kriyaa is open to every role (each sees only their own data, see assistant.scope.test.js).
+  // With no key configured, getting a 503 rather than a 403 proves the role gate let them through.
+  for (const [name, make] of [['a buyer', makeBuyer], ['a manufacturer', makeMfr]]) {
+    test(`${name} is allowed in (503 not-configured, not 403)`, async () => {
+      const original = process.env.ANTHROPIC_API_KEY
+      delete process.env.ANTHROPIC_API_KEY
+      try {
+        const u = await make()
+        const { status } = await as(u).post('/api/assistant/chat', { messages: [{ role: 'user', content: 'hi' }] })
+        assert.equal(status, 503)
+      } finally { if (original !== undefined) process.env.ANTHROPIC_API_KEY = original }
+    })
+  }
 
   test('503 when ANTHROPIC_API_KEY is unset', async () => {
     // app.js's `import 'dotenv/config'` (its literal first line) loads the real

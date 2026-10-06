@@ -1,0 +1,198 @@
+import { dayNumber, getToday, isStageDone, stageStatusOf, stageIsOverdue, effectiveEta, inFlightStages } from './constants.js'
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dashboard "AI summary" - PLACEHOLDER GENERATOR.
+//
+// Today this builds a 3-4 line summary from the data already on the page using
+// plain rules (no model call). The shape is the contract for the real thing:
+//
+//   generateSummary(ctx) -> Promise<{ lines: string[], generatedAt: string, source: string }>
+//
+// `ctx` is { role, user, orders, actionItems }. To plug in a real model, replace
+// the body of `generateSummary` with a backend call that returns the same
+// object; the card, loading state and placement need no changes. Lines may use
+// **bold** for emphasis.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + 's')}`
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const shortDate = d => {
+  const dt = new Date(d)
+  return Number.isNaN(dt.getTime()) ? '' : `${dt.getUTCDate()} ${MONTHS[dt.getUTCMonth()]}`
+}
+const list = items => items.length <= 1 ? items.join('') : items.slice(0, -1).join(', ') + ' and ' + items[items.length - 1]
+
+/** One row per order x factory split, with the health facts the lines are built from. */
+function buildRows(orders, role, userId, todayNum) {
+  const rows = []
+  for (const o of orders || []) {
+    for (const a of o.assignments || []) {
+      if (role === 'manufacturer' && String(a.mid) !== String(userId)) continue
+      const stages = a.stages || []
+      const allDone = stages.length > 0 && stages.every(isStageDone)
+      const live = inFlightStages(a, { windowDays: 3650 })
+      const blocked = live.filter(({ stage }) => stage.blocked)
+      const late = live.filter(({ stage }) => stageIsOverdue(stage))
+      const working = live.filter(({ stage }) => stageStatusOf(stage) === 'in_progress' && !stage.blocked)
+      const upcoming = live
+        .filter(({ stage }) => { const e = effectiveEta(stage); return e && dayNumber(e) >= todayNum })
+        .sort((x, y) => dayNumber(effectiveEta(x.stage)) - dayNumber(effectiveEta(y.stage)))[0] || null
+      const deliveryDay = o.delivery ? dayNumber(new Date(o.delivery).toISOString()) : null
+      const delivered = allDone || a.status === 'Delivered'
+      const daysLate = late.length
+        ? Math.max(...late.map(({ stage }) => todayNum - dayNumber(effectiveEta(stage))))
+        : 0
+      const health = delivered ? 'delivered'
+        : blocked.length ? 'blocked'
+        : (late.length || (deliveryDay != null && deliveryDay < todayNum)) ? 'late'
+        : 'ontrack'
+      rows.push({ order: o, asgn: a, stages, live, blocked, late, working, upcoming, delivered, health, daysLate, deliveryDay })
+    }
+  }
+  return rows
+}
+
+const severity = r => (r.health === 'blocked' ? 1000 : 0) + r.daysLate
+
+function attentionLine(rows, role) {
+  const bad = rows.filter(r => r.health === 'blocked' || r.health === 'late').sort((a, b) => severity(b) - severity(a))
+  if (!bad.length) return 'Nothing is late or blocked right now, every live order is on plan.'
+  const bits = bad.slice(0, 2).map(r => {
+    const who = role === 'admin' ? ` (${r.order.buyerCompany})` : ''
+    if (r.health === 'blocked') {
+      const s = r.blocked[0].stage
+      return `**${r.order.product}**${who} is blocked at ${s.name}${s.blockedReason ? `, ${s.blockedReason.toLowerCase()}` : ''}`
+    }
+    const s = r.late[0]?.stage
+    return r.late.length
+      ? `**${r.order.product}**${who} is ${plural(r.daysLate, 'day')} past plan at ${s.name}`
+      : `**${r.order.product}**${who} is past its delivery date`
+  })
+  const more = bad.length - bits.length
+  return `Needs attention: ${bits.join('; ')}${more > 0 ? `, plus ${plural(more, 'other order')}` : ''}.`
+}
+
+function nextDeliveryLine(rows, role, todayNum) {
+  const next = rows
+    .filter(r => !r.delivered && r.deliveryDay != null && r.deliveryDay >= todayNum)
+    .sort((a, b) => a.deliveryDay - b.deliveryDay)[0]
+  if (!next) return null
+  const days = next.deliveryDay - todayNum
+  const who = role === 'admin' ? ` for ${next.order.buyerCompany}` : ''
+  return `Next delivery: **${next.order.product}**${who} on ${shortDate(next.order.delivery)} (${days === 0 ? 'today' : `in ${plural(days, 'day')}`}).`
+}
+
+function build({ role, user, orders, actionItems }) {
+  const todayNum = dayNumber(getToday())
+  const rows = buildRows(orders, role, user?.id, todayNum)
+  const live = rows.filter(r => !r.delivered)
+  const delivered = rows.length - live.length
+  const count = h => live.filter(r => r.health === h).length
+  const lines = []
+
+  if (!live.length) {
+    lines.push(rows.length
+      ? `All ${plural(rows.length, 'order')} on your book ${rows.length === 1 ? 'is' : 'are'} delivered, nothing is in progress.`
+      : 'No orders yet, there is nothing to summarise.')
+    return lines
+  }
+
+  const mix = `${count('ontrack')} on track, ${count('late')} late, ${count('blocked')} blocked`
+  if (role === 'admin') {
+    const customers = new Set(live.map(r => r.order.buyerCompany)).size
+    const factories = new Set(live.map(r => r.asgn.mfrCompany)).size
+    lines.push(`**${plural(live.length, 'live order')}** across ${plural(customers, 'customer')} and ${plural(factories, 'factory', 'factories')}: ${mix}${delivered ? `, ${delivered} already delivered` : ''}.`)
+  } else if (role === 'buyer') {
+    lines.push(`Your **${plural(live.length, 'live order')}**: ${mix}${delivered ? `, ${delivered} already delivered` : ''}.`)
+  } else {
+    const pcs = live.reduce((n, r) => n + (r.asgn.qty || 0), 0)
+    const customers = new Set(live.map(r => r.order.buyerCompany)).size
+    lines.push(`You have **${plural(live.length, 'live order')}** (${pcs.toLocaleString('en-IN')} pcs) for ${plural(customers, 'customer')}: ${mix}.`)
+  }
+
+  lines.push(attentionLine(live, role))
+
+  // The action-items line differs most by role: it answers "what is waiting on me".
+  if (role === 'admin') {
+    // Same definition as the dashboard's "My Action Items" card: open items assigned to
+    // this admin, plus the active (first unfinished) stage of each order they own.
+    const items = (actionItems || []).filter(i => i.status === 'open' && String(i.assigneeId) === String(user?.id))
+    const ownedSteps = rows.map(r => r.stages.find(s => !isStageDone(s))).filter(s => s && s.responsibleId && String(s.responsibleId) === String(user?.id))
+    const etas = [...items.map(i => i.eta), ...ownedSteps.map(s => (s.eta && s.eta !== 'NA' ? s.eta : null))]
+    const total = items.length + ownedSteps.length
+    const overdue = etas.filter(e => e && dayNumber(e) < todayNum).length
+    const open = live.reduce((n, r) => n + inFlightStages(r.asgn, { windowDays: 3 }).length, 0)
+    lines.push(`Action items: **${plural(total, 'open item')}** assigned to you${overdue ? ` (${overdue} overdue)` : ''}${ownedSteps.length ? `, of which ${ownedSteps.length} ${ownedSteps.length === 1 ? 'is a production step' : 'are production steps'}` : ''}. ${plural(open, 'step')} across all orders ${open === 1 ? 'is' : 'are'} open or due in the next 3 days.`)
+  } else if (role === 'buyer') {
+    const waiting = live.flatMap(r => r.live
+      .filter(({ stage }) => String(stage.responsibleId) === String(user?.id) && !stage.blocked)
+      .map(({ stage }) => `${stage.name} on **${r.order.product}**`))
+    lines.push(waiting.length
+      ? `Waiting on you: **${plural(waiting.length, 'approval')}**, ${list(waiting.slice(0, 2))}${waiting.length > 2 ? `, plus ${waiting.length - 2} more` : ''}.`
+      : 'Nothing is waiting on you, no approvals are pending.')
+  } else {
+    const focus = live
+      .flatMap(r => r.working.map(w => ({ r, ...w })))
+      .sort((a, b) => dayNumber(effectiveEta(a.stage) || '9999-12-31') - dayNumber(effectiveEta(b.stage) || '9999-12-31'))
+      .slice(0, 2)
+      .map(f => `${f.stage.name} on **${f.r.order.product}**`)
+    lines.push(focus.length ? `Today's focus: ${list(focus)}.` : 'No step is in progress today, check the orders that are about to start.')
+  }
+
+  if (role === 'manufacturer') {
+    const soon = live.filter(r => r.upcoming).sort((a, b) => dayNumber(effectiveEta(a.upcoming.stage)) - dayNumber(effectiveEta(b.upcoming.stage)))[0]
+    if (soon) lines.push(`Next deadline: ${soon.upcoming.stage.name} for **${soon.order.product}** on ${shortDate(effectiveEta(soon.upcoming.stage))}.`)
+  } else {
+    const nd = nextDeliveryLine(rows, role, todayNum)
+    if (nd) lines.push(nd)
+  }
+  return lines
+}
+
+/** Plug-in point: swap the body for a backend/model call returning the same shape. */
+export async function generateSummary(ctx) {
+  return { lines: build(ctx), generatedAt: new Date().toISOString(), source: 'rules' }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-order one-liner for the Reporting page's "AI summary" column.
+// PLACEHOLDER: rule-based like the dashboard summary above. `r` is a Reporting
+// page row ({ order, asgn, stages, live, blocked, late, working, upcoming,
+// health, doneCount, daysToDelivery }). To plug in a real model, replace this
+// function (or fetch one line per row and look it up by order id).
+// ─────────────────────────────────────────────────────────────────────────────
+export function rowCallout(r) {
+  const { order, stages, live, blocked, late, working, upcoming, health, doneCount, daysToDelivery } = r
+  const total = stages.length
+  const deliveryBit = daysToDelivery == null ? ''
+    : daysToDelivery < 0 ? `delivery was due ${shortDate(order.delivery)}`
+    : `delivery ${shortDate(order.delivery)} (${daysToDelivery === 0 ? 'today' : `${daysToDelivery}d`})`
+
+  if (health === 'done') return `Delivered, all ${total} steps complete${order.delivery ? ` (due ${shortDate(order.delivery)})` : ''}.`
+
+  if (health === 'blocked') {
+    const s = blocked[0].stage
+    const why = s.blockedReason ? `: ${s.blockedReason}` : ''
+    return `Blocked at ${s.name}${why}. Needs a decision before it can move${deliveryBit ? `, ${deliveryBit}` : ''}.`
+  }
+
+  if (health === 'late') {
+    const worst = late[0]?.stage
+    const days = late.length ? Math.max(...late.map(({ stage }) => dayNumber(getToday()) - dayNumber(effectiveEta(stage)))) : 0
+    // A manual callout only rides along when it is short enough to keep this a one-liner.
+    const cause = order.callout && order.callout.length <= 50 ? ` ${order.callout}` : ''
+    if (worst) return `${plural(days, 'day')} behind at ${worst.name}${deliveryBit ? `, ${deliveryBit} at risk` : ''}.${cause}`
+    return `Past its delivery date.${cause}`
+  }
+
+  const w = working[0]?.stage
+  if (w) {
+    const pct = Math.round(((w.unitsDone || 0) / Math.max(w.totalUnits || 1, 1)) * 100)
+    const due = effectiveEta(w) ? `, due ${shortDate(effectiveEta(w))}` : ''
+    const prog = w.kind === 'quantity' || !w.kind ? ` ${pct}% done` : ' in progress'
+    return `On track: ${w.name}${prog}${due}${deliveryBit ? `; ${deliveryBit}` : ''}.`
+  }
+  if (live.length === 0 && doneCount === 0) return `Not started yet${stages[0]?.startDate && stages[0].startDate !== 'NA' ? `, first step ${stages[0].name} begins ${shortDate(stages[0].startDate)}` : ''}.`
+  if (upcoming) return `On track: next up ${upcoming.stage.name} on ${shortDate(effectiveEta(upcoming.stage))}${deliveryBit ? `; ${deliveryBit}` : ''}.`
+  return `${doneCount} of ${total} steps done${deliveryBit ? `, ${deliveryBit}` : ''}.`
+}

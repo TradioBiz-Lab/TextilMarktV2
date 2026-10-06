@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken'
 import rateLimit from 'express-rate-limit'
 import { User, AuditLog } from '../db/index.js'
 import { requireAuth } from '../middleware/auth.js'
+import { viewAsFlags } from './viewAs.js'  // sandbox-only, see viewAs.js
 
 const router = Router()
 
@@ -80,13 +81,14 @@ router.post('/login', loginLimiter, async (req, res) => {
     // SameSite=None cookies, so the frontend also stores this token and sends it as
     // an Authorization header — requireAuth already accepts either. Always included
     // (not just in non-prod) since prod is exactly where the cookie can fail.
-    res.json({ user: payload, token })
+    res.json({ user: { ...payload, ...(await viewAsFlags(payload)) }, token })
   } catch (err) {
     res.status(500).json({ error: 'Server error' })
   }
 })
 
 router.post('/change-password', requireAuth, changePasswordLimiter, async (req, res) => {
+  if (req.user.viewAsBy) return res.status(403).json({ error: 'Not available while viewing as another user' })
   try {
     const { currentPassword, newPassword } = req.body
     if (!currentPassword || typeof currentPassword !== 'string') return res.status(400).json({ error: 'Current password is required' })
@@ -117,11 +119,13 @@ router.post('/change-password', requireAuth, changePasswordLimiter, async (req, 
 })
 
 // GET /api/auth/me — restore session and refresh the httpOnly cookie
-router.get('/me', requireAuth, (req, res) => {
+router.get('/me', requireAuth, async (req, res) => {
   const payload = {
     id: req.user.id, email: req.user.email, role: req.user.role,
     adminType: req.user.adminType, name: req.user.name, company: req.user.company,
     code: req.user.code, mustChangePw: req.user.mustChangePw,
+    // Keep a view-as session a view-as session when the cookie is refreshed.
+    ...(req.user.viewAsBy ? { viewAsBy: req.user.viewAsBy, viewAsByName: req.user.viewAsByName } : {}),
   }
   const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '60m' })
   const isProd = process.env.NODE_ENV === 'production'
@@ -133,7 +137,7 @@ router.get('/me', requireAuth, (req, res) => {
     path: '/',
   })
   // Same Authorization-header fallback as /login — see comment there.
-  res.json({ user: req.user, token })
+  res.json({ user: { ...req.user, ...(await viewAsFlags(req.user)) }, token })
 })
 
 // POST /api/auth/logout — clear the httpOnly cookie

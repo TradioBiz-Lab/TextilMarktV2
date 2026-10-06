@@ -1,5 +1,5 @@
 import { useMemo, useState, Fragment } from 'react'
-import { AlertTriangle, Plus, RotateCw, Ban, CircleDot, CalendarClock, Search, User, Building2, Package, MessageCircle, Check, ChevronUp, ChevronDown } from 'lucide-react'
+import { AlertTriangle, Plus, RotateCw, Ban, CircleDot, CalendarClock, Search, User, Building2, Package, MessageCircle, Check, ChevronUp, ChevronDown } from '../../icons.jsx'
 import {
   T, dayNumber, getToday, fmtN,
   stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, inFlightStages,
@@ -86,7 +86,8 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
   const [onlyMine, setOnlyMine] = useState(false)
   const [edits, setEdits] = useState({})
   const [saving, setSaving] = useState(false)
-  const [collapsed, setCollapsed] = useState({})
+  // Buyer groups start collapsed; a search, owner filter or "mine only" opens them so results are never hidden.
+  const [expanded, setExpanded] = useState({})
   const [showCreate, setShowCreate] = useState(false)
   const [customDrafts, setCustomDrafts] = useState({})
   const [busy, setBusy] = useState(false)
@@ -299,7 +300,7 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
         <StatCard icon={<CalendarClock size={19} color={T.warning} />} label="Due today" value={stats.dueToday} color={T.warning} />
       </div>
 
-      <FlexRow gap={8} style={{ marginBottom: 8, flexWrap: 'wrap' }}>
+      {isAdmin && <FlexRow gap={8} style={{ marginBottom: 8, flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
           <Search size={14} color={T.textLight} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
           <input
@@ -314,14 +315,14 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
         </select>
         <Btn variant={includeOverdue ? 'primary' : 'secondary'} onClick={() => setIncludeOverdue(v => !v)} icon={<CircleDot size={13} />}>Past deadline</Btn>
         <Btn variant={onlyMine ? 'primary' : 'secondary'} onClick={() => setOnlyMine(v => !v)} icon={<User size={13} />}>Mine only</Btn>
-      </FlexRow>
+      </FlexRow>}
 
       {/* Whose action it is — Tradio, the factory, or the customer. A third of a
           real TNA sits with the buyer, so this is a first-class filter. */}
       <FlexRow gap={6} style={{ marginBottom: 14, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Owner:</span>
-        {OWNER_FILTERS.map(f => (
-          <button key={f.id} onClick={() => setOwner(f.id)}
+        <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{isAdmin ? 'Owner:' : 'Show only:'}</span>
+        {(isAdmin ? OWNER_FILTERS : OWNER_FILTERS.filter(f => f.id === currentUser?.role)).map(f => (
+          <button key={f.id} onClick={() => setOwner(isAdmin ? f.id : (owner === f.id ? 'all' : f.id))}
             style={{ fontSize: 11, fontWeight: 700, padding: '4px 11px', borderRadius: 14, cursor: 'pointer', fontFamily: 'inherit',
               border: `1px solid ${owner === f.id ? T.primary : T.border}`,
               background: owner === f.id ? T.primaryLight : T.surface,
@@ -338,10 +339,11 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
             desc={q || onlyMine || owner !== 'all' ? 'Try widening the search, owner, or date range.' : 'No steps are open, blocked, or due in this window.'} />
         </Card>
       ) : groups.map(g => {
-        const open = !collapsed[g.key]
+        // Admins start with customers collapsed; customers and manufacturers see their list open.
+        const open = isAdmin ? (!!expanded[g.key] || !!q || owner !== 'all' || onlyMine) : expanded[g.key] !== false
         return (
           <Card key={g.key} pad={false} style={{ marginBottom: 14 }}>
-            <FlexRow gap={10} onClick={() => setCollapsed(p => ({ ...p, [g.key]: open }))}
+            <FlexRow gap={10} onClick={() => setExpanded(p => ({ ...p, [g.key]: !open }))}
               style={{ padding: '11px 16px', background: '#eef2f7', borderRadius: '12px 12px 0 0', cursor: 'pointer' }}>
               <span style={{ color: T.textMuted, transform: open ? 'none' : 'rotate(-90deg)', display: 'inline-flex' }}><ChevronDown size={13} /></span>
               <span style={{ fontSize: 14, fontWeight: 800, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Building2 size={14} /> {g.buyerCompany}</span>

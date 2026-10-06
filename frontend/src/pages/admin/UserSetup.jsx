@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Crown, Check, AlertTriangle, Plus, Search, KeyRound, Pencil, Users, Circle } from 'lucide-react'
+import { Crown, Check, AlertTriangle, Plus, Search, KeyRound, Pencil, Users, Circle } from '../../icons.jsx'
 import { T } from '../../constants.js'
 import { Modal, Input, Select, Btn, Card, Alert, EmptyState, FlexRow, PageHeader, RoleBadge, Mono, LoadingScreen, FileUpload, useToast, fileUploadPayload } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'

@@ -1,6 +1,6 @@
 import { useState, useMemo, Fragment } from 'react'
 import Papa from 'papaparse'
-import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight } from 'lucide-react'
+import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight } from '../../icons.jsx'
 import {
   T, ORDER_STATUSES, STAGE_DOC_MAP, DOC_ICONS,
   stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
@@ -9,6 +9,7 @@ import {
 } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
+import { capsFor, canWriteStage, canSetAssignmentStatus } from '../../caps.js'
 import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
@@ -28,6 +29,8 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     addStageItem, updateStageItem, removeStageItem, addAssignment, insertStage } = useApp()
   const toast = useToast()
   const isMaster = currentUser?.adminType === 'master'
+  // Same screen for every role; this decides which controls each one gets.
+  const caps = capsFor(currentUser)
 
   const [showEdit, setShowEdit] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
@@ -93,7 +96,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
 
   // Doc upload modal
   const [showUp, setShowUp] = useState(false)
-  const [uf, setUf] = useState({ type: 'PO', name: '', issuer: 'Tradio', issueDate: new Date().toISOString().slice(0, 10), expiryDate: '' })
+  const [uf, setUf] = useState({ type: 'PO', name: '', issuer: currentUser?.role === 'admin' ? 'Tradio' : (currentUser?.company || ''), issueDate: new Date().toISOString().slice(0, 10), expiryDate: '' })
   const [fileData, setFileData] = useState(null)
   const [fileErr, setFileErr] = useState('')
 
@@ -233,7 +236,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     ? orderDocs.filter(d => d.stageIndex != null && String(d.mfrId || '') === effectiveMid)
     : []
 
-  const resetUpload = () => { setUf({ type: 'PO', name: '', issuer: 'Tradio', issueDate: new Date().toISOString().slice(0, 10), expiryDate: '' }); setFileData(null); setFileErr('') }
+  const resetUpload = () => { setUf({ type: 'PO', name: '', issuer: currentUser?.role === 'admin' ? 'Tradio' : (currentUser?.company || ''), issueDate: new Date().toISOString().slice(0, 10), expiryDate: '' }); setFileData(null); setFileErr('') }
 
   // ── Stage Dates Adjustment ──
   const dateToInput = d => d === 'NA' ? 'NA' : (d ? new Date(d).toISOString().slice(0, 10) : '')
@@ -597,7 +600,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     const heroImgUrl = order.imageDataUrl || order.imageUrl
     const checklist = [
       {
-        key: 'image', label: 'Product Image', uploaded: !!heroImgUrl,
+        key: 'image', label: 'Product Image', uploaded: !!heroImgUrl, canUpload: caps.uploadProductPhoto,
         preview: heroImgUrl ? <img src={heroImgUrl} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover' }} /> : null,
         file: heroPhotoFile, err: heroPhotoErr, uploading: heroPhotoUploading,
         onFile: f => { setHeroPhotoFile(f); setHeroPhotoErr('') }, onErr: setHeroPhotoErr, onUpload: uploadHeroPhoto,
@@ -606,7 +609,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
         const doc = orderDocs.find(d => d.type === type)
         const uploadProps = type === 'pattern' ? PATTERN_FILE_PROPS : type === 'measurements' ? MEASUREMENTS_FILE_PROPS : {}
         return {
-          key: type, label: refDocLabels[type], uploaded: !!doc, doc, uploadProps,
+          key: type, label: refDocLabels[type], uploaded: !!doc, doc, uploadProps, canUpload: caps.uploadReferenceDocs,
           file: refDocFiles[type], err: refDocErrs[type], uploading: refDocUploading === type,
           onFile: f => setRefDocFiles(p => ({ ...p, [type]: f })),
           onErr: e => setRefDocErrs(p => ({ ...p, [type]: e })),
@@ -625,11 +628,13 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
           {!unassigned && order.assignments?.length > 1 && (
             <Btn variant="secondary" size="sm" onClick={() => setSelectedMid(null)} icon={<ArrowLeftRight size={13} />}>Change Mfr</Btn>
           )}
-          <Btn variant="secondary" size="sm" onClick={() => setShowEdit(true)} icon={<Pencil size={13} />}>Edit Style</Btn>
-          <button
-            onClick={() => setShowDelete(true)}
-            style={{ padding: '7px 14px', fontSize: 12, fontWeight: 700, borderRadius: 8, border: `1px solid ${T.dangerBorder}`, background: T.dangerBg, color: T.danger, cursor: 'pointer', fontFamily: 'inherit' }}
-          >Delete Style</button>
+          {caps.editOrders && <Btn variant="secondary" size="sm" onClick={() => setShowEdit(true)} icon={<Pencil size={13} />}>Edit Style</Btn>}
+          {caps.deleteOrders && (
+            <button
+              onClick={() => setShowDelete(true)}
+              style={{ padding: '7px 14px', fontSize: 12, fontWeight: 700, borderRadius: 8, border: `1px solid ${T.dangerBorder}`, background: T.dangerBg, color: T.danger, cursor: 'pointer', fontFamily: 'inherit' }}
+            >Delete Style</button>
+          )}
         </FlexRow>
 
         {/* ── Style spec sheet — modelled on the paper swatch/trim card that
@@ -641,9 +646,9 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
             {/* Photo + tear line */}
             <div style={{ display: 'flex', flexShrink: 0 }}>
               <div style={{ width: 128, padding: 18, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-                <div onClick={() => setShowEdit(true)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => setShowEdit(true))}
-                  title="Change photo"
-                  style={{ width: 92, height: 92, borderRadius: 6, overflow: 'hidden', background: '#f8fafc', border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                <div onClick={caps.editOrders ? () => setShowEdit(true) : undefined} role={caps.editOrders ? 'button' : undefined} tabIndex={caps.editOrders ? 0 : undefined} onKeyDown={caps.editOrders ? activateOnKey(() => setShowEdit(true)) : undefined}
+                  title={caps.editOrders ? 'Change photo' : undefined}
+                  style={{ width: 92, height: 92, borderRadius: 6, overflow: 'hidden', background: '#f8fafc', border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: caps.editOrders ? 'pointer' : 'default' }}>
                   {heroImgUrl ? (
                     <img src={heroImgUrl} alt={order.product} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : (
@@ -757,8 +762,22 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                   </FlexRow>
                   {isOpen && (
                     <div style={{ padding: '0 12px 12px' }}>
-                      {item.uploaded && item.doc ? (
+                      {item.key === 'image' && item.uploaded ? (
+                        // The product photo lives on the order itself (not as a document), so show it here
+                        // rather than falling through to the empty-upload state.
+                        <div>
+                          <img src={heroImgUrl} alt={order.product} style={{ display: 'block', maxWidth: '100%', maxHeight: 360, borderRadius: 8, border: `1px solid ${T.border}` }} />
+                          {item.canUpload && (
+                            <div style={{ marginTop: 10 }}>
+                              <FileUpload {...item.uploadProps} file={item.file} onFile={item.onFile} error={item.err} onError={item.onErr} />
+                              {item.file && <Btn size="sm" style={{ marginTop: 6 }} disabled={item.uploading} onClick={item.onUpload}>{item.uploading ? 'Uploading…' : 'Replace photo'}</Btn>}
+                            </div>
+                          )}
+                        </div>
+                      ) : item.uploaded && item.doc ? (
                         <DocCard doc={item.doc} users={users} onGetData={getDocData} />
+                      ) : !item.canUpload ? (
+                        <div style={{ fontSize: 12, color: T.textMuted, padding: '4px 2px' }}>Not uploaded yet. {caps.isMfr ? 'The customer or Tradio uploads this.' : ''}</div>
                       ) : (
                         <>
                           <FileUpload {...item.uploadProps} file={item.file} onFile={item.onFile} error={item.err} onError={item.onErr} />
@@ -816,7 +835,14 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
 
         {renderSummary({ unassigned: true })}
 
-        <div style={{ marginTop: 16 }}>
+        {!caps.assignManufacturers && (
+          <div style={{ marginTop: 16 }}>
+            <Card><SectionLabel>Manufacturer</SectionLabel>
+              <div style={{ fontSize: 12, color: T.textMuted, marginTop: 6 }}>No manufacturer has been assigned to this style yet. Production starts once Tradio assigns one.</div>
+            </Card>
+          </div>
+        )}
+        {caps.assignManufacturers && <div style={{ marginTop: 16 }}>
           <Card>
             <SectionLabel>Add Manufacturer</SectionLabel>
             <div style={{ fontSize: 12, color: T.textMuted, margin: '6px 0 12px' }}>
@@ -844,7 +870,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
               >{addingMfr ? 'Adding…' : 'Add Manufacturer'}</Btn>
             </FlexRow>
           </Card>
-        </div>
+        </div>}
       </div>
     )
   }
@@ -855,7 +881,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
       <div>
         <FlexRow style={{ marginBottom: 20 }} gap={12}>
           <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
-          <ProductThumb order={order} size="lg" onClick={() => setShowEdit(true)} />
+          <ProductThumb order={order} size="lg" onClick={caps.editOrders ? () => setShowEdit(true) : undefined} />
           <div style={{ flex: 1 }}>
             <FlexRow gap={10}>
               <Mono style={{ fontSize: 15 }}>{order.id}</Mono>
@@ -1157,7 +1183,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
             {sdItems.map((item, idx) => (
               <div key={idx} style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 16px', background: '#f8fafc', position: 'relative' }}>
                 {sdItems.length > 1 && (
-                  <button onClick={() => removeSdItem(idx)} style={{ position: 'absolute', top: 10, right: 10, background: '#fee2e2', border: 'none', borderRadius: 6, cursor: 'pointer', width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: T.danger }}>×</button>
+                  <button onClick={() => removeSdItem(idx)} style={{ position: 'absolute', top: 10, right: 10, background: '#fee2e2', border: 'none', borderRadius: 6, cursor: 'pointer', width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: T.danger }} aria-label="Close"><X size={12} /></button>
                 )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <Input label="Document Name *" value={item.name} onChange={e => updateSdItem(idx, { name: e.target.value, fileErr: '' })} placeholder={`e.g. ${(order.assignments.find(a => String(a.mid) === String(sdMfrId))?.stages?.[sdStageIdx]?.name) || `Stage ${sdStageIdx + 1}`} GRN - Batch ${idx + 1}`} />
@@ -1174,7 +1200,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
             ))}
             {sdErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={12} /> {sdErr}</div>}
             <FlexRow justify="space-between" gap={8}>
-              <Btn variant="secondary" size="sm" onClick={addSdItem}>+ Add Another Document</Btn>
+              <Btn variant="secondary" size="sm" onClick={addSdItem} icon={<Plus size={12} />}>Add Another Document</Btn>
               <FlexRow gap={8}>
                 <Btn variant="secondary" onClick={() => setShowStageDocs(false)}>Cancel</Btn>
                 <Btn disabled={saving} onClick={submitStageDoc}>{saving ? 'Uploading…' : `Upload ${sdItems.length > 1 ? `${sdItems.length} Documents` : 'Evidence'}`}</Btn>
@@ -1212,7 +1238,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                   style={{ background: '#1e293b', border: '1px solid #334155', color: '#e2e8f0', borderRadius: 7, padding: '0 12px', height: 32, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6 }}><Download size={13} /> Download</button>
               )}
               <button onClick={closeViewer}
-                style={{ background: '#ef4444', border: 'none', color: '#fff', borderRadius: 7, width: 32, height: 32, fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}>×</button>
+                style={{ background: '#ef4444', border: 'none', color: '#fff', borderRadius: 7, width: 32, height: 32, fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }} aria-label="Close"><X size={16} /></button>
             </div>
           </div>
           {viewerLoading && (
@@ -1269,12 +1295,12 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                       </div>
                       <FlexRow gap={8}>
                         <Badge status={a.status} />
-                        <Btn size="sm" variant="warning" onClick={() => openStatusOverride(a.mid, a.status)} icon={<Pencil size={12} />}>Status</Btn>
-                        {currentUser?.adminType === 'master' && (
+                        {canSetAssignmentStatus(currentUser, a) && <Btn size="sm" variant="warning" onClick={() => openStatusOverride(a.mid, a.status)} icon={<Pencil size={12} />}>Status</Btn>}
+                        {caps.overrideStage && (
                           <Btn size="sm" variant="outline" onClick={() => openStageOverride(a.mid)} icon={<ShieldAlert size={12} />}>Override</Btn>
                         )}
-                        <Btn size="sm" variant="secondary" onClick={() => openEtaAdjust(a.mid)} icon={<ClipboardEdit size={12} />}>Bulk Edit</Btn>
-                        <Btn size="sm" variant="secondary" onClick={() => setTnaCsvOpen(p => ({ ...p, [a.mid]: !p[a.mid] }))} icon={<FileSpreadsheet size={12} />}>Upload CSV</Btn>
+                        {caps.editPlan && <Btn size="sm" variant="secondary" onClick={() => openEtaAdjust(a.mid)} icon={<ClipboardEdit size={12} />}>Bulk Edit</Btn>}
+                        {caps.editPlan && <Btn size="sm" variant="secondary" onClick={() => setTnaCsvOpen(p => ({ ...p, [a.mid]: !p[a.mid] }))} icon={<FileSpreadsheet size={12} />}>Upload CSV</Btn>}
                       </FlexRow>
                     </div>
 
@@ -1308,7 +1334,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                             <button onClick={downloadTnaCsvTemplate} style={{ fontSize: 11, fontWeight: 700, color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>Download template</button>
                           </FlexRow>
                           <div style={{ fontSize: 10, color: T.textLight, marginBottom: 8 }}>Columns: {TNA_CSV_HEADERS.join(', ')} — one row per stage, in order.</div>
-                          {tnaCsvErr[a.mid] && <div style={{ fontSize: 11, color: T.danger, marginBottom: 8 }}>⚠ {tnaCsvErr[a.mid]}</div>}
+                          {tnaCsvErr[a.mid] && <div style={{ fontSize: 11, color: T.danger, marginBottom: 8 }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {tnaCsvErr[a.mid]}</div>}
                           {csvRows.length > 0 && (
                             <div>
                               <div style={{ fontSize: 11, fontWeight: 700, color: T.text, marginBottom: 6 }}>
@@ -1337,6 +1363,11 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                       {stages.length > 0 && <StageTimeline stages={stages} />}
 
                       {stages.length === 0 && (
+                        !caps.editPlan ? (
+                          <div style={{ background: '#f8fafc', border: `1px dashed ${T.border}`, borderRadius: 10, padding: '14px 16px', marginBottom: 14, fontSize: 12, color: T.textMuted }}>
+                            No TNA yet. The production plan is set up by your Tradio coordinator.
+                          </div>
+                        ) :
                         <div style={{ background: '#f8fafc', border: `1px dashed ${T.border}`, borderRadius: 10, padding: '14px 16px', marginBottom: 14 }}>
                           <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 2 }}>No TNA yet</div>
                           <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Add stages one at a time below, or click "Upload CSV" above for a whole plan at once.</div>
@@ -1367,6 +1398,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                               </select>
                             </div>
                             <Btn
+                              icon={<Plus size={12} />}
                               size="sm"
                               disabled={!newStageDraft(a.mid).name.trim() || !newStageDraft(a.mid).startDate || !newStageDraft(a.mid).eta || addingStage === a.mid}
                               onClick={async () => {
@@ -1379,7 +1411,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                                   toast(typeof e === 'string' ? e : (e?.message || 'Failed to add stage'), 'error')
                                 } finally { setAddingStage(null) }
                               }}
-                            >{addingStage === a.mid ? 'Adding…' : '+ Add Stage'}</Btn>
+                            >{addingStage === a.mid ? 'Adding…' : 'Add Stage'}</Btn>
                           </div>
                         </div>
                       )}
@@ -1414,6 +1446,10 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                             : stageStatusOf(s) === 'in_progress' ? { bg: '#dbeafe', fg: '#1d4ed8', label: 'In progress' }
                             : { bg: '#f1f5f9', fg: T.textMuted, label: 'Upcoming' }
                           const receivedCount = (s.materials || []).filter(m => m.status === 'received').length
+                          // Per-stage rights: a manufacturer on their own assignment, a customer only on a
+                          // stage assigned to them, an admin everywhere (see caps.js).
+                          const writable = canWriteStage(currentUser, a, s)
+                          const canItems = caps.manageChecklist && writable
                           return (
                             <Fragment key={i}>
                             <tr onClick={() => openUpdateStage(a.mid, i)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => openUpdateStage(a.mid, i))}
@@ -1488,7 +1524,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                                         {(s.items || []).length === 0 && (
                                           <FlexRow gap={6}>
                                             <div style={{ fontSize: 11, color: T.textLight }}>No items yet.</div>
-                                            {(order.colourways || []).length > 0 && (
+                                            {canItems && (order.colourways || []).length > 0 && (
                                               <Btn size="sm" variant="secondary" onClick={() => generateItemsFromColourways(a.mid, i, s.name)}>
                                                 + One per colourway ({order.colourways.length})
                                               </Btn>
@@ -1501,8 +1537,9 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                                           return (
                                           <FlexRow key={ii} gap={8} style={{ background: '#fff', borderRadius: 6, padding: '5px 9px', border: `1px solid ${T.border}` }}>
                                             <button
-                                              onClick={() => toggleStageItem(a.mid, i, ii, it.status)}
-                                              title={it.status === 'done' ? 'Mark pending' : 'Mark done'}
+                                              onClick={canItems ? () => toggleStageItem(a.mid, i, ii, it.status) : undefined}
+                                              disabled={!canItems}
+                                              title={canItems ? (it.status === 'done' ? 'Mark pending' : 'Mark done') : undefined}
                                               style={{ cursor: 'pointer', border: `1px solid ${it.status === 'done' ? T.success : T.border}`, background: it.status === 'done' ? T.success : '#fff', color: '#fff', borderRadius: 4, width: 18, height: 18, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                                             >{it.status === 'done' ? <Check size={11} strokeWidth={3} /> : ''}</button>
                                             <span style={{ flex: 1, fontSize: 11, color: T.text, textDecoration: it.status === 'done' ? 'line-through' : 'none' }}>{it.name}</span>
@@ -1516,8 +1553,8 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                                                 <Check size={10} strokeWidth={3} /> {fmtDate(it.doneDate)}
                                               </span>
                                             )}
-                                            <button onClick={() => removeStageItem(order.id, a.mid, i, ii)} title="Remove"
-                                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textLight, display: 'flex' }}><X size={12} /></button>
+                                            {canItems && <button onClick={() => removeStageItem(order.id, a.mid, i, ii)} title="Remove"
+                                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textLight, display: 'flex' }}><X size={12} /></button>}
                                           </FlexRow>
                                           )
                                         })}
@@ -1535,7 +1572,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                                       </div>
                                     ))}
                                   </div>
-                                  <FlexRow gap={6}>
+                                  {writable && <FlexRow gap={6}>
                                     <input
                                       value={updateDrafts[rowKey] || ''}
                                       onChange={e => setUpdateDrafts(d => ({ ...d, [rowKey]: e.target.value }))}
@@ -1544,7 +1581,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                                       style={{ flex: 1, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 11, fontFamily: 'inherit' }}
                                     />
                                     <Btn size="sm" disabled={!(updateDrafts[rowKey] || '').trim()} onClick={() => submitStageUpdateNote(a.mid, i)}>Post</Btn>
-                                  </FlexRow>
+                                  </FlexRow>}
 
                                   <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', margin: '12px 0 6px' }}>Materials / PO</div>
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1610,7 +1647,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                           <span style={{ fontSize: 11, color: T.textMuted }}>{pct}%</span>
                           <FlexRow gap={8} style={{ marginLeft: 'auto' }}>
                             <span style={{ fontSize: 11, fontWeight: 700, color: '#1d4ed8', background: '#dbeafe', padding: '2px 8px', borderRadius: 10 }}>{sDocs.length} file{sDocs.length !== 1 ? 's' : ''}</span>
-                            <Btn size="sm" variant="outline" style={{ fontSize: 10 }} onClick={() => openStageDocUpload(effectiveMid, i)} icon={<Paperclip size={10} />}>Add</Btn>
+                            {caps.uploadStageEvidence && canWriteStage(currentUser, selectedAsgn, s) && <Btn size="sm" variant="outline" style={{ fontSize: 10 }} onClick={() => openStageDocUpload(effectiveMid, i)} icon={<Paperclip size={10} />}>Add</Btn>}
                           </FlexRow>
                         </div>
                         <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>

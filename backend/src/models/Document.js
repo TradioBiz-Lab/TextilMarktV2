@@ -12,6 +12,8 @@ const DOC_TYPES = [
   'material_po', 'knitting_grn', 'knitting_qc',
   'dyeing_grn', 'dyeing_qc', 'processing_grn', 'processing_qc',
   'cutting_qc', 'stitching_qc', 'final_qc', 'packing_qc', 'dispatch_docs',
+  // Evidence captured from a factory message (photo, voice note, challan) by Zero Entry Capture
+  'floor_evidence',
 ]
 
 const documentSchema = new mongoose.Schema({
@@ -40,6 +42,9 @@ const documentSchema = new mongoose.Schema({
   // Free-text notes — used for stage evidence entries that capture context (SOP-driven),
   // including text-only stage evidence (no file/link).
   notes:      { type: String, default: null },
+
+  // Set when this evidence was created from an inbound factory message
+  sourceMessageId: { type: mongoose.Schema.Types.ObjectId, ref: 'InboundMessage', default: null },
 
   // File payload — stored as base64 data URL (inline) OR external link (e.g. Zoho/GDrive share URL)
   // For non-stage docs, exactly one of dataUrl or externalUrl is set.

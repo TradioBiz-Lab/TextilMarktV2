@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react' // useMemo kept for myReqDocs
-import { AlertTriangle, ClipboardList, UploadCloud, Search, Package } from 'lucide-react'
+import { AlertTriangle, ClipboardList, UploadCloud, Search, Package } from '../../icons.jsx'
 import { T, DOC_TYPES, getToday } from '../../constants.js'
 import { Card, EmptyState, PageHeader, Btn, Modal, Select, Input, FileUpload, FlexRow, LoadingScreen, DocCard, useToast, fileUploadPayload } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'

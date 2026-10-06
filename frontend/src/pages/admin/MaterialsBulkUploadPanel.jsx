@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { AlertTriangle, Check } from '../../icons.jsx'
 import Papa from 'papaparse'
 import { T } from '../../constants.js'
 import { Btn, FlexRow, EmptyState } from '../../components/ui.jsx'
@@ -144,7 +145,7 @@ export function MaterialsBulkUploadPanel({ onDone }) {
         </FlexRow>
       </div>
 
-      {parseErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}>⚠ {parseErr}</div>}
+      {parseErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {parseErr}</div>}
 
       {rows.length === 0 && !parseErr && (
         <EmptyState icon="📦" title="No CSV uploaded yet" desc="Download the template, fill in materials for existing orders, and upload it here" />
@@ -175,8 +176,8 @@ export function MaterialsBulkUploadPanel({ onDone }) {
                   <td style={{ padding: '4px 6px' }}><input type="date" value={row.expectedDate} onChange={e => updateRow(row.rowIndex, { expectedDate: e.target.value })} style={cellStyle(140)} /></td>
                   <td style={{ padding: '6px 10px' }}>
                     {v.status === 'valid'
-                      ? <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: T.successBg, color: T.success, border: `1px solid ${T.successBorder}` }}>✓</span>
-                      : <span title={v.errors.join('; ')} style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: T.dangerBg, color: T.danger, border: `1px solid ${T.dangerBorder}`, cursor: 'help' }}>⚠ {v.errors.length}</span>}
+                      ? <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: T.successBg, color: T.success, border: `1px solid ${T.successBorder}` }}><Check size={11} strokeWidth={3} /></span>
+                      : <span title={v.errors.join('; ')} style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: T.dangerBg, color: T.danger, border: `1px solid ${T.dangerBorder}`, cursor: 'help' }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {v.errors.length}</span>}
                   </td>
                 </tr>
               ))}

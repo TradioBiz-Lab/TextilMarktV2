@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, X, AlertTriangle, Paperclip, Plus } from '../../icons.jsx'
 import { T, STAGE_DOC_MAP, stageKindOf, stageStatusOf, stageVariance, stageActualVariance, STAGE_STATUS_LABELS, fmtStageDate } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, FlexRow, Input, FileUpload, DocCard, useToast, fileUploadPayload, SectionLabel } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
+import { capsFor, canWriteStage } from '../../caps.js'
 import { ordersApi } from '../../api.js'
 
 // 'YYYY-MM-DD' or 'NA' → the value a native <input type="date"> (or the 'NA'
@@ -35,6 +36,9 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
   const asgn = order?.assignments.find(a => String(a.mid) === String(mfrId))
   const stage = asgn?.stages?.[stageIndex]
   const isMaster = currentUser?.adminType === 'master'
+  // The same modal serves every role; what each may change follows the server's rules (caps.js).
+  const caps = capsFor(currentUser)
+  const writable = canWriteStage(currentUser, asgn, stage)
 
   const [description, setDescription] = useState(stage?.description || '')
   const [units, setUnits] = useState(String(stage?.unitsDone ?? 0))
@@ -63,7 +67,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
   const [sdErr, setSdErr] = useState('')
 
   const uploadedStageDocs = (docs || []).filter(d =>
-    d.orderId === orderId && d.stageIndex === stageIndex && d.materialLineIndex == null && String(d.mfrId || '') === String(mfrId))
+    d.orderId === orderId && d.stageIndex === stageIndex && d.materialLineIndex == null && (!d.mfrId || String(d.mfrId) === String(mfrId)))   // Tradio-uploaded evidence has no manufacturer
 
   // Document Name defaults to the stage's own name (e.g. "Lab Dip Approval")
   // rather than starting blank.
@@ -124,6 +128,10 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
   if (!order || !asgn || !stage) return null
   const kind = stageKindOf(stage)
   const isDone = stageStatusOf(stage) === 'done'
+  // A customer may only set status on a stage assigned to them, never close a quantity stage.
+  const canProgress = writable && !(caps.isBuyer && kind === 'quantity')
+  const canMaterials = caps.manageMaterials && writable
+  const canEvidence = caps.uploadStageEvidence && writable
 
   const saveDescription = async () => {
     setSaving(true)
@@ -242,12 +250,16 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div>
           <SectionLabel>Description</SectionLabel>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="What does this stage involve? (optional)" />
-            <FlexRow justify="flex-end">
-              <Btn size="sm" variant="secondary" disabled={saving} onClick={saveDescription}>{saving ? 'Saving…' : 'Save Description'}</Btn>
-            </FlexRow>
-          </div>
+          {caps.editPlan ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="What does this stage involve? (optional)" />
+              <FlexRow justify="flex-end">
+                <Btn size="sm" variant="secondary" disabled={saving} onClick={saveDescription}>{saving ? 'Saving…' : 'Save Description'}</Btn>
+              </FlexRow>
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: stage.description ? T.text : T.textLight }}>{stage.description || 'No description.'}</div>
+          )}
         </div>
 
         <div>
@@ -262,20 +274,20 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
                   {stage.totalUnits > 0 && (
                     <span style={{ fontSize: 11, color: T.textMuted, flexShrink: 0 }}>{Math.round(stage.unitsDone / stage.totalUnits * 100)}%</span>
                   )}
-                  {isDone ? (
+                  {canProgress && (isDone ? (
                     <Btn size="sm" variant="secondary" disabled={saving} onClick={undoMarkDone}>{saving ? 'Saving…' : 'Reopen Stage'}</Btn>
                   ) : (
                     <Btn size="sm" disabled={saving} onClick={markStageDone}>{saving ? 'Saving…' : 'Mark Stage Done'}</Btn>
-                  )}
+                  ))}
                 </FlexRow>
               </div>
-              <button
+              {canProgress && <button
                 onClick={() => setShowPartial(p => !p)}
                 style={{ marginTop: 8, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 11.5, fontWeight: 600, color: T.primary, padding: 0 }}
               >
                 {showPartial ? 'Hide partial update' : 'Update partial completion'}
-              </button>
-              {showPartial && (
+              </button>}
+              {canProgress && showPartial && (
                 <div style={{ marginTop: 10 }}>
                   <Input label={`Units Done (max ${stage.totalUnits})`} type="number" value={units} onChange={e => setUnits(e.target.value)} />
                   <FlexRow justify="flex-end" style={{ marginTop: 8 }}>
@@ -285,14 +297,18 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
               )}
             </>
           ) : (
-            <>
-              <Select label="Status" value={status} onChange={e => setStatus(e.target.value)}>
-                {Object.entries(STAGE_STATUS_LABELS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-              </Select>
-              <FlexRow justify="flex-end" style={{ marginTop: 8 }}>
-                <Btn size="sm" disabled={saving} onClick={saveProgress}>{saving ? 'Saving…' : 'Save Progress'}</Btn>
-              </FlexRow>
-            </>
+            canProgress ? (
+              <>
+                <Select label="Status" value={status} onChange={e => setStatus(e.target.value)}>
+                  {Object.entries(STAGE_STATUS_LABELS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+                </Select>
+                <FlexRow justify="flex-end" style={{ marginTop: 8 }}>
+                  <Btn size="sm" disabled={saving} onClick={saveProgress}>{saving ? 'Saving…' : 'Save Progress'}</Btn>
+                </FlexRow>
+              </>
+            ) : (
+              <div style={{ fontSize: 12, color: T.text, fontWeight: 600 }}>{STAGE_STATUS_LABELS[stageStatusOf(stage)]}</div>
+            )
           )}
         </div>
 
@@ -320,8 +336,8 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
               )}
             </div>
             <div>
-              <div style={{ fontSize: 10, color: T.textLight, marginBottom: 4 }}>New planned date</div>
-              <FlexRow gap={4}>
+              <div style={{ fontSize: 10, color: T.textLight, marginBottom: 4 }}>{caps.editPlan ? 'New planned date' : 'Current planned date'}</div>
+              {!caps.editPlan ? <div style={{ fontSize: 12, fontWeight: 700, color: T.text, padding: '5px 0' }}>{fmtStageDate(stage.eta)}</div> : <FlexRow gap={4}>
                 <input
                   type={etaDraft === 'NA' ? 'text' : 'date'}
                   value={etaDraft}
@@ -333,7 +349,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
                   onClick={() => setEtaDraft(etaDraft === 'NA' ? '' : 'NA')}
                   style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 700, color: T.primary, padding: '0 2px' }}
                 >{etaDraft === 'NA' ? 'Set date' : 'N/A'}</button>
-              </FlexRow>
+              </FlexRow>}
             </div>
             <div>
               <div style={{ fontSize: 10, color: T.textLight, marginBottom: 4 }}>Actual date</div>
@@ -366,7 +382,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
               )}
             </div>
           </div>
-          <FlexRow justify="flex-end" style={{ marginTop: 10 }}>
+          {caps.editPlan && <FlexRow justify="flex-end" style={{ marginTop: 10 }}>
             <Btn
               size="sm"
               disabled={savingEta || (
@@ -376,7 +392,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
               )}
               onClick={saveEta}
             >{savingEta ? 'Saving…' : 'Save Date'}</Btn>
-          </FlexRow>
+          </FlexRow>}
           {(() => {
             const v = stageVariance(stage)
             return v != null && v !== 0 ? (
@@ -398,7 +414,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
               </div>
             ))}
           </div>
-          <FlexRow gap={6}>
+          {writable && <FlexRow gap={6}>
             <input
               value={updateText} onChange={e => setUpdateText(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') postUpdate() }}
@@ -406,7 +422,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
               style={{ flex: 1, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit' }}
             />
             <Btn size="sm" disabled={saving || !updateText.trim()} onClick={postUpdate}>Post</Btn>
-          </FlexRow>
+          </FlexRow>}
         </div>
 
         <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
@@ -422,23 +438,23 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: T.text }}>{m.name} — {m.requiredQty}{m.unit ? ` ${m.unit}` : ''}</div>
                   </div>
-                  <button onClick={() => advanceMaterial(mi, m.status)}
+                  <button onClick={canMaterials ? () => advanceMaterial(mi, m.status) : undefined} disabled={!canMaterials}
                     style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: sStyle.bg, color: sStyle.c, border: 'none', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
                     {m.status}
                   </button>
-                  <button onClick={() => deleteMaterial(mi)}
-                    style={{ background: T.dangerBg, border: 'none', borderRadius: 6, cursor: 'pointer', width: 20, height: 20, color: T.danger, flexShrink: 0 }}>×</button>
+                  {canMaterials && <button onClick={() => deleteMaterial(mi)}
+                    style={{ background: T.dangerBg, border: 'none', borderRadius: 6, cursor: 'pointer', width: 20, height: 20, color: T.danger, flexShrink: 0 }} aria-label="Close"><X size={12} /></button>}
                 </FlexRow>
               )
             })}
           </div>
-          <FlexRow gap={6}>
+          {canMaterials && <FlexRow gap={6}>
             <input value={matDraft.name} placeholder="Material name" onChange={e => setMatDraft(d => ({ ...d, name: e.target.value }))}
               style={{ flex: 1, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit' }} />
             <input type="number" value={matDraft.requiredQty} placeholder="Qty" onChange={e => setMatDraft(d => ({ ...d, requiredQty: e.target.value }))}
               style={{ width: 70, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit' }} />
-            <Btn size="sm" disabled={saving || !matDraft.name.trim() || !matDraft.requiredQty} onClick={addMaterial}>+ Add</Btn>
-          </FlexRow>
+            <Btn size="sm" disabled={saving || !matDraft.name.trim() || !matDraft.requiredQty} onClick={addMaterial} icon={<Plus size={12} />}>Add</Btn>
+          </FlexRow>}
         </div>
 
         <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
@@ -451,9 +467,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
               ))}
             </div>
           )}
-          <Btn size="sm" variant="outline" onClick={openStageDocUpload}>
-            📎 Upload Evidence
-          </Btn>
+          {canEvidence && <Btn size="sm" variant="outline" onClick={openStageDocUpload} icon={<Paperclip size={12} />}>Upload Evidence</Btn>}
         </div>
 
         <FlexRow justify="flex-end" gap={8}>
@@ -474,7 +488,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
           {sdItems.map((item, idx) => (
             <div key={idx} style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 16px', background: '#f8fafc', position: 'relative' }}>
               {sdItems.length > 1 && (
-                <button onClick={() => removeSdItem(idx)} style={{ position: 'absolute', top: 10, right: 10, background: '#fee2e2', border: 'none', borderRadius: 6, cursor: 'pointer', width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: T.danger }}>×</button>
+                <button onClick={() => removeSdItem(idx)} style={{ position: 'absolute', top: 10, right: 10, background: '#fee2e2', border: 'none', borderRadius: 6, cursor: 'pointer', width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: T.danger }} aria-label="Close"><X size={12} /></button>
               )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <Input label="Document Name *" value={item.name} onChange={e => updateSdItem(idx, { name: e.target.value, fileErr: '' })} placeholder={`e.g. ${stage?.name || `Stage ${stageIndex + 1}`} GRN - Batch ${idx + 1}`} />
@@ -489,9 +503,9 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
               </div>
             </div>
           ))}
-          {sdErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500 }}>⚠ {sdErr}</div>}
+          {sdErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500 }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {sdErr}</div>}
           <FlexRow justify="space-between" gap={8}>
-            <Btn variant="secondary" size="sm" onClick={addSdItem}>+ Add Another Document</Btn>
+            <Btn variant="secondary" size="sm" onClick={addSdItem} icon={<Plus size={12} />}>Add Another Document</Btn>
             <FlexRow gap={8}>
               <Btn variant="secondary" onClick={() => setShowStageDocs(false)}>Cancel</Btn>
               <Btn disabled={saving} onClick={submitStageDoc}>{saving ? 'Uploading…' : `Upload ${sdItems.length > 1 ? `${sdItems.length} Documents` : 'Evidence'}`}</Btn>

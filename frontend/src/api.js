@@ -177,4 +177,28 @@ export const masterOrdersApi = {
   delete: id => api.post(`/master-orders/${id}/delete`),
 }
 
+// SANDBOX ONLY, TEMPORARY (see backend/src/routes/viewAs.js)
+export const viewAsApi = {
+  options: () => api.get('/auth/view-as/options'),
+  start: userId => api.post('/auth/view-as', { userId }),
+  exit: () => api.post('/auth/view-as/exit'),
+}
+
+export const inboundApi = {
+  upload: data => api.post('/inbound/upload', data, { timeout: 90000 }),
+}
+
+export const reviewApi = {
+  queue: () => api.get('/review/queue'),
+  approve: id => api.post(`/review/${id}/approve`, {}),
+  correct: (id, body) => api.post(`/review/${id}/correct`, body),
+  reject: id => api.post(`/review/${id}/reject`, {}),
+  // Authenticated image fetch as a Blob (an <img src> can't carry our auth).
+  media: id => api.get(`/review/${id}/media`, { responseType: 'blob' }),
+}
+
+export const floorApi = {
+  feed: () => api.get('/floor/feed'),
+}
+
 export default api

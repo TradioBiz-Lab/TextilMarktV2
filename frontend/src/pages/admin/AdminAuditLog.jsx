@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Package, RotateCw, Paperclip, User, Ban, Check, KeyRound, Zap, Search, Crown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { Package, RotateCw, Paperclip, User, Ban, Check, KeyRound, Zap, Search, Crown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X } from '../../icons.jsx'
 import { T } from '../../constants.js'
 import { Card, PageHeader, EmptyState, FlexRow, LoadingScreen } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -179,7 +179,7 @@ export function AdminAuditLog() {
           {hasFilters && (
             <button onClick={resetFilters}
               style={{ padding: '7px 12px', borderRadius: 8, border: `1px solid ${T.border}`, background: '#f1f5f9', color: T.textMuted, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-              Clear ×
+              Clear <X size={11} style={{ verticalAlign: -1 }} />
             </button>
           )}
         </div>

@@ -1,8 +1,7 @@
 import {
   ClipboardList, ShoppingCart, Ruler, Wallet, Mail, FileText, ShieldCheck, Search,
   FlaskConical, Leaf, ShieldPlus, Package, Layers, CheckCircle2, Palette, Settings2,
-  Scissors, Shirt, Trophy, Truck, Factory,
-} from 'lucide-react'
+  Scissors, Shirt, Trophy, Truck, Factory, Camera } from './icons.jsx'
 
 // Legacy status flow (kept for admin/mfr pages not yet migrated)
 export const STATUS_FLOW = [
@@ -59,20 +58,22 @@ export const DOC_TYPES = [
   { v: 'mfr_profile', l: 'Manufacturer Profile' },
 ]
 
-// Production stage evidence document types
+// Production stage evidence document types. stageIndex is the position in the 12-step plan (DEFAULT_STAGE_NAMES above); Lab Dip (0) and PP Sample (1) take no factory evidence types.
 export const STAGE_DOC_TYPES = [
-  { v: 'material_po',    l: 'Material PO',         stageIndex: 0 },
-  { v: 'knitting_grn',   l: 'Knitting GRN',        stageIndex: 1 },
-  { v: 'knitting_qc',    l: 'Knitting QC',         stageIndex: 1 },
-  { v: 'dyeing_grn',     l: 'Dyeing GRN',          stageIndex: 2 },
-  { v: 'dyeing_qc',      l: 'Dyeing QC',           stageIndex: 2 },
-  { v: 'processing_grn', l: 'Processing GRN',      stageIndex: 3 },
-  { v: 'processing_qc',  l: 'Processing QC',       stageIndex: 3 },
-  { v: 'cutting_qc',     l: 'Cutting QC',          stageIndex: 4 },
-  { v: 'stitching_qc',   l: 'Stitching QC',        stageIndex: 5 },
-  { v: 'final_qc',       l: 'Final QC',            stageIndex: 8 },
-  { v: 'packing_qc',     l: 'Packing QC',          stageIndex: 7 },
-  { v: 'dispatch_docs',  l: 'Dispatch Documents',   stageIndex: 9 },
+  { v: 'material_po',    l: 'Material PO',         stageIndex: 2 },
+  { v: 'knitting_grn',   l: 'Knitting GRN',        stageIndex: 3 },
+  { v: 'knitting_qc',    l: 'Knitting QC',         stageIndex: 3 },
+  { v: 'dyeing_grn',     l: 'Dyeing GRN',          stageIndex: 4 },
+  { v: 'dyeing_qc',      l: 'Dyeing QC',           stageIndex: 4 },
+  { v: 'processing_grn', l: 'Processing GRN',      stageIndex: 5 },
+  { v: 'processing_qc',  l: 'Processing QC',       stageIndex: 5 },
+  { v: 'cutting_qc',     l: 'Cutting QC',          stageIndex: 6 },
+  { v: 'stitching_qc',   l: 'Stitching QC',        stageIndex: 7 },
+  { v: 'final_qc',       l: 'Final QC',            stageIndex: 10 },
+  { v: 'packing_qc',     l: 'Packing QC',          stageIndex: 9 },
+  { v: 'dispatch_docs',  l: 'Dispatch Documents',   stageIndex: 11 },
+  // Auto-captured from factory messages; attaches to any stage, so it is never offered in the manual upload picker (-1 matches no stage).
+  { v: 'floor_evidence', l: 'Floor evidence',       stageIndex: -1 },
 ]
 
 // Map stageIndex → allowed evidence doc types for that stage
@@ -90,7 +91,7 @@ export const DOC_ICONS = {
   // Stage evidence docs
   material_po: Package, knitting_grn: Layers, knitting_qc: CheckCircle2,
   dyeing_grn: Palette, dyeing_qc: CheckCircle2, processing_grn: Settings2, processing_qc: CheckCircle2,
-  cutting_qc: Scissors, stitching_qc: Shirt, final_qc: Trophy,
+  floor_evidence: Camera, cutting_qc: Scissors, stitching_qc: Shirt, final_qc: Trophy,
   packing_qc: Package, dispatch_docs: Truck,
   mfr_profile: Factory,
 }

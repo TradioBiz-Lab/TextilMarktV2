@@ -29,16 +29,24 @@ describe('POST /api/voice/transcribe', () => {
     assert.equal(status, 401)
   })
 
-  test('403 for a buyer', async () => {
-    const buyer = await makeBuyer()
-    const { status } = await as(buyer).post('/api/voice/transcribe', { audioDataUrl: SAMPLE_AUDIO_DATA_URL })
-    assert.equal(status, 403)
+  test('a buyer is allowed in (503 not-configured, not 403)', async () => {
+    const original = process.env.SARVAM_API_KEY
+    delete process.env.SARVAM_API_KEY
+    try {
+      const u = await makeBuyer()
+      const { status } = await as(u).post('/api/voice/transcribe', { audioDataUrl: SAMPLE_AUDIO_DATA_URL })
+      assert.equal(status, 503)
+    } finally { if (original !== undefined) process.env.SARVAM_API_KEY = original }
   })
 
-  test('403 for a manufacturer', async () => {
-    const mfr = await makeMfr()
-    const { status } = await as(mfr).post('/api/voice/transcribe', { audioDataUrl: SAMPLE_AUDIO_DATA_URL })
-    assert.equal(status, 403)
+  test('a manufacturer is allowed in (503 not-configured, not 403)', async () => {
+    const original = process.env.SARVAM_API_KEY
+    delete process.env.SARVAM_API_KEY
+    try {
+      const u = await makeMfr()
+      const { status } = await as(u).post('/api/voice/transcribe', { audioDataUrl: SAMPLE_AUDIO_DATA_URL })
+      assert.equal(status, 503)
+    } finally { if (original !== undefined) process.env.SARVAM_API_KEY = original }
   })
 
   test('503 when SARVAM_API_KEY is unset', async () => {
@@ -122,16 +130,24 @@ describe('POST /api/voice/speak', () => {
     assert.equal(status, 401)
   })
 
-  test('403 for a buyer', async () => {
-    const buyer = await makeBuyer()
-    const { status } = await as(buyer).post('/api/voice/speak', { text: 'hi', languageCode: 'en-IN' })
-    assert.equal(status, 403)
+  test('a buyer is allowed in (503 not-configured, not 403)', async () => {
+    const original = process.env.SARVAM_API_KEY
+    delete process.env.SARVAM_API_KEY
+    try {
+      const u = await makeBuyer()
+      const { status } = await as(u).post('/api/voice/speak', { text: 'hi', languageCode: 'en-IN' })
+      assert.equal(status, 503)
+    } finally { if (original !== undefined) process.env.SARVAM_API_KEY = original }
   })
 
-  test('403 for a manufacturer', async () => {
-    const mfr = await makeMfr()
-    const { status } = await as(mfr).post('/api/voice/speak', { text: 'hi', languageCode: 'en-IN' })
-    assert.equal(status, 403)
+  test('a manufacturer is allowed in (503 not-configured, not 403)', async () => {
+    const original = process.env.SARVAM_API_KEY
+    delete process.env.SARVAM_API_KEY
+    try {
+      const u = await makeMfr()
+      const { status } = await as(u).post('/api/voice/speak', { text: 'hi', languageCode: 'en-IN' })
+      assert.equal(status, 503)
+    } finally { if (original !== undefined) process.env.SARVAM_API_KEY = original }
   })
 
   test('503 when SARVAM_API_KEY is unset', async () => {

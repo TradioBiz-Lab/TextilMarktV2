@@ -28,13 +28,12 @@ export function AppProvider({ children }) {
     try {
       // Single batch: fetch everything in parallel
       const isAdmin = user.role === 'admin'
-      const isMfr   = user.role === 'manufacturer'
       const promises = [
         ordersApi.list(),
         documentsApi.list(),
         notificationsApi.list(),
         ribbonsApi.list(),
-        isMfr ? Promise.resolve([]) : masterOrdersApi.list(), // manufacturers cannot access master orders
+        masterOrdersApi.list(), // scoped by the server: customers see their own, manufacturers only those their orders belong to
         ...(isAdmin ? [usersApi.list(), auditApi.list(), actionItemsApi.list()] : []),
       ]
       const results = await Promise.all(promises)
@@ -487,13 +486,21 @@ export function AppProvider({ children }) {
     setOrders(o)
   }, [])
 
+  // Stage evidence is created server-side by the inbound pipeline, so the
+  // document list needs an external refresh path too.
+  const refreshDocs = useCallback(async () => {
+    setDocs(await documentsApi.list())
+  }, [])
+
   // actionItems is otherwise only fetched once at bootstrap (line ~38) — every
   // existing mutation below refetches inline, but nothing external (like the
   // AI assistant, which can also change ActionItem records) had a way to ask
   // for a refresh until now.
   const refreshActionItems = useCallback(async () => {
+    // The action-item task list is the admin team's; other roles have none to refresh.
+    if (currentUser?.role !== 'admin') return
     setActionItems(await actionItemsApi.list())
-  }, [])
+  }, [currentUser?.role])
 
   const addStageUpdate = useCallback(async (orderId, mfrId, stageIndex, text) => {
     const updated = await ordersApi.addStageUpdate(orderId, mfrId, stageIndex, text)
@@ -630,7 +637,7 @@ export function AppProvider({ children }) {
       editOrder, deleteOrder,
       createUser, updateUser, toggleUser, resetUserPw,
       markAllRead, markOneRead, getDocData, addAudit, pushNotif,
-      refreshOrders, listAllRibbons, createRibbon, updateRibbon, removeRibbon,
+      refreshOrders, refreshDocs, listAllRibbons, createRibbon, updateRibbon, removeRibbon,
       createActionItem, updateActionItem, addActionItemUpdate, removeActionItem, refreshActionItems,
     }}>
       {children}

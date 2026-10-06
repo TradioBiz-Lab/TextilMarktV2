@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
-import { ShoppingBag, Factory, Package, Siren, Target, Check, ClipboardList, Megaphone, ChevronRight } from 'lucide-react'
+import { DashboardSummary } from '../../components/DashboardSummary.jsx'
+import { capsFor } from '../../caps.js'
+import { ShoppingBag, Factory, Package, Siren, Target, Check, ClipboardList, Megaphone, ChevronRight } from '../../icons.jsx'
 import { T, ST, isExpiringSoon, isExpired, getToday, dayNumber, withBuyerPrefix } from '../../constants.js'
 import { StatCard, Card, Grid, EmptyState, Mono, PageHeader, Badge, Btn, FlexRow, Modal, Select, Textarea, Input, Alert, LoadingScreen, DocCard } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -71,7 +73,9 @@ export function AdminDashboard({ onNavigate, onOpen }) {
   // state it already knows. Requests/ribbons stay collapsed: they're reference,
   // not triage, and keep the page scannable. Same open-by-default posture
   // ReportingPage already uses.
-  const [openSections, setOpenSections] = useState({ orders: true, requests: false, alerts: true, ribbons: false })
+  // One dashboard for every role; caps decides which sections each sees (see caps.js).
+  const caps = capsFor(currentUser)
+  const [openSections, setOpenSections] = useState({ orders: false, actions: false, requests: false, alerts: false, ribbons: false })
   const toggleSection = id => setOpenSections(p => ({ ...p, [id]: !p[id] }))
 
   // ── Ribbon management state ──
@@ -100,6 +104,10 @@ export function AdminDashboard({ onNavigate, onOpen }) {
   const buyerRequests = docs.filter(d => d.isActive !== false && ['RFQ', 'tech_pack', 'buyer_order'].includes(d.type) && users.find(u => String(u.id) === String(d.uploadedBy) && u.role === 'buyer')).sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))
 
   const buyers = users.filter(u => u.role === 'buyer' && u.isActive)
+  // For a customer or manufacturer the users list is just themselves, so count the other side from their own orders.
+  const counterparties = caps.isBuyer
+    ? new Set(orders.flatMap(o => (o.assignments || []).map(a => a.mid))).size
+    : new Set(orders.map(o => o.buyerId)).size
   const mfrs = users.filter(u => u.role === 'manufacturer' && u.isActive)
   const delayed = orders.filter(o => (o.assignments || []).some(a => a.status === 'Delayed' || a.status === 'On Hold'))
   const expDocs = docs.filter(d => d.isActive !== false && (isExpiringSoon(d.expiryDate) || isExpired(d.expiryDate)))
@@ -180,7 +188,11 @@ export function AdminDashboard({ onNavigate, onOpen }) {
 
   return (
     <div>
-      <PageHeader title="Admin Dashboard" subtitle="Platform overview, alerts, and ribbon notifications" />
+      <PageHeader
+        title={caps.isAdmin ? 'Admin Dashboard' : 'Dashboard'}
+        subtitle={caps.isAdmin ? 'Platform overview, alerts, and ribbon notifications'
+          : caps.isBuyer ? 'Your orders, what needs you, and any alerts'
+          : 'Your assigned orders, what needs you, and any alerts'} />
 
       {/* ── Ribbon Publish Modal ── */}
       {showRibbon && (
@@ -235,11 +247,23 @@ export function AdminDashboard({ onNavigate, onOpen }) {
 
       {/* ── Stat Cards ── */}
       <Grid cols={4} style={{ marginBottom: 22 }}>
-        <StatCard label="Active Buyers" value={buyers.length} icon={<ShoppingBag size={19} color="#1d4ed8" />} bg="#dbeafe" />
-        <StatCard label="Manufacturers" value={mfrs.length} icon={<Factory size={19} color="#92400e" />} bg="#fef9c3" />
+        {caps.isAdmin ? (
+          <>
+            <StatCard label="Active Buyers" value={buyers.length} icon={<ShoppingBag size={19} color="#1d4ed8" />} bg="#dbeafe" />
+            <StatCard label="Manufacturers" value={mfrs.length} icon={<Factory size={19} color="#92400e" />} bg="#fef9c3" />
+          </>
+        ) : (
+          <>
+            {/* The other side of the relationship: a customer's factories, a factory's customers. */}
+            <StatCard label={caps.isBuyer ? 'Factories' : 'Customers'} value={counterparties} icon={caps.isBuyer ? <Factory size={19} color="#92400e" /> : <ShoppingBag size={19} color="#1d4ed8" />} bg={caps.isBuyer ? '#fef9c3' : '#dbeafe'} />
+            <StatCard label="Delivered" value={allTxns.filter(t => t.status === 'Delivered').length} icon={<Check size={19} color={T.success} strokeWidth={2.5} />} bg={T.successBg} />
+          </>
+        )}
         <StatCard label="Total Orders" value={allTxns.length} icon={<Package size={19} color={T.primaryDark} />} bg={T.primaryLight} />
         <StatCard label="Active Alerts" value={delayed.length + expDocs.length} icon={<Siren size={19} color={T.danger} />} bg={T.dangerBg} />
       </Grid>
+
+      <DashboardSummary />
 
       {/* ── Orders by Status — one overall status per Master Order, not a per-item breakdown ── */}
       <Card pad={false} style={{ marginBottom: 14 }}>
@@ -260,7 +284,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
                   const st = ST[overallStatus] || { bg: '#f1f5f9', c: '#475569' }
                   return (
                     <div key={group.key}
-                      onClick={() => onNavigate && onNavigate('orders')}
+                      onClick={() => onNavigate && onNavigate('reports', { mo: group.key === '__unassigned__' ? '__none__' : group.key })}
                       style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: '12px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, transition: 'all 0.15s', background: T.surface }}
                       onMouseEnter={e => { e.currentTarget.style.background = st.bg; e.currentTarget.style.borderColor = st.c + '55' }}
                       onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.borderColor = T.border }}
@@ -279,11 +303,15 @@ export function AdminDashboard({ onNavigate, onOpen }) {
 
       {/* ── Action Items Summary ── */}
       <Card style={{ marginBottom: 14 }}>
-        <FlexRow justify="space-between" style={{ marginBottom: 14 }}>
-          <span style={{ fontSize: 14, fontWeight: 700, color: T.text, display: 'flex', alignItems: 'center', gap: 7 }}><Target size={15} /> My Action Items</span>
-          <Btn size="sm" variant="secondary" onClick={() => onNavigate && onNavigate('action_items')}>Open Action Items →</Btn>
+        <FlexRow justify="space-between" onClick={() => toggleSection('actions')} style={{ marginBottom: openSections.actions ? 14 : 0, cursor: 'pointer' }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: T.text, display: 'flex', alignItems: 'center', gap: 7 }}>
+            <span style={{ color: T.textMuted, transition: 'transform 0.2s', transform: openSections.actions ? 'rotate(90deg)' : 'rotate(0deg)', display: 'flex' }}><ChevronRight size={14} /></span>
+            <Target size={15} /> My Action Items
+            <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, background: '#f1f5f9', border: `1px solid ${T.border}`, borderRadius: 10, padding: '2px 9px' }}>{combinedOpen.length}</span>
+          </span>
+          <Btn size="sm" variant="secondary" onClick={e => { e.stopPropagation(); onNavigate && onNavigate('action_items') }}>Open Action Items →</Btn>
         </FlexRow>
-        {combinedOpen.length === 0 ? (
+        {!openSections.actions ? null : combinedOpen.length === 0 ? (
           <EmptyState icon={<Check size={26} color={T.success} strokeWidth={2.5} />} compact title="All caught up" desc="No open action items assigned to you" />
         ) : (
           <>
@@ -310,6 +338,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
         )}
       </Card>
 
+      {caps.seeBuyerRequests && (<>
       {/* ── Buyer Requests ── */}
       <Card pad={false} style={{ marginBottom: 14 }}>
         <SectionHeader icon={<ClipboardList size={15} />} label="Buyer Requests" count={buyerRequests.length} open={openSections.requests} onToggle={() => toggleSection('requests')} />
@@ -325,6 +354,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
           </div>
         )}
       </Card>
+      </>)}
 
       {/* ── Active Alerts ── */}
       <Card pad={false} style={{ marginBottom: 14 }}>
@@ -350,6 +380,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
         )}
       </Card>
 
+      {caps.seeRibbonsAdmin && (<>
       {/* ── Ribbon Notifications ── */}
       <Card pad={false} style={{ marginBottom: 14 }}>
         <SectionHeader icon={<Megaphone size={15} />} label="Ribbons" count={allRibbons.length} open={openSections.ribbons} onToggle={() => toggleSection('ribbons')} />
@@ -397,6 +428,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
           </div>
         )}
       </Card>
+      </>)}
     </div>
   )
 }

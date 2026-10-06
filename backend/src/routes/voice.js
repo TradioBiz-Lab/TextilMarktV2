@@ -1,12 +1,12 @@
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
-import { requireAuth, requireAdmin } from '../middleware/auth.js'
+import { requireAuth } from '../middleware/auth.js'
+import { transcribeAudio } from '../lib/sarvam.js'
 
 const router = Router()
 
 const skipInTest = () => process.env.NODE_ENV === 'test'
 
-const SARVAM_STT_URL = 'https://api.sarvam.ai/speech-to-text'
 const SARVAM_TTS_URL = 'https://api.sarvam.ai/text-to-speech'
 
 // A voice chat clip is a few seconds of audio — well under documents.js's
@@ -76,7 +76,7 @@ function decodeAudioPayload(audioDataUrl) {
   return { buffer, mimeType }
 }
 
-router.post('/transcribe', requireAuth, requireAdmin, voiceLimiter, async (req, res) => {
+router.post('/transcribe', requireAuth, voiceLimiter, async (req, res) => {
   if (!process.env.SARVAM_API_KEY)
     return res.status(503).json({ error: 'Voice is not configured on this server.' })
 
@@ -85,26 +85,11 @@ router.post('/transcribe', requireAuth, requireAdmin, voiceLimiter, async (req, 
   if (decoded.error) return res.status(400).json({ error: decoded.error })
 
   try {
-    const form = new FormData()
-    form.append('file', new Blob([decoded.buffer], { type: decoded.mimeType }), 'audio')
-    form.append('model', 'saaras:v3')
-    // language_code intentionally omitted — auto-detects across
-    // Hindi/English/Kannada/Bengali (and everything else Saaras supports).
-
-    const sarvamRes = await fetch(SARVAM_STT_URL, {
-      method: 'POST',
-      headers: { 'api-subscription-key': process.env.SARVAM_API_KEY },
-      body: form,
-    })
-    if (!sarvamRes.ok) {
-      console.error('[voice] Sarvam STT failed', sarvamRes.status, await sarvamRes.text().catch(() => ''))
-      return res.status(502).json({ error: 'Voice transcription failed. Please try again or type your message.' })
-    }
-    const data = await sarvamRes.json()
+    const data = await transcribeAudio(decoded.buffer, decoded.mimeType)
     res.json({
-      transcript: data.transcript || '',
-      languageCode: data.language_code || null,
-      languageProbability: data.language_probability ?? null,
+      transcript: data.transcript,
+      languageCode: data.languageCode,
+      languageProbability: data.languageProbability,
     })
   } catch (err) {
     console.error('[voice]', err)
@@ -112,7 +97,7 @@ router.post('/transcribe', requireAuth, requireAdmin, voiceLimiter, async (req, 
   }
 })
 
-router.post('/speak', requireAuth, requireAdmin, voiceLimiter, async (req, res) => {
+router.post('/speak', requireAuth, voiceLimiter, async (req, res) => {
   if (!process.env.SARVAM_API_KEY)
     return res.status(503).json({ error: 'Voice is not configured on this server.' })
 

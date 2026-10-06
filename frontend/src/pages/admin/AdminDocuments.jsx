@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react'
-import { Factory, ClipboardList, CheckCircle2, AlertTriangle, XCircle, Paperclip, Shield, Folder, Inbox, FileText, ChevronRight } from 'lucide-react'
+import { Factory, ClipboardList, CheckCircle2, AlertTriangle, XCircle, Paperclip, Shield, Folder, Inbox, FileText, ChevronRight } from '../../icons.jsx'
 import { T, DOC_TYPES, DOC_ICONS, isExpiringSoon, isExpired } from '../../constants.js'
 import { Modal, Select, Input, Btn, Card, Alert, EmptyState, FlexRow, PageHeader, DocCard, FileUpload, StatCard, LoadingScreen, useToast, fileUploadPayload, Grid } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
+import { capsFor } from '../../caps.js'
 
 const CERT_TYPES = ['compliance_cert', 'factory_audit', 'chemical_cert', 'environmental_cert', 'insurance']
 
@@ -13,8 +14,15 @@ const fmtDate = d => {
 }
 
 export function AdminDocuments() {
-  const { docs, orders, users, loading, uploadDoc, getDocData } = useApp()
+  const { docs, orders, users, loading, uploadDoc, getDocData, currentUser } = useApp()
   const toast = useToast()
+  // Same repository for every role; what each may upload follows the server's rules (caps.js).
+  const caps = capsFor(currentUser)
+  const defaultIssuer = caps.isAdmin ? 'Tradio' : (currentUser?.company || '')
+  // A customer cannot upload compliance certificates or manufacturer profiles; a factory
+  // does not upload customer orders or RFQs. Admins can upload anything.
+  const uploadTypes = caps.isBuyer ? DOC_TYPES.filter(t => !CERT_TYPES.includes(t.v) && t.v !== 'mfr_profile')
+    : caps.isMfr ? DOC_TYPES.filter(t => !['buyer_order', 'RFQ'].includes(t.v)) : DOC_TYPES
   const [show, setShow] = useState(false)
   const [filt, setFilt] = useState('all')
   const [certTab, setCertTab] = useState('all')
@@ -25,7 +33,7 @@ export function AdminDocuments() {
   // stay collapsed on purpose: real accounts can have many orders.
   const [openGroups, setOpenGroups] = useState(new Set(['__buyer_docs__']))
   const toggleGroup = id => setOpenGroups(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
-  const [uf, setUf] = useState({ type: 'PO', name: '', issuer: 'Tradio', issueDate: new Date().toISOString().slice(0, 10), expiryDate: '', orderId: '', mfrId: null, buyerId: '' })
+  const [uf, setUf] = useState({ type: 'PO', name: '', issuer: defaultIssuer, issueDate: new Date().toISOString().slice(0, 10), expiryDate: '', orderId: '', mfrId: null, buyerId: '' })
   const [fileData, setFileData] = useState(null)
   const [fileErr, setFileErr] = useState('')
   const [saving, setSaving] = useState(false)
@@ -58,13 +66,15 @@ export function AdminDocuments() {
 
   const certFiltered = certData[certTab] || certData.all
 
-  const reset = () => { setUf({ type: 'PO', name: '', issuer: 'Tradio', issueDate: new Date().toISOString().slice(0, 10), expiryDate: '', orderId: '', mfrId: null, buyerId: '' }); setFileData(null); setFileErr('') }
+  const reset = () => { setUf({ type: 'PO', name: '', issuer: defaultIssuer, issueDate: new Date().toISOString().slice(0, 10), expiryDate: '', orderId: '', mfrId: null, buyerId: '' }); setFileData(null); setFileErr('') }
 
   const submit = async () => {
     if (!fileData) { setFileErr('Please select a file.'); return }
     setSaving(true)
     try {
-      await uploadDoc({ ...uf, expiryDate: uf.expiryDate || null, orderId: uf.orderId || null, mfrId: uf.mfrId || null, ...fileUploadPayload(fileData) })
+      // A factory always uploads as itself; a customer may never attach a factory (the server refuses it).
+      const mfrId = caps.isMfr ? currentUser.id : caps.isBuyer ? null : (uf.mfrId || null)
+      await uploadDoc({ ...uf, expiryDate: uf.expiryDate || null, orderId: uf.orderId || null, mfrId, ...fileUploadPayload(fileData) })
       toast('Document uploaded', 'success')
       setShow(false); reset()
     } catch {
@@ -86,10 +96,10 @@ export function AdminDocuments() {
     { id: 'expired', l: `Expired (${certData.expired.length})`, Icon: XCircle },
   ]
 
-  const getMfrName = mfrId => {
+  const getMfrName = (mfrId, doc) => {
     if (!mfrId) return '—'
     const u = users.find(usr => String(usr.id) === String(mfrId))
-    return u ? u.company : '—'
+    return u ? u.company : (doc?.uploadedByCompany || '—')
   }
 
   const daysUntilExpiry = d => {
@@ -107,15 +117,15 @@ export function AdminDocuments() {
         const isPO = uf.type === 'PO'
         const isBuyerOrder = uf.type === 'buyer_order'
         const isMfrProfile = uf.type === 'mfr_profile'
-        const filteredOrders = isBuyerOrder && uf.buyerId
+        const filteredOrders = isBuyerOrder && uf.buyerId && caps.isAdmin
           ? orders.filter(o => String(o.buyerId) === String(uf.buyerId))
           : orders
         const modalTitle = isMfrProfile ? 'Upload Manufacturer Profile' : isPO ? 'Upload Purchase Order' : isBuyerOrder ? 'Upload Buyer Order' : 'Upload Document'
         const modalSub = isMfrProfile ? 'PDF profile visible to all users working with this manufacturer' : isPO ? 'Link this PO to the manufacturer it belongs to' : isBuyerOrder ? 'Link this order to the buyer and their order' : 'Document will be automatically distributed to relevant parties'
         const canSubmit = uf.name && fileData && !saving
-          && (isPO ? !!uf.mfrId : true)
-          && (isBuyerOrder ? (!!uf.buyerId && !!uf.orderId) : true)
-          && (isMfrProfile ? !!uf.mfrId : true)
+          && (isPO ? (caps.isAdmin ? !!uf.mfrId : true) : true)
+          && (isBuyerOrder ? ((caps.isAdmin ? !!uf.buyerId : true) && !!uf.orderId) : true)
+          && (isMfrProfile ? (caps.isAdmin ? !!uf.mfrId : true) : true)
         return (
         <Modal title={modalTitle} subtitle={modalSub} onClose={() => { setShow(false); reset() }} size="lg">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -129,7 +139,7 @@ export function AdminDocuments() {
                   buyerId: (t === 'buyer_order') ? prev.buyerId : '',
                 }))
               }}>
-                {DOC_TYPES.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}
+                {uploadTypes.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}
               </Select>
               <Input label="Document Name" value={uf.name} onChange={e => setUf({ ...uf, name: e.target.value })} placeholder="Document title" />
             </div>
@@ -138,7 +148,7 @@ export function AdminDocuments() {
             )}
             <div className="form-grid-2">
               {/* Buyer Order: show Buyer selector (compulsory) */}
-              {isBuyerOrder && (
+              {caps.isAdmin && isBuyerOrder && (
                 <Select label="Link to Buyer *" value={uf.buyerId} onChange={e => setUf({ ...uf, buyerId: e.target.value, orderId: '' })}>
                   <option value="">— Select Buyer —</option>
                   {buyerUsers.map(b => <option key={b.id} value={b.id}>{b.company} ({b.name})</option>)}
@@ -152,7 +162,7 @@ export function AdminDocuments() {
                 </Select>
               )}
               {/* PO: show Manufacturer selector (compulsory) */}
-              {isPO && (
+              {caps.isAdmin && isPO && (
                 <Select label="Link to Manufacturer *" value={uf.mfrId || ''} onChange={e => setUf({ ...uf, mfrId: e.target.value || null })}>
                   <option value="">— Select Manufacturer —</option>
                   {mfrUsers.map(m => <option key={m.id} value={m.id}>{m.company}</option>)}
@@ -171,7 +181,7 @@ export function AdminDocuments() {
                   {orders.map(o => <option key={o.id} value={o.id}>{o.id}</option>)}
                 </Select>
               )}
-              {!isPO && !isBuyerOrder && (
+              {caps.isAdmin && !isPO && !isBuyerOrder && (
                 <Select
                   label={isMfrProfile ? 'Manufacturer *' : 'Link to Manufacturer (optional)'}
                   value={uf.mfrId || ''}
@@ -198,7 +208,7 @@ export function AdminDocuments() {
         )
       })()}
 
-      <PageHeader title="Document Repository" subtitle="All documents across orders and manufacturers" action={<Btn onClick={() => setShow(true)} icon={<Paperclip size={13} />}>Upload Document</Btn>} />
+      <PageHeader title="Document Repository" subtitle={caps.isAdmin ? 'All documents across orders and manufacturers' : caps.isBuyer ? 'Your orders\' documents and your factories\' certificates' : 'Your orders\' documents and your own certificates'} action={<Btn onClick={() => setShow(true)} icon={<Paperclip size={13} />}>Upload Document</Btn>} />
 
       {/* Mode toggle: Documents vs Certificate Tracker */}
       <div style={{ display: 'flex', gap: 0, borderBottom: `2px solid ${T.border}`, marginBottom: 16 }}>
@@ -223,7 +233,7 @@ export function AdminDocuments() {
           {filt === 'all' ? (() => {
             // Buyer Docs = docs uploaded by a buyer user (Submit Requirement etc.).
             // Ops/admin reviews these here and extracts relevant ones to specific order folders.
-            const buyerDocs = show2.filter(d => d.uploadedByRole === 'buyer')
+            const buyerDocs = caps.isAdmin ? show2.filter(d => d.uploadedByRole === 'buyer') : []
             const buyerDocIds = new Set(buyerDocs.map(d => d.id))
             const remaining = show2.filter(d => !buyerDocIds.has(d.id))
             const withOrder = remaining.filter(d => d.orderId)
@@ -363,7 +373,7 @@ export function AdminDocuments() {
                           <div style={{ fontSize: 10, color: T.textLight }}>Uploaded {fmtDate(cert.uploadedAt)}</div>
                         </td>
                         <td style={{ padding: '10px 16px', fontSize: 12, color: T.textMuted }}>{certTypeName(cert.type)}</td>
-                        <td style={{ padding: '10px 16px', fontSize: 12, color: T.textMuted, fontWeight: 600 }}>{getMfrName(cert.mfrId)}</td>
+                        <td style={{ padding: '10px 16px', fontSize: 12, color: T.textMuted, fontWeight: 600 }}>{getMfrName(cert.mfrId, cert)}</td>
                         <td style={{ padding: '10px 16px', fontSize: 12, color: T.textMuted }}>{cert.issuer || '—'}</td>
                         <td style={{ padding: '10px 16px', fontSize: 12, color: expired ? T.danger : expiring ? T.warning : T.text, fontWeight: 600 }}>{fmtDate(cert.expiryDate)}</td>
                         <td style={{ padding: '10px 16px' }}>

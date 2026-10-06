@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react'
-import { CalendarClock, AlertTriangle, Package, Ban, CircleDot, CheckCircle2, Search, BarChart3, Folder, MessageCircle, Calendar, ChevronDown, ChevronRight, Play, Download, ArrowRight } from 'lucide-react'
+import { useMemo, useState, useEffect } from 'react'
+import { CalendarClock, AlertTriangle, Package, Ban, CircleDot, CheckCircle2, Search, BarChart3, Folder, MessageCircle, Calendar, ChevronDown, ChevronRight, Play, Download, ArrowRight, Sparkles } from '../../icons.jsx'
 import {
   T, dayNumber, getToday, fmtN,
   stageStatusOf, stageIsOverdue, isStageDone, inFlightStages, stageProgressLabel, stageVariance,
 } from '../../constants.js'
 import { Btn, Card, EmptyState, FlexRow, Modal, Mono, LoadingScreen, PageHeader, ProductThumb, StatCard, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
+import { rowCallout } from '../../dashboardSummary.js'
 
 // This page answers one question per row: WHERE IS THIS ORDER?
 //
@@ -178,11 +179,14 @@ function GanttModal({ order, asgn, onClose, onOpen }) {
   )
 }
 
-export function ReportingPage({ onOpen }) {
+export function ReportingPage({ onOpen, initialMo }) {
   const { orders, masterOrders, currentUser, loading, loadError } = useApp()
   const [q, setQ] = useState('')
   const [healthFilter, setHealthFilter] = useState('All')
-  const [collapsed, setCollapsed] = useState({})
+  // Groups start collapsed; a search or filter opens them so results are never hidden.
+  const [expanded, setExpanded] = useState({})
+  // Arriving from the dashboard (or Back from a product page) on a specific master order: open just that
+  // group and scroll to it.
   const [ganttTarget, setGanttTarget] = useState(null)
   const isBuyer = currentUser?.role === 'buyer'
   const todayNum = dayNumber(getToday())
@@ -273,6 +277,15 @@ export function ReportingPage({ onOpen }) {
     return result
   }, [filtered, masterOrders])
 
+  useEffect(() => {
+    if (!initialMo) return
+    const hit = groups.filter(g => g.moId === initialMo)
+    if (!hit.length) return
+    setExpanded(Object.fromEntries(hit.map(g => [g.key, true])))
+    const t = setTimeout(() => document.getElementById(`rp-group-${initialMo}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 80)
+    return () => clearTimeout(t)
+  }, [initialMo, groups.length])
+
   const exportCsv = () => {
     const header = ['Customer', 'Master order', 'Order ID', 'Style', 'Manufacturer', 'Qty',
       'Steps done', 'Total steps', '% complete', 'Health', 'Open now', 'Blocked', 'Past deadline',
@@ -333,12 +346,12 @@ export function ReportingPage({ onOpen }) {
       {groups.length === 0 ? (
         <Card><EmptyState icon={<BarChart3 size={26} color={T.textLight} />} title={q || healthFilter !== 'All' ? 'No matching orders' : 'No orders'} desc={q || healthFilter !== 'All' ? 'Try adjusting the search or filter' : 'Orders will appear here'} /></Card>
       ) : groups.map(g => {
-        const isOpen = !collapsed[g.key]
+        const isOpen = !!expanded[g.key] || !!q || healthFilter !== 'All'
         return (
-          <Card key={g.key} pad={false} style={{ marginBottom: 12 }}>
+          <Card key={g.key} pad={false} style={{ marginBottom: 12 }} id={`rp-group-${g.moId}`}>
             <FlexRow
               gap={10}
-              onClick={() => setCollapsed(p => ({ ...p, [g.key]: isOpen }))}
+              onClick={() => setExpanded(p => ({ ...p, [g.key]: !isOpen }))}
               style={{ padding: '10px 16px', background: '#f1f5f9', borderRadius: '12px 12px 0 0', cursor: 'pointer' }}
             >
               <span style={{ color: T.textMuted, transform: isOpen ? 'none' : 'rotate(-90deg)', display: 'inline-flex' }}><ChevronDown size={13} /></span>
@@ -351,10 +364,10 @@ export function ReportingPage({ onOpen }) {
 
             {isOpen && (
               <div className="table-scroll">
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1020 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 880 }}>
                   <thead>
                     <tr style={{ background: '#f8fafc' }}>
-                      {['Style', 'Progress', 'Open right now', 'Next due', 'Delivery', ''].map(h => (
+                      {['Style', 'Progress', 'AI summary', 'Delivery', ''].map(h => (
                         <th key={h} style={{ padding: '9px 14px', textAlign: 'left', fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.07em', whiteSpace: 'nowrap' }}>{h}</th>
                       ))}
                     </tr>
@@ -393,60 +406,22 @@ export function ReportingPage({ onOpen }) {
                             <div style={{ fontSize: 10, color: T.textLight, marginTop: 3 }}>{r.doneCount}/{r.stages.length} steps done</div>
                           </td>
 
-                          <td style={{ padding: '10px 14px', minWidth: 260 }}>
-                            {r.live.length === 0 ? (
-                              <span style={{ fontSize: 11, color: T.textLight, fontStyle: 'italic' }}>Nothing open</span>
-                            ) : (
-                              <>
-                                <FlexRow gap={4} style={{ flexWrap: 'wrap' }}>
-                                  {r.blocked.length > 0 && <Chip tone={HEALTH.blocked} title={r.blocked.map(({ stage }) => stage.blockedReason || stage.name).join('\n')}><Ban size={9} style={{ marginRight: 3, verticalAlign: -1 }} />{r.blocked.length} blocked</Chip>}
-                                  {r.late.length > 0 && <Chip tone={HEALTH.late}><CircleDot size={9} style={{ marginRight: 3, verticalAlign: -1 }} />{r.late.length} past deadline</Chip>}
-                                  {r.working.length > 0 && <Chip tone={{ bg: '#dbeafe', fg: '#1d4ed8' }}><Play size={8} style={{ marginRight: 3, verticalAlign: -1 }} fill="#1d4ed8" />{r.working.length} in progress</Chip>}
-                                </FlexRow>
-                                <div style={{ fontSize: 11, color: T.text, marginTop: 4, lineHeight: 1.45 }}>
-                                  {r.live.slice(0, 2).map(({ stage, index }) => {
-                                    const v = stageVariance(stage)
-                                    const dueStr = stage.eta && stage.eta !== 'NA' ? fmtDate(stage.eta) : null
-                                    return (
-                                      <div key={index} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 250 }}>
-                                        · {stage.name} <span style={{ color: T.textLight }}>({stageProgressLabel(stage)})</span>
-                                        {dueStr && (
-                                          <span style={{ color: T.textLight }}>
-                                            {' '}— due {dueStr}{v != null && v !== 0 ? `, ${v > 0 ? '+' : ''}${v}d` : ''}
-                                          </span>
-                                        )}
-                                      </div>
-                                    )
-                                  })}
-                                  {r.live.length > 2 && <div style={{ color: T.textLight }}>+{r.live.length - 2} more</div>}
+                          <td style={{ padding: '10px 14px', minWidth: 300, maxWidth: 420 }}>
+                            {(() => {
+                              const text = rowCallout(r)
+                              return (
+                                <div title={text} style={{ display: 'flex', gap: 7, alignItems: 'flex-start', fontSize: 12, lineHeight: 1.45, color: r.health === 'blocked' || r.health === 'late' ? T.danger : T.text }}>
+                                  <Sparkles size={12} color="#f97316" style={{ flexShrink: 0, marginTop: 2 }} />
+                                  <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{text}</span>
                                 </div>
-                              </>
-                            )}
-                            {r.order.callout && (
-                              <div style={{ fontSize: 10, color: '#b45309', background: '#fef3c7', borderRadius: 4, padding: '3px 6px', marginTop: 5, display: 'flex', alignItems: 'flex-start', gap: 3 }} title={r.order.callout}>
-                                <AlertTriangle size={10} style={{ flexShrink: 0, marginTop: 1 }} /> {r.order.callout.length > 60 ? `${r.order.callout.slice(0, 60)}…` : r.order.callout}
-                              </div>
-                            )}
-                            {r.lastUpdate && (
-                              <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 250, display: 'flex', alignItems: 'center', gap: 3 }}
-                                title={`${r.lastUpdate.stageName}: ${r.lastUpdate.text}`}>
-                                <MessageCircle size={10} style={{ flexShrink: 0 }} /> {r.lastUpdate.text.length > 60 ? `${r.lastUpdate.text.slice(0, 60)}…` : r.lastUpdate.text}
-                              </div>
-                            )}
-                          </td>
-
-                          <td style={{ padding: '10px 14px', minWidth: 170 }}>
-                            {r.upcoming ? (
-                              <>
-                                <div style={{ fontSize: 12, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 160 }}>{r.upcoming.stage.name}</div>
-                                <div style={{ fontSize: 11, color: T.textMuted, fontFamily: "'JetBrains Mono',monospace" }}>{fmtDate(r.upcoming.stage.eta)}</div>
-                              </>
-                            ) : <span style={{ fontSize: 11, color: T.textLight }}>—</span>}
+                              )
+                            })()}
                           </td>
 
                           <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
                             <div style={{ fontSize: 12, color: T.text, fontFamily: "'JetBrains Mono',monospace" }}>{fmtDate(r.order.delivery)}</div>
-                            {r.daysToDelivery != null && (
+                            {r.health === 'done' && <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted }}>Delivered</div>}
+                            {r.health !== 'done' && r.daysToDelivery != null && (
                               <div style={{ fontSize: 11, fontWeight: 700, color: r.daysToDelivery < 0 ? T.danger : r.daysToDelivery <= 7 ? '#b45309' : T.textMuted }}>
                                 {r.daysToDelivery < 0 ? `${Math.abs(r.daysToDelivery)}d overdue` : `${r.daysToDelivery}d left`}
                               </div>
@@ -459,7 +434,9 @@ export function ReportingPage({ onOpen }) {
                               title="View timeline"
                               style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, marginRight: 4, display: 'inline-flex', verticalAlign: 'middle', color: T.textMuted }}
                             ><Calendar size={15} /></button>
-                            <ChevronRight size={14} color={T.textLight} />
+                            <Btn size="sm" variant="secondary" onClick={e => { e.stopPropagation(); onOpen?.(r.order.id, r.asgn.mid) }}>
+                              Dive deeper <ArrowRight size={12} style={{ marginLeft: 2 }} />
+                            </Btn>
                           </td>
                         </tr>
                       )
