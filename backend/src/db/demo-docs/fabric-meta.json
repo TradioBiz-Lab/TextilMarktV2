@@ -1,0 +1,58 @@
+{
+ "baggy-active-jacket": {
+  "composition": "80% Polyester 20% Spandex",
+  "gsm": "210"
+ },
+ "zip-up-recovery-jacket": {
+  "composition": "88% Polyester 12% Spandex",
+  "gsm": "200 - 230"
+ },
+ "stride-track-jacket": {
+  "composition": "88% Polyester 12% Spandex",
+  "gsm": "140 - 150"
+ },
+ "aero-windbreaker": {
+  "composition": "88% Polyester 12% Spandex",
+  "gsm": "250"
+ },
+ "cuffed-joggers": {
+  "composition": "73% Nylon 27% Spandex",
+  "gsm": "210"
+ },
+ "drifit-joggers": {
+  "composition": "88% Polyester 12% Spandex",
+  "gsm": "250"
+ },
+ "studio-leggings": {
+  "composition": "88% Polyester 12% Spandex",
+  "gsm": "250"
+ },
+ "pace-running-shorts": {
+  "composition": "88% Polyester 12% Spandex",
+  "gsm": "140 - 150"
+ },
+ "recovery-tee": {
+  "composition": "88% Polyester 12% Spandex",
+  "gsm": "230"
+ },
+ "long-sleeve-training-tee": {
+  "composition": "88% Polyester 12% Spandex",
+  "gsm": "180 - 190"
+ },
+ "hooded-tank": {
+  "composition": "80% Polyester 20% Spandex",
+  "gsm": "210"
+ },
+ "flex-sports-bra": {
+  "composition": "88% Polyester 12% Spandex",
+  "gsm": "250"
+ },
+ "core-crew-sweatshirt": {
+  "composition": "88% Polyester 12% Spandex",
+  "gsm": "250"
+ },
+ "cropped-fleece-hoodie": {
+  "composition": "88% Polyester 12% Spandex",
+  "gsm": "200 - 230"
+ }
+}

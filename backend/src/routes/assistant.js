@@ -105,10 +105,36 @@ const WRITE_TOOLS = new Set([
 // check_delivery_risk only, reads Mongoose directly — there's no REST route
 // to loop back to for pure date-math. Exported (in addition to the default
 // router below) purely for direct testing without the Anthropic SDK.
+function compactOrder(o) {
+  return {
+    id: o.id, buyerCompany: o.buyerCompany, product: o.product, styleNumber: o.styleNumber, category: o.category,
+    season: o.season, totalQty: o.totalQty, delivery: o.delivery, masterOrderId: o.masterOrderId || null,
+    assignments: (o.assignments || []).map(a => {
+      const stages = a.stages || []
+      const done = stages.filter(st => st.status === 'done').length
+      const active = stages.findIndex(st => st.status !== 'done' && (st.unitsDone > 0 || st.status === 'in_progress' || st.blocked))
+      return {
+        mid: a.mid, mfrCompany: a.mfrCompany, status: a.status, qty: a.qty,
+        stagesDone: done, stagesTotal: stages.length,
+        currentStage: active >= 0 ? { stageIndex: active, name: stages[active].name } : null,
+        attention: stages.map((st, i) => ({ st, i })).filter(({ st }) => st.blocked || (st.etaVarianceDays > 0 && st.status !== 'done'))
+          .map(({ st, i }) => ({ stageIndex: i, name: st.name, status: st.status, blocked: !!st.blocked, blockedReason: st.blockedReason || undefined, etaVarianceDays: st.etaVarianceDays, eta: st.eta })),
+      }
+    }),
+  }
+}
+
 export const TOOL_HANDLERS = {
   list_action_items: (input, ctx) => loopbackFetch(ctx.cookie, 'GET', '/api/action-items'),
 
-  list_orders: (input, ctx) => loopbackOrderFetch(ctx.cookie, 'GET', '/api/orders'),
+  // Compact on purpose: the full TNA for every order is ~1.7k tokens each, which gets expensive
+  // fast. Each assignment carries counts plus only the stages that need attention; get_order
+  // returns the full detail for one order.
+  list_orders: async (input, ctx) => {
+    const result = await loopbackOrderFetch(ctx.cookie, 'GET', '/api/orders')
+    if (!result.ok) return result
+    return { ...result, data: result.data.map(compactOrder) }
+  },
 
   // Resolves "the Zara jeans" style references to real order IDs without the
   // admin ever having to know or say one. Reuses the same loopback list as
@@ -243,7 +269,7 @@ const TOOLS = [
   },
   {
     name: 'list_orders',
-    description: 'List every order with full TNA detail: buyer, every manufacturer assignment, and every production stage per assignment (name, kind, status, unitsDone/totalUnits, startDate, eta, baselineEta, etaVarianceDays, actualEnd, responsible person, updates, materials, checklist items). This is a large payload - prefer find_orders then get_order for anything about a specific customer or product, and only call this for genuinely cross-order questions (\'what\'s overdue across every order\', \'which orders are behind\'). Do not call it out of habit on every turn.',
+    description: 'List every order in a compact form: buyer, product, delivery, and per manufacturer assignment the status, steps done of total, the current step, and only the steps that are blocked or running late (with reason and etaVarianceDays). It has no per-stage detail, so call get_order for the full TNA of any order you need to act on. Prefer find_orders then get_order for anything about a specific customer or product, and use this for cross-order questions (\'what\'s overdue across every order\', \'which orders are behind\'). Do not call it out of habit on every turn.',
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {

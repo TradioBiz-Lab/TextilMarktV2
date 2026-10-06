@@ -420,7 +420,8 @@ export function ReportingPage({ onOpen, initialMo }) {
 
                           <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
                             <div style={{ fontSize: 12, color: T.text, fontFamily: "'JetBrains Mono',monospace" }}>{fmtDate(r.order.delivery)}</div>
-                            {r.daysToDelivery != null && (
+                            {r.health === 'done' && <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted }}>Delivered</div>}
+                            {r.health !== 'done' && r.daysToDelivery != null && (
                               <div style={{ fontSize: 11, fontWeight: 700, color: r.daysToDelivery < 0 ? T.danger : r.daysToDelivery <= 7 ? '#b45309' : T.textMuted }}>
                                 {r.daysToDelivery < 0 ? `${Math.abs(r.daysToDelivery)}d overdue` : `${r.daysToDelivery}d left`}
                               </div>

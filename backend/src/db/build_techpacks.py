@@ -42,7 +42,7 @@ def mod_fabric(s):
     if m:  # shift the blend by two points
         a, b = int(m.group(1)) - 2, int(m.group(3)) + 2
         return f'{a}% {m.group(2)} {b}% {m.group(4)}'
-    return (s or 'Poly Spandex Blend').replace('Spendex', 'Spandex')
+    return '88% Polyester 12% Spandex' if (not s or 'Blend' in s or '%' not in s) else s.replace('Spendex', 'Spandex')
 def mod_gsm(s):
     nums = re.findall(r'\d+', s or '')
     if len(nums) == 2: return f'{int(nums[0]) + 10} - {int(nums[1]) + 10}'
@@ -266,6 +266,11 @@ def build(style):
     pdf = os.path.join(OUT, f"techpack-{style['slug']}.pdf")
     pages[0].save(pdf, 'PDF', save_all=True, append_images=pages[1:], resolution=100.0, quality=72)
     xlsx(style, src, rows, sizes, os.path.join(OUT, f"measurements-{style['slug']}.xlsx"))
+    # Fabric facts as printed on this tech pack, so the order page can show the same numbers.
+    mp = os.path.join(OUT, 'fabric-meta.json')
+    meta = json.load(open(mp)) if os.path.exists(mp) else {}
+    meta[style['slug']] = dict(composition=mod_fabric(src['header'].get('Fabric Comp.')), gsm=mod_gsm(src['header'].get('GSM')))
+    json.dump(meta, open(mp, 'w'), indent=1)
     return pdf
 
 if __name__ == '__main__':

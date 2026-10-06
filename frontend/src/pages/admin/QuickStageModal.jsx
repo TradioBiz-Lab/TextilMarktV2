@@ -67,7 +67,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
   const [sdErr, setSdErr] = useState('')
 
   const uploadedStageDocs = (docs || []).filter(d =>
-    d.orderId === orderId && d.stageIndex === stageIndex && d.materialLineIndex == null && String(d.mfrId || '') === String(mfrId))
+    d.orderId === orderId && d.stageIndex === stageIndex && d.materialLineIndex == null && (!d.mfrId || String(d.mfrId) === String(mfrId)))   // Tradio-uploaded evidence has no manufacturer
 
   // Document Name defaults to the stage's own name (e.g. "Lab Dip Approval")
   // rather than starting blank.

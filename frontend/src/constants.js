@@ -58,20 +58,20 @@ export const DOC_TYPES = [
   { v: 'mfr_profile', l: 'Manufacturer Profile' },
 ]
 
-// Production stage evidence document types
+// Production stage evidence document types. stageIndex is the position in the 12-step plan (DEFAULT_STAGE_NAMES above); Lab Dip (0) and PP Sample (1) take no factory evidence types.
 export const STAGE_DOC_TYPES = [
-  { v: 'material_po',    l: 'Material PO',         stageIndex: 0 },
-  { v: 'knitting_grn',   l: 'Knitting GRN',        stageIndex: 1 },
-  { v: 'knitting_qc',    l: 'Knitting QC',         stageIndex: 1 },
-  { v: 'dyeing_grn',     l: 'Dyeing GRN',          stageIndex: 2 },
-  { v: 'dyeing_qc',      l: 'Dyeing QC',           stageIndex: 2 },
-  { v: 'processing_grn', l: 'Processing GRN',      stageIndex: 3 },
-  { v: 'processing_qc',  l: 'Processing QC',       stageIndex: 3 },
-  { v: 'cutting_qc',     l: 'Cutting QC',          stageIndex: 4 },
-  { v: 'stitching_qc',   l: 'Stitching QC',        stageIndex: 5 },
-  { v: 'final_qc',       l: 'Final QC',            stageIndex: 8 },
-  { v: 'packing_qc',     l: 'Packing QC',          stageIndex: 7 },
-  { v: 'dispatch_docs',  l: 'Dispatch Documents',   stageIndex: 9 },
+  { v: 'material_po',    l: 'Material PO',         stageIndex: 2 },
+  { v: 'knitting_grn',   l: 'Knitting GRN',        stageIndex: 3 },
+  { v: 'knitting_qc',    l: 'Knitting QC',         stageIndex: 3 },
+  { v: 'dyeing_grn',     l: 'Dyeing GRN',          stageIndex: 4 },
+  { v: 'dyeing_qc',      l: 'Dyeing QC',           stageIndex: 4 },
+  { v: 'processing_grn', l: 'Processing GRN',      stageIndex: 5 },
+  { v: 'processing_qc',  l: 'Processing QC',       stageIndex: 5 },
+  { v: 'cutting_qc',     l: 'Cutting QC',          stageIndex: 6 },
+  { v: 'stitching_qc',   l: 'Stitching QC',        stageIndex: 7 },
+  { v: 'final_qc',       l: 'Final QC',            stageIndex: 10 },
+  { v: 'packing_qc',     l: 'Packing QC',          stageIndex: 9 },
+  { v: 'dispatch_docs',  l: 'Dispatch Documents',   stageIndex: 11 },
   // Auto-captured from factory messages; attaches to any stage, so it is never offered in the manual upload picker (-1 matches no stage).
   { v: 'floor_evidence', l: 'Floor evidence',       stageIndex: -1 },
 ]

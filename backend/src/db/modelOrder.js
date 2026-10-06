@@ -97,11 +97,11 @@ export async function seedModelOrder({ orderId, qty, buyer, mfr, admin, day, sta
   for (const [si, text, note] of floor) {
     const when = at(stageEnd(si))
     const m = await InboundMessage.create({
-      factoryId: mfr._id, senderNumber: mfr.whatsappNumber, channel: 'whatsapp', type: 'text', rawText: text, receivedAt: when,
+      factoryId: mfr._id, senderNumber: mfr.whatsappNumber, channel: 'web', type: 'text', rawText: text, receivedAt: when,
       parsed: { updates: [{ style_hint: 'AER-BAJ-02', stage: ['cutting', 'stitching', 'finishing', 'packing', 'dispatched'][floor.findIndex(f => f[0] === si)], status: 'done', expected_date: null, note }], confidence: 0.93 },
       confidence: 0.93, orderId, stageApplied: DEFAULT_STAGE_NAMES[si], state: 'applied', createdAt: when, updatedAt: when,
     })
-    add({ type: 'floor_evidence', name: `Floor update`, by: mfr, stageIndex: si, issued: stageEnd(si), mfrScoped: true, issuer: 'Auto-captured from WhatsApp text', notes: `${text}\n${note}`, sourceMessageId: m._id })
+    add({ type: 'floor_evidence', name: `Floor update`, by: mfr, stageIndex: si, issued: stageEnd(si), mfrScoped: true, issuer: 'Auto-captured from web text', notes: `${text}\n${note}`, sourceMessageId: m._id })
   }
 
   await Document.insertMany(rows.map(r => ({ ...r, version: 1, isActive: true, createdAt: r.issueDate, updatedAt: r.issueDate })))

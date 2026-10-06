@@ -68,7 +68,15 @@ def spec(pdf, p):
             if name == 'armhole)': name = 'Chest (1 in below armhole)'
             if not name or re.match(r'^[±+\-/\d. ]+$', name): name = f'Measurement point {m.group(1)}'
             vals = [float(v) for v in m.group(4).split()]
-            rows.append(dict(code=m.group(1), name=name[:1].upper() + name[1:] if name else 'Measurement', tol=m.group(3).replace('+/-', '±').replace(' ', ''), vals=vals))
+            tol = m.group(3)
+            # a row with no tolerance column: the first value was read as the tolerance
+            if sizes and len(vals) == len(sizes) - 1 and not re.search(r'[±+]', tol):
+                vals = [float(tol)] + vals; tol = '±0.5'
+            # one grade value out of line with its neighbours is a read error: use the midpoint
+            for k in range(1, len(vals) - 1):
+                lo, hi = sorted((vals[k - 1], vals[k + 1]))
+                if not (lo <= vals[k] <= hi): vals[k] = round((vals[k - 1] + vals[k + 1]) / 2, 1)
+            rows.append(dict(code=m.group(1), name=name[:1].upper() + name[1:] if name else 'Measurement', tol=tol.replace('+/-', '±').replace(' ', ''), vals=vals))
     return dict(sizes=sizes or ['S', 'M', 'L', 'XL', 'XXL'], rows=rows)
 
 def extract(pdf):

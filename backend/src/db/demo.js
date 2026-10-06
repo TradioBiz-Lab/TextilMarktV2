@@ -172,10 +172,15 @@ async function main() {
     const buf = fs.readFileSync(f)
     return { dataUrl: `data:${mime};base64,${buf.toString('base64')}`, fileName: file, fileSize: buf.length, mimeType: mime }
   }
+  const FABRIC_META = fs.existsSync(path.join(DOCS, 'fabric-meta.json')) ? JSON.parse(fs.readFileSync(path.join(DOCS, 'fabric-meta.json'), 'utf8')) : {}
   const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
   for (const st of STYLES) {
     const o = { ...st, buyer: aero, mfr: factory[st.mfr] }
+    // Fabric facts come from the tech pack so the order page and the PDF agree.
+    const tpMeta = FABRIC_META[o.slug] || {}
+    const fab = { name: (o.fabric || 'Poly-spandex interlock').replace(/\s*\d+\s*GSM/i, ''), composition: tpMeta.composition || '88% Polyester 12% Spandex', gsm: tpMeta.gsm || '220' }
+    const fabricLabel = `${fab.name} ${fab.gsm} GSM`
     await Order.deleteOne({ _id: o.id })
     await Document.deleteMany({ orderId: o.id })
     await Order.create({
@@ -183,8 +188,8 @@ async function main() {
       totalQty: o.qty, delivery: new Date(day(o.delivery)), createdAt: new Date(day(o.delivered ? -95 : -30)),
       callout: o.callout || '',
       colourways: (o.colours || ['Black', 'Charcoal']).map(n => ({ name: n })),
-      fabricDetails: [{ name: o.fabric || 'Poly-spandex interlock 220 GSM', composition: '88% Polyester 12% Elastane', gsm: '220', supplier: o.supplier || 'Sri Lakshmi Mills' }], imageDataUrl: photo(o.slug),
-      assignments: [{ mfrId: o.mfr._id, qty: o.qty, status: o.delivered ? 'Delivered' : (o.status || 'Processing'), sub: 'M1', stages: stages(o.qty, o.active, { buyer: o.buyer, mfr: o.mfr, admin, colours: o.colours || ['Black', 'Charcoal'], fabric: o.fabric || 'Poly-spandex interlock 220 GSM', supplier: o.supplier || 'Sri Lakshmi Mills', code: o.style }, EXTRAS[o.id]) }],
+      fabricDetails: [{ name: fab.name, composition: fab.composition, gsm: fab.gsm, supplier: o.supplier || 'Sri Lakshmi Mills' }], imageDataUrl: photo(o.slug),
+      assignments: [{ mfrId: o.mfr._id, qty: o.qty, status: o.delivered ? 'Delivered' : (o.status || 'Processing'), sub: 'M1', stages: stages(o.qty, o.active, { buyer: o.buyer, mfr: o.mfr, admin, colours: o.colours || ['Black', 'Charcoal'], fabric: fabricLabel, supplier: o.supplier || 'Sri Lakshmi Mills', code: o.style }, EXTRAS[o.id]) }],
     })
     if (o.delivered) {
       const n = await seedModelOrder({ orderId: o.id, qty: o.qty, buyer: o.buyer, mfr: o.mfr, admin, day, startOffset: -(6 * o.active) - 2, slug: o.slug })
