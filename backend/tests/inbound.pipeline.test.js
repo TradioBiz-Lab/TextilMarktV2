@@ -167,6 +167,28 @@ describe('review + webhook + feed routes', () => {
     delete process.env.INBOUND_WEBHOOK_SECRET
   })
 
+  test('webhook refuses all traffic when no secret is configured', async () => {
+    await arrange()
+    const { startServer: s } = await import('./helpers/client.js')
+    const base = await s()
+    delete process.env.INBOUND_WEBHOOK_SECRET
+    const post = headers => fetch(`${base}/api/inbound/webhook/mock`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify({ sender_number: '919876543210', type: 'text', text: 'cutting ho gaya' }) })
+    for (const h of [{}, { 'x-webhook-secret': '' }, { 'x-webhook-secret': 'undefined' }, { 'x-webhook-secret': 'sekret' }])
+      assert.equal((await post(h)).status, 503, JSON.stringify(h))
+    assert.equal(await InboundMessage.countDocuments({}), 0)
+  })
+
+  test('webhook rejects a wrong secret of the same length', async () => {
+    await arrange()
+    const { startServer: s } = await import('./helpers/client.js')
+    const base = await s()
+    process.env.INBOUND_WEBHOOK_SECRET = 'sekret'
+    const r = await fetch(`${base}/api/inbound/webhook/mock`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-webhook-secret': 'sekrex' }, body: JSON.stringify({ sender_number: '919876543210', type: 'text', text: 'x' }) })
+    assert.equal(r.status, 401)
+    assert.equal(await InboundMessage.countDocuments({}), 0)
+    delete process.env.INBOUND_WEBHOOK_SECRET
+  })
+
   test('buyer feed is scoped to the buyer\'s own orders', async () => {
     const { buyer, mfr } = await arrange()
     await ingestMessage({ ...img, factoryId: mfr._id }, photo())
