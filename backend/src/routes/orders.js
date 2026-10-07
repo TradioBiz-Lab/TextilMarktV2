@@ -7,6 +7,8 @@ import { Notification } from '../models/Notification.js'
 import { AuditLog }     from '../models/AuditLog.js'
 import { MasterOrder }  from '../models/MasterOrder.js'
 import { Document }     from '../models/Document.js'
+import { DroppedRecord } from '../models/DroppedRecord.js'
+import { parseDropReason, styleLabel } from '../lib/dropRecord.js'
 import {
   DEFAULT_STAGE_NAMES, ORDER_STATUS_VALUES, STAGE_KINDS, STAGE_STATUS_VALUES,
   stageKindOf, deriveStageStatus, mirroredUnits, stageEtaVarianceDays, deriveActualEnd, deliveryVarianceDays,
@@ -2225,18 +2227,33 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
 router.post('/:id/delete', requireAuth, requireAdmin, async (req, res) => {
   try {
     const orderId = req.params.id
+    const { reason, error: reasonErr } = parseDropReason(req.body?.reason)
+    if (reasonErr) return res.status(400).json({ error: reasonErr })
     const order = await Order.findById(orderId).lean()
     if (!order) return res.status(404).json({ error: 'Order not found' })
+
+    // Keep a permanent record BEFORE removing anything: the full document as it
+    // was, who dropped it, when and why. If this write fails, nothing is deleted.
+    // The order's documents stay where they are (still in the Documents tab); the
+    // record notes which ones there were.
+    const buyer = await User.findById(order.buyerId, 'company').lean()
+    const docIds = (await Document.find({ orderId, isActive: true }, '_id').lean()).map(d => d._id)
+    const record = await DroppedRecord.create({
+      kind: 'style', refId: orderId, label: styleLabel(order),
+      masterOrderId: order.masterOrderId || null, buyerId: order.buyerId || null, buyerCompany: buyer?.company || '',
+      snapshot: order, documentIds: docIds, reason,
+      droppedBy: req.user.id, droppedByName: req.user.name,
+    })
 
     await Order.findByIdAndDelete(orderId)
 
     await AuditLog.create({
       byUser: req.user.id,
       action: 'Order Deleted',
-      detail: `${orderId} (${order.product}) deleted by ${req.user.name}`,
+      detail: `${orderId} (${order.product}) dropped by ${req.user.name}${reason ? ` | ${reason.slice(0, 200)}` : ''} [record ${record._id}]`,
     })
 
-    res.json({ ok: true })
+    res.json({ ok: true, recordId: String(record._id) })
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })

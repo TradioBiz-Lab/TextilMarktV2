@@ -23,6 +23,7 @@ import voiceRouter         from './routes/voice.js'
 import inboundRouter from './routes/inbound.js'
 import reviewRouter from './routes/review.js'
 import floorRouter from './routes/floor.js'
+import droppedRouter from './routes/dropped.js'
 import viewAsRouter from './routes/viewAs.js'  // sandbox-only, flag-gated (ENABLE_VIEW_AS)
 
 // ── Validate required env vars at startup ──────────────────────────────────
@@ -179,6 +180,7 @@ app.use('/api/signup',        signupRouter)
 app.use('/api/inbound',       inboundRouter)
 app.use('/api/review',        reviewRouter)
 app.use('/api/floor',         floorRouter)
+app.use('/api/dropped',       droppedRouter)
 
 // ── Health check ────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

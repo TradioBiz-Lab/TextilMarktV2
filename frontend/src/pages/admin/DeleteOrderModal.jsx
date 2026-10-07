@@ -1,19 +1,20 @@
 import { useState } from 'react'
 import { AlertTriangle, X } from '../../icons.jsx'
 import { T } from '../../constants.js'
-import { Btn, FlexRow, Mono } from '../../components/ui.jsx'
+import { Btn, FlexRow, Mono, Textarea } from '../../components/ui.jsx'
 
 export function DeleteOrderModal({ order, onClose, onConfirm }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [reason, setReason] = useState('')
 
   const confirm = async () => {
     setErr('')
     setBusy(true)
     try {
-      await onConfirm(order.id)
+      await onConfirm(order.id, reason.trim())
     } catch (e) {
-      setErr(typeof e === 'string' ? e : 'Failed to delete order')
+      setErr(typeof e === 'string' ? e : 'Failed to drop style')
       setBusy(false)
     }
   }
@@ -26,16 +27,16 @@ export function DeleteOrderModal({ order, onClose, onConfirm }) {
       <div style={{ background: '#fff', borderRadius: 14, border: `1px solid ${T.border}`, width: '100%', maxWidth: 440, boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '20px 24px 16px', borderBottom: `1px solid ${T.border}` }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: T.danger }}>Delete Order</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: T.danger }}>Drop Style</div>
           <button onClick={onClose} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: T.textMuted }} aria-label="Close"><X size={14} /></button>
         </div>
 
         {/* Body */}
         <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ background: '#fff1f2', border: '1px solid #fecdd3', borderRadius: 10, padding: '14px 16px' }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#9f1239', marginBottom: 6 }}>This action cannot be undone.</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#9f1239', marginBottom: 6 }}>This style will be removed from every list and report.</div>
             <div style={{ fontSize: 13, color: '#be123c', lineHeight: 1.6 }}>
-              All production stage data and assignment records for this order will be permanently deleted. Associated documents will remain in the Documents tab.
+              A full record of it, including its production plan, is kept in the database with who dropped it and when. Its documents stay in the Documents tab. It can't be brought back from the app.
             </div>
           </div>
 
@@ -58,6 +59,15 @@ export function DeleteOrderModal({ order, onClose, onConfirm }) {
             </div>
           </div>
 
+          <Textarea
+            label="Why is it being dropped? (optional)"
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            maxLength={500}
+            rows={2}
+            placeholder="e.g. Buyer cancelled the style"
+          />
+
           {err && (
             <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 6 }}>
               <AlertTriangle size={13} /> {err}
@@ -71,7 +81,7 @@ export function DeleteOrderModal({ order, onClose, onConfirm }) {
               disabled={busy}
               style={{ padding: '8px 18px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: busy ? '#fca5a5' : T.danger, color: '#fff', cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit' }}
             >
-              {busy ? 'Deleting…' : 'Yes, Delete Order'}
+              {busy ? 'Dropping…' : 'Yes, Drop Style'}
             </button>
           </FlexRow>
         </div>

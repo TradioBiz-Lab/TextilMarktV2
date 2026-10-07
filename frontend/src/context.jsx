@@ -393,9 +393,15 @@ export function AppProvider({ children }) {
     return mo
   }, [addAudit])
 
-  const deleteMasterOrder = useCallback(async (id) => {
+  const updateMasterOrder = useCallback(async (id, data) => {
+    const updated = await masterOrdersApi.update(id, data)
+    setMasterOrders(p => p.map(m => m.id === id ? updated : m))
+    return updated
+  }, [])
+
+  const deleteMasterOrder = useCallback(async (id, reason) => {
     const mo = masterOrders.find(m => m.id === id)
-    await masterOrdersApi.delete(id)
+    await masterOrdersApi.delete(id, reason)
     setMasterOrders(p => p.filter(m => m.id !== id))
     await addAudit('Master Order Deleted', `${id}${mo ? ' — ' + mo.orderName : ''}`)
   }, [masterOrders, addAudit])
@@ -433,9 +439,9 @@ export function AppProvider({ children }) {
     return updated
   }, [addAudit])
 
-  const deleteOrder = useCallback(async (id) => {
+  const deleteOrder = useCallback(async (id, reason) => {
     const order = orders.find(o => o.id === id)
-    await ordersApi.delete(id)
+    await ordersApi.delete(id, reason)
     setOrders(p => p.filter(o => o.id !== id))
     await addAudit('Order Deleted', `${id}${order ? ' — ' + order.product : ''}`)
   }, [orders, addAudit])
@@ -636,7 +642,7 @@ export function AppProvider({ children }) {
       login, logout,
       updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial, bulkUploadMaterials,
       bulkUpdateStages, addStageItem, updateStageItem, removeStageItem,
-      updateAssignment, addAssignment, insertStage, uploadDoc, updateDoc, deleteDoc, createOrder, bulkCreateOrders, createMasterOrder, deleteMasterOrder,
+      updateAssignment, addAssignment, insertStage, uploadDoc, updateDoc, deleteDoc, createOrder, bulkCreateOrders, createMasterOrder, updateMasterOrder, deleteMasterOrder,
       editOrder, deleteOrder,
       createUser, updateUser, toggleUser, resetUserPw,
       markAllRead, markOneRead, getDocData, addAudit, pushNotif,
