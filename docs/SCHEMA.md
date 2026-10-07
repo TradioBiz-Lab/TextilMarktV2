@@ -385,6 +385,8 @@ manufacturer, an order, or both — or is stage-evidence tied to a specific stag
 
   mfrId       ObjectId → users    nullable — manufacturer the doc/cert belongs to
   orderId     String → orders     nullable — order the document belongs to
+  masterOrderId String → masterorders nullable — set for a file that belongs to a whole master
+                                  order (e.g. the customer PO attached at creation). Admin-only
 
   issueDate   Date                default: now
   expiryDate  Date | null         for certs that expire
@@ -431,6 +433,7 @@ The frontend offers evidence types per stage from `STAGE_DOC_TYPES` in `frontend
 **Indexes:**
 - `{ mfrId: 1, isActive: 1 }` — manufacturer cert queries
 - `{ orderId: 1, isActive: 1 }` — order document queries
+- `{ masterOrderId: 1 }` — files attached to a master order
 - `{ expiryDate: 1 }` — expiry alert cron jobs
 - `{ uploadedBy: 1 }` — audit queries
 - `{ createdAt: -1 }` — list sort (avoids in-memory sort on Atlas)
@@ -439,7 +442,7 @@ The frontend offers evidence types per stage from `STAGE_DOC_TYPES` in `frontend
 | Role         | Can see                                                              |
 |--------------|------------------------------------------------------------------------|
 | Admin        | All active documents                                                    |
-| Buyer        | Docs for their orders + certs of manufacturers assigned to those orders|
+| Buyer        | Docs for their orders and master orders + certs of manufacturers assigned to those orders|
 | Manufacturer | Their own certs + docs for orders they are assigned to                 |
 
 ---
@@ -488,6 +491,10 @@ deleted.
   action    String              required — e.g. "Order Created", "Status Updated",
                                  "Stage Updated", "ETA Adjusted", "Login Failed"
   detail    String              required — human-readable description
+  viewAsBy  ObjectId → users    nullable — the master admin who really acted, when the entry
+                                 was written during a "view as" session (byUser is then the
+                                 viewed user). Stamped automatically by a model hook from the
+                                 request context; detail also gets "[done by NAME using view as]"
   createdAt Date                auto
   updatedAt Date                auto
 }

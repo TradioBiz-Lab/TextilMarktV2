@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, createContext, useContext, isValidElement, cloneElement } from 'react'
-import { Link2, Package, Factory, Eye, Download, FileText, StickyNote, AlertTriangle, CheckCircle2, Info, X, Image as ImageIcon, Paperclip, Upload, ChevronLeft, ChevronRight, Crown, Check, Pencil, Trash2 } from '../icons.jsx'
+import { Folder, Link2, Package, Factory, Eye, Download, FileText, StickyNote, AlertTriangle, CheckCircle2, Info, X, Image as ImageIcon, Paperclip, Upload, ChevronLeft, ChevronRight, Crown, Check, Pencil, Trash2 } from '../icons.jsx'
 import { T, ST, DOC_TYPES, STAGE_DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired } from '../constants.js'
 import { useApp } from '../context.jsx'
 import * as pdfjsLib from 'pdfjs-dist'
@@ -842,6 +842,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
               Stage {doc.stageIndex + 1} — {stageName}
             </span>
             {doc.orderId && <span style={{ fontSize: 11, color: T.primary, fontWeight: 700, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Package size={11} /> {doc.orderId}</span>}
+            {!doc.orderId && doc.masterOrderId && <span title="Attached to the whole master order" style={{ fontSize: 11, color: T.primary, fontWeight: 700, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Folder size={11} /> {doc.masterOrderId}</span>}
             {mfr && <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Factory size={11} /> {mfr.company}</span>}
           </div>
           {/* Doc body */}
@@ -900,6 +901,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center', marginTop: 5 }}>
             <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10, background: '#f1f5f9', color: T.textMuted, border: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>{typLabel}</span>
             {doc.orderId && <span style={{ fontSize: 11, color: T.primary, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Package size={11} /> {doc.orderId}</span>}
+            {!doc.orderId && doc.masterOrderId && <span title="Attached to the whole master order" style={{ fontSize: 11, color: T.primary, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Folder size={11} /> {doc.masterOrderId}</span>}
             {mfr && <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Factory size={11} /> {mfr.company}</span>}
             <span style={{ fontSize: 11, color: T.textLight, whiteSpace: 'nowrap' }}>{fmtShort(doc.issueDate || doc.uploadedAt)}</span>
             {uploaderName && (

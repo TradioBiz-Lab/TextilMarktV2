@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken'
 import { User } from '../db/index.js'
+import { requestContext } from '../lib/requestContext.js'
 
 // ── NoSQL injection protection: strip $ keys from req.body ──
 function sanitizeValue(val) {
@@ -69,7 +70,8 @@ export async function requireAuth(req, res, next) {
     return res.status(403).json({ error: 'You must change your temporary password first', code: 'MUST_CHANGE_PW' })
   }
 
-  next()
+  // Everything after this point (handlers, model hooks) can see who is really acting.
+  return requestContext.run({ viewAsBy: req.user.viewAsBy || null, viewAsByName: req.user.viewAsByName || null }, next)
 }
 
 export function requireAdmin(req, res, next) {
