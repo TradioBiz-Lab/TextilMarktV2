@@ -16,8 +16,6 @@ export function BuyerSubmitReq() {
   const [uploadErr, setUploadErr] = useState('')
   const [saving, setSaving] = useState(false)
 
-  if (loading) return <LoadingScreen />
-
   // Show only buyer-submitted RFQ/TechPack/PO docs
   const myReqDocs = useMemo(() =>
     (docs || []).filter(d =>
@@ -49,6 +47,9 @@ export function BuyerSubmitReq() {
   if (loadError) return (
     <Card><EmptyState icon={<AlertTriangle size={26} color={T.textLight} />} title="Could not load data" desc="Check your connection and refresh the page." /></Card>
   )
+
+  // Hooks above must run on every render, so the loading gate sits after them.
+  if (loading) return <LoadingScreen />
 
   return (
     <div>

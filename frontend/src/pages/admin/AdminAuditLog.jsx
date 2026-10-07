@@ -63,8 +63,6 @@ export function AdminAuditLog() {
   const [userFilt, setUserFilt] = useState('All')
   const [page, setPage] = useState(1)
 
-  if (loading) return <LoadingScreen />
-
   const sorted = useMemo(
     () => [...audit].sort((a, b) => new Date(b.at) - new Date(a.at)),
     [audit]
@@ -115,6 +113,9 @@ export function AdminAuditLog() {
     if (safePage >= totalPages - 2) return [totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages]
     return [safePage - 2, safePage - 1, safePage, safePage + 1, safePage + 2]
   })()
+
+  // Hooks above must run on every render, so the loading gate sits after them.
+  if (loading) return <LoadingScreen />
 
   return (
     <div>

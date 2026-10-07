@@ -10,6 +10,7 @@ import {
   Select, Input, Textarea, StatCard, useToast, activateOnKey,
 } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
+import { capsFor } from '../../caps.js'
 
 // Action Items and the daily update, as one page — because they were always the
 // same job. Laid out like the "Action Item Updates" sheet the team maintains by
@@ -78,6 +79,7 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
     createActionItem, updateActionItem, addActionItemUpdate, removeActionItem,
   } = useApp()
   const toast = useToast()
+  const canEditPlan = capsFor(currentUser).editPlan
 
   const [q, setQ] = useState('')
   const [owner, setOwner] = useState('all')
@@ -234,7 +236,7 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
 
         const patch = { index: row.index }
         let hasPatch = false
-        if (e.eta && e.eta !== row.stage.eta) { patch.eta = e.eta; hasPatch = true }
+        if (canEditPlan && e.eta && e.eta !== row.stage.eta) { patch.eta = e.eta; hasPatch = true }
         if (e.status && e.status !== row.status && row.kind !== 'quantity') { patch.status = e.status; hasPatch = true }
         if (e.unitsDone !== undefined && e.unitsDone !== '' && Number(e.unitsDone) !== row.stage.unitsDone)
           unitRows.push({ row, units: Number(e.unitsDone) })
@@ -430,7 +432,9 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
                                   {fmtDate(r.stage.baselineEta)}
                                 </td>
                                 <td style={{ padding: '6px 10px', width: 128 }}>
-                                  <input type="date" value={revised} onChange={ev => setEdit(r.key, { eta: ev.target.value })} style={cellInput} />
+                                  {canEditPlan
+                                    ? <input type="date" value={revised} onChange={ev => setEdit(r.key, { eta: ev.target.value })} style={cellInput} />
+                                    : <span style={{ fontSize: 11, color: T.textMuted, fontFamily: "'JetBrains Mono',monospace" }}>{fmtDate(r.stage.eta)}</span>}
                                 </td>
                                 <td style={{ padding: '6px 10px' }}><Variance days={r.variance} /></td>
                                 <td style={{ padding: '6px 10px', fontSize: 11, fontWeight: 700, color: T.success, whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono',monospace" }}>
