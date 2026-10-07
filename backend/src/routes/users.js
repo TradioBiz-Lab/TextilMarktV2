@@ -153,24 +153,37 @@ router.post('/:id/toggle', requireAuth, requireMaster, async (req, res) => {
   }
 })
 
+// 14 characters, at least one of each class the password policy demands, drawn
+// with crypto.randomInt (no modulo bias) and shuffled so the classes are not
+// in fixed positions. Letters skip look-alikes (I, l, O, 0, 1).
+const TEMP_UPPER = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+const TEMP_LOWER = 'abcdefghjkmnpqrstuvwxyz'
+const TEMP_DIGIT = '23456789'
+const TEMP_SPECIAL = '!@#$%&*'
+export function generateTempPassword(length = 14) {
+  const pick = set => set[crypto.randomInt(set.length)]
+  const all = TEMP_UPPER + TEMP_LOWER + TEMP_DIGIT + TEMP_SPECIAL
+  const chars = [pick(TEMP_UPPER), pick(TEMP_LOWER), pick(TEMP_DIGIT), pick(TEMP_SPECIAL)]
+  while (chars.length < length) chars.push(pick(all))
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = crypto.randomInt(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]]
+  }
+  return chars.join('')
+}
+
 // PATCH /api/users/:id/reset-password
 router.post('/:id/reset-password', requireAuth, requireMaster, async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
     if (!user) return res.status(404).json({ error: 'User not found' })
 
-    // Generate a cryptographically secure temporary password
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
-    const specials = '!@#$%&*'
-    const bytes = crypto.randomBytes(12)
-    let tempPw = ''
-    for (let i = 0; i < 10; i++) tempPw += chars[bytes[i] % chars.length]
-    tempPw += specials[bytes[10] % specials.length]
-    // Ensure at least one uppercase, one lowercase, one digit
-    tempPw = 'T' + tempPw.slice(1, 9) + 'a1' + tempPw.slice(11)
+    const tempPw = generateTempPassword()
 
     user.passwordHash = await bcrypt.hash(tempPw, 10)
     user.mustChangePw = true
+    // Signs out every session that was open under the old password.
+    user.passwordChangedAt = new Date()
     await user.save()
 
     // BRD US-USR-01: "Sends a password reset email to the user instantly"
