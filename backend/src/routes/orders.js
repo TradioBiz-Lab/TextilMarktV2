@@ -192,6 +192,18 @@ const enrichOrder = (o, viewerMfrId = null) => {
 const enrichFor = (order, req) =>
   enrichOrder(order, req.user.role === 'manufacturer' ? String(req.user.id) : null)
 
+// A follow-up write that must happen once the main one has (re-pointing document links after
+// a stage moves) is retried briefly, and failure is logged loudly rather than swallowed.
+async function withRetry(label, fn, attempts = 3) {
+  for (let i = 1; ; i++) {
+    try { return await fn() } catch (err) {
+      if (i >= attempts) { console.error(`[orders] CRITICAL: ${label} failed after ${attempts} attempts`, err); throw err }
+    }
+  }
+}
+
+const STAGES_CHANGED = { error: 'The stages changed while you were editing. Reload the order and try again.' }
+
 // GET /api/orders
 router.get('/', requireAuth, async (req, res) => {
   try {
@@ -1071,30 +1083,22 @@ router.post('/:orderId/assignments/:mfrId/stages/insert', requireAuth, requireAd
       updates: [], materials: [], items: [], actualEnd: resolvedActualEnd,
     }
 
-    // Same landmine as the delete route below: this is a whole-array $set from a
-    // .lean() read, so every existing stage must have its legacy fields resolved
-    // explicitly rather than left to Mongoose's cast-time defaults.
-    const normalizedExisting = stages.map(s => ({
-      ...s,
-      kind: stageKindOf(s),
-      status: deriveStageStatus(s),
-      blocked: !!s.blocked,
-      blockedReason: s.blockedReason || '',
-      baselineEta: s.baselineEta ?? s.eta ?? null,
-    }))
-    const newStages = [...normalizedExisting.slice(0, index), newStage, ...normalizedExisting.slice(index)]
-
-    await Order.updateOne(
-      { _id: orderId, 'assignments.mfrId': mfrObjectId },
-      { $set: { 'assignments.$[asgn].stages': newStages, 'assignments.$[asgn].updatedAt': new Date() } },
+    // Atomic: push the one new stage at its position instead of rewriting the whole array from
+    // the read above, so a manufacturer's concurrent progress update or note on another stage
+    // is not overwritten. The $size guard makes it fail cleanly if another insert or delete
+    // changed the plan in between (the position was computed from the old one).
+    const inserted = await Order.updateOne(
+      { _id: orderId, assignments: { $elemMatch: { mfrId: mfrObjectId, stages: { $size: stages.length } } } },
+      { $push: { 'assignments.$[asgn].stages': { $each: [newStage], $position: index } }, $set: { 'assignments.$[asgn].updatedAt': new Date() } },
       { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }] }
     )
+    if (inserted.modifiedCount === 0) return res.status(409).json(STAGES_CHANGED)
 
     // Documents linked to a stage at/after the insertion point shift up to match.
-    await Document.updateMany(
+    await withRetry('document shift after stage insert', () => Document.updateMany(
       { orderId, mfrId: mfrObjectId, isActive: true, stageIndex: { $gte: index } },
       { $inc: { stageIndex: 1 } }
-    )
+    ))
 
     const order = await Order.findById(orderId)
       .populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS)
@@ -1600,35 +1604,28 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/delete', requireAut
     if (linkedDocs > 0)
       return res.status(400).json({ error: `Cannot delete — ${linkedDocs} document(s) are linked to this stage. Remove those first.` })
 
-    // This is the ONLY write in this file that $sets the whole stages array
-    // rather than dotted paths, and `existingAsgn` came from a .lean() read — so
-    // fields absent on documents predating them (kind/status/blocked/baselineEta)
-    // would be filled in by Mongoose's schema defaults during the cast. That
-    // would stamp status:'not_started' onto completed stages as a side effect of
-    // deleting an unrelated one. Resolve every such field explicitly here so the
-    // result never depends on cast semantics in either direction.
-    const newStages = existingAsgn.stages
-      .filter((_, i) => i !== stageIndex)
-      .map(s => ({
-        ...s,
-        kind: stageKindOf(s),
-        status: deriveStageStatus(s),
-        blocked: !!s.blocked,
-        blockedReason: s.blockedReason || '',
-        baselineEta: s.baselineEta ?? s.eta ?? null,
-      }))
-
-    await Order.updateOne(
-      { _id: orderId, 'assignments.mfrId': mfrObjectId },
-      { $set: { 'assignments.$[asgn].stages': newStages, 'assignments.$[asgn].updatedAt': new Date() } },
-      { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }] }
+    // Atomic removal by index with an update pipeline, guarded on the stage count and on the
+    // stage still sitting at that index. Nothing else in the array is rewritten, so there is no
+    // lost update and no legacy-default stamping of untouched stages (the old whole-array $set
+    // from a .lean() read needed explicit normalisation to avoid that).
+    const removed = await Order.updateOne(
+      { _id: orderId, assignments: { $elemMatch: { mfrId: mfrObjectId, stages: { $size: stageCount }, [`stages.${stageIndex}.name`]: removedStage.name } } },
+      [{ $set: { assignments: { $map: { input: '$assignments', as: 'a', in: { $cond: [
+        { $eq: ['$$a.mfrId', mfrObjectId] },
+        { $mergeObjects: ['$$a', {
+          stages: { $concatArrays: [{ $slice: ['$$a.stages', stageIndex] }, { $slice: ['$$a.stages', stageIndex + 1, stageCount] }] },
+          updatedAt: '$$NOW',
+        }] },
+        '$$a',
+      ] } } } } }]
     )
+    if (removed.modifiedCount === 0) return res.status(409).json(STAGES_CHANGED)
 
     // Documents linked to a later stage need their stageIndex shifted down to match.
-    await Document.updateMany(
+    await withRetry('document shift after stage delete', () => Document.updateMany(
       { orderId, mfrId: mfrObjectId, isActive: true, stageIndex: { $gt: stageIndex } },
       { $inc: { stageIndex: -1 } }
-    )
+    ))
 
     const order = await Order.findById(orderId)
       .populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS)
@@ -2074,11 +2071,14 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineInde
     // Remove-by-index: $unset leaves a null hole in the array, then $pull removes it —
     // the standard two-step Mongo pattern for deleting a specific array element by index.
     const unsetField = `assignments.$[asgn].stages.${stageIndex}.materials.${lineIndex}`
-    await Order.updateOne(
-      { _id: orderId, 'assignments.mfrId': mfrObjectId },
+    // Guarded on the line still being the one the caller saw: if another edit shifted the list
+    // in between, refuse instead of removing a different material.
+    const unset = await Order.updateOne(
+      { _id: orderId, assignments: { $elemMatch: { mfrId: mfrObjectId, [`stages.${stageIndex}.materials.${lineIndex}.name`]: removedName } } },
       { $unset: { [unsetField]: 1 } },
       { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }] }
     )
+    if (unset.modifiedCount === 0) return res.status(409).json({ error: 'The material list changed while you were editing. Reload and try again.' })
     const pullField = `assignments.$[asgn].stages.${stageIndex}.materials`
     const order = await Order.findOneAndUpdate(
       { _id: orderId, 'assignments.mfrId': mfrObjectId },
@@ -2087,6 +2087,14 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineInde
     ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
 
     if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
+
+    // PO attachments point at a material line by index. Documents on the removed line stay as
+    // plain stage evidence (nothing is deleted); those on later lines move down with the list.
+    const docScope = { orderId, mfrId: mfrObjectId, stageIndex, isActive: true }
+    await withRetry('document detach after material delete', () => Document.updateMany(
+      { ...docScope, materialLineIndex: lineIndex }, { $set: { materialLineIndex: null } }))
+    await withRetry('document shift after material delete', () => Document.updateMany(
+      { ...docScope, materialLineIndex: { $gt: lineIndex } }, { $inc: { materialLineIndex: -1 } }))
 
     await AuditLog.create({
       byUser: req.user.id,

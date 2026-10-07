@@ -52,30 +52,67 @@ const finish = async (msg, req, state, detail) => {
   await AuditLog.create({ byUser: req.user.id, action: 'Inbound Review', detail }).catch(() => {})
 }
 
+// Two admins can have the same message open. The first to act claims it by moving it to the
+// transient 'reviewing' state in one atomic update; the other gets a 404, so nothing is applied
+// or reverted twice. Anything that stops short of finish() hands it back to the queue.
+const claim = async id => mongoose.Types.ObjectId.isValid(id)
+  ? InboundMessage.findOneAndUpdate({ _id: id, state: 'needs_review' }, { $set: { state: 'reviewing' } }, { new: true })
+  : null
+const release = id => InboundMessage.updateOne({ _id: id, state: 'reviewing' }, { $set: { state: 'needs_review' } })
+
+async function withClaim(req, res, fn) {
+  const msg = await claim(req.params.id)
+  if (!msg) return res.status(404).json({ error: 'Message not found or already reviewed' })
+  let finished = false
+  try {
+    await fn(msg, () => { finished = true })
+  } finally {
+    if (!finished) await release(msg._id).catch(() => {})
+  }
+}
+
+// Undo what the AI applied. A stage that someone has updated since is left as it is.
+async function revertChanges(msg) {
+  const left = []
+  for (const c of msg.changes) {
+    const r = await revertStageChange({ orderId: c.orderId, mfrId: c.mfrId, stageIndex: c.stageIndex, before: c.before, after: c.after })
+    if (!r.reverted) left.push(c.stageName || `stage ${c.stageIndex + 1}`)
+  }
+  return left
+}
+
+const keptNote = left => left.length ? ` (left as is, edited since the AI update: ${left.join(', ')})` : ''
+
 // POST /api/review/:id/approve - keep whatever the AI already applied; if it
 // applied nothing, apply its own best guess (needs a matched order + stage).
-router.post('/:id/approve', requireAuth, requireAdmin, async (req, res) => {
-  const msg = await InboundMessage.findOne({ _id: req.params.id, state: 'needs_review' })
-  if (!msg) return res.status(404).json({ error: 'Message not found or already reviewed' })
+router.post('/:id/approve', requireAuth, requireAdmin, (req, res) => withClaim(req, res, async (msg, done) => {
   if (!msg.changes.length) {
     const u = msg.parsed?.updates?.[0]
     const canonical = msg.parsed?.stage || msg.parsed?.implied_stage || u?.stage
     if (!msg.orderId || !canonical || !msg.factoryId)
       return res.status(400).json({ error: 'Nothing to approve - use Correct to pick the order and stage' })
-    const r = await applyForReview(msg, msg.orderId, canonical, u?.status === 'in_progress' ? 'in_progress' : 'done')
+    const target = await resolveTarget(msg, msg.orderId, canonical)
+    if (target.error) return res.status(400).json({ error: target.error })
+    const r = await applyForReview(msg, target, u?.status === 'in_progress' ? 'in_progress' : 'done')
     if (r.error) return res.status(400).json({ error: r.error })
   }
   await finish(msg, req, 'applied', `Approved inbound message ${msg._id}`)
+  done()
   res.json({ ok: true })
-})
+}))
 
-async function applyForReview(msg, orderId, canonicalOrName, status) {
+// Finds the order and stage a review action points at, without writing anything.
+async function resolveTarget(msg, orderId, canonicalOrName) {
   const orders = await loadActiveOrders(msg.factoryId)
   const order = orders.find(o => o.id === orderId)
   if (!order) return { error: 'Order is not active for this factory' }
   let idx = mapStageIndex(canonicalOrName, order.stages)
   if (idx < 0) idx = order.stages.findIndex(s => s.name === canonicalOrName)
   if (idx < 0) return { error: 'Stage not found on this order' }
+  return { orderId, idx }
+}
+
+async function applyForReview(msg, { orderId, idx }, status) {
   const r = await applyStageChange({ orderId, mfrId: msg.factoryId, stageIndex: idx, status, note: msg.parsed?.description || msg.rawText?.slice(0, 200) })
   if (r.error) return r
   msg.orderId = orderId; msg.stageApplied = r.stageName
@@ -86,31 +123,33 @@ async function applyForReview(msg, orderId, canonicalOrName, status) {
 }
 
 // POST /api/review/:id/correct  { orderId, stage, status? } - coordinator overrides the guess
-router.post('/:id/correct', requireAuth, requireAdmin, async (req, res) => {
+router.post('/:id/correct', requireAuth, requireAdmin, (req, res) => withClaim(req, res, async (msg, done) => {
   const { orderId, stage, status = 'done' } = req.body || {}
   if (typeof orderId !== 'string' || typeof stage !== 'string') return res.status(400).json({ error: 'orderId and stage required' })
   if (!['done', 'in_progress'].includes(status)) return res.status(400).json({ error: 'Invalid status' })
-  const msg = await InboundMessage.findOne({ _id: req.params.id, state: 'needs_review' })
-  if (!msg) return res.status(404).json({ error: 'Message not found or already reviewed' })
   if (!msg.factoryId) return res.status(400).json({ error: 'Unknown sender - assign a factory number first' })
-  // Undo anything the AI applied before applying the coordinator's version.
-  for (const c of msg.changes) await revertStageChange({ orderId: c.orderId, mfrId: c.mfrId, stageIndex: c.stageIndex, before: c.before })
+  // Check the coordinator's target BEFORE undoing anything, so a bad pick leaves the message and
+  // the stages exactly as they were.
+  const target = await resolveTarget(msg, orderId, stage)
+  if (target.error) return res.status(400).json({ error: target.error })
+  const left = await revertChanges(msg)
   msg.changes = []
   await retractEvidence(msg._id)
-  const r = await applyForReview(msg, orderId, stage, status)
+  const r = await applyForReview(msg, target, status)
   if (r.error) return res.status(400).json({ error: r.error })
-  await finish(msg, req, 'applied', `Corrected inbound message ${msg._id} to ${orderId} / ${r.stageName}`)
-  res.json({ ok: true })
-})
+  const delivered = r.splitStatus === 'Delivered' ? '; split marked Delivered' : ''
+  await finish(msg, req, 'applied', `Corrected inbound message ${msg._id} to ${orderId} / ${r.stageName}${delivered}${keptNote(left)}`)
+  done()
+  res.json({ ok: true, ...(left.length ? { warnings: [`Not reverted (edited since the AI update): ${left.join(', ')}`] } : {}) })
+}))
 
 // POST /api/review/:id/reject - revert any AI write, keep the raw message
-router.post('/:id/reject', requireAuth, requireAdmin, async (req, res) => {
-  const msg = await InboundMessage.findOne({ _id: req.params.id, state: 'needs_review' })
-  if (!msg) return res.status(404).json({ error: 'Message not found or already reviewed' })
-  for (const c of msg.changes) await revertStageChange({ orderId: c.orderId, mfrId: c.mfrId, stageIndex: c.stageIndex, before: c.before })
+router.post('/:id/reject', requireAuth, requireAdmin, (req, res) => withClaim(req, res, async (msg, done) => {
+  const left = await revertChanges(msg)
   await retractEvidence(msg._id)
-  await finish(msg, req, 'rejected', `Rejected inbound message ${msg._id}`)
-  res.json({ ok: true })
-})
+  await finish(msg, req, 'rejected', `Rejected inbound message ${msg._id}${keptNote(left)}`)
+  done()
+  res.json({ ok: true, ...(left.length ? { warnings: [`Not reverted (edited since the AI update): ${left.join(', ')}`] } : {}) })
+}))
 
 export default router

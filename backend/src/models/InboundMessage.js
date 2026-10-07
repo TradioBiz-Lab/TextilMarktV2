@@ -1,7 +1,9 @@
 import mongoose from 'mongoose'
 
 export const MESSAGE_TYPES = ['image', 'audio', 'document', 'text']
-export const MESSAGE_STATES = ['new', 'auto_applied', 'needs_review', 'applied', 'rejected']
+// 'reviewing' is held only while a coordinator's approve/correct/reject is running, so two admins
+// acting on one message cannot both apply it.
+export const MESSAGE_STATES = ['new', 'auto_applied', 'needs_review', 'reviewing', 'applied', 'rejected']
 
 // One stage change this message caused, with the "before" snapshot so a
 // coordinator rejecting the message can revert exactly what the AI did.
