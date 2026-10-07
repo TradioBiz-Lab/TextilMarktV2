@@ -495,24 +495,6 @@ export function AppProvider({ children }) {
     return updated
   }, [])
 
-  const bulkUploadMaterials = useCallback(async (rows) => {
-    const result = await ordersApi.materialsBulkUpload(rows)
-    await refreshOrders()
-    return result
-  }, [refreshOrders])
-
-  const bulkCreateOrders = useCallback(async (masterOrderId, rows) => {
-    const result = await ordersApi.bulkCreate(masterOrderId, rows)
-
-    // The bulk response only returns lightweight per-row results (not full
-    // enriched order docs) — refetch so newly-created orders show up in state.
-    if (result.created > 0) {
-      await refreshOrders()
-    }
-
-    return result
-  }, [masterOrders, refreshOrders])
-
   const getDocData = useCallback(async (id) => {
     if (docDataCache.current[id]) return docDataCache.current[id]
     const data = await documentsApi.getData(id)
@@ -577,9 +559,9 @@ export function AppProvider({ children }) {
       currentUser, users, orders, ordersAt, docs, notifs, audit, auditTotal, loading, loadError, unread, ribbons, masterOrders,
       actionItems,
       login, logout,
-      updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial, bulkUploadMaterials,
+      updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
       bulkUpdateStages, addStageItem, updateStageItem, removeStageItem,
-      updateAssignment, addAssignment, insertStage, uploadDoc, updateDoc, deleteDoc, createOrder, bulkCreateOrders, createMasterOrder, updateMasterOrder, deleteMasterOrder,
+      updateAssignment, addAssignment, insertStage, uploadDoc, updateDoc, deleteDoc, createOrder, createMasterOrder, updateMasterOrder, deleteMasterOrder,
       editOrder, deleteOrder,
       createUser, updateUser, toggleUser, resetUserPw,
       markAllRead, markOneRead, getDocData, refreshAudit, loadMoreAudit,
