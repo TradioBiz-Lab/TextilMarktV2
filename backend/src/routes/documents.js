@@ -339,6 +339,7 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
     if (!type || !name || !name.trim()) return res.status(400).json({ error: 'type and name required' })
     if (typeof type !== 'string' || typeof name !== 'string') return res.status(400).json({ error: 'Invalid input types' })
     if (name.length > 300 || type.length > 50) return res.status(400).json({ error: 'Input too long' })
+    if (!Document.schema.path('type').enumValues.includes(type)) return res.status(400).json({ error: `Unknown document type "${type}"` })
     if (issuer && typeof issuer === 'string' && issuer.length > 200)
       return res.status(400).json({ error: 'Issuer name too long (max 200 chars)' })
     if (fileName && typeof fileName === 'string' && fileName.length > 500)

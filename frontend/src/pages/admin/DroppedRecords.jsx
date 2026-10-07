@@ -17,10 +17,11 @@ const fmt = d => {
 export function DroppedRecords() {
   const toast = useToast()
   const [rows, setRows] = useState(null)
+  const [failed, setFailed] = useState(false)
   const [open, setOpen] = useState(false)
   const [busyId, setBusyId] = useState(null)
 
-  useEffect(() => { droppedApi.list().then(setRows).catch(() => setRows([])) }, [])
+  useEffect(() => { droppedApi.list().then(setRows).catch(() => { setFailed(true); setRows([]) }) }, [])
 
   const download = async r => {
     setBusyId(r.id)
@@ -32,7 +33,7 @@ export function DroppedRecords() {
       a.href = url; a.download = `dropped-${r.refId}.json`; a.click()
       URL.revokeObjectURL(url)
     } catch (e) {
-      toast(typeof e === 'string' ? e : (e?.message || 'Could not download the record'), 'error')
+      toast(e?.message || 'Could not download the record', 'error')
     } finally { setBusyId(null) }
   }
 
@@ -48,7 +49,9 @@ export function DroppedRecords() {
       </button>
       {open && (
         rows.length === 0 ? (
-          <div style={{ padding: '4px 16px 14px', fontSize: 13, color: T.textMuted }}>Nothing has been dropped yet.</div>
+          <div style={{ padding: '4px 16px 14px', fontSize: 13, color: failed ? T.danger : T.textMuted }}>
+            {failed ? 'Could not load the records. Reload the page to try again.' : 'Nothing has been dropped yet.'}
+          </div>
         ) : (
           <div style={{ borderTop: `1px solid ${T.border}` }}>
             {rows.map(r => (

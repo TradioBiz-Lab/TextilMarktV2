@@ -32,10 +32,18 @@ function QueueItem({ item, onDone }) {
   const [orderId, setOrderId] = useState(item.orderId || item.candidates[0]?.id || '')
   const cand = item.candidates.find(c => c.id === orderId)
   const [stage, setStage] = useState(item.stageApplied || '')
+  // The coordinator picks what happened; it is no longer assumed to be "done".
+  const [status, setStatus] = useState(item.parsed?.updates?.[0]?.status === 'in_progress' ? 'in_progress' : 'done')
+  const closesDelivery = status === 'done' && /^delivery$/i.test(stage.trim())
   const [busy, setBusy] = useState(false)
   const run = async (fn, okMsg) => {
     setBusy(true)
-    try { await fn(); toast(okMsg); onDone() } catch (e) { toast(e.message || 'Failed', 'error') } finally { setBusy(false) }
+    try {
+      const r = await fn()
+      // A stage someone edited after the AI update is left as it is, and the server says so.
+      if (r?.warnings?.length) toast(`${okMsg}. ${r.warnings[0]}`, 'warning'); else toast(okMsg)
+      onDone()
+    } catch (e) { toast(e.message || 'Failed', 'error') } finally { setBusy(false) }
   }
   const guess = item.parsed?.stage || item.parsed?.implied_stage || item.parsed?.updates?.map(u => `${u.stage} ${u.status}`).join(', ')
   return (
@@ -62,11 +70,20 @@ function QueueItem({ item, onDone }) {
                 <option value="">Pick stage</option>
                 {(cand?.stages || []).map(s => <option key={s} value={s}>{s}</option>)}
               </Select>
+              <Select value={status} onChange={e => setStatus(e.target.value)} aria-label="Status">
+                <option value="done">Done</option>
+                <option value="in_progress">In progress</option>
+              </Select>
+            </div>
+          )}
+          {item.candidates.length > 0 && closesDelivery && (
+            <div style={{ fontSize: 12, color: T.danger, marginTop: 6 }}>
+              This closes the Delivery step and marks the manufacturer's split Delivered. Only do it if the goods were really delivered.
             </div>
           )}
           <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
             <Btn size="sm" icon={<Check size={14} />} disabled={busy} onClick={() => run(() => reviewApi.approve(item.id), 'Approved')}>Approve</Btn>
-            <Btn size="sm" variant="secondary" disabled={busy || !orderId || !stage} onClick={() => run(() => reviewApi.correct(item.id, { orderId, stage, status: 'done' }), 'Corrected and applied')}>Correct and apply</Btn>
+            <Btn size="sm" variant="secondary" disabled={busy || !orderId || !stage} onClick={() => run(() => reviewApi.correct(item.id, { orderId, stage, status }), 'Corrected and applied')}>{closesDelivery ? 'Close Delivery and apply' : 'Correct and apply'}</Btn>
             <Btn size="sm" variant="secondary" icon={<X size={14} />} disabled={busy} onClick={() => run(() => reviewApi.reject(item.id), 'Rejected')}>Reject</Btn>
           </div>
         </div>
@@ -94,7 +111,8 @@ function SimulatePanel({ onSent }) {
       const m = r.message
       toast(m.state === 'auto_applied' ? `Applied: ${m.stageApplied}` : `Sent to review: ${m.reviewReason || m.state}`)
       onSent()
-    } catch (e) { toast(e.message || 'Upload failed', 'error') } finally { setBusy(false); if (file.current) file.current.value = '' }
+      return true
+    } catch (e) { toast(e.message || 'Upload failed', 'error'); return false } finally { setBusy(false); if (file.current) file.current.value = '' }
   }
   const pick = async e => {
     const f = e.target.files?.[0]; if (!f) return
@@ -113,7 +131,7 @@ function SimulatePanel({ onSent }) {
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
         <input value={text} onChange={e => setText(e.target.value)} placeholder="or type: cutting ho gaya, kal se stitching" maxLength={2000}
           style={{ flex: 1, padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 8, fontFamily: 'inherit', fontSize: 13 }} />
-        <Btn size="sm" icon={<Send size={14} />} disabled={busy || !text.trim() || !fid} onClick={() => send('text', { text }).then(() => setText(''))}>Send</Btn>
+        <Btn size="sm" icon={<Send size={14} />} disabled={busy || !text.trim() || !fid} onClick={() => send('text', { text }).then(ok => { if (ok) setText('') })}>Send</Btn>
       </div>
     </Card>
   )
@@ -122,14 +140,23 @@ function SimulatePanel({ onSent }) {
 export function ReviewQueuePage() {
   const { refreshOrders } = useApp()
   const [items, setItems] = useState(null)
-  const load = useCallback(() => reviewApi.queue().then(setItems).catch(() => setItems([])), [])
+  const [loadFailed, setLoadFailed] = useState(false)
+  // A failed load must not read as "All clear": that would hide messages that need a person.
+  const load = useCallback(() => reviewApi.queue()
+    .then(r => { setLoadFailed(false); setItems(r) })
+    .catch(() => { setLoadFailed(true); setItems(p => p ?? []) }), [])
   useEffect(() => { load() }, [load])
   const done = () => { load(); refreshOrders() }
   return (
     <div>
       <PageHeader title="Review Queue" subtitle="Messages the AI was not sure about. Nothing here has changed an order unless it says Already applied." />
       <SimulatePanel onSent={done} />
-      {items === null ? null : items.length === 0
+      {items === null ? null : loadFailed
+        ? <Card>
+            <EmptyState icon={<X size={26} color={T.danger} />} title="Could not load the queue" desc="Check your connection, then try again." />
+            <div style={{ textAlign: 'center', paddingBottom: 20 }}><Btn size="sm" onClick={load}>Retry</Btn></div>
+          </Card>
+        : items.length === 0
         ? <Card><EmptyState icon={<Check size={26} color={T.success} />} title="All clear" desc="No messages need review" /></Card>
         : items.map(i => <QueueItem key={i.id} item={i} onDone={done} />)}
     </div>
