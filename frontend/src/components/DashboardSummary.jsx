@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { Sparkles, RefreshCw } from '../icons.jsx'
 import { useApp } from '../context.jsx'
 import { generateSummary } from '../dashboardSummary.js'
-import { T } from '../constants.js'
+import { T, getToday } from '../constants.js'
 
 // **bold** segments in a summary line render as emphasis.
 const renderLine = text => text.split('**').map((part, i) => i % 2 ? <strong key={i} style={{ color: T.text }}>{part}</strong> : part)
@@ -13,9 +13,16 @@ const renderLine = text => text.split('**').map((part, i) => i % 2 ? <strong key
  * today and the single place to plug a real model in later.
  */
 export function DashboardSummary() {
-  const { orders, actionItems, currentUser: user, loading } = useApp()
+  const { orders, ordersAt, actionItems, currentUser: user, loading } = useApp()
   const [summary, setSummary] = useState(null)
   const [busy, setBusy] = useState(false)
+  // Days-late and the next-delivery countdown are worked out against today, so a
+  // tab left open past midnight has to recompute even though no data changed.
+  const [today, setToday] = useState(getToday)
+  useEffect(() => {
+    const t = setInterval(() => setToday(getToday()), 60 * 1000)
+    return () => clearInterval(t)
+  }, [])
 
   const run = useCallback(async () => {
     if (!user) return
@@ -23,7 +30,7 @@ export function DashboardSummary() {
     try { setSummary(await generateSummary({ role: user.role, user, orders, actionItems })) }
     catch { setSummary(null) }
     finally { setBusy(false) }
-  }, [user, orders, actionItems])
+  }, [user, orders, actionItems, today])
 
   // Regenerates whenever the underlying data changes, so it stays current as updates land.
   useEffect(() => { if (!loading) run() }, [run, loading])
@@ -40,7 +47,7 @@ export function DashboardSummary() {
             <Sparkles size={12} /> AI SUMMARY
           </span>
           <span style={{ fontSize: 11, color: T.textLight }}>
-            {summary ? `Updated ${new Date(summary.generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Generating…'}
+            {summary ? `Data as of ${new Date(ordersAt || summary.generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Generating…'}
           </span>
           <button onClick={run} disabled={busy} title="Regenerate summary" aria-label="Regenerate summary"
             style={{ marginLeft: 'auto', border: 'none', background: 'transparent', cursor: busy ? 'default' : 'pointer', color: T.textMuted, display: 'inline-flex', padding: 4, borderRadius: 6 }}>

@@ -7,6 +7,7 @@ import { makeAdmin, makeBuyer, makeMfr, orderPayload } from './helpers/factories
 import { DEFAULT_STAGE_NAMES, Order } from '../src/models/Order.js'
 import { InboundMessage } from '../src/models/InboundMessage.js'
 import { Document } from '../src/models/Document.js'
+import { ActionItem } from '../src/models/ActionItem.js'
 
 let ingestMessage, setPipelineDeps
 before(async () => {
@@ -195,6 +196,42 @@ describe('review + webhook + feed routes', () => {
     const other = await makeBuyer()
     assert.equal((await as(buyer).get('/api/floor/feed')).body.items.length, 1)
     assert.equal((await as(other).get('/api/floor/feed')).body.items.length, 0)
+  })
+
+  // A dashboard left open used to learn nothing about other people's edits: the
+  // version only moved on a factory message. It now also moves when any of the
+  // viewer's own orders is written, by anyone, and only for that viewer.
+  test('feed version moves when someone else edits one of the viewer\'s orders', async () => {
+    const { admin, buyer, mfr, ids } = await arrange()
+    const other = await makeBuyer()
+    const before = (await as(buyer).get('/api/floor/feed')).body.version
+    const otherBefore = (await as(other).get('/api/floor/feed')).body.version
+    await new Promise(r => setTimeout(r, 5))
+    const upd = await as(admin).post(`/api/orders/${ids[0]}/assignments/${mfr._id}/stages/0`, { status: 'in_progress' })
+    assert.equal(upd.status, 200, JSON.stringify(upd.body))
+    assert.notEqual((await as(buyer).get('/api/floor/feed')).body.version, before)
+    assert.equal((await as(other).get('/api/floor/feed')).body.version, otherBefore)
+  })
+
+  test('feed version moves when an order is added or removed', async () => {
+    const { buyer } = await arrange()
+    const before = (await as(buyer).get('/api/floor/feed')).body.version
+    const master = (await import('./helpers/factories.js')).makeMaster
+    const mfr2 = await makeMfr()
+    await new Promise(r => setTimeout(r, 5))
+    const r = await as(await master()).post('/api/orders', orderPayload({ id: 'INB-TEST-NEW', buyerId: buyer._id, mfrId: mfr2._id, stageNames: DEFAULT_STAGE_NAMES }))
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    assert.notEqual((await as(buyer).get('/api/floor/feed')).body.version, before)
+  })
+
+  test('only admins get an action-item version, and it moves when the list changes', async () => {
+    const { admin, buyer } = await arrange()
+    assert.equal((await as(buyer).get('/api/floor/feed')).body.itemsVersion, null)
+    const before = (await as(admin).get('/api/floor/feed')).body.itemsVersion
+    assert.equal(typeof before, 'string')
+    await new Promise(r => setTimeout(r, 5))
+    await ActionItem.create({ title: 'Chase trims', assigneeId: admin._id, createdBy: admin._id })
+    assert.notEqual((await as(admin).get('/api/floor/feed')).body.itemsVersion, before)
   })
 
   test('a manufacturer\'s feed covers only their own orders', async () => {

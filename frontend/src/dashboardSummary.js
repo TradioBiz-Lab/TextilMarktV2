@@ -39,20 +39,38 @@ function buildRows(orders, role, userId, todayNum) {
         .sort((x, y) => dayNumber(effectiveEta(x.stage)) - dayNumber(effectiveEta(y.stage)))[0] || null
       const deliveryDay = o.delivery ? dayNumber(new Date(o.delivery).toISOString()) : null
       const delivered = allDone || a.status === 'Delivered'
-      const daysLate = late.length
-        ? Math.max(...late.map(({ stage }) => todayNum - dayNumber(effectiveEta(stage))))
-        : 0
+      const lateBy = ({ stage }) => todayNum - dayNumber(effectiveEta(stage))
+      const worstLate = late.reduce((w, x) => (!w || lateBy(x) > lateBy(w) ? x : w), null)
+      const daysLate = worstLate ? lateBy(worstLate) : 0
       const health = delivered ? 'delivered'
         : blocked.length ? 'blocked'
         : (late.length || (deliveryDay != null && deliveryDay < todayNum)) ? 'late'
         : 'ontrack'
-      rows.push({ order: o, asgn: a, stages, live, blocked, late, working, upcoming, delivered, health, daysLate, deliveryDay })
+      rows.push({ order: o, asgn: a, stages, live, blocked, late, worstLate, working, upcoming, delivered, health, daysLate, deliveryDay })
     }
   }
   return rows
 }
 
-const severity = r => (r.health === 'blocked' ? 1000 : 0) + r.daysLate
+const severity = r => (r.health === 'blocked' ? 1000 : 0) + (r.health === 'late' ? 1 : 0) + r.daysLate
+
+/**
+ * buildRows is one row per order x factory split; the summary counts orders.
+ * Collapse each order to one row, represented by its worst open split so a late
+ * factory is never hidden behind an on-track one. An order is delivered only
+ * once every split is. `splits` keeps the individual rows for step-level counts.
+ */
+function groupByOrder(rows) {
+  const byOrder = new Map()
+  for (const r of rows) {
+    const g = byOrder.get(r.order.id)
+    if (g) g.push(r); else byOrder.set(r.order.id, [r])
+  }
+  return [...byOrder.values()].map(splits => {
+    const open = splits.filter(r => !r.delivered).sort((a, b) => severity(b) - severity(a))
+    return { ...(open[0] || splits[0]), delivered: open.length === 0, splits }
+  })
+}
 
 function attentionLine(rows, role) {
   const bad = rows.filter(r => r.health === 'blocked' || r.health === 'late').sort((a, b) => severity(b) - severity(a))
@@ -63,9 +81,10 @@ function attentionLine(rows, role) {
       const s = r.blocked[0].stage
       return `**${r.order.product}**${who} is blocked at ${s.name}${s.blockedReason ? `, ${s.blockedReason.toLowerCase()}` : ''}`
     }
-    const s = r.late[0]?.stage
-    return r.late.length
-      ? `**${r.order.product}**${who} is ${plural(r.daysLate, 'day')} past plan at ${s.name}`
+    const s = r.worstLate?.stage
+    const via = role === 'admin' && r.splits.length > 1 && r.asgn.mfrCompany ? ` via ${r.asgn.mfrCompany}` : ''
+    return r.worstLate
+      ? `**${r.order.product}**${who} is ${plural(r.daysLate, 'day')} past plan at ${s.name}${via}`
       : `**${r.order.product}**${who} is past its delivery date`
   })
   const more = bad.length - bits.length
@@ -84,15 +103,17 @@ function nextDeliveryLine(rows, role, todayNum) {
 
 function build({ role, user, orders, actionItems }) {
   const todayNum = dayNumber(getToday())
-  const rows = buildRows(orders, role, user?.id, todayNum)
-  const live = rows.filter(r => !r.delivered)
-  const delivered = rows.length - live.length
+  const rows = buildRows(orders, role, user?.id, todayNum)   // order x factory
+  const orderRows = groupByOrder(rows)                        // one per order
+  const live = orderRows.filter(r => !r.delivered)
+  const liveSplits = rows.filter(r => !r.delivered)           // open order x factory rows
+  const delivered = orderRows.length - live.length
   const count = h => live.filter(r => r.health === h).length
   const lines = []
 
   if (!live.length) {
-    lines.push(rows.length
-      ? `All ${plural(rows.length, 'order')} on your book ${rows.length === 1 ? 'is' : 'are'} delivered, nothing is in progress.`
+    lines.push(orderRows.length
+      ? `All ${plural(orderRows.length, 'order')} on your book ${orderRows.length === 1 ? 'is' : 'are'} delivered, nothing is in progress.`
       : 'No orders yet, there is nothing to summarise.')
     return lines
   }
@@ -100,12 +121,12 @@ function build({ role, user, orders, actionItems }) {
   const mix = `${count('ontrack')} on track, ${count('late')} late, ${count('blocked')} blocked`
   if (role === 'admin') {
     const customers = new Set(live.map(r => r.order.buyerCompany)).size
-    const factories = new Set(live.map(r => r.asgn.mfrCompany)).size
+    const factories = new Set(liveSplits.map(r => r.asgn.mfrCompany)).size
     lines.push(`**${plural(live.length, 'live order')}** across ${plural(customers, 'customer')} and ${plural(factories, 'factory', 'factories')}: ${mix}${delivered ? `, ${delivered} already delivered` : ''}.`)
   } else if (role === 'buyer') {
     lines.push(`Your **${plural(live.length, 'live order')}**: ${mix}${delivered ? `, ${delivered} already delivered` : ''}.`)
   } else {
-    const pcs = live.reduce((n, r) => n + (r.asgn.qty || 0), 0)
+    const pcs = liveSplits.reduce((n, r) => n + (r.asgn.qty || 0), 0)
     const customers = new Set(live.map(r => r.order.buyerCompany)).size
     lines.push(`You have **${plural(live.length, 'live order')}** (${pcs.toLocaleString('en-IN')} pcs) for ${plural(customers, 'customer')}: ${mix}.`)
   }
@@ -118,20 +139,20 @@ function build({ role, user, orders, actionItems }) {
     // this admin, plus the active (first unfinished) stage of each order they own.
     const items = (actionItems || []).filter(i => i.status === 'open' && String(i.assigneeId) === String(user?.id))
     const ownedSteps = rows.map(r => r.stages.find(s => !isStageDone(s))).filter(s => s && s.responsibleId && String(s.responsibleId) === String(user?.id))
-    const etas = [...items.map(i => i.eta), ...ownedSteps.map(s => (s.eta && s.eta !== 'NA' ? s.eta : null))]
+    const etas = [...items.map(i => i.eta), ...ownedSteps.map(s => effectiveEta(s))]
     const total = items.length + ownedSteps.length
     const overdue = etas.filter(e => e && dayNumber(e) < todayNum).length
-    const open = live.reduce((n, r) => n + inFlightStages(r.asgn, { windowDays: 3 }).length, 0)
+    const open = liveSplits.reduce((n, r) => n + inFlightStages(r.asgn, { windowDays: 3 }).length, 0)
     lines.push(`Action items: **${plural(total, 'open item')}** assigned to you${overdue ? ` (${overdue} overdue)` : ''}${ownedSteps.length ? `, of which ${ownedSteps.length} ${ownedSteps.length === 1 ? 'is a production step' : 'are production steps'}` : ''}. ${plural(open, 'step')} across all orders ${open === 1 ? 'is' : 'are'} open or due in the next 3 days.`)
   } else if (role === 'buyer') {
-    const waiting = live.flatMap(r => r.live
+    const waiting = liveSplits.flatMap(r => r.live
       .filter(({ stage }) => String(stage.responsibleId) === String(user?.id) && !stage.blocked)
       .map(({ stage }) => `${stage.name} on **${r.order.product}**`))
     lines.push(waiting.length
       ? `Waiting on you: **${plural(waiting.length, 'approval')}**, ${list(waiting.slice(0, 2))}${waiting.length > 2 ? `, plus ${waiting.length - 2} more` : ''}.`
       : 'Nothing is waiting on you, no approvals are pending.')
   } else {
-    const focus = live
+    const focus = liveSplits
       .flatMap(r => r.working.map(w => ({ r, ...w })))
       .sort((a, b) => dayNumber(effectiveEta(a.stage) || '9999-12-31') - dayNumber(effectiveEta(b.stage) || '9999-12-31'))
       .slice(0, 2)
@@ -140,10 +161,10 @@ function build({ role, user, orders, actionItems }) {
   }
 
   if (role === 'manufacturer') {
-    const soon = live.filter(r => r.upcoming).sort((a, b) => dayNumber(effectiveEta(a.upcoming.stage)) - dayNumber(effectiveEta(b.upcoming.stage)))[0]
+    const soon = liveSplits.filter(r => r.upcoming).sort((a, b) => dayNumber(effectiveEta(a.upcoming.stage)) - dayNumber(effectiveEta(b.upcoming.stage)))[0]
     if (soon) lines.push(`Next deadline: ${soon.upcoming.stage.name} for **${soon.order.product}** on ${shortDate(effectiveEta(soon.upcoming.stage))}.`)
   } else {
-    const nd = nextDeliveryLine(rows, role, todayNum)
+    const nd = nextDeliveryLine(orderRows, role, todayNum)
     if (nd) lines.push(nd)
   }
   return lines
@@ -177,8 +198,11 @@ export function rowCallout(r) {
   }
 
   if (health === 'late') {
-    const worst = late[0]?.stage
-    const days = late.length ? Math.max(...late.map(({ stage }) => dayNumber(getToday()) - dayNumber(effectiveEta(stage)))) : 0
+    // Name the stage that is furthest behind, the same one the day count belongs to.
+    const lateBy = ({ stage }) => dayNumber(getToday()) - dayNumber(effectiveEta(stage))
+    const worstEntry = late.reduce((w, x) => (!w || lateBy(x) > lateBy(w) ? x : w), null)
+    const worst = worstEntry?.stage
+    const days = worstEntry ? lateBy(worstEntry) : 0
     // A manual callout only rides along when it is short enough to keep this a one-liner.
     const cause = order.callout && order.callout.length <= 50 ? ` ${order.callout}` : ''
     if (worst) return `${plural(days, 'day')} behind at ${worst.name}${deliveryBit ? `, ${deliveryBit} at risk` : ''}.${cause}`
