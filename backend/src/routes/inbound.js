@@ -9,8 +9,18 @@ import { ingestMessage, IMAGE_MIME, DOC_MIME, AUDIO_MIME, MAX_MEDIA_BYTES } from
 
 const router = Router()
 const skipInTest = () => process.env.NODE_ENV === 'test'
+// The web upload is limited per signed-in user (keyed by IP it would throttle a whole factory
+// behind one NAT). The provider webhook arrives from the provider's few IPs and is already gated by
+// the shared secret, so it gets a far higher ceiling: at 300/hour a busy day could start dropping
+// real messages from every factory at once.
 const limiter = rateLimit({
   windowMs: 60 * 60 * 1000, max: 300,
+  keyGenerator: req => req.user?.id ? `user|${req.user.id}` : req.ip,
+  message: { error: 'Too many messages. Please wait a bit.' },
+  standardHeaders: true, legacyHeaders: false, validate: false, skip: skipInTest,
+})
+const webhookLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, max: 5000,
   message: { error: 'Too many messages. Please wait a bit.' },
   standardHeaders: true, legacyHeaders: false, validate: false, skip: skipInTest,
 })
@@ -30,7 +40,7 @@ const publicMessage = m => ({
 // POST /api/inbound/webhook/:provider
 // Provider-agnostic entry point. The shared secret keeps strangers from
 // feeding the pipeline; each provider's payload is normalized by its adapter.
-router.post('/webhook/:provider', limiter, async (req, res) => {
+router.post('/webhook/:provider', webhookLimiter, async (req, res) => {
   const secret = process.env.INBOUND_WEBHOOK_SECRET
   if (!secret) return res.status(503).json({ error: 'Inbound webhook is not configured' })
   const given = String(req.headers['x-webhook-secret'] || '')
@@ -43,6 +53,8 @@ router.post('/webhook/:provider', limiter, async (req, res) => {
   try { n = await adapter.normalize(req.body) } catch (err) { return res.status(400).json({ error: err.message }) }
   if (n.type !== 'text' && !mimeAllowed(n.type, n.mime_type)) return res.status(400).json({ error: 'Unsupported media type' })
   if (n.media_bytes && n.media_bytes.length > MAX_MEDIA_BYTES) return res.status(400).json({ error: 'Media too large' })
+  // Same 2000-character ceiling the web upload applies; the webhook had none.
+  if (typeof n.text === 'string' && n.text.length > 2000) n.text = n.text.slice(0, 2000)
 
   const msg = await ingestMessage({
     senderNumber: n.sender_number, channel: 'whatsapp', type: n.type,

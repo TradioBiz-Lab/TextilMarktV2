@@ -24,21 +24,7 @@ router.get('/', requireAuth, requireAdmin, async (req, res) => {
   }
 })
 
-// POST /api/audit (admin only)
-router.post('/', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { action, detail } = req.body
-    if (!action || typeof action !== 'string' || action.trim().length === 0)
-      return res.status(400).json({ error: 'Action is required' })
-    if (action.length > 100) return res.status(400).json({ error: 'Action too long (max 100 chars)' })
-    if (detail && typeof detail !== 'string') return res.status(400).json({ error: 'Invalid detail' })
-    if (detail && detail.length > 1000) return res.status(400).json({ error: 'Detail too long (max 1000 chars)' })
-    const entry = await AuditLog.create({ byUser: req.user.id, action: action.trim(), detail: detail?.trim() || '' })
-    res.status(201).json({ id: entry._id })
-  } catch (err) {
-    console.error('[audit]', err)
-    res.status(500).json({ error: 'Server error' })
-  }
-})
+// There is deliberately no POST here: the audit log is written by the server, at the point an
+// action happens. A client-writable endpoint let any admin record entries that never occurred.
 
 export default router

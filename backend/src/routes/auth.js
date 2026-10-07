@@ -13,16 +13,37 @@ const router = Router()
 const skipInTest = () => process.env.NODE_ENV === 'test'
 
 // Server-side brute-force protection: 5 attempts per email per 15 min window
+// Keyed by IP AND email: keyed by email alone, anyone could lock a known user (the master admin
+// included) out of their account by sending five bad attempts every 15 minutes. A second, looser
+// ceiling per email still caps guessing spread across many IPs.
+const emailOf = req => String(req.body?.email ?? '').toLowerCase().trim().slice(0, 254)
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
-  keyGenerator: (req) => req.body?.email?.toLowerCase?.()?.trim?.() || req.ip,
+  keyGenerator: (req) => `${req.ip}|${emailOf(req)}`,
   message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
   validate: false,
   skip: skipInTest,
 })
+const loginEmailCeiling = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 40,
+  keyGenerator: (req) => `email|${emailOf(req)}`,
+  message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false,
+  skip: skipInTest,
+})
+
+// Compared against when the email is unknown, so a missing account costs the same bcrypt time as a
+// wrong password and the response timing does not reveal which emails exist.
+const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 10)
+
+// Sessions refresh themselves through /me, so cap the total life of one login.
+const MAX_SESSION_SECONDS = 12 * 60 * 60
 
 const changePasswordLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -35,7 +56,7 @@ const changePasswordLimiter = rateLimit({
   skip: skipInTest,
 })
 
-router.post('/login', loginLimiter, async (req, res) => {
+router.post('/login', loginLimiter, loginEmailCeiling, async (req, res) => {
   try {
     const { email, password } = req.body
     if (!email || !password) return res.status(400).json({ error: 'Email and password required' })
@@ -44,15 +65,19 @@ router.post('/login', loginLimiter, async (req, res) => {
 
     const user = await User.findOne({ email: email.toLowerCase().trim() })
     if (!user) {
-      AuditLog.create({ byUser: null, action: 'Login Failed', detail: `Unknown email: ${email.toLowerCase().trim()}` }).catch(err => console.error('[auth] Audit log failed:', err))
+      await bcrypt.compare(password, DUMMY_HASH)
+      // Capped: the email is attacker-controlled text and lands in the audit log.
+      AuditLog.create({ byUser: null, action: 'Login Failed', detail: `Unknown email: ${email.toLowerCase().trim().slice(0, 100)}` }).catch(err => console.error('[auth] Audit log failed:', err))
       return res.status(401).json({ error: 'Invalid email or password' })
-    }
-    if (!user.isActive) {
-      AuditLog.create({ byUser: user._id, action: 'Login Failed', detail: `Inactive account: ${user.email}` }).catch(err => console.error('[auth] Audit log failed:', err))
-      return res.status(403).json({ error: 'Account inactive. Contact your administrator.' })
     }
 
     const valid = await bcrypt.compare(password, user.passwordHash)
+    // An inactive account gets the same answer as a wrong password, after the same work, so the
+    // response does not reveal that the account exists or that it was deactivated.
+    if (valid && !user.isActive) {
+      AuditLog.create({ byUser: user._id, action: 'Login Failed', detail: `Inactive account: ${user.email}` }).catch(err => console.error('[auth] Audit log failed:', err))
+      return res.status(401).json({ error: 'Invalid email or password' })
+    }
     if (!valid) {
       AuditLog.create({ byUser: user._id, action: 'Login Failed', detail: `Bad password for: ${user.email}` }).catch(err => console.error('[auth] Audit log failed:', err))
       return res.status(401).json({ error: 'Invalid email or password' })
@@ -63,7 +88,8 @@ router.post('/login', loginLimiter, async (req, res) => {
       adminType: user.adminType, name: user.name, company: user.company,
       code: user.code, mustChangePw: user.mustChangePw,
     }
-    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '60m' })
+    // oiat: when this login began. /me keeps it across refreshes so a session cannot slide forever.
+    const token = jwt.sign({ ...payload, oiat: Math.floor(Date.now() / 1000) }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '60m' })
 
     // Set httpOnly cookie (secure + sameSite=none for cross-origin Vercel→Render in production)
     const isProd = process.env.NODE_ENV === 'production'
@@ -120,12 +146,18 @@ router.post('/change-password', requireAuth, changePasswordLimiter, async (req, 
 
 // GET /api/auth/me — restore session and refresh the httpOnly cookie
 router.get('/me', requireAuth, async (req, res) => {
+  const startedAt = req.user.oiat ?? req.user.iat
+  if (startedAt && Math.floor(Date.now() / 1000) - startedAt > MAX_SESSION_SECONDS) {
+    res.clearCookie('tradio_token', { httpOnly: true, sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', secure: process.env.NODE_ENV === 'production' })
+    return res.status(401).json({ error: 'Session expired — please log in again' })
+  }
   const payload = {
     id: req.user.id, email: req.user.email, role: req.user.role,
     adminType: req.user.adminType, name: req.user.name, company: req.user.company,
     code: req.user.code, mustChangePw: req.user.mustChangePw,
     // Keep a view-as session a view-as session when the cookie is refreshed.
     ...(req.user.viewAsBy ? { viewAsBy: req.user.viewAsBy, viewAsByName: req.user.viewAsByName } : {}),
+    ...(startedAt ? { oiat: startedAt } : {}),
   }
   const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '60m' })
   const isProd = process.env.NODE_ENV === 'production'
