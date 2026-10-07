@@ -92,8 +92,6 @@ export const ordersApi = {
     api.post(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}/items/${lineIndex}/delete`),
   escalate: (id, reason) =>
     api.post(`/orders/${id}/escalate`, { reason }),
-  bulkCreate: (masterOrderId, rows) =>
-    api.post('/orders/bulk', { masterOrderId, rows }),
   addStageUpdate: (orderId, mfrId, stageIndex, text) =>
     api.post(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}/updates`, { text }),
   addStageMaterial: (orderId, mfrId, stageIndex, data) =>
@@ -109,8 +107,6 @@ export const ordersApi = {
   // responsibleId?, status?, actualEnd?} — index omitted appends to the end.
   insertStage: (orderId, mfrId, data) =>
     api.post(`/orders/${orderId}/assignments/${mfrId}/stages/insert`, data),
-  materialsBulkUpload: (rows) =>
-    api.post('/orders/materials/bulk', { rows }),
 }
 
 export const documentsApi = {
