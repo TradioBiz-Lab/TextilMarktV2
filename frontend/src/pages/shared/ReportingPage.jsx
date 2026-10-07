@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { CalendarClock, AlertTriangle, Package, Ban, CircleDot, CheckCircle2, Search, BarChart3, Folder, MessageCircle, Calendar, ChevronDown, ChevronRight, Play, Download, ArrowRight, Sparkles } from '../../icons.jsx'
 import {
-  T, dayNumber, getToday, fmtN, effectiveEta, planProgress,
+  T, dayNumber, getToday, fmtN, effectiveEta, planProgress, deliveryStatus,
   stageStatusOf, stageIsOverdue, isStageDone, inFlightStages, stageProgressLabel, stageVariance,
 } from '../../constants.js'
 import { toCsvCell } from '../../csvCell.js'
@@ -206,10 +206,12 @@ export function ReportingPage({ onOpen, initialMo }) {
         .filter(({ stage }) => effectiveEta(stage) && dayNumber(effectiveEta(stage)) >= todayNum)
         .sort((x, y) => dayNumber(effectiveEta(x.stage)) - dayNumber(effectiveEta(y.stage)))[0] || null
 
-      const deliveryDay = o.delivery ? dayNumber(new Date(o.delivery).toISOString()) : null
+      // Delivered splits show the day they were delivered; open ones count down to the promise.
+      const delivery = deliveryStatus(o, a)
+      const deliveryDay = !delivery.delivered && o.delivery ? dayNumber(new Date(o.delivery).toISOString()) : null
       const daysToDelivery = deliveryDay != null ? deliveryDay - todayNum : null
 
-      const health = doneCount === stages.length && stages.length > 0 ? 'done'
+      const health = delivery.delivered ? 'done'
         : blocked.length ? 'blocked'
         : late.length ? 'late'
         : (daysToDelivery != null && daysToDelivery < 0) ? 'late'
@@ -223,7 +225,7 @@ export function ReportingPage({ onOpen, initialMo }) {
         ? allUpdates.reduce((a, b) => new Date(b.at) > new Date(a.at) ? b : a)
         : null
 
-      return { order: o, asgn: a, stages, doneCount, pct, live, blocked, late, working, upcoming, daysToDelivery, health, lastUpdate }
+      return { order: o, asgn: a, stages, doneCount, pct, live, blocked, late, working, upcoming, delivery, daysToDelivery, health, lastUpdate }
     }))
   }, [orders, todayNum])
 
@@ -297,7 +299,7 @@ export function ReportingPage({ onOpen, initialMo }) {
       r.live.map(({ stage }) => stage.name).join(' | '),
       r.blocked.length, r.late.length,
       r.upcoming?.stage.name || '', r.upcoming ? fmtDate(effectiveEta(r.upcoming.stage)) : '',
-      fmtDate(r.order.delivery), r.daysToDelivery ?? '', r.order.callout || '',
+      fmtDate(r.delivery.date), r.daysToDelivery ?? '', r.order.callout || '',
       r.lastUpdate ? `${r.lastUpdate.stageName}: ${r.lastUpdate.text}` : '',
     ])
     downloadCsv([header, ...body], `order-status-${getToday()}.csv`)
@@ -418,8 +420,8 @@ export function ReportingPage({ onOpen, initialMo }) {
                           </td>
 
                           <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
-                            <div style={{ fontSize: 12, color: T.text, fontFamily: "'JetBrains Mono',monospace" }}>{fmtDate(r.order.delivery)}</div>
-                            {r.health === 'done' && <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted }}>Delivered</div>}
+                            <div style={{ fontSize: 12, color: T.text, fontFamily: "'JetBrains Mono',monospace" }}>{fmtDate(r.delivery.date)}</div>
+                            {r.health === 'done' && <div style={{ fontSize: 11, fontWeight: 700, color: T.success }}>Delivered</div>}
                             {r.health !== 'done' && r.daysToDelivery != null && (
                               <div style={{ fontSize: 11, fontWeight: 700, color: r.daysToDelivery < 0 ? T.danger : r.daysToDelivery <= 7 ? '#b45309' : T.textMuted }}>
                                 {r.daysToDelivery < 0 ? `${Math.abs(r.daysToDelivery)}d overdue` : `${r.daysToDelivery}d left`}
