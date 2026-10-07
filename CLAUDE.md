@@ -109,6 +109,11 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
 - **Kriyaa tool input is untrusted.** IDs from the model are validated against strict shapes
   before they go into a loopback URL, and request bodies are rebuilt from an allowlist
   (`stageTarget` / `pick` in `routes/assistant.js`). Don't interpolate tool input into a path.
+- **Notifications and the audit log are written by the server only.** `lib/notify.js` creates
+  cross-user notifications inside the order, document and assignment routes (buyer, plus all
+  admins when a manufacturer is the one acting; never the actor). The browser never creates
+  notifications or audit entries, so a new mutating route should call `notify` / `AuditLog.create`
+  itself. The Audit Log page re-reads on open and loads older entries on demand.
 - **Async route errors reach the error handler.** `middleware/asyncErrors.js` patches Express 4
   so a rejected async handler calls `next(err)` instead of hanging the request.
 - **CORS preflight workaround.** `frontend/src/api.js` sends all requests as

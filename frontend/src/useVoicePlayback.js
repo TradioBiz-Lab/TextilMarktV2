@@ -45,7 +45,12 @@ export function useVoicePlayback() {
   // inside the mic-click handler, not creating a new element per reply.
   const audioElRef = useRef(typeof Audio !== 'undefined' ? new Audio() : null)
   const blobRef = useRef(null)
-  const cancelledRef = useRef(false)
+  // One shared cancel flag let an older play() wake up after a newer one had reset it and keep
+  // driving the same <audio> element. Each play() now takes an id, and anything that is not the
+  // latest id has been superseded or stopped. endPlaybackRef lets stop() release the promise
+  // that is waiting for the current clip to end (pausing never fires `ended`).
+  const playIdRef = useRef(0)
+  const endPlaybackRef = useRef(null)
 
   // Playback-amplitude plumbing (fullscreen voice mode's "speaking" orb
   // only — plain audio.play() via the inline mic doesn't touch any of
@@ -114,7 +119,9 @@ export function useVoicePlayback() {
   }, [])
 
   const stop = useCallback(() => {
-    cancelledRef.current = true
+    playIdRef.current++
+    endPlaybackRef.current?.()
+    endPlaybackRef.current = null
     stopAmpLoop()
     audioElRef.current?.pause()
     blobRef.current?.revoke()
@@ -131,15 +138,16 @@ export function useVoicePlayback() {
   // "thinking" through that gap instead.
   const play = useCallback(async (text, languageCode, index, onFirstAudio) => {
     stop()
-    cancelledRef.current = false
+    const myId = ++playIdRef.current
+    const superseded = () => playIdRef.current !== myId
     setSpeakingIndex(index)
     startAmpLoop()
     try {
       let first = true
       for (const chunk of chunkText(text)) {
-        if (cancelledRef.current) return
+        if (superseded()) return
         const { audioDataUrl } = await voiceApi.speak(chunk, languageCode)
-        if (cancelledRef.current) return
+        if (superseded()) return
         const blob = dataUrlToBlobUrl(audioDataUrl)
         if (!blob) continue
         blobRef.current = blob
@@ -147,24 +155,34 @@ export function useVoicePlayback() {
         audio.src = blob.url
         if (first) { first = false; onFirstAudio?.() }
         await new Promise((resolve, reject) => {
+          endPlaybackRef.current = resolve
           audio.onended = resolve
           audio.onerror = reject
           audio.play().catch(reject)
         })
+        endPlaybackRef.current = null
+        if (superseded()) return
         blob.revoke()
         blobRef.current = null
       }
     } catch {
       // Playback failure isn't fatal — the text reply is already on screen.
     } finally {
-      stopAmpLoop()
-      if (!cancelledRef.current) setSpeakingIndex(null)
+      // Only the latest play() may touch shared state; an older one finishing late must not
+      // stop the amplitude loop or clear the speaking indicator of the one that replaced it.
+      if (!superseded()) {
+        stopAmpLoop()
+        setSpeakingIndex(null)
+      }
     }
   }, [stop])
 
   const getAmplitude = useCallback(() => ampRef.current, [])
 
-  useEffect(() => () => stop(), [stop])
+  useEffect(() => () => {
+    stop()
+    audioCtxRef.current?.close().catch(() => {})
+  }, [stop])
 
   return { speakingIndex, play, stop, unlock, getAmplitude }
 }

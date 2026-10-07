@@ -14,6 +14,7 @@ export function AppProvider({ children }) {
   const [docs, setDocs]               = useState([])
   const [notifs, setNotifs]           = useState([])
   const [audit, setAudit]             = useState([])
+  const [auditTotal, setAuditTotal]     = useState(0)
   const [serverRibbons, setServerRibbons] = useState([])
   const [masterOrders, setMasterOrders] = useState([])
   const [actionItems, setActionItems] = useState([])
@@ -54,7 +55,9 @@ export function AppProvider({ children }) {
         setUsers(results[5])
         // audit endpoint now returns { total, limit, skip, items }
         const auditResult = results[6]
-        setAudit(Array.isArray(auditResult) ? auditResult : (auditResult?.items ?? []))
+        const auditItems = Array.isArray(auditResult) ? auditResult : (auditResult?.items ?? [])
+        setAudit(auditItems)
+        setAuditTotal(auditResult?.total ?? auditItems.length)
         setActionItems(results[7])
         // Cert expiry check — fire and forget, don't re-fetch notifications
         documentsApi.checkCertExpiry().catch(() => {})
@@ -92,6 +95,7 @@ export function AppProvider({ children }) {
     setDocs([])
     setNotifs([])
     setAudit([])
+    setAuditTotal(0)
     setUsers([])
     setServerRibbons([])
     setMasterOrders([])
@@ -275,49 +279,13 @@ export function AppProvider({ children }) {
   }, [currentUser, orders, docs, serverRibbons])
 
   // ── Actions ───────────────────────────────────────────────────────────────
-  const addAudit = useCallback(async (action, detail) => {
-    // Only admins can write audit logs via the API; non-admin actions are logged server-side in route handlers
-    if (currentUser?.role !== 'admin') return
-    const entry = await auditApi.add(action, detail)
-    setAudit(p => [{ ...entry, action, detail, by: currentUser?.id, at: new Date().toISOString() }, ...p])
-  }, [currentUser])
-
-  const pushNotif = useCallback(async (toUser, type, msg, orderId = null) => {
-    try {
-      await notificationsApi.create({ toUser, type, msg, orderId })
-      // Only update local state after the API call succeeds and the notification is for the current user
-      if (toUser === currentUser?.id) {
-        setNotifs(p => [{ id: Date.now(), to: toUser, type, msg, orderId, read: false, at: new Date().toISOString() }, ...p])
-      }
-    } catch {
-      // Non-admin users can't create notifications for others — server-side handlers cover cross-user notifications
-    }
-  }, [currentUser])
-
   const updateStage = useCallback(async (orderId, mfrId, stageIndex, data) => {
-    // Capture old values for audit logging
-    const oldOrder = orders.find(o => o.id === orderId)
-    const oldStage = oldOrder?.assignments?.find(a => String(a.mid) === String(mfrId))?.stages?.[stageIndex]
-    const oldUnits = oldStage?.unitsDone ?? 0
-
     // The route returns { ...order, warnings } — keep warnings out of the store.
     const { warnings, ...updated } = await ordersApi.updateStage(orderId, mfrId, stageIndex, data)
     setOrders(p => p.map(o => o.id === orderId ? updated : o))
 
-    const newStage = (updated.assignments || []).find(a => String(a.mid) === String(mfrId))?.stages?.[stageIndex]
-    const stageName = newStage?.name || `Stage ${stageIndex + 1}`
-    if (updated.buyerId) {
-      await pushNotif(updated.buyerId, 'status', `Production update on ${orderId}: ${stageName} progress updated`, orderId)
-    }
-    // Read the change off the response, not off `data` — a status-only write
-    // (milestones, the daily grid) carries no unitsDone and used to log
-    // "units 0 → undefined".
-    const change = newStage?.kind === 'quantity'
-      ? `units ${oldUnits} → ${newStage?.unitsDone ?? oldUnits}`
-      : `status → ${newStage?.status ?? 'updated'}`
-    await addAudit('Stage Update', `${orderId}: ${stageName} — ${change}${data.note ? ' | Note: ' + data.note : ''}`)
     return { ...updated, warnings: warnings || [] }
-  }, [orders, pushNotif, addAudit])
+  }, [])
 
   // One request for N stages. Used by the daily-update grid and Bulk Edit, which
   // previously fired one call per changed stage and could exhaust the 120/hr
@@ -325,16 +293,14 @@ export function AppProvider({ children }) {
   const bulkUpdateStages = useCallback(async (orderId, mfrId, stages) => {
     const { updated: count, ...updated } = await ordersApi.bulkUpdateStages(orderId, mfrId, stages)
     setOrders(p => p.map(o => o.id === orderId ? updated : o))
-    await addAudit('Stages Bulk Update', `${orderId}: ${count} stage(s) updated`)
     return updated
-  }, [addAudit])
+  }, [])
 
   const addStageItem = useCallback(async (orderId, mfrId, stageIndex, data) => {
     const updated = await ordersApi.addStageItem(orderId, mfrId, stageIndex, data)
     setOrders(p => p.map(o => o.id === orderId ? updated : o))
-    await addAudit('Stage Item Added', `${orderId}: stage ${stageIndex + 1}`)
     return updated
-  }, [addAudit])
+  }, [])
 
   const updateStageItem = useCallback(async (orderId, mfrId, stageIndex, lineIndex, data) => {
     const updated = await ordersApi.updateStageItem(orderId, mfrId, stageIndex, lineIndex, data)
@@ -345,63 +311,37 @@ export function AppProvider({ children }) {
   const removeStageItem = useCallback(async (orderId, mfrId, stageIndex, lineIndex) => {
     const updated = await ordersApi.removeStageItem(orderId, mfrId, stageIndex, lineIndex)
     setOrders(p => p.map(o => o.id === orderId ? updated : o))
-    await addAudit('Stage Item Removed', `${orderId}: stage ${stageIndex + 1}`)
     return updated
-  }, [addAudit])
+  }, [])
 
   const updateAssignment = useCallback(async (orderId, mfrId, status, note) => {
     const updated = await ordersApi.updateAssignment(orderId, mfrId, status, note)
     setOrders(p => p.map(o => o.id === orderId ? updated : o))
-    if (updated.buyerId) {
-      await pushNotif(updated.buyerId, 'status', `Order ${orderId} status updated to: ${status}`, orderId)
-      if (currentUser?.role === 'admin') {
-        await pushNotif(mfrId, 'status', `Your order ${orderId} was updated to: ${status}`, orderId)
-      }
-    }
-    await addAudit('Status Update', `${orderId}: → ${status}${note ? ' | Note: ' + note : ''}`)
     return updated
-  }, [currentUser, pushNotif, addAudit])
+  }, [])
 
   const uploadDoc = useCallback(async (data) => {
     const doc = await documentsApi.upload(data)
     setDocs(p => [doc, ...p])
-    await addAudit('Document Uploaded', `${data.name} (${data.type})${data.orderId ? ' for order ' + data.orderId : ''}`)
-
-    // BRD §8: "Document uploaded to order → Buyer + Admin"
-    if (data.orderId) {
-      const order = orders.find(o => o.id === data.orderId)
-      if (order?.buyerId && order.buyerId !== currentUser?.id) {
-        await pushNotif(order.buyerId, 'order', `New document uploaded to order ${data.orderId}: ${data.name}`, data.orderId)
-      }
-      // Notify all admins (except current user if they are admin)
-      const adminUsers = users.filter(u => u.role === 'admin' && u.id !== currentUser?.id)
-      for (const admin of adminUsers) {
-        await pushNotif(admin.id, 'order', `New document uploaded to order ${data.orderId}: ${data.name}`, data.orderId)
-      }
-    }
     return doc
-  }, [orders, users, currentUser, addAudit, pushNotif])
+  }, [])
 
   const updateDoc = useCallback(async (id, data) => {
     const doc = await documentsApi.update(id, data)
     setDocs(p => p.map(d => d.id === id ? doc : d))
-    await addAudit('Document Updated', `${doc.name} (${doc.type})`)
     return doc
-  }, [addAudit])
+  }, [])
 
   const deleteDoc = useCallback(async (id) => {
-    const target = docs.find(d => d.id === id)
     await documentsApi.remove(id)
     setDocs(p => p.filter(d => d.id !== id))
-    await addAudit('Document Deleted', target ? `${target.name} (${target.type})` : id)
-  }, [docs, addAudit])
+  }, [])
 
   const createMasterOrder = useCallback(async (data) => {
     const mo = await masterOrdersApi.create(data)
     setMasterOrders(p => [mo, ...p])
-    await addAudit('Master Order Created', `${data.id} — ${data.orderName}`)
     return mo
-  }, [addAudit])
+  }, [])
 
   const updateMasterOrder = useCallback(async (id, data) => {
     const updated = await masterOrdersApi.update(id, data)
@@ -410,83 +350,82 @@ export function AppProvider({ children }) {
   }, [])
 
   const deleteMasterOrder = useCallback(async (id, reason) => {
-    const mo = masterOrders.find(m => m.id === id)
     await masterOrdersApi.delete(id, reason)
     setMasterOrders(p => p.filter(m => m.id !== id))
-    await addAudit('Master Order Deleted', `${id}${mo ? ' — ' + mo.orderName : ''}`)
-  }, [masterOrders, addAudit])
+  }, [])
 
   const createOrder = useCallback(async (data) => {
     const order = await ordersApi.create(data)
     setOrders(p => [order, ...p])
-    await pushNotif(data.buyerId, 'order', `New order created: ${data.id}`, data.id)
-    for (const a of (data.assignments || [])) {
-      await pushNotif(a.mid, 'order', `New order assigned to you: ${data.id}`, data.id)
-    }
-    await addAudit('Order Created', `${data.id} — ${data.product}`)
     return order
-  }, [pushNotif, addAudit])
+  }, [])
 
   const addAssignment = useCallback(async (orderId, { mfrId, qty, sub }) => {
     const order = await ordersApi.addAssignment(orderId, { mfrId, qty, sub })
     setOrders(p => p.map(o => o.id === orderId ? order : o))
-    await pushNotif(mfrId, 'order', `New order assigned to you: ${orderId}`, orderId)
-    await addAudit('Manufacturer Assigned', `${orderId}: manufacturer added, qty ${qty}`)
     return order
-  }, [pushNotif, addAudit])
+  }, [])
 
   const insertStage = useCallback(async (orderId, mfrId, data) => {
     const order = await ordersApi.insertStage(orderId, mfrId, data)
     setOrders(p => p.map(o => o.id === orderId ? order : o))
-    await addAudit('Stage Inserted', `${orderId}: added stage "${data.name}"`)
     return order
-  }, [addAudit])
+  }, [])
 
   const editOrder = useCallback(async (id, data) => {
     const updated = await ordersApi.update(id, data)
     setOrders(p => p.map(o => o.id === id ? updated : o))
-    await addAudit('Order Edited', `${id}: ${Object.keys(data).join(', ')} updated`)
     return updated
-  }, [addAudit])
+  }, [])
 
   const deleteOrder = useCallback(async (id, reason) => {
-    const order = orders.find(o => o.id === id)
     await ordersApi.delete(id, reason)
     setOrders(p => p.filter(o => o.id !== id))
-    await addAudit('Order Deleted', `${id}${order ? ' — ' + order.product : ''}`)
-  }, [orders, addAudit])
+  }, [])
 
   const createUser = useCallback(async (data) => {
     const user = await usersApi.create(data)
     setUsers(p => [...p, user])
-    await addAudit('User Created', `${data.role} account created: ${data.email} (${data.company})`)
     return user
-  }, [addAudit])
+  }, [])
 
   const updateUser = useCallback(async (id, data) => {
     const updated = await usersApi.update(id, data)
     setUsers(p => p.map(u => u.id === id ? updated : u))
-    await addAudit('User Updated', `Updated user details for: ${updated.email}`)
     return updated
-  }, [addAudit])
+  }, [])
 
   const toggleUser = useCallback(async (id) => {
-    const user = users.find(u => u.id === id)
     const updated = await usersApi.toggle(id)
     setUsers(p => p.map(u => u.id === id ? updated : u))
-    try {
-      await addAudit(updated.isActive ? 'User Activated' : 'User Deactivated', `Account: ${user?.email}`)
-    } catch { /* audit is best-effort */ }
     return updated
-  }, [users, addAudit])
+  }, [])
 
   const resetUserPw = useCallback(async (id) => {
-    const user = users.find(u => u.id === id)
     const result = await usersApi.resetPassword(id)
     setUsers(p => p.map(u => u.id === id ? { ...u, mustChangePw: true } : u))
-    await addAudit('Password Reset', `Forced password reset for: ${user?.email}`)
     return result
-  }, [users, addAudit])
+  }, [])
+
+  // The audit log is written by the server only, so the page re-reads it when opened
+  // instead of the browser appending its own copy. Older entries load on demand.
+  const AUDIT_PAGE = 200
+  const refreshAudit = useCallback(async () => {
+    const r = await auditApi.list({ limit: AUDIT_PAGE, skip: 0 })
+    const items = Array.isArray(r) ? r : (r?.items ?? [])
+    setAudit(items)
+    setAuditTotal(r?.total ?? items.length)
+  }, [])
+
+  const loadMoreAudit = useCallback(async () => {
+    const r = await auditApi.list({ limit: AUDIT_PAGE, skip: audit.length })
+    const items = Array.isArray(r) ? r : (r?.items ?? [])
+    setAudit(p => {
+      const seen = new Set(p.map(a => a.id))
+      return [...p, ...items.filter(a => !seen.has(a.id))]
+    })
+    setAuditTotal(r?.total ?? auditTotal)
+  }, [audit.length, auditTotal])
 
   const markAllRead = useCallback(async () => {
     await notificationsApi.markAllRead()
@@ -524,38 +463,32 @@ export function AppProvider({ children }) {
   const addStageUpdate = useCallback(async (orderId, mfrId, stageIndex, text) => {
     const updated = await ordersApi.addStageUpdate(orderId, mfrId, stageIndex, text)
     setOrders(p => p.map(o => o.id === orderId ? updated : o))
-    const stageName = (updated.assignments || []).find(a => String(a.mid) === String(mfrId))?.stages?.[stageIndex]?.name || `Stage ${stageIndex + 1}`
-    await addAudit('Stage Update Added', `${orderId}: ${stageName} — ${text.slice(0, 100)}`)
     return updated
-  }, [addAudit])
+  }, [])
 
   const addStageMaterial = useCallback(async (orderId, mfrId, stageIndex, data) => {
     const updated = await ordersApi.addStageMaterial(orderId, mfrId, stageIndex, data)
     setOrders(p => p.map(o => o.id === orderId ? updated : o))
-    await addAudit('Stage Material Added', `${orderId}: added "${data.name}"`)
     return updated
-  }, [addAudit])
+  }, [])
 
   const updateStageMaterial = useCallback(async (orderId, mfrId, stageIndex, lineIndex, data) => {
     const updated = await ordersApi.updateStageMaterial(orderId, mfrId, stageIndex, lineIndex, data)
     setOrders(p => p.map(o => o.id === orderId ? updated : o))
-    await addAudit('Stage Material Updated', `${orderId}: material line ${lineIndex + 1}${data.status ? ` → ${data.status}` : ''}`)
     return updated
-  }, [addAudit])
+  }, [])
 
   const removeStageMaterial = useCallback(async (orderId, mfrId, stageIndex, lineIndex) => {
     const updated = await ordersApi.removeStageMaterial(orderId, mfrId, stageIndex, lineIndex)
     setOrders(p => p.map(o => o.id === orderId ? updated : o))
-    await addAudit('Stage Material Deleted', `${orderId}: removed material line ${lineIndex + 1}`)
     return updated
-  }, [addAudit])
+  }, [])
 
   const bulkUploadMaterials = useCallback(async (rows) => {
     const result = await ordersApi.materialsBulkUpload(rows)
     await refreshOrders()
-    await addAudit('Bulk Materials Upload', `${result.created} created, ${result.failed} failed`)
     return result
-  }, [addAudit, refreshOrders])
+  }, [refreshOrders])
 
   const bulkCreateOrders = useCallback(async (masterOrderId, rows) => {
     const result = await ordersApi.bulkCreate(masterOrderId, rows)
@@ -566,25 +499,8 @@ export function AppProvider({ children }) {
       await refreshOrders()
     }
 
-    const mo = masterOrders.find(m => m.id === masterOrderId)
-    if (result.created > 0 && mo) {
-      await pushNotif(mo.buyerId, 'order', `${result.created} new order${result.created !== 1 ? 's' : ''} created under Master Order ${masterOrderId}`)
-
-      // One summary notification per distinct manufacturer across successfully-created rows
-      const successRows = new Set(result.results.filter(r => r.success).map(r => r.row))
-      const mfrIds = new Set()
-      rows.forEach((row, i) => {
-        if (!successRows.has(i)) return
-        ;(row.assignments || []).forEach(a => mfrIds.add(a.mid))
-      })
-      for (const mid of mfrIds) {
-        await pushNotif(mid, 'order', `You were assigned to new orders under Master Order ${masterOrderId}`)
-      }
-    }
-
-    await addAudit('Bulk Order Upload', `${result.created} created, ${result.failed} failed under ${masterOrderId}`)
     return result
-  }, [masterOrders, pushNotif, addAudit, refreshOrders])
+  }, [masterOrders, refreshOrders])
 
   const getDocData = useCallback(async (id) => {
     if (docDataCache.current[id]) return docDataCache.current[id]
@@ -647,7 +563,7 @@ export function AppProvider({ children }) {
 
   return (
     <AppContext.Provider value={{
-      currentUser, users, orders, ordersAt, docs, notifs, audit, loading, loadError, unread, ribbons, masterOrders,
+      currentUser, users, orders, ordersAt, docs, notifs, audit, auditTotal, loading, loadError, unread, ribbons, masterOrders,
       actionItems,
       login, logout,
       updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial, bulkUploadMaterials,
@@ -655,7 +571,7 @@ export function AppProvider({ children }) {
       updateAssignment, addAssignment, insertStage, uploadDoc, updateDoc, deleteDoc, createOrder, bulkCreateOrders, createMasterOrder, updateMasterOrder, deleteMasterOrder,
       editOrder, deleteOrder,
       createUser, updateUser, toggleUser, resetUserPw,
-      markAllRead, markOneRead, getDocData, addAudit, pushNotif,
+      markAllRead, markOneRead, getDocData, refreshAudit, loadMoreAudit,
       refreshOrders, refreshDocs, listAllRibbons, createRibbon, updateRibbon, removeRibbon,
       createActionItem, updateActionItem, addActionItemUpdate, removeActionItem, refreshActionItems,
     }}>

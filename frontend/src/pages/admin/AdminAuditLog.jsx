@@ -1,13 +1,14 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Package, RotateCw, Paperclip, User, Ban, Check, KeyRound, Zap, Search, Crown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X } from '../../icons.jsx'
 import { T } from '../../constants.js'
-import { Card, PageHeader, EmptyState, FlexRow, LoadingScreen } from '../../components/ui.jsx'
+import { Card, PageHeader, EmptyState, FlexRow, LoadingScreen, Btn } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { DroppedRecords } from './DroppedRecords.jsx'
 
 const ACTION_META = {
   'Order Created':     { bg: '#dcfce7', c: '#15803d', border: '#86efac', Icon: Package },
   'Status Update':     { bg: '#dbeafe', c: '#1d4ed8', border: '#93c5fd', Icon: RotateCw },
+  'Status Updated':    { bg: '#dbeafe', c: '#1d4ed8', border: '#93c5fd', Icon: RotateCw }, // what the server writes
   'Document Uploaded': { bg: '#ede9fe', c: '#6d28d9', border: '#c4b5fd', Icon: Paperclip },
   'User Created':      { bg: '#ccfbf1', c: '#0f766e', border: '#5eead4', Icon: User },
   'User Deactivated':  { bg: '#fee2e2', c: '#dc2626', border: '#fca5a5', Icon: Ban },
@@ -57,7 +58,12 @@ function dateGroup(d) {
 }
 
 export function AdminAuditLog() {
-  const { audit, users, loading } = useApp()
+  const { audit, auditTotal, users, loading, refreshAudit, loadMoreAudit } = useApp()
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [moreErr, setMoreErr] = useState('')
+
+  // The server writes every audit entry, so re-read the log whenever this page opens.
+  useEffect(() => { refreshAudit().catch(() => {}) }, [refreshAudit])
   const [q, setQ] = useState('')
   const [actionFilt, setActionFilt] = useState('All')
   const [userFilt, setUserFilt] = useState('All')
@@ -121,7 +127,7 @@ export function AdminAuditLog() {
     <div>
       <PageHeader
         title="Audit Log"
-        subtitle={`${audit.length.toLocaleString()} total entries · complete record of all platform actions`}
+        subtitle={`${(auditTotal || audit.length).toLocaleString()} total entries · showing the latest ${audit.length.toLocaleString()}`}
       />
 
       <DroppedRecords />
@@ -312,6 +318,20 @@ export function AdminAuditLog() {
           <span style={{ fontSize: 12, color: T.textMuted, marginLeft: 6, whiteSpace: 'nowrap' }}>
             {((safePage - 1) * PAGE_SIZE) + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)} of {filtered.length}
           </span>
+        </div>
+      )}
+
+      {audit.length < auditTotal && (
+        <div style={{ textAlign: 'center', marginTop: 14 }}>
+          <Btn variant="secondary" disabled={loadingMore} onClick={async () => {
+            setLoadingMore(true); setMoreErr('')
+            try { await loadMoreAudit() }
+            catch (e) { setMoreErr(e?.message || 'Could not load older entries') }
+            finally { setLoadingMore(false) }
+          }}>
+            {loadingMore ? 'Loading...' : `Load older entries (${(auditTotal - audit.length).toLocaleString()} more)`}
+          </Btn>
+          {moreErr && <div style={{ color: T.danger, fontSize: 12, marginTop: 6 }}>{moreErr}</div>}
         </div>
       )}
     </div>

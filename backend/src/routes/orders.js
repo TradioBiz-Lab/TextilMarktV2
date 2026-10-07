@@ -14,6 +14,7 @@ import {
   stageKindOf, deriveStageStatus, mirroredUnits, reconcileForTotal, stageEtaVarianceDays, deriveActualEnd, deliveryVarianceDays,
 } from '../models/Order.js'
 import { dayNumber, getToday, effectiveEta, DELIVERY_STEP_NAME, isDeliveryName, deliveryStageIndex, makeDeliveryStage, statusAfterDeliveryStep } from '../lib/stageMath.js'
+import { notify, notifyOrderChange } from '../lib/notify.js'
 
 // Categories are now free-text — no validation needed
 const VALID_SEASONS    = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
@@ -545,6 +546,14 @@ router.post('/', requireAuth, requireAdmin, createOrderLimiter, async (req, res)
 
     const order = await Order.findById(result.order._id).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
 
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Order Created',
+      detail: `${order._id} — ${order.product}`,
+    })
+    await notify([order.buyerId], { type: 'order', msg: `New order created: ${order._id}`, orderId: order._id }, { exceptUserId: req.user.id })
+    await notify((order.assignments || []).map(a => a.mfrId), { type: 'order', msg: `New order assigned to you: ${order._id}`, orderId: order._id }, { exceptUserId: req.user.id })
+
     res.status(201).json(enrichFor(order, req))
   } catch (err) {
     res.status(500).json({ error: 'Server error' })
@@ -625,6 +634,13 @@ router.post('/bulk', requireAuth, requireAdmin, bulkOrderLimiter, async (req, re
       detail: `Bulk upload: ${created} created, ${failed} failed under ${masterOrderId}`,
     })
 
+    if (created > 0) {
+      await notify([buyerId], { type: 'order', msg: `${created} new order${created !== 1 ? 's' : ''} created under Master Order ${masterOrderId}` }, { exceptUserId: req.user.id })
+      const okRows = new Set(results.filter(r => r.success).map(r => r.row))
+      const mfrIds = rows.flatMap((row, i) => okRows.has(i) ? (row.assignments || []).map(a => a.mid) : [])
+      await notify(mfrIds, { type: 'order', msg: `You were assigned to new orders under Master Order ${masterOrderId}` }, { exceptUserId: req.user.id })
+    }
+
     res.status(200).json({ total: rows.length, created, failed, results })
   } catch (err) {
     console.error('[orders bulk]', err)
@@ -682,6 +698,9 @@ router.post('/:orderId/assignments/:mfrId', requireAuth, updateLimiter, async (r
       action: 'Status Updated',
       detail: `${orderId}: assignment status → ${status}${note ? ' | ' + note.slice(0, 200) : ''}`,
     })
+    await notifyOrderChange(order, req.user, { msg: `Order ${orderId} status updated to: ${status}`, orderId })
+    if (req.user.role === 'admin')
+      await notify([mfrId], { type: 'status', msg: `Your order ${orderId} was updated to: ${status}`, orderId }, { exceptUserId: req.user.id })
 
     res.json(enrichFor(order, req))
   } catch (err) {
@@ -728,6 +747,7 @@ router.post('/:orderId/assignments', requireAuth, requireAdmin, updateLimiter, a
       action: 'Manufacturer Assigned',
       detail: `${orderId}: added manufacturer ${mfrUser._id} (${nextSub}, qty ${aqty}) by ${req.user.name}`,
     })
+    await notify([mfrUser._id], { type: 'order', msg: `New order assigned to you: ${orderId}`, orderId }, { exceptUserId: req.user.id })
 
     res.status(201).json(enrichFor(order, req))
   } catch (err) {
@@ -955,6 +975,7 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimit
       action: 'Stages Bulk Updated',
       detail: `${orderId}: ${touched.length} stage(s) updated by ${req.user.name} [${touched.map(i => i + 1).join(', ')}]`,
     })
+    await notifyOrderChange(order, req.user, { msg: `Production update on ${orderId}: ${touched.length} stage${touched.length !== 1 ? 's' : ''} updated`, orderId })
 
     res.json({ ...enrichFor(order, req), updated: touched.length })
   } catch (err) {
@@ -1282,6 +1303,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
       action: nextAsgnStatus === 'Delivered' ? 'Order Delivered' : 'Delivery Reopened',
       detail: `${orderId}: split is now ${nextAsgnStatus} (Delivery step ${nextStatus}) by ${req.user.name}`,
     })
+    await notifyOrderChange(order, req.user, { msg: `Production update on ${orderId}: ${stageName} progress updated`, orderId })
 
     // Real TNA plans aren't strictly sequential — FPT/PP/GPT approvals
     // legitimately overlap, and only some stages are actual hard gates

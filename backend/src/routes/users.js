@@ -2,7 +2,7 @@ import { Router } from 'express'
 import crypto from 'node:crypto'
 import bcrypt from 'bcryptjs'
 import rateLimit from 'express-rate-limit'
-import { User } from '../db/index.js'
+import { User, AuditLog } from '../db/index.js'
 import { requireAuth, requireAdmin, requireMaster } from '../middleware/auth.js'
 import { sendEmail, emailUserCreated, emailPasswordReset } from '../lib/email.js'
 
@@ -93,6 +93,12 @@ router.post('/', requireAuth, requireMaster, createUserLimiter, async (req, res)
     // BRD US-USR-01: "Login credentials sent to user via email on creation"
     sendEmail(emailUserCreated({ name, email, password, role, company }))
 
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'User Created',
+      detail: `${role} account created: ${email} (${company}) by ${req.user.name}`,
+    })
+
     res.status(201).json(mapUser(user.toObject()))
   } catch (err) {
     if (err.code === 11000) return res.status(409).json({ error: 'Email already in use' })
@@ -130,6 +136,11 @@ router.post('/:id', requireAuth, requireMaster, async (req, res) => {
     }
 
     await user.save()
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'User Updated',
+      detail: `Updated user details for: ${user.email} by ${req.user.name}`,
+    })
     res.json(mapUser(user.toObject()))
   } catch (err) {
     console.error('[users]', err)
@@ -146,6 +157,11 @@ router.post('/:id/toggle', requireAuth, requireMaster, async (req, res) => {
 
     user.isActive = !user.isActive
     await user.save()
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: user.isActive ? 'User Activated' : 'User Deactivated',
+      detail: `Account: ${user.email} by ${req.user.name}`,
+    })
     res.json(mapUser(user.toObject()))
   } catch (err) {
     console.error('[users]', err)
@@ -188,6 +204,12 @@ router.post('/:id/reset-password', requireAuth, requireMaster, async (req, res) 
 
     // BRD US-USR-01: "Sends a password reset email to the user instantly"
     sendEmail(emailPasswordReset({ name: user.name, email: user.email, tempPassword: tempPw }))
+
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Password Reset',
+      detail: `Forced password reset for: ${user.email} by ${req.user.name}`,
+    })
 
     // Do NOT return tempPassword in response — delivered via email only
     res.json({ ok: true })
