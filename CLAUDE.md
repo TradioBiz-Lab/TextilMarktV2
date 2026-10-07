@@ -164,6 +164,9 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   edge caches `index.html` aggressively — a plain reload right after a redeploy can serve the
   previous build; append a cache-busting query string (`?v=...`) or wait a bit if a "just
   deployed" change doesn't appear to have landed.
+- **Prod URLs** (built from `main`): frontend `https://textilmarktv2-yaybylkx.onslate.in`,
+  backend `https://textilmarkt-50042744536.development.catalystappsail.in`. Smoke-check the
+  hosted sites signed out only; test logins are for the local build.
 - **AppSail does not auto-deploy on git push, unlike Slate.** Every backend change needs a
   manual `catalyst deploy --only appsail` from a machine with the CLI authenticated (check
   with `catalyst whoami`) — pushing to `main` alone does nothing for the backend. GitHub
