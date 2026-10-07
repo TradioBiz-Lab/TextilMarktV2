@@ -1,6 +1,14 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { authApi, ordersApi, documentsApi, usersApi, notificationsApi, auditApi, ribbonsApi, masterOrdersApi, actionItemsApi, setStoredToken, setAuthToken } from './api.js'
-import { isExpiringSoon, isExpired } from './constants.js'
+import { isExpiringSoon, isExpired, dayNumber, getToday } from './constants.js'
+
+// "Past the delivery date" on the same India-time day boundary as the rest of the app. Comparing
+// the date to `new Date()` treats the delivery day as over at 05:30 IST (UTC midnight), so the late
+// banner appeared hours before the day had actually ended.
+const isPastDelivery = d => {
+  const n = dayNumber(d)
+  return n != null && n < dayNumber(getToday())
+}
 
 const AppContext = createContext(null)
 export const useApp = () => useContext(AppContext)
@@ -206,7 +214,7 @@ export function AppProvider({ children }) {
 
       const late = myOrders.filter(o =>
         (o.assignments || []).length > 0 &&
-        new Date(o.delivery) < new Date() &&
+        isPastDelivery(o.delivery) &&
         !(o.assignments || []).every(a => a.status === 'Delivered')
       )
       if (late.length > 0) {
@@ -245,7 +253,7 @@ export function AppProvider({ children }) {
       const myOrders = orders.filter(o => (o.assignments || []).some(a => String(a.mid) === uid))
       const late = myOrders.filter(o => {
         const mine = (o.assignments || []).find(a => String(a.mid) === uid)
-        return mine && new Date(o.delivery) < new Date() && mine.status !== 'Delivered'
+        return mine && isPastDelivery(o.delivery) && mine.status !== 'Delivered'
       })
       if (late.length > 0) {
         r.push({

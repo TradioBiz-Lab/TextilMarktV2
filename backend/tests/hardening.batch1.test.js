@@ -223,3 +223,18 @@ describe('bad input is a 400, not a 500', () => {
     assert.equal((await api.post('/api/action-items', { title: 42, assigneeId: String(admin._id) })).status, 400)
   })
 })
+
+describe('product links must be real web addresses', () => {
+  test('creation and edit refuse a javascript: or scheme-less link, and accept https', async () => {
+    const { admin, buyer, mfrA } = await arrange()
+    const api = as(admin)
+    const mk = (id, ecommerceLink) => api.post('/api/orders', { ...orderPayload({ buyerId: buyer._id, mfrId: mfrA._id }), id, ecommerceLink })
+    assert.equal((await mk('LNK-001', 'javascript:alert(1)')).status, 400)
+    assert.equal((await mk('LNK-002', 'amazon.in/some-product')).status, 400)
+    assert.equal((await mk('LNK-003', 'https://example.com/product/1')).status, 201)
+    assert.equal((await mk('LNK-004', '')).status, 201)
+    assert.equal((await api.post('/api/orders/LNK-003', { ecommerceLink: 'data:text/html,<script>1</script>' })).status, 400)
+    assert.equal((await api.post('/api/orders/LNK-003', { ecommerceLink: 'https://example.com/product/2' })).status, 200)
+    assert.equal((await api.post('/api/orders/LNK-003', { ecommerceLink: '' })).status, 200)
+  })
+})

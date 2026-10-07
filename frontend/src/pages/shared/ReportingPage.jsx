@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import { CalendarClock, AlertTriangle, Package, Ban, CircleDot, CheckCircle2, Search, BarChart3, Folder, MessageCircle, Calendar, ChevronDown, ChevronRight, Play, Download, ArrowRight, Sparkles } from '../../icons.jsx'
 import {
   T, dayNumber, getToday, fmtN, effectiveEta,
@@ -275,10 +275,12 @@ export function ReportingPage({ onOpen, initialMo }) {
     return result
   }, [filtered, masterOrders])
 
+  const handledMo = useRef(null)
   useEffect(() => {
-    if (!initialMo) return
+    if (!initialMo || handledMo.current === initialMo) return
     const hit = groups.filter(g => g.moId === initialMo)
     if (!hit.length) return
+    handledMo.current = initialMo // once per target, not again on every filter change
     setExpanded(Object.fromEntries(hit.map(g => [g.key, true])))
     const t = setTimeout(() => document.getElementById(`rp-group-${initialMo}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 80)
     return () => clearTimeout(t)

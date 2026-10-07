@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { X, Plus, Trash2, ChevronLeft, ChevronRight, AlertTriangle } from '../../icons.jsx'
-import { T, CATEGORIES, PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor } from '../../constants.js'
+import { T, CATEGORIES, PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, getToday } from '../../constants.js'
 import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
@@ -83,11 +83,12 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
   const submit = async () => {
     setErr('')
     setSaving(true)
+    const createdIds = []
+    const createdKeys = []
+    // Styles made earlier in this same run are not in `orders` yet, so the next ID has to
+    // count them too, or two styles in one category both get -001.
+    const justCreated = []
     try {
-      const createdIds = []
-      // Styles made earlier in this same run are not in `orders` yet, so the next ID has to
-      // count them too, or two styles in one category both get -001.
-      const justCreated = []
       for (const s of styles) {
         const category = s.category === '__custom__' ? s.customCategory.trim() : s.category
         const id = genStyleId([...orders, ...justCreated], mo.buyerCode, (category || 'XX').toUpperCase().slice(0, 6), mo.season || 'XX')
@@ -100,12 +101,13 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
           id, buyerId: mo.buyerId, product: s.product.trim(), styleNumber: s.styleNumber.trim(),
           category, season: mo.season || undefined, masterOrderId,
           totalQty: Math.floor(Number(s.totalQty)), delivery: s.delivery,
-          createdAt: new Date().toISOString().slice(0, 10),
+          createdAt: getToday(),
           colourways, fabricDetails, ecommerceLink: s.ecommerceLink.trim(),
           imageDataUrl: photoPayload.dataUrl || null, imageUrl: photoPayload.externalUrl || null,
         })
         createdIds.push(created.id)
         justCreated.push({ id: created.id })
+        createdKeys.push(s._key)
 
         const docUploads = [
           [s.measurementsFile, 'measurements', 'Measurements'],
@@ -116,7 +118,7 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
           if (!file) continue
           try {
             await uploadDoc({
-              type, name: `${label} — ${created.id}`, issuer: '', issueDate: new Date().toISOString().slice(0, 10),
+              type, name: `${label} — ${created.id}`, issuer: '', issueDate: getToday(),
               expiryDate: null, orderId: created.id, mfrId: null,
               ...fileUploadPayload(file),
             })
@@ -125,7 +127,11 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
       }
       onCreated(createdIds[0])
     } catch (e) {
-      setErr(typeof e === 'string' ? e : (e?.message || 'Failed to create style(s)'))
+      // A failure part-way through must not leave the styles that did get created in the form,
+      // or pressing Create again would make them a second time.
+      if (createdKeys.length) setStyles(p => p.filter(x => !createdKeys.includes(x._key)))
+      const done = createdKeys.length ? ` ${createdIds.length} style${createdIds.length !== 1 ? 's were' : ' was'} already created (${createdIds.join(', ')}) and removed from this form, so retrying only creates the rest.` : ''
+      setErr(`${e?.message || 'Failed to create style(s)'}.${done}`)
       setSaving(false)
     }
   }

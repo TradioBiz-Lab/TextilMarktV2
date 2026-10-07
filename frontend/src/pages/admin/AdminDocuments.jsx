@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { Factory, ClipboardList, CheckCircle2, AlertTriangle, XCircle, Paperclip, Shield, Folder, Inbox, FileText, ChevronRight } from '../../icons.jsx'
-import { T, DOC_TYPES, DOC_ICONS, isExpiringSoon, isExpired } from '../../constants.js'
+import { T, DOC_TYPES, DOC_ICONS, isExpiringSoon, isExpired , getToday } from '../../constants.js'
 import { Modal, Select, Input, Btn, Card, Alert, EmptyState, FlexRow, PageHeader, DocCard, FileUpload, StatCard, LoadingScreen, useToast, fileUploadPayload, Grid } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { capsFor } from '../../caps.js'
@@ -33,7 +33,7 @@ export function AdminDocuments() {
   // stay collapsed on purpose: real accounts can have many orders.
   const [openGroups, setOpenGroups] = useState(new Set(['__buyer_docs__']))
   const toggleGroup = id => setOpenGroups(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
-  const [uf, setUf] = useState({ type: 'PO', name: '', issuer: defaultIssuer, issueDate: new Date().toISOString().slice(0, 10), expiryDate: '', orderId: '', mfrId: null, buyerId: '' })
+  const [uf, setUf] = useState({ type: 'PO', name: '', issuer: defaultIssuer, issueDate: getToday(), expiryDate: '', orderId: '', mfrId: null, buyerId: '' })
   const [fileData, setFileData] = useState(null)
   const [fileErr, setFileErr] = useState('')
   const [saving, setSaving] = useState(false)
@@ -64,7 +64,7 @@ export function AdminDocuments() {
 
   const certFiltered = certData[certTab] || certData.all
 
-  const reset = () => { setUf({ type: 'PO', name: '', issuer: defaultIssuer, issueDate: new Date().toISOString().slice(0, 10), expiryDate: '', orderId: '', mfrId: null, buyerId: '' }); setFileData(null); setFileErr('') }
+  const reset = () => { setUf({ type: 'PO', name: '', issuer: defaultIssuer, issueDate: getToday(), expiryDate: '', orderId: '', mfrId: null, buyerId: '' }); setFileData(null); setFileErr('') }
 
   const submit = async () => {
     if (!fileData) { setFileErr('Please select a file.'); return }
@@ -157,7 +157,7 @@ export function AdminDocuments() {
               )}
               {/* Buyer Order: show Order selector (compulsory, filtered by buyer) */}
               {isBuyerOrder && (
-                <Select label="Link to Order *" value={uf.orderId} onChange={e => setUf({ ...uf, orderId: e.target.value })} disabled={!uf.buyerId} style={{ opacity: !uf.buyerId ? 0.45 : 1 }}>
+                <Select label="Link to Order *" value={uf.orderId} onChange={e => setUf({ ...uf, orderId: e.target.value })} disabled={caps.isAdmin && !uf.buyerId} style={{ opacity: caps.isAdmin && !uf.buyerId ? 0.45 : 1 }}>
                   <option value="">— Select Order —</option>
                   {filteredOrders.map(o => <option key={o.id} value={o.id}>{o.id}</option>)}
                 </Select>

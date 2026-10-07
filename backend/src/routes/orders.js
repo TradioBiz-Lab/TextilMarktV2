@@ -202,6 +202,11 @@ async function withRetry(label, fn, attempts = 3) {
   }
 }
 
+// A product link is shown to buyers and factories as a clickable link, so it must be a real
+// http(s) address: anything else (javascript:, data:, ...) is refused rather than rendered.
+const isHttpUrl = v => { try { const u = new URL(String(v)); return u.protocol === 'http:' || u.protocol === 'https:' } catch { return false } }
+const LINK_SCHEME_ERROR = 'E-commerce link must be a full web address starting with http:// or https://'
+
 const STAGES_CHANGED = { error: 'The stages changed while you were editing. Reload the order and try again.' }
 
 // GET /api/orders
@@ -287,6 +292,7 @@ async function validateAndCreateOrder({ id, buyerId, product, styleNumber, categ
   if (ecommerceLink !== undefined && ecommerceLink !== null) {
     if (typeof ecommerceLink !== 'string') return { ok: false, error: 'E-commerce link must be text' }
     if (ecommerceLink.trim().length > 2000) return { ok: false, error: 'E-commerce link too long' }
+    if (ecommerceLink.trim() && !isHttpUrl(ecommerceLink.trim())) return { ok: false, error: LINK_SCHEME_ERROR }
   }
   if (!mongoose.Types.ObjectId.isValid(buyerId)) return { ok: false, error: 'Invalid buyer ID' }
   const buyerCheck = await User.findById(buyerId, 'role isActive').lean()
@@ -2202,6 +2208,7 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
       if (ecommerceLink !== null && typeof ecommerceLink !== 'string') return res.status(400).json({ error: 'E-commerce link must be text' })
       const link = (ecommerceLink || '').trim()
       if (link.length > 2000) return res.status(400).json({ error: 'E-commerce link too long' })
+      if (link && !isHttpUrl(link)) return res.status(400).json({ error: LINK_SCHEME_ERROR })
       updates.ecommerceLink = link
     }
 

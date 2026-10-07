@@ -213,15 +213,18 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
   }), [rows, customItems, todayNum])
 
   const setEdit = (key, patch) => setEdits(p => ({ ...p, [key]: { ...p[key], ...patch } }))
-  const dirtyKeys = Object.keys(edits).filter(k => {
-    const e = edits[k]
-    return e && Object.values(e).some(v => v !== undefined && v !== '')
-  })
+  // Only edits for rows that are on screen are saved. Changing the window or a filter can hide a
+  // row that has pending edits; those are kept (and counted below) rather than silently dropped
+  // while the toast claims they were saved.
+  const rowByKey = useMemo(() => new Map(rows.map(r => [r.key, r])), [rows])
+  const hasValues = e => !!e && Object.values(e).some(v => v !== undefined && v !== '')
+  const dirtyKeys = Object.keys(edits).filter(k => hasValues(edits[k]) && rowByKey.has(k))
+  const hiddenDirtyCount = Object.keys(edits).filter(k => hasValues(edits[k]) && !rowByKey.has(k)).length
 
   async function saveAll() {
     if (dirtyKeys.length === 0) return
     setSaving(true)
-    let ok = 0
+    const failedKeys = new Set()
     const failures = []
     try {
       const byAsgn = new Map()
@@ -229,40 +232,50 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
       const noteRows = []
 
       for (const key of dirtyKeys) {
-        const row = rows.find(r => r.key === key)
-        if (!row) continue
+        const row = rowByKey.get(key)
         const e = edits[key]
-        if (e.updateText?.trim()) noteRows.push({ row, text: e.updateText.trim() })
+        if (e.updateText?.trim()) noteRows.push({ key, row, text: e.updateText.trim() })
 
         const patch = { index: row.index }
         let hasPatch = false
         if (canEditPlan && e.eta && e.eta !== row.stage.eta) { patch.eta = e.eta; hasPatch = true }
         if (e.status && e.status !== row.status && row.kind !== 'quantity') { patch.status = e.status; hasPatch = true }
         if (e.unitsDone !== undefined && e.unitsDone !== '' && Number(e.unitsDone) !== row.stage.unitsDone)
-          unitRows.push({ row, units: Number(e.unitsDone) })
+          unitRows.push({ key, row, units: Number(e.unitsDone) })
 
         if (hasPatch) {
           const k = `${row.order.id}|${row.asgn.mid}`
-          if (!byAsgn.has(k)) byAsgn.set(k, { orderId: row.order.id, mid: row.asgn.mid, stages: [] })
-          byAsgn.get(k).stages.push(patch)
+          if (!byAsgn.has(k)) byAsgn.set(k, { orderId: row.order.id, mid: row.asgn.mid, stages: [], keys: [] })
+          const g = byAsgn.get(k); g.stages.push(patch); g.keys.push(key)
         }
       }
 
-      for (const { orderId, mid, stages } of byAsgn.values()) {
-        try { await bulkUpdateStages(orderId, mid, stages); ok += stages.length }
-        catch (err) { failures.push(`${orderId}: ${err?.message || 'failed'}`) }
+      // The bulk route is all-or-nothing per split, so a failure fails every key in that group.
+      for (const { orderId, mid, stages, keys } of byAsgn.values()) {
+        try { await bulkUpdateStages(orderId, mid, stages) }
+        catch (err) { keys.forEach(k => failedKeys.add(k)); failures.push(`${orderId}: ${err?.message || 'failed'}`) }
       }
-      for (const { row, units } of unitRows) {
-        try { await updateStage(row.order.id, row.asgn.mid, row.index, { unitsDone: units }); ok++ }
-        catch (err) { failures.push(`${row.order.id} ${row.stage.name}: ${err?.message || 'failed'}`) }
+      for (const { key, row, units } of unitRows) {
+        try { await updateStage(row.order.id, row.asgn.mid, row.index, { unitsDone: units }) }
+        catch (err) { failedKeys.add(key); failures.push(`${row.order.id} ${row.stage.name}: ${err?.message || 'failed'}`) }
       }
-      for (const { row, text } of noteRows) {
-        try { await addStageUpdate(row.order.id, row.asgn.mid, row.index, text) }
-        catch (err) { failures.push(`${row.order.id} ${row.stage.name}: ${err?.message || 'failed'}`) }
+      for (const { key, row, text } of noteRows) {
+        try {
+          await addStageUpdate(row.order.id, row.asgn.mid, row.index, text)
+          // Clear it the moment it lands, so a retry after some other failure cannot post it again.
+          setEdits(p => ({ ...p, [key]: { ...p[key], updateText: '' } }))
+        } catch (err) { failedKeys.add(key); failures.push(`${row.order.id} ${row.stage.name}: ${err?.message || 'failed'}`) }
       }
 
-      if (failures.length) toast(`Saved ${ok}, ${failures.length} failed — ${failures[0]}`, 'warning')
-      else { toast(`Saved ${dirtyKeys.length} update${dirtyKeys.length !== 1 ? 's' : ''}`, 'success'); setEdits({}) }
+      // Forget what was saved; keep what failed (and anything hidden) so nothing is lost or repeated.
+      setEdits(p => {
+        const next = { ...p }
+        for (const k of dirtyKeys) if (!failedKeys.has(k)) delete next[k]
+        return next
+      })
+      const saved = dirtyKeys.length - failedKeys.size
+      if (failures.length) toast(`Saved ${saved}, ${failedKeys.size} failed: ${failures[0]}. The failed ones are still here to retry.`, 'warning')
+      else toast(`Saved ${saved} update${saved !== 1 ? 's' : ''}`, 'success')
     } finally { setSaving(false) }
   }
 
@@ -291,6 +304,11 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
             <Btn onClick={saveAll} disabled={saving || dirtyKeys.length === 0}>
               {saving ? 'Saving…' : dirtyKeys.length ? `Save ${dirtyKeys.length} change${dirtyKeys.length !== 1 ? 's' : ''}` : 'Save'}
             </Btn>
+            {hiddenDirtyCount > 0 && (
+              <span style={{ fontSize: 11, color: T.warning || T.textMuted, maxWidth: 190 }}>
+                {hiddenDirtyCount} edited row{hiddenDirtyCount !== 1 ? 's are' : ' is'} hidden by the current filters and will not be saved until shown.
+              </span>
+            )}
           </FlexRow>
         }
       />

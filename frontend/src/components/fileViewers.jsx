@@ -152,7 +152,10 @@ export function DxfPreview({ bytes, onReady }) {
     if (s.type === 'CIRCLE') { xs.push(s.cx - s.r, s.cx + s.r); ys.push(s.cy - s.r, s.cy + s.r) }
     else s.pts.forEach(p => { xs.push(p.x); ys.push(p.y) })
   }
-  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys)
+  // Not Math.min(...xs): spreading a big array into a call throws RangeError past roughly 100k
+  // values, and a real pattern file has far more vertices than that.
+  const extent = arr => { let lo = Infinity, hi = -Infinity; for (const v of arr) { if (v < lo) lo = v; if (v > hi) hi = v } return [lo, hi] }
+  const [minX, maxX] = extent(xs), [minY, maxY] = extent(ys)
   const w = maxX - minX || 1, h = maxY - minY || 1, pad = Math.max(w, h) * 0.04
   const layers = [...new Set(shapes.map(s => s.layer))]
   const color = l => LAYER_COLORS[layers.indexOf(l) % LAYER_COLORS.length]

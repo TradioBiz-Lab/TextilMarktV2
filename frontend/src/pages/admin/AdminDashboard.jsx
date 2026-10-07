@@ -91,12 +91,11 @@ export function AdminDashboard({ onNavigate, onOpen }) {
 
   useEffect(() => {
     if (currentUser?.role === 'admin' && listAllRibbons) {
-      listAllRibbons().then(async r => {
-        const expired = r.filter(x => x.expiresAt && new Date(x.expiresAt) < new Date())
-        if (expired.length > 0) {
-          for (const x of expired) { try { await removeRibbon(x.id) } catch {} }
-          r = await listAllRibbons()
-        }
+      // Expired ribbons are no longer shown to users (the server filters them), so nothing needs
+      // deleting here. The page used to remove them for good the moment the dashboard loaded, and
+      // since a bare date parses as UTC midnight that happened at 05:30 IST on the expiry date,
+      // before the day was over.
+      listAllRibbons().then(r => {
         setAllRibbons(r)
         setRibbonsLoaded(true)
       }).catch(() => setRibbonsLoaded(true))
