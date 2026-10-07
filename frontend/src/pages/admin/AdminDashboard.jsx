@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { DashboardSummary } from '../../components/DashboardSummary.jsx'
 import { capsFor } from '../../caps.js'
 import { ShoppingBag, Factory, Package, Siren, Target, Check, ClipboardList, Megaphone, ChevronRight } from '../../icons.jsx'
-import { T, ST, isExpiringSoon, isExpired, getToday, dayNumber, withBuyerPrefix } from '../../constants.js'
+import { T, ST, isExpiringSoon, isExpired, getToday, dayNumber, effectiveEta, withBuyerPrefix } from '../../constants.js'
 import { StatCard, Card, Grid, EmptyState, Mono, PageHeader, Badge, Btn, FlexRow, Modal, Select, Textarea, Input, Alert, LoadingScreen, DocCard } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
@@ -49,9 +49,13 @@ function flattenTxns(orders) {
 function isScheduleOverdue(order, todayNum) {
   return (order.assignments || []).some(a => {
     if (a.status === 'On Hold' || a.status === 'Delivered') return false
-    const stage = (a.stages || []).find(s => (s.unitsDone || 0) < (s.totalUnits || 0))
-    if (!stage || !stage.eta || stage.eta === 'NA') return false
-    return dayNumber(stage.eta) - todayNum < 0
+    // Any open stage past its end date counts (stages run in parallel, so the first open one
+    // is not the only one that can be late), using the baseline date until a stage is revised.
+    return (a.stages || []).some(s => {
+      if ((s.unitsDone || 0) >= (s.totalUnits || 0)) return false
+      const e = effectiveEta(s)
+      return !!e && dayNumber(e) - todayNum < 0
+    })
   })
 }
 
@@ -136,7 +140,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
       id: `stage:${o.id}:${asgn.mid || ai}:${si}`,
       title: `${s.name} — ${o.product}`,
       buyerCompany: o.buyerCompany,
-      eta: s.eta && s.eta !== 'NA' ? s.eta : null,
+      eta: effectiveEta(s),
       orderId: o.id,
       priority: 'medium',
       _kind: 'stage',

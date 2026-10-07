@@ -204,3 +204,22 @@ describe('admin password reset', () => {
     assert.equal((await old.get('/api/orders')).status, 401)
   })
 })
+
+describe('bad input is a 400, not a 500', () => {
+  test('order creation rejects a bad quantity or malformed lists', async () => {
+    const { admin, buyer, mfrA } = await arrange()
+    const api = as(admin)
+    const base = orderPayload({ buyerId: buyer._id, mfrId: mfrA._id })
+    for (const patch of [{ totalQty: -5 }, { totalQty: 'abc' }, { totalQty: 2.5 }, { category: { x: 1 } }, { stageEtas: 'nope' }, { stageNames: 'nope' }]) {
+      const res = await api.post('/api/orders', { ...base, id: `BAD-${Math.random().toString(36).slice(2, 8)}`, ...patch })
+      assert.equal(res.status, 400, `${JSON.stringify(patch)} -> ${res.status} ${JSON.stringify(res.body)}`)
+    }
+  })
+
+  test('action items reject a malformed id or a non-text title', async () => {
+    const { admin } = await arrange()
+    const api = as(admin)
+    assert.equal((await api.post('/api/action-items/not-an-id', { status: 'done' })).status, 400)
+    assert.equal((await api.post('/api/action-items', { title: 42, assigneeId: String(admin._id) })).status, 400)
+  })
+})

@@ -1,10 +1,17 @@
 import { Router } from 'express'
+import mongoose from 'mongoose'
 import { ActionItem } from '../models/ActionItem.js'
 import { User } from '../models/User.js'
 import { AuditLog } from '../models/AuditLog.js'
 import { requireAuth, requireAdmin, requireMaster } from '../middleware/auth.js'
 
 const router = Router()
+
+// A malformed id is the caller's mistake (400), not a server error (500 from a CastError).
+router.param('id', (req, res, next, id) => {
+  if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid action item ID' })
+  next()
+})
 
 const USER_FIELDS = 'name company code'
 const VALID_PRIORITIES = ['high', 'medium', 'low']
@@ -69,7 +76,7 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { title, detail, assigneeId, buyerId, orderId, stageName, source, priority, eta } = req.body
 
-    if (!title?.trim()) return res.status(400).json({ error: 'Title is required' })
+    if (typeof title !== 'string' || !title.trim()) return res.status(400).json({ error: 'Title is required' })
     if (title.trim().length > 200) return res.status(400).json({ error: 'Title too long (max 200 chars)' })
     if (!assigneeId) return res.status(400).json({ error: 'Assignee is required' })
     if (priority && !VALID_PRIORITIES.includes(priority))
@@ -121,6 +128,7 @@ router.post('/:id', requireAuth, requireAdmin, async (req, res) => {
     const update = {}
 
     if (title !== undefined) {
+      if (typeof title !== 'string') return res.status(400).json({ error: 'Title must be text' })
       if (!title.trim()) return res.status(400).json({ error: 'Title is required' })
       if (title.trim().length > 200) return res.status(400).json({ error: 'Title too long (max 200 chars)' })
       update.title = title.trim()

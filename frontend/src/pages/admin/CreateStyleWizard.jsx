@@ -85,9 +85,12 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
     setSaving(true)
     try {
       const createdIds = []
+      // Styles made earlier in this same run are not in `orders` yet, so the next ID has to
+      // count them too, or two styles in one category both get -001.
+      const justCreated = []
       for (const s of styles) {
         const category = s.category === '__custom__' ? s.customCategory.trim() : s.category
-        const id = genStyleId(orders, mo.buyerCode, (category || 'XX').toUpperCase().slice(0, 6), mo.season || 'XX')
+        const id = genStyleId([...orders, ...justCreated], mo.buyerCode, (category || 'XX').toUpperCase().slice(0, 6), mo.season || 'XX')
         const photoPayload = fileUploadPayload(s.photoFile)
         const colourways = s.colourways.filter(c => c.name.trim()).map(c => ({ name: c.name.trim(), code: c.code.trim(), hex: c.hex.trim() }))
         const fabricDetails = s.fabrics.filter(f => f.name.trim()).map(f => ({
@@ -102,6 +105,7 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
           imageDataUrl: photoPayload.dataUrl || null, imageUrl: photoPayload.externalUrl || null,
         })
         createdIds.push(created.id)
+        justCreated.push({ id: created.id })
 
         const docUploads = [
           [s.measurementsFile, 'measurements', 'Measurements'],

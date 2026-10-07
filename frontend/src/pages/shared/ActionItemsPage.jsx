@@ -1,7 +1,7 @@
 import { useMemo, useState, Fragment } from 'react'
 import { AlertTriangle, Plus, RotateCw, Ban, CircleDot, CalendarClock, Search, User, Building2, Package, MessageCircle, Check, ChevronUp, ChevronDown } from '../../icons.jsx'
 import {
-  T, dayNumber, getToday, fmtN,
+  T, dayNumber, getToday, fmtN, effectiveEta,
   stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, inFlightStages,
   deliveryOverrunDays, STAGE_STATUS_LABELS,
 } from '../../constants.js'
@@ -193,8 +193,8 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
       for (const l of b.lineList) {
         l.rows.sort((x, y) => {
           if (x.overdue !== y.overdue) return x.overdue ? -1 : 1
-          const ex = x.stage.eta && x.stage.eta !== 'NA' ? dayNumber(x.stage.eta) : Infinity
-          const ey = y.stage.eta && y.stage.eta !== 'NA' ? dayNumber(y.stage.eta) : Infinity
+          const ex = effectiveEta(x.stage) ? dayNumber(effectiveEta(x.stage)) : Infinity
+          const ey = effectiveEta(y.stage) ? dayNumber(effectiveEta(y.stage)) : Infinity
           return ex - ey || x.index - y.index
         })
       }
@@ -209,7 +209,7 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
     open: rows.length + customItems.length,
     blocked: rows.filter(r => r.stage.blocked).length,
     overdue: rows.filter(r => r.overdue).length,
-    dueToday: rows.filter(r => r.stage.eta && r.stage.eta !== 'NA' && dayNumber(r.stage.eta) === todayNum).length,
+    dueToday: rows.filter(r => effectiveEta(r.stage) && dayNumber(effectiveEta(r.stage)) === todayNum).length,
   }), [rows, customItems, todayNum])
 
   const setEdit = (key, patch) => setEdits(p => ({ ...p, [key]: { ...p[key], ...patch } }))
@@ -399,7 +399,7 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
                           {line.rows.map(r => {
                             const e = edits[r.key] || {}
                             const dirty = Object.values(e).some(v => v !== undefined && v !== '')
-                            const revised = e.eta ?? (r.stage.eta && r.stage.eta !== 'NA' ? r.stage.eta : '')
+                            const revised = e.eta ?? (effectiveEta(r.stage) || '')
                             const thread = r.stage.updates || []
                             const last = thread.slice(-1)[0]
                             const threadOpen = openThread === r.key
@@ -434,7 +434,7 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
                                 <td style={{ padding: '6px 10px', width: 128 }}>
                                   {canEditPlan
                                     ? <input type="date" value={revised} onChange={ev => setEdit(r.key, { eta: ev.target.value })} style={cellInput} />
-                                    : <span style={{ fontSize: 11, color: T.textMuted, fontFamily: "'JetBrains Mono',monospace" }}>{fmtDate(r.stage.eta)}</span>}
+                                    : <span style={{ fontSize: 11, color: T.textMuted, fontFamily: "'JetBrains Mono',monospace" }}>{fmtDate(effectiveEta(r.stage))}</span>}
                                 </td>
                                 <td style={{ padding: '6px 10px' }}><Variance days={r.variance} /></td>
                                 <td style={{ padding: '6px 10px', fontSize: 11, fontWeight: 700, color: T.success, whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono',monospace" }}>

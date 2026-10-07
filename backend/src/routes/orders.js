@@ -245,6 +245,15 @@ async function validateAndCreateOrder({ id, buyerId, product, styleNumber, categ
     return { ok: false, error: 'Invalid input types' }
   if (id.length > 100 || product.length > 300)
     return { ok: false, error: 'Input too long' }
+  // Mongoose would throw a cast or validation error for these, which surfaced as a bare 500.
+  if (!Number.isInteger(Number(totalQty)) || Number(totalQty) < 1)
+    return { ok: false, error: 'Total quantity must be a positive whole number' }
+  if (category != null && typeof category !== 'string')
+    return { ok: false, error: 'Invalid category' }
+  for (const [label, v] of [['stageEtas', stageEtas], ['stageStartDates', stageStartDates], ['stageNames', customStages],
+    ['stageResponsibleIds', stageResponsibleIds], ['stageDescriptions', stageDescriptions], ['stageTotalUnits', stageTotalUnits], ['stageKinds', stageKinds]]) {
+    if (v != null && !Array.isArray(v)) return { ok: false, error: `${label} must be a list` }
+  }
   if (!/^[A-Z0-9\-]+$/i.test(id))
     return { ok: false, error: 'Order ID may only contain letters, numbers, and hyphens' }
   if (styleNumber && typeof styleNumber === 'string' && styleNumber.length > 60)
@@ -562,7 +571,14 @@ router.post('/bulk', requireAuth, requireAdmin, bulkOrderLimiter, async (req, re
     // genId() convention (AdminOrders.jsx), then incremented in-memory per row
     // within this batch rather than re-queried each time. Single-instance
     // assumption (see CLAUDE.md) — safe only because AppSail runs one process.
-    let seq = (await Order.countDocuments({ _id: new RegExp(`^${buyer.code}-`) })) + 1
+    // Highest existing trailing number, not a document count: after a style is dropped
+    // the count falls below the highest suffix and the next ID would collide with it.
+    const escapedCode = String(buyer.code).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const existingIds = await Order.find({ _id: new RegExp(`^${escapedCode}-`) }, { _id: 1 }).lean()
+    let seq = existingIds.reduce((max, o) => {
+      const n = parseInt(String(o._id).match(/-(\d+)$/)?.[1], 10)
+      return Number.isFinite(n) && n > max ? n : max
+    }, 0) + 1
 
     const results = []
     let created = 0, failed = 0
@@ -570,13 +586,15 @@ router.post('/bulk', requireAuth, requireAdmin, bulkOrderLimiter, async (req, re
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i]
       try {
-        let orderId = row.orderId
+        let orderId = typeof row.orderId === 'string' ? row.orderId.trim() : row.orderId
         if (!orderId) {
           const firstMfr = await User.findById(row.assignments?.[0]?.mid, 'code').lean().catch(() => null)
           const cat = (row.category || 'XX').toUpperCase().slice(0, 6)
           const season = row.season || mo.season || 'XX'
-          orderId = `${buyer.code}-${firstMfr?.code || 'XX'}-${cat}-${season}-${String(seq).padStart(3, '0')}`
-          seq++
+          const makeId = n => `${buyer.code}-${firstMfr?.code || 'XX'}-${cat}-${season}-${String(n).padStart(3, '0')}`
+          orderId = makeId(seq++)
+          // Skip any number that is somehow already taken (a concurrent create).
+          while (await Order.exists({ _id: orderId })) orderId = makeId(seq++)
         }
 
         const result = await validateAndCreateOrder({

@@ -40,7 +40,7 @@ export function BuyerSubmitReq() {
       toast('Requirement submitted successfully!', 'success')
       setShowUpload(false); resetUpload()
     } catch (e) {
-      setUploadErr(typeof e === 'string' ? e : 'Upload failed. Please try again.')
+      setUploadErr(e?.message || 'Upload failed. Please try again.')
     } finally { setSaving(false) }
   }
 

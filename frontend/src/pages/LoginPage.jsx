@@ -34,7 +34,10 @@ export function LoginPage() {
         setLocked(p => ({ ...p, [email]: Date.now() + 15 * 60 * 1000 }))
         setError('Too many attempts. Account locked for 15 minutes.')
       } else {
-        setError(`${err || 'Invalid email or password'}. ${5 - cnt} attempt(s) remaining.`)
+        // The server's own message already says how many attempts are left; only add
+        // our count when it does not.
+        const msg = err?.message || 'Invalid email or password'
+        setError(/attempt/i.test(msg) ? msg : `${msg}. ${5 - cnt} attempt(s) remaining.`)
       }
     } finally {
       setLoading(false)

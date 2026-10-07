@@ -39,7 +39,7 @@ export function SignUpPage({ onBackToLogin }) {
       })
       setDone(true)
     } catch (e) {
-      setErr(typeof e === 'string' ? e : 'Something went wrong. Please try again.')
+      setErr(e?.message || 'Something went wrong. Please try again.')
     } finally {
       setBusy(false)
     }

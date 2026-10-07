@@ -9,6 +9,7 @@ import {
 } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
+import { normalizeCsvDate } from '../../csvDates.js'
 import { capsFor, canWriteStage, canSetAssignmentStatus } from '../../caps.js'
 import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
@@ -164,8 +165,8 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
       complete: (results) => {
         const rows = results.data.map((raw, i) => {
           const name = (raw.name || '').trim()
-          const startDate = (raw.start_date || '').trim()
-          const endDate = (raw.end_date || '').trim()
+          const startRaw = (raw.start_date || '').trim()
+          const endRaw = (raw.end_date || '').trim()
           const kind = (raw.kind || '').trim().toLowerCase() || 'quantity'
           const targetQty = (raw.target_qty || '').trim()
           const description = (raw.description || '').trim()
@@ -173,8 +174,17 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
           const errors = []
           if (!name) errors.push('missing name')
           if (/^delivery$/i.test(name)) errors.push('Delivery is added automatically as the last step')
-          if (!startDate) errors.push('missing start_date')
-          if (!endDate) errors.push('missing end_date')
+          // Dates are normalized to YYYY-MM-DD here: the server stores the text as sent and
+          // all date maths assumes that shape. Ambiguous or invalid cells are rejected.
+          const start = normalizeCsvDate(startRaw)
+          const end = normalizeCsvDate(endRaw)
+          if (start.error) errors.push(start.error === 'missing' ? 'missing start_date' : `start_date "${startRaw}" is ${start.error} (use YYYY-MM-DD or DD/MM/YYYY)`)
+          if (end.error) errors.push(end.error === 'missing' ? 'missing end_date' : `end_date "${endRaw}" is ${end.error} (use YYYY-MM-DD or DD/MM/YYYY)`)
+          const startDate = start.value || startRaw
+          const endDate = end.value || endRaw
+          if (start.value && end.value && start.value !== 'NA' && end.value !== 'NA' && start.value > end.value)
+            errors.push('start_date is after end_date')
+          if (targetQty && !/^[1-9]\d*$/.test(targetQty)) errors.push(`target_qty "${targetQty}" must be a whole number above zero`)
           if (!['quantity', 'milestone', 'checklist'].includes(kind)) errors.push(`invalid kind "${kind}"`)
           let responsibleId = null
           if (responsibleEmail) {
@@ -203,12 +213,14 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
           responsibleId: r.responsibleId || undefined,
         })
         imported++
+        // Drop the row once it is in, so a retry after a later failure cannot insert it twice.
+        setTnaCsvRows(p => ({ ...p, [mid]: (p[mid] || []).filter(x => x !== r) }))
       }
       toast(`${imported} stage${imported !== 1 ? 's' : ''} imported`, 'success')
       setTnaCsvRows(p => ({ ...p, [mid]: [] }))
       setTnaCsvOpen(p => ({ ...p, [mid]: false }))
     } catch (e) {
-      toast(`Imported ${imported} of ${rows.length} before failing: ${typeof e === 'string' ? e : (e?.message || 'error')}`, 'error')
+      toast(`Imported ${imported} of ${rows.length}, then stopped: ${e?.message || 'error'}. The ${imported} that went in are removed from the list, so importing again only retries the rest.`, 'error')
     } finally { setTnaCsvImporting(null) }
   }
 

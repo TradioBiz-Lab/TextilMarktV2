@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from 'react'
 import { CalendarClock, AlertTriangle, Package, Ban, CircleDot, CheckCircle2, Search, BarChart3, Folder, MessageCircle, Calendar, ChevronDown, ChevronRight, Play, Download, ArrowRight, Sparkles } from '../../icons.jsx'
 import {
-  T, dayNumber, getToday, fmtN,
+  T, dayNumber, getToday, fmtN, effectiveEta,
   stageStatusOf, stageIsOverdue, isStageDone, inFlightStages, stageProgressLabel, stageVariance,
 } from '../../constants.js'
 import { Btn, Card, EmptyState, FlexRow, Modal, Mono, LoadingScreen, PageHeader, ProductThumb, StatCard, activateOnKey } from '../../components/ui.jsx'
@@ -75,7 +75,7 @@ function GanttChart({ asgn }) {
   const todayNum = dayNumber(getToday())
 
   const validDays = stages
-    .flatMap(s => [s.startDate, s.eta])
+    .flatMap(s => [s.startDate, effectiveEta(s)])
     .filter(d => d && d !== 'NA')
     .map(dayNumber)
     .filter(d => d != null)
@@ -112,16 +112,17 @@ function GanttChart({ asgn }) {
         <div style={{ minWidth: 620, display: 'flex', flexDirection: 'column', gap: 2 }}>
           {stages.map((s, i) => {
             const done = isStageDone(s)
-            const hasDates = s.startDate && s.startDate !== 'NA' && s.eta && s.eta !== 'NA'
+            const endDate = effectiveEta(s)
+            const hasDates = s.startDate && s.startDate !== 'NA' && endDate
             const overdue = !done && hasDates && stageIsOverdue(s)
             const colorKey = done ? 'success' : s.blocked ? 'blocked' : overdue ? 'danger'
               : stageStatusOf(s) === 'in_progress' ? 'primary' : 'pending'
             const left = hasDates ? pctForDay(dayNumber(s.startDate)) : 0
-            const rawWidth = hasDates ? pctForDay(dayNumber(s.eta)) - left : 0
-            const isMilestone = hasDates && (s.startDate === s.eta || rawWidth < 0.6)
+            const rawWidth = hasDates ? pctForDay(dayNumber(endDate)) - left : 0
+            const isMilestone = hasDates && (s.startDate === endDate || rawWidth < 0.6)
             const width = Math.max(1.5, rawWidth)
             const tip = hasDates
-              ? `${s.name}: ${fmtDate(s.startDate)}${isMilestone ? '' : ` → ${fmtDate(s.eta)}`} · ${stageProgressLabel(s)}`
+              ? `${s.name}: ${fmtDate(s.startDate)}${isMilestone ? '' : ` → ${fmtDate(endDate)}`} · ${stageProgressLabel(s)}`
               : s.name
             return (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0' }}>
@@ -150,7 +151,7 @@ function GanttChart({ asgn }) {
                   )}
                 </div>
                 <span style={{ fontSize: 10, color: T.textMuted, width: 76, flexShrink: 0, textAlign: 'right', fontFamily: "'JetBrains Mono',monospace" }}>
-                  {hasDates ? fmtDate(s.eta) : '—'}
+                  {hasDates ? fmtDate(endDate) : '—'}
                 </span>
               </div>
             )
@@ -206,8 +207,8 @@ export function ReportingPage({ onOpen, initialMo }) {
 
       // Next thing due that isn't already late.
       const upcoming = live
-        .filter(({ stage }) => stage.eta && stage.eta !== 'NA' && dayNumber(stage.eta) >= todayNum)
-        .sort((x, y) => dayNumber(x.stage.eta) - dayNumber(y.stage.eta))[0] || null
+        .filter(({ stage }) => effectiveEta(stage) && dayNumber(effectiveEta(stage)) >= todayNum)
+        .sort((x, y) => dayNumber(effectiveEta(x.stage)) - dayNumber(effectiveEta(y.stage)))[0] || null
 
       const deliveryDay = o.delivery ? dayNumber(new Date(o.delivery).toISOString()) : null
       const daysToDelivery = deliveryDay != null ? deliveryDay - todayNum : null
@@ -297,7 +298,7 @@ export function ReportingPage({ onOpen, initialMo }) {
       r.doneCount, r.stages.length, r.pct, HEALTH[r.health].label,
       r.live.map(({ stage }) => stage.name).join(' | '),
       r.blocked.length, r.late.length,
-      r.upcoming?.stage.name || '', r.upcoming ? fmtDate(r.upcoming.stage.eta) : '',
+      r.upcoming?.stage.name || '', r.upcoming ? fmtDate(effectiveEta(r.upcoming.stage)) : '',
       fmtDate(r.order.delivery), r.daysToDelivery ?? '', r.order.callout || '',
       r.lastUpdate ? `${r.lastUpdate.stageName}: ${r.lastUpdate.text}` : '',
     ])
