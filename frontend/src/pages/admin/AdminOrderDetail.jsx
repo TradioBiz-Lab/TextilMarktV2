@@ -445,8 +445,8 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
       await updateAssignment(order.id, stTarget, stStatus, `[Admin Override] ${stNote}`)
       toast(`Status updated to "${stStatus}"`, 'success')
       setShowSt(false)
-    } catch {
-      toast('Failed to update status', 'error')
+    } catch (e) {
+      toast(e?.message || 'Failed to update status', 'error')
     } finally { setSaving(false) }
   }
 

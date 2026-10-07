@@ -133,6 +133,24 @@ export function mirroredUnits(status, totalUnits) {
 }
 
 /**
+ * The status / unitsDone / actualEnd a stage must carry after ONLY its target
+ * (totalUnits) changed. Writing totalUnits alone used to break the mirror: a done
+ * milestone raised from 1 to 5 read "done, 1 of 5", and a quantity stage whose
+ * target moved kept a status that no longer matched its units.
+ *   quantity  -> units are authoritative, status follows them
+ *   otherwise -> status is authoritative, units mirror it
+ */
+export function reconcileForTotal(stage, newTotal, kind = stageKindOf(stage)) {
+  if (kind === 'quantity') {
+    const done = stage?.unitsDone || 0
+    const status = newTotal > 0 && done >= newTotal ? 'done' : done > 0 ? 'in_progress' : 'not_started'
+    return { status, unitsDone: done, actualEnd: deriveActualEnd(status, stage?.actualEnd) }
+  }
+  const status = deriveStageStatus(stage)
+  return { status, unitsDone: mirroredUnits(status, newTotal), actualEnd: deriveActualEnd(status, stage?.actualEnd) }
+}
+
+/**
  * `actualEnd` for a stage transitioning to the given status. Stamps today's
  * date (IST — see getToday(), matching every other day-boundary in this app;
  * new Date().toISOString() was UTC and could land a day behind IST between
