@@ -134,3 +134,19 @@ describe('two admins at once', () => {
     assert.equal((await api.post('/api/review/not-an-id/approve', {})).status, 404)
   })
 })
+
+describe('a review that died part-way', () => {
+  test('a message held in "reviewing" for minutes returns to the queue; a fresh one stays out', async () => {
+    const { api, message } = await arrange()
+    const stuck = await message({ state: 'reviewing' })
+    const fresh = await message({ state: 'reviewing' })
+    // Age the stuck one past the 5 minute hold (the schema's timestamps would otherwise reset it).
+    await InboundMessage.collection.updateOne({ _id: stuck._id }, { $set: { updatedAt: new Date(Date.now() - 10 * 60 * 1000) } })
+    const q = await api.get('/api/review/queue')
+    assert.equal(q.status, 200)
+    const ids = q.body.map(m => m.id)
+    assert.ok(ids.includes(String(stuck._id)), 'the stuck message is back in the queue')
+    assert.ok(!ids.includes(String(fresh._id)), 'a review that is genuinely in progress is left alone')
+    assert.equal((await InboundMessage.findById(stuck._id).lean()).state, 'needs_review')
+  })
+})
