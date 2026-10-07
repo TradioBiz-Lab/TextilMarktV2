@@ -14,7 +14,7 @@ export function DeleteOrderModal({ order, onClose, onConfirm }) {
     try {
       await onConfirm(order.id, reason.trim())
     } catch (e) {
-      setErr(typeof e === 'string' ? e : 'Failed to drop style')
+      setErr(e?.message || 'Failed to drop style')
       setBusy(false)
     }
   }

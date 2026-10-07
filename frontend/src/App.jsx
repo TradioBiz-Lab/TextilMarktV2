@@ -42,7 +42,7 @@ function ForceChangePassword() {
       setOk(true)
       setTimeout(logout, 2000)
     } catch (e) {
-      setErr(typeof e === 'string' ? e : 'Failed to change password. Check your current password.')
+      setErr(e?.message || 'Failed to change password. Check your current password.')
     } finally {
       setBusy(false)
     }

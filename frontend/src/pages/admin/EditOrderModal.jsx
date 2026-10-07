@@ -75,7 +75,7 @@ export function EditOrderModal({ order, onClose, onSave }) {
     try {
       await onSave(order.id, payload)
     } catch (e) {
-      setErr(typeof e === 'string' ? e : 'Failed to update order')
+      setErr(e?.message || 'Failed to update order')
       setSaving(false)
     }
   }

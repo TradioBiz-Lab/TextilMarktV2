@@ -84,7 +84,7 @@ export function UserSetup() {
       setProfileFileErr('')
       setErrors({})
     } catch (e) {
-      toast(typeof e === 'string' ? e : 'Failed to create user', 'error')
+      toast(e?.message || 'Failed to create user', 'error')
     } finally { setSaving(false) }
   }
 
@@ -106,7 +106,7 @@ export function UserSetup() {
       toast('User details updated', 'success')
       setEditUser(null)
     } catch (e) {
-      setEditErrors({ _: typeof e === 'string' ? e : 'Update failed. Please try again.' })
+      setEditErrors({ _: e?.message || 'Update failed. Please try again.' })
     } finally { setEditSaving(false) }
   }
 
