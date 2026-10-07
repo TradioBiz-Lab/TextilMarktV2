@@ -11,7 +11,7 @@ import { DroppedRecord } from '../models/DroppedRecord.js'
 import { parseDropReason, styleLabel } from '../lib/dropRecord.js'
 import {
   DEFAULT_STAGE_NAMES, ORDER_STATUS_VALUES, STAGE_KINDS, STAGE_STATUS_VALUES,
-  stageKindOf, deriveStageStatus, mirroredUnits, stageEtaVarianceDays, deriveActualEnd, deliveryVarianceDays,
+  stageKindOf, deriveStageStatus, mirroredUnits, reconcileForTotal, stageEtaVarianceDays, deriveActualEnd, deliveryVarianceDays,
 } from '../models/Order.js'
 import { dayNumber, getToday, effectiveEta, DELIVERY_STEP_NAME, isDeliveryName, deliveryStageIndex, makeDeliveryStage, statusAfterDeliveryStep } from '../lib/stageMath.js'
 
@@ -632,6 +632,21 @@ router.post('/:orderId/assignments/:mfrId', requireAuth, updateLimiter, async (r
     if (note !== undefined && note !== null && typeof note === 'string' && note.length > 1000)
       return res.status(400).json({ error: 'Note too long (max 1000 characters)' })
 
+    // The Delivery step is the single source of truth for "delivered": a split is
+    // Delivered exactly when its Delivery step is done. A manual status must not
+    // contradict that, so closing or reopening the step is how it changes.
+    const current = await Order.findOne({ _id: orderId, 'assignments.mfrId': mfrId }, { 'assignments.$': 1 }).lean()
+    if (!current) return res.status(404).json({ error: 'Order or assignment not found' })
+    const currentStages = current.assignments?.[0]?.stages || []
+    const deliveryAt = deliveryStageIndex(currentStages)
+    if (deliveryAt !== -1) {
+      const stepDone = deriveStageStatus(currentStages[deliveryAt]) === 'done'
+      if (status === 'Delivered' && !stepDone)
+        return res.status(400).json({ error: 'Close the Delivery step to mark this split Delivered' })
+      if (status !== 'Delivered' && stepDone)
+        return res.status(400).json({ error: 'This split is Delivered. Reopen its Delivery step to change the status' })
+    }
+
     const order = await Order.findOneAndUpdate(
       { _id: orderId, 'assignments.mfrId': mfrId },
       { $set: {
@@ -776,6 +791,13 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimit
         setFields[p('kind')] = row.kind
       }
 
+      if (stage.isDelivery) {
+        if (has('kind') && row.kind !== 'milestone')
+          return res.status(400).json({ error: `Stage ${i + 1} is the Delivery step and must stay a milestone` })
+        if (has('totalUnits'))
+          return res.status(400).json({ error: `Stage ${i + 1} is the Delivery step; its target cannot be changed` })
+      }
+
       if (has('totalUnits')) {
         const t = parseInt(row.totalUnits, 10)
         if (isNaN(t) || t < 1) return res.status(400).json({ error: `Target quantity on stage ${i + 1} must be a positive number` })
@@ -875,6 +897,14 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimit
         setFields[p('status')] = s
         setFields[p('unitsDone')] = mirroredUnits(s, has('totalUnits') ? parseInt(row.totalUnits, 10) : (stage.totalUnits ?? 0))
         setFields[p('actualEnd')] = deriveActualEnd(s, stage.actualEnd)
+      }
+
+      // A target change with no status or kind change still has to keep the mirror.
+      if (has('totalUnits') && !has('status') && !has('kind')) {
+        const r = reconcileForTotal(stage, parseInt(row.totalUnits, 10))
+        setFields[p('status')] = r.status
+        setFields[p('unitsDone')] = r.unitsDone
+        setFields[p('actualEnd')] = r.actualEnd
       }
 
       touched.push(i)
@@ -1318,6 +1348,15 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
 
     const currentStage = existingAsgn.stages[stageIndex]
 
+    // The Delivery step is a plain milestone with a target of one. Reshaping it
+    // would let it stop meaning "delivered".
+    if (currentStage.isDelivery) {
+      if (hasKind && kind !== 'milestone')
+        return res.status(400).json({ error: 'The Delivery step must stay a milestone' })
+      if (hasTotalUnits)
+        return res.status(400).json({ error: "The Delivery step's target cannot be changed" })
+    }
+
     // Target quantity for this stage — not every stage tracks progress against the full
     // order qty (e.g. "Lab Dip Approval" might target 3 dips, not 600 pieces).
     let parsedTotalUnits
@@ -1383,7 +1422,17 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
     if (hasEta) setFields[`assignments.$[asgn].stages.${stageIndex}.eta`] = eta
     if (hasStartDate) setFields[`assignments.$[asgn].stages.${stageIndex}.startDate`] = startDate
     if (hasResponsibleId) setFields[`assignments.$[asgn].stages.${stageIndex}.responsibleId`] = responsibleId || null
-    if (hasTotalUnits) setFields[`assignments.$[asgn].stages.${stageIndex}.totalUnits`] = parsedTotalUnits
+    if (hasTotalUnits) {
+      setFields[`assignments.$[asgn].stages.${stageIndex}.totalUnits`] = parsedTotalUnits
+      // A target change alone must keep status and units in step. When actualEnd or
+      // kind is also being set, those branches below own the status.
+      if (!hasActualEnd && !hasKind) {
+        const r = reconcileForTotal(currentStage, parsedTotalUnits)
+        setFields[`assignments.$[asgn].stages.${stageIndex}.status`] = r.status
+        setFields[`assignments.$[asgn].stages.${stageIndex}.unitsDone`] = r.unitsDone
+        setFields[`assignments.$[asgn].stages.${stageIndex}.actualEnd`] = r.actualEnd
+      }
+    }
     if (hasDescription) setFields[`assignments.$[asgn].stages.${stageIndex}.description`] = trimmedDescription
 
     // Capture the baseline at the exact moment it would otherwise be lost.
@@ -1437,6 +1486,11 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
       setFields[`assignments.$[asgn].stages.${stageIndex}.actualEnd`] = deriveActualEnd(nextStatus, currentStage.actualEnd)
     }
 
+    // Backdating the Delivery step closes it, which marks the split Delivered.
+    const etaAsgnStatus = currentStage.isDelivery && hasActualEnd
+      ? statusAfterDeliveryStep(existingAsgn.status, 'done') : null
+    if (etaAsgnStatus) setFields['assignments.$[asgn].status'] = etaAsgnStatus
+
     const order = await Order.findOneAndUpdate(
       { _id: orderId, 'assignments.mfrId': mfrObjectId },
       { $set: setFields },
@@ -1444,6 +1498,12 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
     ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
 
     if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
+
+    if (etaAsgnStatus) await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Order Delivered',
+      detail: `${orderId}: split is now ${etaAsgnStatus} (Delivery step done, actual end set) by ${req.user.name}`,
+    })
 
     const stageName = currentStage.name || `Stage ${stageIndex + 1}`
     const changes = []
@@ -2127,7 +2187,14 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
           ;(asgns[0].stages || []).forEach((s, i) => {
             if (stageKindOf(s) !== 'quantity') return
             if ((s.totalUnits ?? 0) !== currentSum) return  // deliberately overridden — leave it
-            updates[`assignments.0.stages.${i}.totalUnits`] = Math.max(qty, s.unitsDone || 0)
+            const nextTotal = Math.max(qty, s.unitsDone || 0)
+            updates[`assignments.0.stages.${i}.totalUnits`] = nextTotal
+            // A done stage whose target just grew is no longer complete: keep status
+            // and units in step (and clear the completion stamp).
+            const r = reconcileForTotal(s, nextTotal)
+            updates[`assignments.0.stages.${i}.status`] = r.status
+            updates[`assignments.0.stages.${i}.unitsDone`] = r.unitsDone
+            updates[`assignments.0.stages.${i}.actualEnd`] = r.actualEnd
           })
         } else {
           // Reallocating between manufacturers is a commercial decision, not
