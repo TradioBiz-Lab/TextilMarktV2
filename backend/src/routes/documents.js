@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit'
 import { Document, Order, User, Notification, AuditLog } from '../db/index.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { sendEmail, emailCertExpiry, emailBuyerDocumentReceived } from '../lib/email.js'
+import { notify, adminIds } from '../lib/notify.js'
 
 // Max 20 document uploads per user per hour — prevents storage abuse
 const uploadLimiter = rateLimit({
@@ -440,6 +441,12 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
       action: 'Document Uploaded',
       detail: `${name} (${type})${orderId ? ' — order ' + orderId : ''}`,
     })
+
+    // Document uploaded to an order: tell its buyer and every admin (not the uploader).
+    if (orderId) {
+      const target = await Order.findById(orderId, { buyerId: 1 }).lean()
+      await notify([target?.buyerId, ...await adminIds()], { type: 'order', msg: `New document uploaded to order ${orderId}: ${name}`, orderId }, { exceptUserId: req.user.id })
+    }
 
     res.status(201).json(mapDoc(doc.toObject(), false))
   } catch (err) {

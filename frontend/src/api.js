@@ -138,8 +138,7 @@ export const notificationsApi = {
 }
 
 export const auditApi = {
-  list: () => api.get('/audit'),
-  add: (action, detail) => api.post('/audit', { action, detail }),
+  list: (params) => api.get('/audit', { params }),
 }
 
 export const ribbonsApi = {

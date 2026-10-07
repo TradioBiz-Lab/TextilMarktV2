@@ -12,6 +12,12 @@ export function useVoiceRecorder() {
   const mediaRecorderRef = useRef(null)
   const chunksRef = useRef([])
   const streamRef = useRef(null)
+  // start() awaits getUserMedia, so a cancel (or unmount) can land while it is pending. Each
+  // start takes a token; cancel/unmount bump it, and a start whose token is stale releases
+  // the stream it just received instead of recording from it. startingRef stops a double
+  // click from opening a second stream while the first is still being acquired.
+  const startTokenRef = useRef(0)
+  const startingRef = useRef(false)
 
   // Silence-detection plumbing (fullscreen voice mode only — the inline
   // mic button never passes `opts.silence`, so none of this activates for
@@ -170,15 +176,23 @@ export function useVoiceRecorder() {
   // original manual tap-to-start/tap-to-stop behavior exactly — no
   // analyser, no auto-stop.
   const start = useCallback(async (opts) => {
+    if (startingRef.current || mediaRecorderRef.current?.state === 'recording') return
+    startingRef.current = true
+    const token = ++startTokenRef.current
     setErrorMsg(null)
     onAutoStopRef.current = opts?.silence?.onAutoStop ?? null
     if (!navigator.mediaDevices?.getUserMedia) {
+      startingRef.current = false
       setState('error')
       setErrorMsg('Voice input is not supported in this browser.')
       return
     }
     try {
       const stream = await acquireStream()
+      if (token !== startTokenRef.current) { // cancelled or unmounted while waiting for the mic
+        stream.getTracks().forEach(t => t.stop())
+        return
+      }
       streamRef.current = stream
       // Browser default mimeType — audio/webm;codecs=opus on Chrome/Firefox,
       // audio/mp4 on Safari. Sarvam's speech-to-text accepts both directly,
@@ -304,6 +318,8 @@ export function useVoiceRecorder() {
       setErrorMsg(err?.name === 'NotAllowedError'
         ? 'Microphone access was denied. Allow it in your browser settings to use voice input.'
         : 'Could not access the microphone.')
+    } finally {
+      if (token === startTokenRef.current) startingRef.current = false
     }
   }, [performStop])
 
@@ -314,6 +330,8 @@ export function useVoiceRecorder() {
   // For interruption — widget closed, page navigated away mid-recording.
   // Releases the mic stream without resolving a result.
   const cancel = useCallback(() => {
+    startTokenRef.current++ // invalidates a start() that is still waiting for the mic
+    startingRef.current = false
     const recorder = mediaRecorderRef.current
     cleanupAnalyser()
     onAutoStopRef.current = null
@@ -331,6 +349,7 @@ export function useVoiceRecorder() {
   // ever called. The persistent recAudioCtxRef is only actually closed
   // here, on unmount — never mid-conversation (see cleanupAnalyser above).
   useEffect(() => () => {
+    startTokenRef.current++
     cleanupAnalyser()
     releaseStream()
     recAudioCtxRef.current?.close().catch(() => {})

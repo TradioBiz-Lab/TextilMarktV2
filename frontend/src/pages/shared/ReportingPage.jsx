@@ -4,6 +4,7 @@ import {
   T, dayNumber, getToday, fmtN, effectiveEta,
   stageStatusOf, stageIsOverdue, isStageDone, inFlightStages, stageProgressLabel, stageVariance,
 } from '../../constants.js'
+import { toCsvCell } from '../../csvCell.js'
 import { Btn, Card, EmptyState, FlexRow, Modal, Mono, LoadingScreen, PageHeader, ProductThumb, StatCard, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { rowCallout } from '../../dashboardSummary.js'
@@ -23,13 +24,9 @@ function fmtDate(d) {
   return `${dd}-${mm}-${dt.getFullYear()}`
 }
 
-function toCsvCell(v) {
-  const s = String(v ?? '')
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-}
-
 function downloadCsv(rows, filename) {
-  const csv = rows.map(r => r.map(toCsvCell).join(',')).join('\r\n')
+  // The BOM makes Excel read the file as UTF-8 (otherwise dashes and Indic text come out garbled).
+  const csv = '\uFEFF' + rows.map(r => r.map(toCsvCell).join(',')).join('\r\n')
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')

@@ -30,6 +30,12 @@ export function KriyaaChatProvider({ children }) {
   // other watcher sees it's already handled.
   const lastAutoSpokenRef = useRef(-1)
 
+  // `busy` is state, so two sends in the same tick (a double click on a chip, or Enter plus a
+  // click) both read it as false. A ref flips immediately, so only the first goes through. That
+  // matters because Kriyaa's tools can change orders, and the second send used to overwrite the
+  // first message in the history.
+  const sendingRef = useRef(false)
+
   // overrideText lets a caller (a suggestion chip, or a voice transcript)
   // send specific text in the same tick without waiting on the
   // setInput('...') state update to land — the default (no arg) keeps
@@ -48,7 +54,8 @@ export function KriyaaChatProvider({ children }) {
   // cache on every voice turn and leak into unrelated later turns).
   const send = useCallback(async (overrideText, { voiceOriginated = false, languageCode = null } = {}) => {
     const text = (overrideText ?? input).trim()
-    if (!text || busy) return
+    if (!text || busy || sendingRef.current) return
+    sendingRef.current = true
     const userMsg = { role: 'user', content: text, at: new Date() }
     const nextMessages = [...messages, userMsg]
     setMessages(nextMessages)
@@ -72,6 +79,7 @@ export function KriyaaChatProvider({ children }) {
       setMessages(m => [...m, { role: 'assistant', content: err?.message || 'Something went wrong — please try again.', at: new Date(), isError: true }])
     } finally {
       clearTimeout(slowTimer)
+      sendingRef.current = false
       setBusy(false)
       setSlow(false)
     }
