@@ -16,6 +16,7 @@
 | `notifications` | In-app alerts per user                                  | ObjectId         |
 | `auditlogs`     | Immutable action trail (admin-visible)                  | ObjectId         |
 | `ribbons`       | Admin-published banner alerts                           | ObjectId         |
+| `inboundmessages` | Raw factory messages (photo, voice, text) and what the AI did with them | ObjectId |
 
 ---
 
@@ -33,6 +34,8 @@ Stores every portal account across all three roles.
   company      String            required
   name         String            required
   phone        String | null
+  whatsappNumber String | null    Zero Entry Capture: identifies a manufacturer on inbound WhatsApp messages (matched on the last 10 digits). Legacy users have no such field; treat undefined as null
+  language     String            default: "hi" - preferred language for replies. Legacy users have no such field; treat undefined as "hi"
   code         String            max 5 chars, uppercase — company code (e.g. "ZAR", "TPR")
   isActive     Boolean           default: true
   mustChangePw       Boolean     default: false — force password change on next login
@@ -380,6 +383,7 @@ manufacturer, an order, or both — or is stage-evidence tied to a specific stag
                                   set only for PO document attachments on a specific
                                   materials/PO checklist line; requires stageIndex
   notes       String | null       free-text context, esp. for text-only stage evidence
+  sourceMessageId ObjectId → inboundmessages  nullable, default null - set when this evidence was created from an inbound factory message (type floor_evidence). Rejecting that message soft-deletes (isActive=false) every document carrying its id
 
   dataUrl     String | null       base64 data URL (inline file)
   externalUrl String | null       external link (e.g. Zoho/Drive share URL)
@@ -403,6 +407,9 @@ manufacturer, an order, or both — or is stage-evidence tied to a specific stag
 - Stage evidence: `material_po`, `knitting_grn`, `knitting_qc`, `dyeing_grn`, `dyeing_qc`,
   `processing_grn`, `processing_qc`, `cutting_qc`, `stitching_qc`, `final_qc`, `packing_qc`,
   `dispatch_docs`
+- Auto-captured: `floor_evidence` (photo, voice note or challan from a factory message; attaches to any stage)
+
+The frontend offers evidence types per stage from `STAGE_DOC_TYPES` in `frontend/src/constants.js`, keyed by position in the 12-step default plan. Stored documents are matched to a stage by `orderId` + `stageIndex` only, never by type.
 
 **Indexes:**
 - `{ mfrId: 1, isActive: 1 }` — manufacturer cert queries
@@ -539,6 +546,45 @@ Never shown to buyers or manufacturers.
 **Indexes:**
 - `{ assigneeId: 1, status: 1 }` — "my open items"
 - `{ buyerId: 1, status: 1 }` — per-customer grouping
+
+---
+
+## 9. `inboundmessages`
+
+Zero Entry Capture. One document per message received from a factory, via the WhatsApp
+webhook (`POST /api/inbound/webhook/:provider`, shared-secret gated) or the web upload
+(`POST /api/inbound/upload`). Kept forever as the audit trail; the pipeline only moves it
+between states, never deletes it.
+
+```
+{
+  _id          ObjectId
+  factoryId    ObjectId → users    nullable - the manufacturer, matched by number or set by the web channel
+  senderNumber String | null
+  channel      String              enum: ["whatsapp", "web"]
+  type         String              enum: ["image", "audio", "document", "text"]
+  dataUrl      String | null       base64 media
+  mimeType     String | null
+  rawText      String              caption, text body or transcript
+  parsed       Mixed | null        the model's extracted JSON
+  confidence   Number | null       0..1; below 0.8 goes to the review queue
+  orderId      String | null       matched order
+  stageApplied String | null
+  state        String              enum: ["new", "auto_applied", "needs_review", "applied", "rejected"], default "new"
+  reviewReason String
+  hasDefect    Boolean
+  changes[]    { orderId, mfrId, stageIndex, stageName, before, after }  - snapshot so a rejection can revert exactly what the AI changed
+  reviewedBy   ObjectId → users | null
+  reviewedAt   Date | null
+  receivedAt   Date                default: now
+  createdAt, updatedAt             auto
+}
+```
+
+**Indexes:** `{ state: 1, createdAt: 1 }`, `{ orderId: 1, createdAt: -1 }`, `{ factoryId: 1, createdAt: -1 }`
+
+An update never moves a stage backwards. The collection is created empty on first connect;
+no migration is needed.
 
 ---
 

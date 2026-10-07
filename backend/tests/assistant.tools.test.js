@@ -16,7 +16,7 @@ import { startTestDb, stopTestDb, clearDb } from './helpers/db.js'
 import { startServer, stopServer, as, tokenFor } from './helpers/client.js'
 import { makeAdmin, makeBuyer, makeMfr, orderPayload } from './helpers/factories.js'
 import { ActionItem } from '../src/db/index.js'
-import { TOOL_HANDLERS } from '../src/routes/assistant.js'
+import { TOOL_HANDLERS, loopbackAuthCookie } from '../src/routes/assistant.js'
 
 before(async () => {
   await startTestDb()
@@ -268,5 +268,36 @@ describe('find_orders', () => {
     const result = await TOOL_HANDLERS.find_orders({ query: 'zzzz' }, ctx)
     assert.equal(result.data.total, 0)
     assert.deepEqual(result.data.orders, [])
+  })
+})
+
+describe('loopbackAuthCookie', () => {
+  const reqWith = headers => ({ headers })
+
+  test('keeps a session cookie as is', () => {
+    assert.equal(loopbackAuthCookie(reqWith({ cookie: 'tradio_token=abc; other=1' })), 'tradio_token=abc; other=1')
+  })
+
+  test('turns a Bearer-only request into a session cookie', () => {
+    assert.equal(loopbackAuthCookie(reqWith({ authorization: 'Bearer abc.def.ghi' })), 'tradio_token=abc.def.ghi')
+  })
+
+  test('adds the Bearer token when the cookie header has no session in it', () => {
+    assert.equal(loopbackAuthCookie(reqWith({ cookie: 'theme=dark', authorization: 'Bearer abc' })), 'theme=dark; tradio_token=abc')
+  })
+
+  test('returns an empty cookie when there is no credential at all', () => {
+    assert.equal(loopbackAuthCookie(reqWith({})), '')
+    assert.equal(loopbackAuthCookie(reqWith({ authorization: 'Basic xyz' })), '')
+  })
+
+  // The regression: a cross-site browser sends only Authorization, and the
+  // tools must still be able to read that user's orders.
+  test('tools work for a request that only carried a Bearer token', async () => {
+    const { admin } = await arrange()
+    const cookie = loopbackAuthCookie(reqWith({ authorization: `Bearer ${tokenFor(admin)}` }))
+    const result = await TOOL_HANDLERS.find_orders({ query: '' }, { cookie })
+    assert.equal(result.ok, true)
+    assert.equal(result.data.total, 1)
   })
 })

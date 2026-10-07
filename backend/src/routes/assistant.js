@@ -34,8 +34,20 @@ const assistantLimiter = rateLimit({
 // Lazy — constructing the client only when a request actually needs it means
 // importing this file never throws just because ANTHROPIC_API_KEY is unset.
 let anthropicClient = null
+// An organisation-level API key is not tied to a workspace, and Anthropic then
+// rejects every request unless it names one in the anthropic-workspace-id
+// header. Set ANTHROPIC_WORKSPACE_ID for such a key; a key created inside a
+// workspace needs nothing, so the header is only sent when the variable is set.
+export function anthropicClientOptions(env = process.env) {
+  const workspaceId = (env.ANTHROPIC_WORKSPACE_ID || '').trim()
+  return {
+    apiKey: env.ANTHROPIC_API_KEY,
+    ...(workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': workspaceId } } : {}),
+  }
+}
+
 function getClient() {
-  if (!anthropicClient) anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  if (!anthropicClient) anthropicClient = new Anthropic(anthropicClientOptions())
   return anthropicClient
 }
 
@@ -92,6 +104,23 @@ function stripOrderImages(data) {
 async function loopbackOrderFetch(cookie, method, path, body) {
   const result = await loopbackFetch(cookie, method, path, body)
   return result.ok ? { ...result, data: stripOrderImages(result.data) } : result
+}
+
+// Every Kriyaa tool calls back into this API over loopback, authenticated the
+// same way the chat request itself was. In production the frontend and the API
+// sit on different sites, so a browser that blocks third-party cookies sends
+// only the Authorization header and no session cookie. Forwarding just the
+// cookie then made every tool call 401, and Kriyaa answered "authorization
+// error" and asked for an order ID. requireAuth accepts the same JWT from
+// either place, so hand it over as the session cookie when it only arrived
+// as a Bearer token. The token was already verified by requireAuth on this
+// very request, so nothing new is trusted.
+export function loopbackAuthCookie(req) {
+  const cookie = req.headers.cookie || ''
+  if (/(^|;\s*)tradio_token=/.test(cookie)) return cookie
+  const header = req.headers.authorization
+  if (!header?.startsWith('Bearer ')) return cookie
+  return `${cookie ? `${cookie}; ` : ''}tradio_token=${header.slice(7)}`
 }
 
 const WRITE_TOOLS = new Set([
@@ -445,7 +474,7 @@ router.post('/chat', requireAuth, assistantLimiter, async (req, res) => {
       return res.status(400).json({ error: `Message too long (max ${MAX_MESSAGE_LENGTH} characters)` })
   }
 
-  const cookie = req.headers.cookie || ''
+  const cookie = loopbackAuthCookie(req)
   // Cache breakpoint on the system prompt's one block. Render order is
   // tools -> system -> messages, so this single marker caches TOOLS (a
   // static module-level array) together with the system prompt itself.

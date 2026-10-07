@@ -9,6 +9,8 @@ export function AppProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null)
   const [users, setUsers]             = useState([])
   const [orders, setOrders]           = useState([])
+  // When the orders in this browser last changed (a fetch, a refresh or a local edit), so a screen can say how old its data is.
+  const [ordersAt, setOrdersAt]         = useState(null)
   const [docs, setDocs]               = useState([])
   const [notifs, setNotifs]           = useState([])
   const [audit, setAudit]             = useState([])
@@ -19,6 +21,7 @@ export function AppProvider({ children }) {
   const [loadError, setLoadError]     = useState(false)
 
   const loadingRef = useRef(false)
+  useEffect(() => { setOrdersAt(Date.now()) }, [orders])
   const docDataCache = useRef({})
   const loadData = useCallback(async (user) => {
     if (loadingRef.current) return // prevent duplicate calls from StrictMode
@@ -628,7 +631,7 @@ export function AppProvider({ children }) {
 
   return (
     <AppContext.Provider value={{
-      currentUser, users, orders, docs, notifs, audit, loading, loadError, unread, ribbons, masterOrders,
+      currentUser, users, orders, ordersAt, docs, notifs, audit, loading, loadError, unread, ribbons, masterOrders,
       actionItems,
       login, logout,
       updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial, bulkUploadMaterials,

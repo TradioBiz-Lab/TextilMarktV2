@@ -9,6 +9,7 @@ import assert from 'node:assert/strict'
 import { startTestDb, stopTestDb, clearDb } from './helpers/db.js'
 import { startServer, stopServer, as, req } from './helpers/client.js'
 import { makeAdmin, makeBuyer, makeMfr } from './helpers/factories.js'
+import { anthropicClientOptions } from '../src/routes/assistant.js'
 
 before(async () => {
   await startTestDb()
@@ -83,5 +84,19 @@ describe('POST /api/assistant/chat', () => {
       if (original === undefined) delete process.env.ANTHROPIC_API_KEY
       else process.env.ANTHROPIC_API_KEY = original
     }
+  })
+})
+
+describe('anthropicClientOptions', () => {
+  test('sends no workspace header unless ANTHROPIC_WORKSPACE_ID is set', () => {
+    const o = anthropicClientOptions({ ANTHROPIC_API_KEY: 'k' })
+    assert.equal(o.apiKey, 'k')
+    assert.equal(o.defaultHeaders, undefined)
+    assert.equal(anthropicClientOptions({ ANTHROPIC_API_KEY: 'k', ANTHROPIC_WORKSPACE_ID: '   ' }).defaultHeaders, undefined)
+  })
+
+  test('sends the workspace header for an organisation-level key', () => {
+    const o = anthropicClientOptions({ ANTHROPIC_API_KEY: 'k', ANTHROPIC_WORKSPACE_ID: ' wrkspc_123 ' })
+    assert.deepEqual(o.defaultHeaders, { 'anthropic-workspace-id': 'wrkspc_123' })
   })
 })
