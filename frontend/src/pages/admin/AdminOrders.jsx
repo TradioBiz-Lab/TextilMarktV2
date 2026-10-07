@@ -3,7 +3,7 @@ import { Plus, List, LayoutGrid, Search, Folder, Package, Check, Ban, AlertTrian
 import {
   T, SEASONS, ORDER_STATUSES,
   isStageDone, stageIsOverdue, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct, fmtStageDate, effectiveEta,
-  CELL_STATE, cellState, buildMatrixSpine, withBuyerPrefix,
+  CELL_STATE, cellState, buildMatrixSpine, withBuyerPrefix, getToday
 } from '../../constants.js'
 import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, FileUpload, LoadingScreen, useToast, fileUploadPayload, ProductThumb, Modal, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -148,8 +148,13 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
   // time so every later toggle is purely the user's.
   // Everything starts collapsed. The one exception is arriving from the
   // dashboard on a specific master order: open that group (only) and scroll to it.
+  // Runs once per target: the group count is a dependency only so it retries until the group has
+  // loaded. Without the `handledMo` guard it fired again on every search or filter (the count
+  // changes) and collapsed everything except the target group.
+  const handledMo = useRef(null)
   useEffect(() => {
-    if (!initialMo || !groupedOrders.some(g => g.moId === initialMo)) return
+    if (!initialMo || handledMo.current === initialMo || !groupedOrders.some(g => g.moId === initialMo)) return
+    handledMo.current = initialMo
     setExpandedGroups(new Set([initialMo]))
     const t = setTimeout(() => document.getElementById(`mo-group-${initialMo}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 80)
     return () => clearTimeout(t)
@@ -176,7 +181,8 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
   const orderStatus = (o) => {
     if (o.assignments.some(a => a.status === 'Delayed')) return 'Delayed'
     if (o.assignments.some(a => a.status === 'On Hold')) return 'On Hold'
-    if (o.assignments.every(a => a.status === 'Delivered')) return 'Delivered'
+    // An unassigned style has no splits, and `every` on an empty list is true: it is not delivered.
+    if (o.assignments.length > 0 && o.assignments.every(a => a.status === 'Delivered')) return 'Delivered'
     return 'Processing'
   }
 
@@ -262,20 +268,23 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
                   try {
                     await createMasterOrder({ id: moId, buyerId: mo.buyerId, orderName: mo.orderName.trim(), season: mo.season })
                     // Upload attached file as PO/RFQ linked to this master order
+                    let fileFailed = null
                     if (moFile) {
                       try {
                         await uploadDoc({
-                          type: 'PO', name: `PO — ${moId}`, issuer: '', issueDate: new Date().toISOString().slice(0, 10),
+                          type: 'PO', name: `PO — ${moId}`, issuer: '', issueDate: getToday(),
                           expiryDate: null, orderId: null, mfrId: null,
                           ...fileUploadPayload(moFile),
                         })
-                      } catch { /* ignore upload errors */ }
+                      } catch (e) { fileFailed = e?.message || 'upload failed' }
                     }
-                    toast(`Master Order ${moId} created`, 'success')
+                    // Say so when the attached file did not make it, instead of reporting a clean success.
+                    if (fileFailed) toast(`Master Order ${moId} created, but the attached file did not upload (${fileFailed}). Add it from Documents.`, 'warning')
+                    else toast(`Master Order ${moId} created`, 'success')
                     setShowMO(false)
                     resetMoForm()
                   } catch (err) {
-                    setMoErr(typeof err === 'string' ? err : (err?.message || 'Failed to create master order'))
+                    setMoErr(err?.message || 'Failed to create master order')
                   } finally { setMoSaving(false) }
                 }}>{moSaving ? 'Creating…' : 'Create Master Order'}</Btn>
               </FlexRow>

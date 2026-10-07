@@ -19,6 +19,9 @@ export function NotifPanel({ onClose, onOpenOrder }) {
 
   useEffect(() => {
     const handler = e => {
+      // The bell is outside the panel but is its own toggle: closing here AND letting its click
+      // toggle again reopened the panel, so the bell could not close it.
+      if (e.target.closest?.('[data-notif-toggle]')) return
       if (panelRef.current && !panelRef.current.contains(e.target)) onClose()
     }
     document.addEventListener('mousedown', handler)

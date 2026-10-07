@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ArrowRight, X, AlertTriangle, Paperclip, Plus } from '../../icons.jsx'
-import { T, evidenceTypesFor, stageKindOf, stageStatusOf, stageVariance, stageActualVariance, STAGE_STATUS_LABELS, fmtStageDate } from '../../constants.js'
+import { T, evidenceTypesFor, stageKindOf, stageStatusOf, stageVariance, stageActualVariance, STAGE_STATUS_LABELS, fmtStageDate, getToday } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, FlexRow, Input, FileUpload, DocCard, useToast, fileUploadPayload, SectionLabel } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { capsFor, canWriteStage } from '../../caps.js'
@@ -9,7 +9,10 @@ import { ordersApi } from '../../api.js'
 // 'YYYY-MM-DD' or 'NA' → the value a native <input type="date"> (or the 'NA'
 // text fallback) expects — same helper as AdminOrderDetail's date-adjust modal.
 function dateToInput(d) {
-  return d === 'NA' ? 'NA' : (d ? new Date(d).toISOString().slice(0, 10) : '')
+  if (d === 'NA') return 'NA'
+  if (!d) return ''
+  const t = new Date(d)
+  return isNaN(t.getTime()) ? '' : t.toISOString().slice(0, 10) // a stored date that will not parse shows blank, not a crash
 }
 
 function fmtDateTime(d) {
@@ -89,40 +92,58 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
 
   const submitStageDoc = async () => {
     // Stage evidence: file OR notes is sufficient (managed via SOP)
-    let hasErr = false
-    setSdItems(prev => prev.map(item => {
-      if (!item.name.trim()) { hasErr = true; return { ...item, fileErr: 'Enter a document name.' } }
-      if (!item.file && !item.notes?.trim()) { hasErr = true; return { ...item, fileErr: 'Attach a file or add notes.' } }
+    const checked = sdItems.map(item => {
+      if (!item.name.trim()) return { ...item, fileErr: 'Enter a document name.' }
+      if (!item.file && !item.notes?.trim()) return { ...item, fileErr: 'Attach a file or add notes.' }
       return { ...item, fileErr: '' }
-    }))
-    if (hasErr) return
+    })
+    setSdItems(checked)
+    if (checked.some(i => i.fileErr)) return
     setSaving(true)
+    let saved = 0
     try {
-      for (const item of sdItems) {
+      for (const item of checked) {
         await uploadDoc({
           type: item.type, name: item.name.trim(), issuer: null,
-          issueDate: new Date().toISOString().slice(0, 10), expiryDate: null,
+          issueDate: getToday(), expiryDate: null,
           orderId, mfrId, stageIndex,
           notes: item.notes?.trim() || null,
           ...fileUploadPayload(item.file),
         })
+        saved++
+        setSdItems(prev => prev.filter(x => x.name !== item.name || x.notes !== item.notes || x.file !== item.file))
       }
-      toast(`${sdItems.length} stage evidence entr${sdItems.length > 1 ? 'ies' : 'y'} saved`, 'success')
+      toast(`${saved} stage evidence entr${saved > 1 ? 'ies' : 'y'} saved`, 'success')
       setShowStageDocs(false)
-    } catch {
-      toast('Failed to save stage evidence', 'error')
+    } catch (e) {
+      toast(`${saved ? `Saved ${saved}, then stopped: ` : ''}${e?.message || 'Failed to save stage evidence'}${saved ? '. The saved ones are removed from the list.' : ''}`, 'error')
     } finally { setSaving(false) }
   }
 
   // Keep the form in step once a save round-trips fresh data back.
+  // A field is only replaced when the person has not edited it: otherwise typing a new date or
+  // description and then pressing "Mark Stage Done" (which re-renders with the new status) threw
+  // the unsaved text away. `synced` remembers what each field last took from the server.
+  const synced = useRef(null)
   useEffect(() => {
     if (!stage) return
-    setDescription(stage.description || '')
-    setUnits(String(stage.unitsDone ?? 0))
-    setStatus(stageStatusOf(stage))
-    setEtaDraft(dateToInput(stage.eta))
-    setBaselineEtaDraft(dateToInput(stage.baselineEta))
-    setActualEndDraft(dateToInput(stage.actualEnd))
+    const next = {
+      description: stage.description || '',
+      units: String(stage.unitsDone ?? 0),
+      status: stageStatusOf(stage),
+      eta: dateToInput(stage.eta),
+      baseline: dateToInput(stage.baselineEta),
+      actualEnd: dateToInput(stage.actualEnd),
+    }
+    const prev = synced.current
+    const follow = (key, set) => set(cur => (!prev || cur === prev[key]) ? next[key] : cur)
+    follow('description', setDescription)
+    follow('units', setUnits)
+    follow('status', setStatus)
+    follow('eta', setEtaDraft)
+    follow('baseline', setBaselineEtaDraft)
+    follow('actualEnd', setActualEndDraft)
+    synced.current = next
   }, [stage?.description, stage?.unitsDone, stage?.status, stage?.eta, stage?.baselineEta, stage?.actualEnd])
 
   if (!order || !asgn || !stage) return null
@@ -211,15 +232,19 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
     } finally { setSavingEta(false) }
   }
 
+  // Enter pressed twice (or Enter then a click) must post once; `saving` is state and has not
+  // flipped yet when the second call arrives, so a ref does the guarding.
+  const postingRef = useRef(false)
   const postUpdate = async () => {
-    if (!updateText.trim()) return
+    if (!updateText.trim() || postingRef.current) return
+    postingRef.current = true
     setSaving(true)
     try {
       await addStageUpdate(orderId, mfrId, stageIndex, updateText.trim())
       setUpdateText('')
     } catch (err) {
       toast(err?.message || 'Failed to post update', 'error')
-    } finally { setSaving(false) }
+    } finally { postingRef.current = false; setSaving(false) }
   }
 
   const addMaterial = async () => {
@@ -366,13 +391,6 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
                     onChange={e => setActualEndDraft(e.target.value)}
                     style={{ flex: 1, minWidth: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: T.text, boxSizing: 'border-box' }}
                   />
-                  {actualEndDraft && (
-                    <button
-                      onClick={() => setActualEndDraft('')}
-                      title="Reopening the stage clears an already-saved actual date automatically."
-                      style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 700, color: T.primary, padding: '0 2px' }}
-                    >Clear</button>
-                  )}
                   {(() => {
                     const av = stageActualVariance(stage)
                     return av != null && av !== 0 ? (

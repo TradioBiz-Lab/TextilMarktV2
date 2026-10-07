@@ -1,10 +1,10 @@
-import { useState, useMemo, Fragment } from 'react'
+import { useState, useMemo, useRef, Fragment } from 'react'
 import Papa from 'papaparse'
 import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight } from '../../icons.jsx'
 import {
   T, ORDER_STATUSES, evidenceTypesFor, DOC_ICONS,
   stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
-  stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber,
+  stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber, getToday,
   PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor,
 } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey } from '../../components/ui.jsx'
@@ -27,7 +27,7 @@ function fmtDate(d) {
 export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   const { currentUser, orders, docs, users, loading, updateAssignment, updateStage, uploadDoc, getDocData, refreshOrders, editOrder, deleteOrder,
     addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
-    addStageItem, updateStageItem, removeStageItem, addAssignment, insertStage } = useApp()
+    addStageItem, updateStageItem, removeStageItem, addAssignment, insertStage, bulkUpdateStages } = useApp()
   const toast = useToast()
   const isMaster = currentUser?.adminType === 'master'
   // Same screen for every role; this decides which controls each one gets.
@@ -97,7 +97,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
 
   // Doc upload modal
   const [showUp, setShowUp] = useState(false)
-  const [uf, setUf] = useState({ type: 'PO', name: '', issuer: currentUser?.role === 'admin' ? 'Tradio' : (currentUser?.company || ''), issueDate: new Date().toISOString().slice(0, 10), expiryDate: '' })
+  const [uf, setUf] = useState({ type: 'PO', name: '', issuer: currentUser?.role === 'admin' ? 'Tradio' : (currentUser?.company || ''), issueDate: getToday(), expiryDate: '' })
   const [fileData, setFileData] = useState(null)
   const [fileErr, setFileErr] = useState('')
 
@@ -235,7 +235,9 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   if (loading) return <LoadingScreen />
   if (!order) return null
 
-  const responsibleUsers = users.filter(u => (u.role === 'admin' || u.role === 'manufacturer') && u.isActive)
+  // Buyers can own approval steps, so the order's own buyer is a valid choice too. Without it a
+  // buyer-owned stage showed as "Unassigned" and saving the dialog would have cleared the owner.
+  const responsibleUsers = users.filter(u => u.isActive && (u.role === 'admin' || u.role === 'manufacturer' || (u.role === 'buyer' && String(u.id) === String(order.buyerId))))
 
   const effectiveMid = selectedMid || (order.assignments?.length === 1 ? String(order.assignments[0]?.mid) : null)
   const selectedAsgn = order.assignments?.find(a => String(a.mid) === effectiveMid) || null
@@ -249,10 +251,11 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     ? orderDocs.filter(d => d.stageIndex != null && String(d.mfrId || '') === effectiveMid)
     : []
 
-  const resetUpload = () => { setUf({ type: 'PO', name: '', issuer: currentUser?.role === 'admin' ? 'Tradio' : (currentUser?.company || ''), issueDate: new Date().toISOString().slice(0, 10), expiryDate: '' }); setFileData(null); setFileErr('') }
+  const resetUpload = () => { setUf({ type: 'PO', name: '', issuer: currentUser?.role === 'admin' ? 'Tradio' : (currentUser?.company || ''), issueDate: getToday(), expiryDate: '' }); setFileData(null); setFileErr('') }
 
   // ── Stage Dates Adjustment ──
-  const dateToInput = d => d === 'NA' ? 'NA' : (d ? new Date(d).toISOString().slice(0, 10) : '')
+  // A stored date that will not parse (legacy data) shows as blank instead of crashing the whole dialog.
+  const dateToInput = d => { if (d === 'NA') return 'NA'; if (!d) return ''; const t = new Date(d); return isNaN(t.getTime()) ? '' : t.toISOString().slice(0, 10) }
 
   const openEtaAdjust = (mfrId) => {
     const asgn = order.assignments.find(a => String(a.mid) === String(mfrId))
@@ -270,8 +273,11 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     try {
       const asgn = order.assignments.find(a => String(a.mid) === String(etaTarget))
       const stageCount = asgn?.stages?.length || 0
-      let changed = false
       const respChanges = []
+      // Every changed stage goes in ONE request. The server checks all of them first and writes
+      // them together, so a bad value on stage 14 can no longer leave stages 1 to 13 saved while the
+      // dialog reports a failure (and the old loop could exhaust the update rate limit).
+      const rows = []
       for (let i = 0; i < stageCount; i++) {
         const stage = asgn?.stages?.[i]
         const oldStart = dateToInput(stage?.startDate)
@@ -285,18 +291,19 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
         const totalUnitsChanged = (totalUnitsValues[i] || '') !== oldTotalUnits && (totalUnitsValues[i] || '').trim() !== ''
         const descriptionChanged = (descriptionValues[i] || '') !== oldDescription
         if (startChanged || etaChanged || responsibleChanged || totalUnitsChanged || descriptionChanged) {
-          const dates = {}
-          if (startChanged) dates.startDate = startValues[i] === 'NA' ? 'NA' : startValues[i] || null
-          if (etaChanged) dates.eta = etaValues[i] === 'NA' ? 'NA' : etaValues[i] || null
-          if (responsibleChanged) dates.responsibleId = responsibleValues[i] || null
-          if (totalUnitsChanged) dates.totalUnits = parseInt(totalUnitsValues[i], 10)
-          if (descriptionChanged) dates.description = descriptionValues[i] || ''
-          await ordersApi.updateStageDates(order.id, etaTarget, i, dates)
-          changed = true
+          const row = { index: i }
+          if (startChanged) row.startDate = startValues[i] === 'NA' ? 'NA' : startValues[i] || null
+          if (etaChanged) row.eta = etaValues[i] === 'NA' ? 'NA' : etaValues[i] || null
+          if (responsibleChanged) row.responsibleId = responsibleValues[i] || null
+          if (totalUnitsChanged) row.totalUnits = parseInt(totalUnitsValues[i], 10)
+          if (descriptionChanged) row.description = descriptionValues[i] || ''
+          rows.push(row)
           if (responsibleChanged && stage?.name) respChanges.push({ stageName: stage.name, responsibleId: responsibleValues[i] || null })
         }
       }
+      const changed = rows.length > 0
       if (changed) {
+        await bulkUpdateStages(order.id, etaTarget, rows)
         await refreshOrders()
         toast('Stage dates updated successfully', 'success')
       } else {
@@ -326,20 +333,24 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     try {
       const siblings = orders.filter(o => o.masterOrderId === order.masterOrderId && o.id !== order.id)
       let updateCount = 0
+      const failed = []
       for (const sib of siblings) {
         for (const sAsgn of (sib.assignments || [])) {
-          for (let idx = 0; idx < (sAsgn.stages || []).length; idx++) {
-            const sStage = sAsgn.stages[idx]
+          const rows = []
+          ;(sAsgn.stages || []).forEach((sStage, idx) => {
             const match = pendingRespChanges.find(c => c.stageName.trim().toLowerCase() === (sStage.name || '').trim().toLowerCase())
-            if (match && (sStage.responsibleId || null) !== (match.responsibleId || null)) {
-              await ordersApi.updateStageDates(sib.id, sAsgn.mid, idx, { responsibleId: match.responsibleId })
-              updateCount++
-            }
-          }
+            if (match && (sStage.responsibleId || null) !== (match.responsibleId || null))
+              rows.push({ index: idx, responsibleId: match.responsibleId })
+          })
+          if (rows.length === 0) continue
+          // One atomic request per split, not one per stage.
+          try { await bulkUpdateStages(sib.id, sAsgn.mid, rows); updateCount += rows.length }
+          catch (err) { failed.push(`${sib.id}: ${err?.message || 'failed'}`) }
         }
       }
+      if (failed.length) toast(`Applied to ${updateCount} stage(s), but ${failed.length} order(s) failed: ${failed[0]}`, 'warning')
       await refreshOrders()
-      toast(updateCount > 0 ? `Responsibility applied to ${updateCount} stage(s) across ${siblings.length} order(s)` : 'No matching stages found on other orders', 'success')
+      if (!failed.length) toast(updateCount > 0 ? `Responsibility applied to ${updateCount} stage(s) across ${siblings.length} order(s)` : 'No matching stages found on other orders', 'success')
     } catch (err) {
       toast(err?.message || 'Failed to apply to other orders', 'error')
     } finally {
@@ -350,16 +361,28 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   }
 
   // ── Stage updates thread + materials checklist (expand row) ──
+  const postingNotes = useRef(new Set())
   const submitStageUpdateNote = async (mfrId, stageIndex) => {
     const key = `${mfrId}:${stageIndex}`
     const text = (updateDrafts[key] || '').trim()
     if (!text) return
+    // Enter pressed twice, or Enter then a click, must post once. The draft is only cleared after
+    // the request returns, so without this both passes read the same text.
+    if (postingNotes.current.has(key)) return
+    postingNotes.current.add(key)
     try {
       await addStageUpdate(order.id, mfrId, stageIndex, text)
       setUpdateDrafts(d => ({ ...d, [key]: '' }))
     } catch (err) {
       toast(err?.message || 'Failed to add update', 'error')
+    } finally {
+      postingNotes.current.delete(key)
     }
+  }
+
+  const removeChecklistItem = async (mfrId, stageIndex, itemIndex) => {
+    try { await removeStageItem(order.id, mfrId, stageIndex, itemIndex) }
+    catch (err) { toast(err?.message || 'Could not remove the item', 'error') }
   }
 
   // Checklist items — the deliverables a step actually produces (three lab dips,
@@ -533,28 +556,34 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
 
   const submitStageDoc = async () => {
     // Stage evidence: file OR notes is sufficient (managed via SOP)
-    let hasErr = false
-    setSdItems(prev => prev.map(item => {
-      if (!item.name.trim()) { hasErr = true; return { ...item, fileErr: 'Enter a document name.' } }
-      if (!item.file && !item.notes?.trim()) { hasErr = true; return { ...item, fileErr: 'Attach a file or add notes.' } }
+    // Validate from the current list, synchronously. (A flag set inside a setState updater is not
+    // guaranteed to have run by the time the next line reads it.)
+    const checked = sdItems.map(item => {
+      if (!item.name.trim()) return { ...item, fileErr: 'Enter a document name.' }
+      if (!item.file && !item.notes?.trim()) return { ...item, fileErr: 'Attach a file or add notes.' }
       return { ...item, fileErr: '' }
-    }))
-    if (hasErr) return
+    })
+    setSdItems(checked)
+    if (checked.some(i => i.fileErr)) return
     setSaving(true)
+    let saved = 0
     try {
-      for (const item of sdItems) {
+      for (const item of checked) {
         await uploadDoc({
           type: item.type, name: item.name.trim(), issuer: null,
-          issueDate: new Date().toISOString().slice(0, 10), expiryDate: null,
+          issueDate: getToday(), expiryDate: null,
           orderId: order.id, mfrId: sdMfrId, stageIndex: sdStageIdx,
           notes: item.notes?.trim() || null,
           ...fileUploadPayload(item.file),
         })
+        saved++
+        // Drop each entry once it is saved, so a retry after a later failure cannot upload it twice.
+        setSdItems(prev => prev.filter(x => x.name !== item.name || x.notes !== item.notes || x.file !== item.file))
       }
-      toast(`${sdItems.length} stage evidence entr${sdItems.length > 1 ? 'ies' : 'y'} saved`, 'success')
+      toast(`${saved} stage evidence entr${saved > 1 ? 'ies' : 'y'} saved`, 'success')
       setShowStageDocs(false)
-    } catch {
-      toast('Failed to save stage evidence', 'error')
+    } catch (e) {
+      toast(`${saved ? `Saved ${saved}, then stopped: ` : ''}${e?.message || 'Failed to save stage evidence'}${saved ? '. The saved ones are removed from the list.' : ''}`, 'error')
     } finally { setSaving(false) }
   }
 
@@ -581,7 +610,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     setRefDocUploading(type)
     try {
       await uploadDoc({
-        type, name: `${refDocLabels[type]} — ${order.id}`, issuer: '', issueDate: new Date().toISOString().slice(0, 10),
+        type, name: `${refDocLabels[type]} — ${order.id}`, issuer: '', issueDate: getToday(),
         expiryDate: null, orderId: order.id, mfrId: null,
         ...fileUploadPayload(file),
       })
@@ -685,7 +714,9 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                 <Mono style={{ fontSize: 12, color: T.textMuted }}>Style {order.styleNumber}</Mono>
               )}
               {order.ecommerceLink && (
-                <a href={order.ecommerceLink} target="_blank" rel="noreferrer" style={{ display: 'block', marginTop: 4, fontSize: 11, fontWeight: 600, color: T.primaryDeep }}>{order.ecommerceLink} ↗</a>
+                /^https?:\/\//i.test(order.ecommerceLink)
+                  ? <a href={order.ecommerceLink} target="_blank" rel="noopener noreferrer" style={{ display: 'block', marginTop: 4, fontSize: 11, fontWeight: 600, color: T.primaryDeep }}>{order.ecommerceLink} ↗</a>
+                  : <span style={{ display: 'block', marginTop: 4, fontSize: 11, color: T.textMuted }}>{order.ecommerceLink}</span>
               )}
 
               {/* Ruled spec table */}
@@ -1566,7 +1597,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                                                 <Check size={10} strokeWidth={3} /> {fmtDate(it.doneDate)}
                                               </span>
                                             )}
-                                            {canItems && <button onClick={() => removeStageItem(order.id, a.mid, i, ii)} title="Remove"
+                                            {canItems && <button onClick={() => removeChecklistItem(a.mid, i, ii)} title="Remove"
                                               style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textLight, display: 'flex' }}><X size={12} /></button>}
                                           </FlexRow>
                                           )

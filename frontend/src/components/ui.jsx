@@ -102,7 +102,8 @@ function DocBody({ blob, doc, onReady }) {
   const ext = (doc.fileName || '').toLowerCase().split('.').pop()
   const mime = blob.mimeType
   const ready = useCallback(() => onReady(), [onReady])
-  if (mime.startsWith('image/') && ext !== 'dxf') {
+  const isDxf = ext === 'dxf' || mime === 'image/vnd.dxf'
+  if (mime.startsWith('image/') && !isDxf) {
     return (
       <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
         <img src={blob.url} alt={doc.name} onLoad={ready} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 4 }} />
@@ -113,7 +114,7 @@ function DocBody({ blob, doc, onReady }) {
   if (mime === 'application/pdf') return <div style={{ flex: 1, overflow: 'hidden', display: 'flex', minHeight: 0 }}><PdfPageViewer bytes={blob.bytes} onReady={ready} /></div>
   if (mime === 'text/csv' || ext === 'csv') return <CsvTable bytes={blob.bytes} onReady={ready} />
   if (ext === 'xlsx') return <XlsxTable bytes={blob.bytes} onReady={ready} />
-  if (ext === 'dxf') return <DxfPreview bytes={blob.bytes} onReady={ready} />
+  if (isDxf) return <DxfPreview bytes={blob.bytes} onReady={ready} />
   return <ReadyMsg onReady={ready}>No inline preview for .{ext || 'this'} files yet. Use Download to open it.</ReadyMsg>
 }
 
@@ -121,6 +122,9 @@ function ReadyMsg({ onReady, children }) {
   useEffect(() => { onReady() }, [onReady])
   return <Msg>{children}</Msg>
 }
+
+// Resolves when the most recently closed PDF has finished tearing down (see PdfPageViewer).
+let pdfTeardown = Promise.resolve()
 
 function PdfPageViewer({ bytes, onReady }) {
   const canvasRef = useRef(null)
@@ -131,28 +135,55 @@ function PdfPageViewer({ bytes, onReady }) {
 
   useEffect(() => {
     let cancelled = false
-    // pdf.js's worker transfers (zero-copies) this buffer, detaching it — pass a
-    // fresh copy so a React StrictMode dev-mode remount doesn't reuse a detached one.
-    pdfjsLib.getDocument({ data: bytes.slice() }).promise
-      .then(doc => { if (!cancelled) { setPdf(doc); setNumPages(doc.numPages) } })
-      .catch(err => { if (!cancelled) { setError(err?.message || 'Failed to load PDF'); onReady?.() } })
-    return () => { cancelled = true }
+    let task = null
+    // A new document must not be requested while the previous one is still being torn down: pdf.js
+    // refuses with "the worker is being destroyed" (and React's dev double-mount, or closing one PDF
+    // and opening another straight away, hits exactly that). So each load waits for the last teardown.
+    pdfTeardown.then(() => {
+      if (cancelled) return
+      try {
+        // pdf.js's worker transfers (zero-copies) this buffer, detaching it — pass a
+        // fresh copy so a React StrictMode dev-mode remount doesn't reuse a detached one.
+        task = pdfjsLib.getDocument({ data: bytes.slice() })
+      } catch (err) { setError(err?.message || 'Failed to load PDF'); onReady?.(); return }
+      task.promise
+        .then(doc => { if (!cancelled) { setPdf(doc); setNumPages(doc.numPages) } })
+        .catch(err => { if (!cancelled) { setError(err?.message || 'Failed to load PDF'); onReady?.() } })
+    })
+    // destroy() releases the loaded document and its worker; without it every PDF opened stayed in
+    // memory until the tab closed. The next load queues behind it via pdfTeardown.
+    return () => { cancelled = true; if (task) pdfTeardown = task.destroy().catch(() => {}) }
   }, [bytes])
 
+  // pdf.js allows one render per canvas at a time. Flipping pages quickly used to start a second
+  // render while the first was still running and throw "Cannot use the same canvas during multiple
+  // render() operations", leaving a blank page. Each render now cancels the previous one and waits
+  // for it to finish before starting.
+  const renderRef = useRef(null)
   useEffect(() => {
     if (!pdf) return
     let cancelled = false
-    pdf.getPage(pageNum).then(page => {
+    const run = async () => {
+      const prev = renderRef.current
+      if (prev) { prev.cancel(); try { await prev.promise } catch { /* a cancelled render rejects */ } }
       if (cancelled) return
+      const page = await pdf.getPage(pageNum)
       const canvas = canvasRef.current
-      if (!canvas) return
+      if (cancelled || !canvas) return
       const viewport = page.getViewport({ scale: 1.4 })
       canvas.width = viewport.width
       canvas.height = viewport.height
-      const ctx = canvas.getContext('2d')
-      page.render({ canvasContext: ctx, viewport }).promise.then(() => { if (!cancelled) onReady?.() })
+      const task = page.render({ canvasContext: canvas.getContext('2d'), viewport })
+      renderRef.current = task
+      await task.promise
+      if (!cancelled) onReady?.()
+    }
+    run().catch(err => {
+      if (cancelled || err?.name === 'RenderingCancelledException') return
+      setError(err?.message || 'Failed to render the page')
+      onReady?.()
     })
-    return () => { cancelled = true }
+    return () => { cancelled = true; renderRef.current?.cancel() }
   }, [pdf, pageNum])
 
   if (error) return <div style={{ color: '#fca5a5', padding: 24, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}><AlertTriangle size={14} /> {error}</div>
@@ -312,15 +343,30 @@ export function Card({ children, style: s, pad = true, onClick, id }) {
   )
 }
 
+// Open modals, oldest first. Escape closes only the newest: with a confirm dialog open on top of a
+// form, one press used to close both and throw away what was typed in the form underneath.
+const openModals = []
+
 export function Modal({ title, subtitle, onClose, children, size = 'md' }) {
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  // Only a press that STARTED on the backdrop closes it: dragging out of a text field and releasing
+  // over the backdrop used to dismiss the dialog and lose what was typed.
+  const backdropDown = useRef(false)
   useEffect(() => {
-    const h = e => e.key === 'Escape' && onClose()
+    const id = Symbol('modal')
+    openModals.push(id)
+    const h = e => { if (e.key === 'Escape' && openModals[openModals.length - 1] === id) onCloseRef.current() }
     document.addEventListener('keydown', h)
-    return () => document.removeEventListener('keydown', h)
-  }, [onClose])
+    return () => {
+      document.removeEventListener('keydown', h)
+      const i = openModals.indexOf(id)
+      if (i !== -1) openModals.splice(i, 1)
+    }
+  }, [])
   const w = { sm: 420, md: 500, lg: 680, xl: 820, xxl: 1040 }[size] || 500
   return (
-    <div className="modal-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }} onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="modal-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }} onMouseDown={e => { backdropDown.current = e.target === e.currentTarget }} onClick={e => { if (e.target === e.currentTarget && backdropDown.current) onClose() }}>
       <div className="modal-inner" style={{ background: T.surface, border: `1px solid ${T.border}`, width: '100%', maxWidth: w, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '20px 24px 16px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
           <div>
@@ -537,6 +583,8 @@ export function FileUpload({ file, onFile, error, onError, mimeTypes, extensions
 export function ProductThumb({ order, size = 'sm', onClick }) {
   const [broken, setBroken] = useState(false)
   const url = order?.imageDataUrl || order?.imageUrl
+  // A replaced photo gets a fresh chance: `broken` used to stick after one bad image.
+  useEffect(() => { setBroken(false) }, [url])
   const dim = size === 'lg' ? 112 : 48
   const showImg = url && !broken
   return (
@@ -686,11 +734,20 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
     if (fileData) return fileData
     if (!onGetData) return null
     setFetching(true)
-    const d = await onGetData(doc.id)
-    setFileData(d)
-    setFetching(false)
-    return d
+    try {
+      const d = await onGetData(doc.id)
+      setFileData(d)
+      return d
+    } finally {
+      // Without this a failed fetch left the Download button disabled until the page reloaded.
+      setFetching(false)
+    }
   }
+
+  // Release the open viewer's blob URL when the card goes away mid-view.
+  const viewerBlobRef = useRef(null)
+  viewerBlobRef.current = viewerBlob
+  useEffect(() => () => { viewerBlobRef.current?.revoke() }, [])
 
   const openFile = async () => {
     // External link doc — open in new tab, no viewer modal
@@ -704,6 +761,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
       if (!d?.dataUrl) { setViewerLoading(false); alert('Document data not available'); return }
       const blob = dataUrlToBlobUrl(d.dataUrl)
       if (!blob) { setViewerLoading(false); alert('Invalid document data'); return }
+      viewerBlob?.revoke() // a double click must not leak the first blob
       setViewerBlob(blob)
       // viewerLoading stays true until iframe onLoad fires
     } catch (err) {
@@ -713,7 +771,9 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
   }
 
   const download = async () => {
-    const d = fileData || await fetchData()
+    let d
+    try { d = fileData || await fetchData() }
+    catch (err) { alert('Could not download the document: ' + (err?.message || 'Unknown error')); return }
     if (!d?.dataUrl) return
     // Use blob URL — base64 hrefs fail on large files in some browsers
     const blob = dataUrlToBlobUrl(d.dataUrl)

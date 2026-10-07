@@ -76,7 +76,7 @@ function attentionLine(rows, role) {
   const bad = rows.filter(r => r.health === 'blocked' || r.health === 'late').sort((a, b) => severity(b) - severity(a))
   if (!bad.length) return 'Nothing is late or blocked right now, every live order is on plan.'
   const bits = bad.slice(0, 2).map(r => {
-    const who = role === 'admin' ? ` (${r.order.buyerCompany})` : ''
+    const who = role === 'admin' ? ` (${r.order.buyerCompany || 'unknown customer'})` : ''
     if (r.health === 'blocked') {
       const s = r.blocked[0].stage
       return `**${r.order.product}**${who} is blocked at ${s.name}${s.blockedReason ? `, ${s.blockedReason.toLowerCase()}` : ''}`
@@ -97,7 +97,7 @@ function nextDeliveryLine(rows, role, todayNum) {
     .sort((a, b) => a.deliveryDay - b.deliveryDay)[0]
   if (!next) return null
   const days = next.deliveryDay - todayNum
-  const who = role === 'admin' ? ` for ${next.order.buyerCompany}` : ''
+  const who = role === 'admin' ? ` for ${next.order.buyerCompany || 'an unknown customer'}` : ''
   return `Next delivery: **${next.order.product}**${who} on ${shortDate(next.order.delivery)} (${days === 0 ? 'today' : `in ${plural(days, 'day')}`}).`
 }
 
@@ -114,7 +114,13 @@ function build({ role, user, orders, actionItems }) {
   if (!live.length) {
     lines.push(orderRows.length
       ? `All ${plural(orderRows.length, 'order')} on your book ${orderRows.length === 1 ? 'is' : 'are'} delivered, nothing is in progress.`
-      : 'No orders yet, there is nothing to summarise.')
+      : (() => {
+        // Styles that exist but have no manufacturer yet produce no rows, so they used to read as "no orders".
+        const unassigned = role === 'manufacturer' ? 0 : (orders || []).filter(o => !(o.assignments || []).length).length
+        return unassigned
+          ? `${plural(unassigned, 'style')} ${unassigned === 1 ? 'has' : 'have'} been created but no manufacturer is assigned yet, so there is no production to track.`
+          : 'No orders yet, there is nothing to summarise.'
+      })())
     return lines
   }
 

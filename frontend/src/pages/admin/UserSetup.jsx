@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Crown, Check, AlertTriangle, Plus, Search, KeyRound, Pencil, Users, Circle } from '../../icons.jsx'
-import { T } from '../../constants.js'
+import { T, getToday } from '../../constants.js'
 import { Modal, Input, Select, Btn, Card, Alert, EmptyState, FlexRow, PageHeader, RoleBadge, Mono, LoadingScreen, FileUpload, useToast, fileUploadPayload } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
@@ -16,6 +16,9 @@ export function UserSetup() {
   const { users, loading, createUser, updateUser, toggleUser, resetUserPw, uploadDoc } = useApp()
   const toast = useToast()
   const [tab, setTab] = useState('all')
+  // Deactivate and Reset password are one click away from locking someone out, so they ask first.
+  const [confirmAction, setConfirmAction] = useState(null) // { kind: 'deactivate' | 'reset', user }
+  const [confirmBusy, setConfirmBusy] = useState(false)
   const [q, setQ] = useState('')
   const [showC, setShowC] = useState(false)
   const [f, setF] = useState({ name: '', email: '', password: '', company: '', phone: '', role: 'buyer', adminType: 'user', code: '' })
@@ -67,25 +70,54 @@ export function UserSetup() {
     if (f.role === 'manufacturer' && !profileFile) { setProfileFileErr('Manufacturer profile document is required'); return }
     if (Object.keys(errs).length) { setErrors(errs); return }
     setSaving(true)
+    let newUser
     try {
-      const newUser = await createUser({ ...f, code: f.role === 'admin' ? 'TRD' : f.code.toUpperCase().slice(0, 5) })
-      if (f.role === 'manufacturer' && profileFile) {
+      newUser = await createUser({ ...f, code: f.role === 'admin' ? 'TRD' : f.code.toUpperCase().slice(0, 5) })
+    } catch (e) {
+      toast(e?.message || 'Failed to create user', 'error')
+      setSaving(false)
+      return
+    }
+    // The account exists from here on. A failed profile upload must not be reported as a failed
+    // create (a retry would only hit "Email already in use"), so it is reported on its own.
+    let profileError = null
+    if (f.role === 'manufacturer' && profileFile) {
+      try {
         await uploadDoc({
           type: 'mfr_profile', name: `${f.company} — Manufacturer Profile`,
-          issuer: f.company, issueDate: new Date().toISOString().slice(0, 10),
+          issuer: f.company, issueDate: getToday(),
           expiryDate: null, mfrId: newUser.id, orderId: null,
           ...fileUploadPayload(profileFile),
         })
+      } catch (e) { profileError = e?.message || 'upload failed' }
+    }
+    if (profileError) toast(`User ${f.name} was created, but the profile document did not upload (${profileError}). Add it from the Documents page.`, 'warning')
+    else toast(`User ${f.name} created`, 'success')
+    setShowC(false)
+    setF({ name: '', email: '', password: '', company: '', phone: '', role: 'buyer', adminType: 'user', code: '' })
+    setProfileFile(null)
+    setProfileFileErr('')
+    setErrors({})
+    setSaving(false)
+  }
+
+  const runConfirmed = async () => {
+    if (!confirmAction) return
+    const { kind, user: u } = confirmAction
+    setConfirmBusy(true)
+    try {
+      if (kind === 'reset') {
+        await resetUserPw(u.id)
+        setTempPwInfo({ name: u.name, email: u.email })
+        toast(`Password reset for ${u.name}`, 'success')
+      } else {
+        await toggleUser(u.id)
+        toast(`${u.name} deactivated`, 'success')
       }
-      toast(`User ${f.name} created`, 'success')
-      setShowC(false)
-      setF({ name: '', email: '', password: '', company: '', phone: '', role: 'buyer', adminType: 'user', code: '' })
-      setProfileFile(null)
-      setProfileFileErr('')
-      setErrors({})
+      setConfirmAction(null)
     } catch (e) {
-      toast(e?.message || 'Failed to create user', 'error')
-    } finally { setSaving(false) }
+      toast(e?.message || (kind === 'reset' ? 'Failed to reset password' : 'Failed to update user status'), 'error')
+    } finally { setConfirmBusy(false) }
   }
 
   const openEdit = (u) => {
@@ -119,6 +151,24 @@ export function UserSetup() {
 
   return (
     <div>
+      {confirmAction && (
+        <Modal
+          title={confirmAction.kind === 'reset' ? 'Reset this password?' : 'Deactivate this account?'}
+          subtitle={`${confirmAction.user.name} · ${confirmAction.user.email}`}
+          onClose={() => !confirmBusy && setConfirmAction(null)}>
+          <div style={{ fontSize: 13, color: T.text, lineHeight: 1.5, marginBottom: 16 }}>
+            {confirmAction.kind === 'reset'
+              ? 'Their current password stops working and they are signed out. A new temporary password is emailed to them, and they must change it at their next login.'
+              : 'They are signed out at once and cannot log in until you activate the account again. Their orders and history are kept.'}
+          </div>
+          <FlexRow gap={8} style={{ justifyContent: 'flex-end' }}>
+            <Btn variant="secondary" disabled={confirmBusy} onClick={() => setConfirmAction(null)}>Cancel</Btn>
+            <Btn variant={confirmAction.kind === 'reset' ? 'primary' : 'danger'} disabled={confirmBusy} onClick={runConfirmed}>
+              {confirmBusy ? 'Working…' : confirmAction.kind === 'reset' ? 'Reset password' : 'Deactivate'}
+            </Btn>
+          </FlexRow>
+        </Modal>
+      )}
       {showC && (
         <Modal title="Create New User" subtitle="User must change password on first login" onClose={() => { setShowC(false); setErrors({}); setProfileFile(null); setProfileFileErr('') }} size="lg">
           <div style={{ marginBottom: 14 }}><Alert type="success"><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Crown size={13} /> Master Admin privilege — only you can create platform users.</span></Alert></div>
@@ -256,19 +306,14 @@ export function UserSetup() {
                           <Pencil size={11} style={{ marginRight: 4, verticalAlign: -1 }} />Edit
                         </button>
                         <button onClick={async () => {
-                            try { await toggleUser(u.id); toast(`${u.name} ${u.isActive ? 'deactivated' : 'activated'}`, 'success') }
-                            catch { toast('Failed to update user status', 'error') }
+                            if (u.isActive) { setConfirmAction({ kind: 'deactivate', user: u }); return }
+                            try { await toggleUser(u.id); toast(`${u.name} activated`, 'success') }
+                            catch (e) { toast(e?.message || 'Failed to update user status', 'error') }
                           }}
                           style={{ padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: u.isActive ? T.dangerBg : T.successBg, color: u.isActive ? T.danger : T.success, border: 'none', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
                           {u.isActive ? 'Deactivate' : 'Activate'}
                         </button>
-                        <button onClick={async () => {
-                            try {
-                              await resetUserPw(u.id)
-                              setTempPwInfo({ name: u.name, email: u.email })
-                              toast(`Password reset for ${u.name}`, 'success')
-                            } catch { toast('Failed to reset password', 'error') }
-                          }}
+                        <button onClick={() => setConfirmAction({ kind: 'reset', user: u })}
                           style={{ padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: T.warningBg, color: T.warning, border: 'none', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
                           Reset PW
                         </button>
