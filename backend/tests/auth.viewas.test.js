@@ -111,3 +111,19 @@ describe('view as', () => {
     assert.equal((await req('GET', '/api/auth/me', { token: tokenFrom(a) })).body.user.canViewAs, undefined)
   })
 })
+
+describe('view as is attributed in the audit log', () => {
+  test('a change made while viewing as a manufacturer names the master admin', async () => {
+    const master = await makeMaster({ name: 'Arun Mehta' }), buyer = await makeBuyer(), mfr = await makeMfr()
+    const created = await as(master).post('/api/orders', orderPayload({ id: 'VAS-ATTR-001', buyerId: buyer._id, mfrId: mfr._id, stageNames: ['Cutting'] }))
+    assert.equal(created.status, 201, JSON.stringify(created.body))
+    const r = await as(master).post('/api/auth/view-as', { userId: String(mfr._id) })
+    assert.equal(r.status, 200)
+    const upd = await req('POST', `/api/orders/VAS-ATTR-001/assignments/${mfr._id}/stages/0`, { token: tokenFrom(r), body: { note: 'changed while viewing as' } })
+    assert.equal(upd.status, 200, JSON.stringify(upd.body))
+    const entry = await AuditLog.findOne({ action: 'Stage Updated' }).lean()
+    assert.equal(String(entry.byUser), String(mfr._id))
+    assert.equal(String(entry.viewAsBy), String(master._id))
+    assert.match(entry.detail, /done by Arun Mehta using view as/)
+  })
+})
