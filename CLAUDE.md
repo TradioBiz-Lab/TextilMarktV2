@@ -51,11 +51,13 @@ backend/src/
   app.js              # Express bootstrap, security middleware, route mounting
   db/index.js         # Mongoose connect + model re-exports
   middleware/auth.js  # requireAuth / requireAdmin / requireMaster / sanitizeBody
+  middleware/asyncErrors.js # forwards rejected async handlers to the error handler
   models/             # User, Order, Document, Notification, AuditLog, Ribbon, MasterOrder,
-                       # ActionItem, WikiPage
-  routes/             # auth, orders, documents, users, notifications, audit, ribbons,
-                       # masterOrders, signup, actionItems, assistant, wikiPages
-  lib/                # email, stageMath, wikiAccess (shared Wiki scoping logic)
+                       # ActionItem, DroppedRecord, InboundMessage
+  routes/             # auth, viewAs, orders, documents, users, notifications, audit, ribbons,
+                       # masterOrders, signup, actionItems, assistant (Kriyaa), voice, inbound,
+                       # review, floor, dropped
+  lib/                # email, stageMath, notify, redact, dropRecord, sarvam, ai/, inbound/
 frontend/src/
   App.jsx             # top-level view router (hand-rolled, no react-router)
   context.jsx         # AppProvider — single global data/actions store
@@ -109,6 +111,9 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
 - **Kriyaa tool input is untrusted.** IDs from the model are validated against strict shapes
   before they go into a loopback URL, and request bodies are rebuilt from an allowlist
   (`stageTarget` / `pick` in `routes/assistant.js`). Don't interpolate tool input into a path.
+  Closing or reopening a Delivery step, and any `override`, also need a human confirmation the
+  server can see (`adminConfirmed` in `routes/assistant.js`): Kriyaa must have asked, and the admin's
+  own latest message must agree. A flag passed by the model cannot stand in for it.
 - **Notifications and the audit log are written by the server only.** `lib/notify.js` creates
   cross-user notifications inside the order, document and assignment routes (buyer, plus all
   admins when a manufacturer is the one acting; never the actor). The browser never creates
@@ -216,6 +221,9 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
 
 ## Conventions / gotchas for future work
 - `category` on Order is free-text (not enum) — don't add enum validation back.
+- **Buyers never write the Delivery step**, even when they own it: closing it marks the split
+  Delivered. Only Tradio or the manufacturer confirms delivery (enforced in `routes/orders.js`, and
+  hidden in `caps.js`).
 - `Order._id` is a custom string, not ObjectId — don't assume `mongoose.Types.ObjectId`.
 - Buyers can never write order status/stage fields — enforced server-side (BRD §3) — **with
   one narrow, deliberate exception**: a buyer who is a stage's `responsibleId` may set that

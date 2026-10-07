@@ -37,7 +37,8 @@ export function canWriteStage(user, asgn, stage) {
   if (!user) return false
   if (user.role === 'admin') return true
   if (user.role === 'manufacturer') return String(asgn?.mid) === String(user.id)
-  if (user.role === 'buyer') return !!stage?.responsibleId && String(stage.responsibleId) === String(user.id)
+  // A buyer never writes the Delivery step: it decides when a split counts as delivered (server rule too).
+  if (user.role === 'buyer') return !stage?.isDelivery && !!stage?.responsibleId && String(stage.responsibleId) === String(user.id)
   return false
 }
 
