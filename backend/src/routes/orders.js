@@ -100,6 +100,11 @@ const RESPONSIBLE_ROLES = ['admin', 'manufacturer', 'buyer']
 const buyerMayWriteStage = (user, stage) =>
   user.role === 'buyer' && !!stage?.responsibleId && String(stage.responsibleId) === String(user.id)
 
+// Planning fields (dates, targets, ownership, description) are the coordinator's
+// (caps.js editPlan: admin only). A manufacturer reports progress; it does not
+// reshape or reschedule the plan. The UI hides these controls, this is the real gate.
+const PLAN_ONLY_STAGE_KEYS = ['kind', 'totalUnits', 'responsibleId', 'description', 'eta', 'startDate']
+
 const enrichOrder = (o, viewerMfrId = null) => {
   const buyer = o.buyerId && typeof o.buyerId === 'object' && o.buyerId.company ? o.buyerId : null
   // Manufacturers only see their own assignment — not competitors' qty/status/notes
@@ -180,6 +185,11 @@ const enrichOrder = (o, viewerMfrId = null) => {
   }),
 }
 }
+
+// Every response that carries an order must be scoped to the caller: a manufacturer
+// only ever sees its own assignment (same boundary as the read routes above).
+const enrichFor = (order, req) =>
+  enrichOrder(order, req.user.role === 'manufacturer' ? String(req.user.id) : null)
 
 // GET /api/orders
 router.get('/', requireAuth, async (req, res) => {
@@ -526,7 +536,7 @@ router.post('/', requireAuth, requireAdmin, createOrderLimiter, async (req, res)
 
     const order = await Order.findById(result.order._id).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
 
-    res.status(201).json(enrichOrder(order))
+    res.status(201).json(enrichFor(order, req))
   } catch (err) {
     res.status(500).json({ error: 'Server error' })
   }
@@ -640,7 +650,7 @@ router.post('/:orderId/assignments/:mfrId', requireAuth, updateLimiter, async (r
       detail: `${orderId}: assignment status → ${status}${note ? ' | ' + note.slice(0, 200) : ''}`,
     })
 
-    res.json(enrichOrder(order))
+    res.json(enrichFor(order, req))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -686,7 +696,7 @@ router.post('/:orderId/assignments', requireAuth, requireAdmin, updateLimiter, a
       detail: `${orderId}: added manufacturer ${mfrUser._id} (${nextSub}, qty ${aqty}) by ${req.user.name}`,
     })
 
-    res.status(201).json(enrichOrder(order))
+    res.status(201).json(enrichFor(order, req))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -745,6 +755,12 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimit
       const kind = row.kind ?? stageKindOf(stage)
       const has = k => Object.prototype.hasOwnProperty.call(row, k)
       const p = f => `assignments.$[asgn].stages.${i}.${f}`
+
+      if (req.user.role === 'manufacturer') {
+        const planKeys = PLAN_ONLY_STAGE_KEYS.filter(k => has(k))
+        if (planKeys.length)
+          return res.status(403).json({ error: `Only an admin can change the plan (not: ${planKeys.join(', ')})` })
+      }
 
       if (req.user.role === 'buyer') {
         if (!buyerMayWriteStage(req.user, stage))
@@ -892,7 +908,7 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimit
       detail: `${orderId}: ${touched.length} stage(s) updated by ${req.user.name} [${touched.map(i => i + 1).join(', ')}]`,
     })
 
-    res.json({ ...enrichOrder(order, req.user.role === 'manufacturer' ? String(req.user.id) : null), updated: touched.length })
+    res.json({ ...enrichFor(order, req), updated: touched.length })
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -1022,7 +1038,7 @@ router.post('/:orderId/assignments/:mfrId/stages/insert', requireAuth, requireAd
       detail: `${orderId}: added stage "${newStage.name}" at position ${index + 1} by ${req.user.name}`,
     })
 
-    res.json(enrichOrder(order))
+    res.json(enrichFor(order, req))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -1046,6 +1062,8 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
 
     if (req.user.role === 'manufacturer' && String(req.user.id) !== String(mfrId))
       return res.status(403).json({ error: 'Forbidden' })
+    if (req.user.role === 'manufacturer' && (hasEta || hasStartDate))
+      return res.status(403).json({ error: 'Only an admin can change planned dates' })
     if (isMasterOverride && !(req.user.role === 'admin' && req.user.adminType === 'master'))
       return res.status(403).json({ error: 'Only master admin can override a stage' })
     if (note !== undefined && note !== null && typeof note === 'string' && note.length > 1000)
@@ -1226,7 +1244,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
     // positives until that graph exists. `warnings` stays in the response
     // shape (frontend callers already check it) for whenever it's worth
     // populating again.
-    res.json({ ...enrichOrder(order), warnings: [] })
+    res.json({ ...enrichFor(order, req), warnings: [] })
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -1444,7 +1462,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
       detail: `${orderId}: Stage ${stageIndex + 1} (${stageName}) ${changes.join(', ')}`,
     })
 
-    res.json(enrichOrder(order))
+    res.json(enrichFor(order, req))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -1523,7 +1541,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/delete', requireAut
       detail: `${orderId}: removed stage "${removedStage.name}" (was stage ${stageIndex + 1})`,
     })
 
-    res.json(enrichOrder(order))
+    res.json(enrichFor(order, req))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -1577,7 +1595,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/updates', requireAu
       detail: `${orderId}: ${stageName} — ${text.trim().slice(0, 100)}`,
     })
 
-    res.json(enrichOrder(order))
+    res.json(enrichFor(order, req))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -1668,7 +1686,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items', requireAuth
       action: 'Stage Item Added',
       detail: `${ctx.orderId}: ${ctx.stage.name || `Stage ${ctx.stageIndex + 1}`} — added ${lines.length} item(s)`,
     })
-    res.json(enrichOrder(order))
+    res.json(enrichFor(order, req))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -1730,7 +1748,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items/:lineIndex', 
       action: 'Stage Item Updated',
       detail: `${ctx.orderId}: ${ctx.stage.name || `Stage ${ctx.stageIndex + 1}`} — "${items[lineIndex].name}"${has('status') ? ` → ${status}` : ''}`,
     })
-    res.json(enrichOrder(order))
+    res.json(enrichFor(order, req))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -1764,7 +1782,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items/:lineIndex/de
       action: 'Stage Item Removed',
       detail: `${ctx.orderId}: ${ctx.stage.name || `Stage ${ctx.stageIndex + 1}`} — removed "${items[lineIndex].name}"`,
     })
-    res.json(enrichOrder(order))
+    res.json(enrichFor(order, req))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -1824,7 +1842,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials', require
       detail: `${orderId}: ${stage.name || `Stage ${stageIndex + 1}`} — added "${line.name}" (${line.requiredQty} ${line.unit})`,
     })
 
-    res.json(enrichOrder(order))
+    res.json(enrichFor(order, req))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -1912,7 +1930,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineInde
       detail: `${orderId}: ${stage.name || `Stage ${stageIndex + 1}`} — "${stage.materials[lineIndex].name}"${status ? ` → ${status}` : ''}`,
     })
 
-    res.json(enrichOrder(order))
+    res.json(enrichFor(order, req))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -1976,7 +1994,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineInde
       detail: `${orderId}: ${stage.name || `Stage ${stageIndex + 1}`} — removed "${removedName}"`,
     })
 
-    res.json(enrichOrder(order))
+    res.json(enrichFor(order, req))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -2216,7 +2234,7 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
       detail: `${orderId}: updated ${changedFields} by ${req.user.name}`,
     })
 
-    res.json(enrichOrder(order))
+    res.json(enrichFor(order, req))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })

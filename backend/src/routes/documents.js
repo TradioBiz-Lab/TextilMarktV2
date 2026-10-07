@@ -84,6 +84,12 @@ async function assertDocAccess(user, { orderId, mfrId, type }) {
   if (user.role === 'manufacturer') {
     if (mfrId && String(mfrId) !== String(user.id))
       throw Object.assign(new Error('You can only upload documents for yourself'), { status: 403 })
+    // An order document may only go on an order this manufacturer is assigned to.
+    if (orderId) {
+      const assigned = await Order.exists({ _id: orderId, 'assignments.mfrId': user.id })
+      if (!assigned)
+        throw Object.assign(new Error('You can only upload documents to orders you are assigned to'), { status: 403 })
+    }
   }
 }
 
@@ -147,7 +153,9 @@ router.get('/', requireAuth, async (req, res) => {
 
       docs = await populateUploader(Document.find({
         isActive: true,
-        $or: [{ mfrId: req.user.id }, { orderId: { $in: orderIds } }],
+        // Own docs, plus general order docs (no mfrId). Never a competing
+        // manufacturer's docs on a shared order: GET /:id/data denies those too.
+        $or: [{ mfrId: req.user.id }, { orderId: { $in: orderIds }, mfrId: null }],
       }).sort({ createdAt: -1 })).lean()
     }
 
