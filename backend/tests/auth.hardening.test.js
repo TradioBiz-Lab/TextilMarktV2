@@ -102,7 +102,14 @@ describe('login does not reveal which accounts exist', () => {
   test('a long unknown email is capped before it reaches the audit log', async () => {
     const r = await login(`${'a'.repeat(200)}@test.local`, 'x')
     assert.equal(r.status, 401)
-    const entry = await AuditLog.findOne({ action: 'Login Failed' }).lean()
+    // The login route writes this entry without waiting for it, so give the write a moment to land
+    // (instant on a fast machine, not guaranteed on a loaded CI runner).
+    let entry = null
+    for (let i = 0; i < 40 && !entry; i++) {
+      entry = await AuditLog.findOne({ action: 'Login Failed' }).lean()
+      if (!entry) await new Promise(res => setTimeout(res, 50))
+    }
+    assert.ok(entry, 'the failed login was never audited')
     assert.ok(entry.detail.length < 140, `detail was ${entry.detail.length} chars`)
   })
 
