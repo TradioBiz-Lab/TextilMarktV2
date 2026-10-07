@@ -101,8 +101,11 @@ app.use((req, _res, next) => {
   next()
 })
 
-// ── Trust proxy — required when behind Render/Vercel reverse proxy ──────────
-// Without this, req.ip is always the proxy IP and rate-limit keys are useless
+// ── Trust proxy: exactly one hop, the Catalyst AppSail edge ─────────────────
+// Without this, req.ip is the edge's internal address (10.x, varying) and every user would share
+// one rate-limit bucket. Verified on the hosted sandbox (Oct 2026): with 1, req.ip is the real
+// client address, and a forged X-Forwarded-For does not change it, because the edge appends the
+// real address and Express takes that last entry. Raise it only if another proxy is put in front.
 if (isProd) app.set('trust proxy', 1)
 
 // ── Global rate limiter ─────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { CalendarClock, AlertTriangle, Package, Ban, CircleDot, CheckCircle2, Search, BarChart3, Folder, MessageCircle, Calendar, ChevronDown, ChevronRight, Play, Download, ArrowRight, Sparkles } from '../../icons.jsx'
 import {
-  T, dayNumber, getToday, fmtN, effectiveEta,
+  T, dayNumber, getToday, fmtN, effectiveEta, planProgress,
   stageStatusOf, stageIsOverdue, isStageDone, inFlightStages, stageProgressLabel, stageVariance,
 } from '../../constants.js'
 import { toCsvCell } from '../../csvCell.js'
@@ -193,8 +193,7 @@ export function ReportingPage({ onOpen, initialMo }) {
   const rows = useMemo(() => {
     return (orders || []).flatMap(o => (o.assignments || []).map(a => {
       const stages = a.stages || []
-      const doneCount = stages.filter(isStageDone).length
-      const pct = stages.length ? Math.round((doneCount / stages.length) * 100) : 0
+      const { done: doneCount, pct } = planProgress(stages)
 
       // The live action items — what someone is (or should be) doing right now.
       const live = inFlightStages(a, { windowDays: 3650 })

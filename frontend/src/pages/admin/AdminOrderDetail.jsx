@@ -4,7 +4,7 @@ import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, Clip
 import {
   T, ORDER_STATUSES, evidenceTypesFor, DOC_ICONS,
   stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
-  stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber, getToday,
+  stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber, getToday, planProgress,
   PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor,
 } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey } from '../../components/ui.jsx'
@@ -941,10 +941,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {order.assignments.map(a => {
             const stages = a.stages || []
-            const totalDone = stages.reduce((s, st) => s + (st.unitsDone || 0), 0)
-            const totalAll = stages.reduce((s, st) => s + (st.totalUnits || 0), 0)
-            const pct = totalAll > 0 ? Math.round((totalDone / totalAll) * 100) : 0
-            const completedStages = stages.filter(s => s.unitsDone >= s.totalUnits && s.totalUnits > 0).length
+            const { pct, done: completedStages } = planProgress(stages)
             const stageCnt = orderDocs.filter(d => d.stageIndex != null && String(d.mfrId || '') === String(a.mid)).length
             return (
               <div key={a.mid}
@@ -1319,10 +1316,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {order.assignments.filter(a => !effectiveMid || String(a.mid) === effectiveMid).map(a => {
                 const stages = a.stages || []
-                const completedStages = stages.filter(s => s.totalUnits > 0 && s.unitsDone >= s.totalUnits).length
-                const overallPct = stages.length > 0
-                  ? Math.round(stages.reduce((sum, s) => sum + (s.totalUnits > 0 ? (s.unitsDone / s.totalUnits) * 100 : 0), 0) / stages.length)
-                  : 0
+                const { pct: overallPct, done: completedStages } = planProgress(stages)
 
                 return (
                   <div key={a.sub} style={{ border: `1px solid ${a.status === 'Delayed' ? T.dangerBorder : a.status === 'On Hold' ? T.warningBorder : T.border}`, borderRadius: 12, overflow: 'hidden', background: a.status === 'Delayed' ? '#fff8f8' : a.status === 'On Hold' ? '#fefdf5' : T.surface }}>
