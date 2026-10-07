@@ -22,6 +22,9 @@ const shape = (m, factories, orders) => ({
 
 // GET /api/review/queue - needs_review, oldest first
 router.get('/queue', requireAuth, requireAdmin, async (_req, res) => {
+  // A review that died part-way (process killed, deploy mid-request) leaves its message 'reviewing',
+  // which hides it from everyone. Anything held longer than a few minutes goes back to the queue.
+  await InboundMessage.updateMany({ state: 'reviewing', updatedAt: { $lt: new Date(Date.now() - 5 * 60 * 1000) } }, { $set: { state: 'needs_review' } })
   const msgs = await InboundMessage.find({ state: 'needs_review' }).select(LIGHT).sort({ createdAt: 1 }).limit(100).lean()
   const ids = [...new Set(msgs.map(m => String(m.factoryId)).filter(i => i !== 'null'))]
   const users = await User.find({ _id: { $in: ids } }, 'name company').lean()
@@ -60,15 +63,23 @@ const claim = async id => mongoose.Types.ObjectId.isValid(id)
   : null
 const release = id => InboundMessage.updateOne({ _id: id, state: 'reviewing' }, { $set: { state: 'needs_review' } })
 
+// The handler does not answer the request itself: it passes `reply(status, body)`, and the response
+// goes out only after the message has been handed back (or finished). Replying first left a window
+// where a client that refetched straight after a 400 saw the message still "reviewing", and a crash
+// in that window would have hidden it for good.
 async function withClaim(req, res, fn) {
   const msg = await claim(req.params.id)
   if (!msg) return res.status(404).json({ error: 'Message not found or already reviewed' })
   let finished = false
+  let outcome = { status: 500, body: { error: 'Server error' } }
   try {
-    await fn(msg, () => { finished = true })
-  } finally {
-    if (!finished) await release(msg._id).catch(() => {})
+    await fn(msg, () => { finished = true }, (status, body) => { outcome = { status, body } })
+  } catch (err) {
+    await release(msg._id).catch(() => {})
+    throw err
   }
+  if (!finished) await release(msg._id).catch(() => {})
+  return res.status(outcome.status).json(outcome.body)
 }
 
 // Undo what the AI applied. A stage that someone has updated since is left as it is.
@@ -85,20 +96,20 @@ const keptNote = left => left.length ? ` (left as is, edited since the AI update
 
 // POST /api/review/:id/approve - keep whatever the AI already applied; if it
 // applied nothing, apply its own best guess (needs a matched order + stage).
-router.post('/:id/approve', requireAuth, requireAdmin, (req, res) => withClaim(req, res, async (msg, done) => {
+router.post('/:id/approve', requireAuth, requireAdmin, (req, res) => withClaim(req, res, async (msg, done, reply) => {
   if (!msg.changes.length) {
     const u = msg.parsed?.updates?.[0]
     const canonical = msg.parsed?.stage || msg.parsed?.implied_stage || u?.stage
     if (!msg.orderId || !canonical || !msg.factoryId)
-      return res.status(400).json({ error: 'Nothing to approve - use Correct to pick the order and stage' })
+      return reply(400, { error: 'Nothing to approve - use Correct to pick the order and stage' })
     const target = await resolveTarget(msg, msg.orderId, canonical)
-    if (target.error) return res.status(400).json({ error: target.error })
+    if (target.error) return reply(400, { error: target.error })
     const r = await applyForReview(msg, target, u?.status === 'in_progress' ? 'in_progress' : 'done')
-    if (r.error) return res.status(400).json({ error: r.error })
+    if (r.error) return reply(400, { error: r.error })
   }
   await finish(msg, req, 'applied', `Approved inbound message ${msg._id}`)
   done()
-  res.json({ ok: true })
+  reply(200, { ok: true })
 }))
 
 // Finds the order and stage a review action points at, without writing anything.
@@ -123,33 +134,33 @@ async function applyForReview(msg, { orderId, idx }, status) {
 }
 
 // POST /api/review/:id/correct  { orderId, stage, status? } - coordinator overrides the guess
-router.post('/:id/correct', requireAuth, requireAdmin, (req, res) => withClaim(req, res, async (msg, done) => {
+router.post('/:id/correct', requireAuth, requireAdmin, (req, res) => withClaim(req, res, async (msg, done, reply) => {
   const { orderId, stage, status = 'done' } = req.body || {}
-  if (typeof orderId !== 'string' || typeof stage !== 'string') return res.status(400).json({ error: 'orderId and stage required' })
-  if (!['done', 'in_progress'].includes(status)) return res.status(400).json({ error: 'Invalid status' })
-  if (!msg.factoryId) return res.status(400).json({ error: 'Unknown sender - assign a factory number first' })
+  if (typeof orderId !== 'string' || typeof stage !== 'string') return reply(400, { error: 'orderId and stage required' })
+  if (!['done', 'in_progress'].includes(status)) return reply(400, { error: 'Invalid status' })
+  if (!msg.factoryId) return reply(400, { error: 'Unknown sender - assign a factory number first' })
   // Check the coordinator's target BEFORE undoing anything, so a bad pick leaves the message and
   // the stages exactly as they were.
   const target = await resolveTarget(msg, orderId, stage)
-  if (target.error) return res.status(400).json({ error: target.error })
+  if (target.error) return reply(400, { error: target.error })
   const left = await revertChanges(msg)
   msg.changes = []
   await retractEvidence(msg._id)
   const r = await applyForReview(msg, target, status)
-  if (r.error) return res.status(400).json({ error: r.error })
+  if (r.error) return reply(400, { error: r.error })
   const delivered = r.splitStatus === 'Delivered' ? '; split marked Delivered' : ''
   await finish(msg, req, 'applied', `Corrected inbound message ${msg._id} to ${orderId} / ${r.stageName}${delivered}${keptNote(left)}`)
   done()
-  res.json({ ok: true, ...(left.length ? { warnings: [`Not reverted (edited since the AI update): ${left.join(', ')}`] } : {}) })
+  reply(200, { ok: true, ...(left.length ? { warnings: [`Not reverted (edited since the AI update): ${left.join(', ')}`] } : {}) })
 }))
 
 // POST /api/review/:id/reject - revert any AI write, keep the raw message
-router.post('/:id/reject', requireAuth, requireAdmin, (req, res) => withClaim(req, res, async (msg, done) => {
+router.post('/:id/reject', requireAuth, requireAdmin, (req, res) => withClaim(req, res, async (msg, done, reply) => {
   const left = await revertChanges(msg)
   await retractEvidence(msg._id)
   await finish(msg, req, 'rejected', `Rejected inbound message ${msg._id}${keptNote(left)}`)
   done()
-  res.json({ ok: true, ...(left.length ? { warnings: [`Not reverted (edited since the AI update): ${left.join(', ')}`] } : {}) })
+  reply(200, { ok: true, ...(left.length ? { warnings: [`Not reverted (edited since the AI update): ${left.join(', ')}`] } : {}) })
 }))
 
 export default router
