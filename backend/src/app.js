@@ -9,6 +9,7 @@ import mongoose from 'mongoose'
 import './middleware/asyncErrors.js'
 import { connectDB } from './db/index.js'
 import { sanitizeBody } from './middleware/auth.js'
+import { redact } from './lib/redact.js'
 import authRouter          from './routes/auth.js'
 import ordersRouter        from './routes/orders.js'
 import documentsRouter     from './routes/documents.js'
@@ -28,6 +29,8 @@ import droppedRouter from './routes/dropped.js'
 
 // ── Validate required env vars at startup ──────────────────────────────────
 const isProd = process.env.NODE_ENV === 'production'
+if (isProd && (process.env.JWT_SECRET || '').length < 32)
+  console.warn('[WARN] JWT_SECRET is shorter than 32 characters. Rotate it to a long random value (signs everyone out once).')
 // Test runs own their DB lifecycle (an ephemeral in-memory mongod), so they
 // supply no MONGO_DB_URI and this module must not bootstrap anything.
 const isTest = process.env.NODE_ENV === 'test'
@@ -119,22 +122,14 @@ app.use(rateLimit({
 // Also parses text/plain — the frontend sends that content type to make requests
 // CORS-simple (skips the OPTIONS preflight, which Catalyst AppSail's edge doesn't
 // forward correctly) while the body itself is still JSON.
+// Login, signup and the other auth routes are reachable without a session, so they get a small
+// body limit; only the authenticated upload routes need the large one below.
+app.use(['/api/auth', '/api/signup'], express.json({ limit: '100kb', type: ['application/json', 'text/plain'] }))
 app.use(express.json({ limit: '14mb', type: ['application/json', 'text/plain'] }))
 app.use(express.urlencoded({ extended: true, limit: '14mb' }))
 app.use(sanitizeBody)
 
 // ── Request logging — never log Authorization headers or body passwords ─────
-const SENSITIVE_FIELDS = new Set(['password', 'currentPassword', 'newPassword', 'passwordHash', 'Authorization'])
-
-function redact(obj, depth = 0) {
-  if (!obj || typeof obj !== 'object' || depth > 3) return obj
-  const out = {}
-  for (const [k, v] of Object.entries(obj)) {
-    out[k] = SENSITIVE_FIELDS.has(k) ? '[REDACTED]' : redact(v, depth + 1)
-  }
-  return out
-}
-
 app.use((req, res, next) => {
   const start = Date.now()
   res.on('finish', () => {
@@ -200,6 +195,11 @@ app.use((_req, res) => {
 
 // ── Global error handler ─────────────────────────────────────────────────────
 app.use((err, req, res, _next) => {
+  // A client mistake (a too-large body, bad JSON) is not a server fault: one short line, no stack.
+  if (err.status && err.status < 500) {
+    console.warn(JSON.stringify({ id: req.id, ts: new Date().toISOString(), event: 'client_error', status: err.status, error: err.message, path: req.originalUrl, method: req.method }))
+    return res.status(err.status).json({ error: err.status === 413 ? 'Request too large' : (isProd ? 'Bad request' : err.message) })
+  }
   console.error(JSON.stringify({
     id:     req.id,
     ts:     new Date().toISOString(),

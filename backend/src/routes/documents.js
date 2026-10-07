@@ -49,7 +49,27 @@ function validateFilePayload(dataUrl, mimeType, fileSize, fileName) {
   if (mimeType && embeddedMime && mimeType.toLowerCase() !== embeddedMime) return 'File payload does not match declared mime type'
   if (fileSize && fileSize > MAX_FILE_SIZE) return 'File exceeds 10MB limit'
   if (Buffer.byteLength(dataUrl, 'utf8') > MAX_FILE_SIZE * 1.4) return 'File payload too large'
+  const sniff = contentMismatch(dataUrl, embeddedMime || (mimeType || '').toLowerCase())
+  if (sniff) return sniff
   return null
+}
+
+// The declared type comes from the client, so check the first bytes of the files we actually render
+// (PDF and the image types). Anything else, such as DXF or spreadsheets, is not sniffed.
+const SIGNATURES = {
+  'application/pdf': b => b.subarray(0, 4).toString('latin1') === '%PDF',
+  'image/png': b => b.length >= 4 && b[0] === 0x89 && b.subarray(1, 4).toString('latin1') === 'PNG',
+  'image/jpeg': b => b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+  'image/jpg': b => b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+  'image/gif': b => b.subarray(0, 4).toString('latin1') === 'GIF8',
+  'image/webp': b => b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP',
+}
+function contentMismatch(dataUrl, mime) {
+  const check = SIGNATURES[mime]
+  if (!check) return null
+  const start = dataUrl.indexOf(',') + 1
+  const head = Buffer.from(dataUrl.slice(start, start + 24), 'base64')
+  return check(head) ? null : 'The file contents do not match its declared type'
 }
 
 // Returns { url } on success or { error } on failure.

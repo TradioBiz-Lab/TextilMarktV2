@@ -29,6 +29,9 @@ export function AppProvider({ children }) {
   const docDataCache = useRef({})
   const loadData = useCallback(async (user) => {
     if (loadingRef.current) return // prevent duplicate calls from StrictMode
+    // Someone on a temporary password may only change it; the server refuses everything else, so
+    // there is nothing to load until they have (they sign in again afterwards).
+    if (user?.mustChangePw) return
     loadingRef.current = true
     const gen = sessionGenRef.current
     setLoading(true)
