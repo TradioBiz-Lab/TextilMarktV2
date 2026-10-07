@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, Fragment } from 'react'
 import Papa from 'papaparse'
-import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight } from '../../icons.jsx'
+import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight, Trash2 } from '../../icons.jsx'
 import {
   T, ORDER_STATUSES, evidenceTypesFor, DOC_ICONS,
   stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
@@ -83,6 +83,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   const [responsibleValues, setResponsibleValues] = useState([]) // array of responsibleId strings
   const [totalUnitsValues, setTotalUnitsValues] = useState([]) // array of target-qty strings — not every stage tracks the full order qty
   const [descriptionValues, setDescriptionValues] = useState([]) // array of stage description strings
+  const [removeMarks, setRemoveMarks] = useState(() => new Set()) // stage indexes marked "not applicable", removed on save
 
   // Prompt to copy this save's responsibility changes to matching-named stages on
   // every other order under the same master order (offered only when there's a
@@ -265,6 +266,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     setResponsibleValues((asgn?.stages || []).map(s => s.responsibleId || ''))
     setTotalUnitsValues((asgn?.stages || []).map(s => s.totalUnits?.toString() || ''))
     setDescriptionValues((asgn?.stages || []).map(s => s.description || ''))
+    setRemoveMarks(new Set())
     setShowEta(true)
   }
 
@@ -290,6 +292,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
         const responsibleChanged = (responsibleValues[i] || '') !== oldResponsible
         const totalUnitsChanged = (totalUnitsValues[i] || '') !== oldTotalUnits && (totalUnitsValues[i] || '').trim() !== ''
         const descriptionChanged = (descriptionValues[i] || '') !== oldDescription
+        if (removeMarks.has(i)) continue // removed below; editing it first would be wasted work
         if (startChanged || etaChanged || responsibleChanged || totalUnitsChanged || descriptionChanged) {
           const row = { index: i }
           if (startChanged) row.startDate = startValues[i] === 'NA' ? 'NA' : startValues[i] || null
@@ -301,13 +304,30 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
           if (responsibleChanged && stage?.name) respChanges.push({ stageName: stage.name, responsibleId: responsibleValues[i] || null })
         }
       }
-      const changed = rows.length > 0
-      if (changed) {
-        await bulkUpdateStages(order.id, etaTarget, rows)
-        await refreshOrders()
-        toast('Stage dates updated successfully', 'success')
+      if (rows.length > 0) await bulkUpdateStages(order.id, etaTarget, rows)
+
+      // Steps marked not applicable come out of this style's plan, so the matrix shows NA for them.
+      // Highest index first: each removal shifts the steps after it down by one.
+      const removals = [...removeMarks].sort((a, b) => b - a)
+      const removedNames = []
+      let removeError = null
+      for (const i of removals) {
+        try { await ordersApi.removeStage(order.id, etaTarget, i); removedNames.push(asgn.stages[i]?.name) }
+        catch (err) { removeError = `${asgn.stages[i]?.name || `Step ${i + 1}`}: ${err?.message || 'could not be removed'}`; break }
+      }
+
+      if (rows.length > 0 || removedNames.length > 0) await refreshOrders()
+      if (removeError) {
+        toast(`${rows.length ? 'Changes saved, but a' : 'A'} step was not removed. ${removeError}`, 'error')
+        return // keep the dialog open so nothing else is lost
+      }
+      if (rows.length > 0 || removedNames.length > 0) {
+        const parts = []
+        if (rows.length) parts.push(`${rows.length} step${rows.length > 1 ? 's' : ''} updated`)
+        if (removedNames.length) parts.push(`${removedNames.length} marked not applicable`)
+        toast(parts.join(', '), 'success')
       } else {
-        toast('No date changes to save', 'info')
+        toast('No changes to save', 'info')
       }
       setShowEta(false)
 
@@ -1101,14 +1121,21 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
 
       {/* ── Stage Dates Adjustment Modal ── */}
       {showEta && etaTarget && (
-        <Modal title="Bulk Edit Stages" subtitle="Update dates, responsible person, target quantity, and description for every stage at once" size="xxl" onClose={() => setShowEta(false)}>
+        <Modal title="Bulk Edit Stages" subtitle="Update dates, responsible person, target quantity, and description for every stage at once, or mark a step not applicable" size="xxl" onClose={() => setShowEta(false)}>
           <Alert type="info" style={{ marginBottom: 20 }}>Changes are logged in the audit trail.</Alert>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ background: '#f8fafc', borderRadius: 10, border: `1px solid ${T.border}`, padding: '12px 14px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {(order.assignments.find(a => String(a.mid) === String(etaTarget))?.stages || []).map((s, i, arr) => (
+                {(order.assignments.find(a => String(a.mid) === String(etaTarget))?.stages || []).map((s, i, arr) => {
+                  const marked = removeMarks.has(i)
+                  const toggleMark = () => setRemoveMarks(prev => { const next = new Set(prev); next.has(i) ? next.delete(i) : next.add(i); return next })
+                  return (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 12, borderBottom: i < arr.length - 1 ? `1px solid ${T.border}` : 'none' }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: T.text, width: 190, flexShrink: 0, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>{i + 1}. {s.name}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: marked ? T.textLight : T.text, textDecoration: marked ? 'line-through' : 'none', width: 190, flexShrink: 0, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>{i + 1}. {s.name}</span>
+                    {marked ? (
+                      // As wide as the inputs it replaces, so the Undo button stays in the NA column.
+                      <span style={{ flex: 1, minWidth: 740, fontSize: 12, color: T.textMuted }}>Not applicable: this step is removed from the plan when you save and shows as NA in the matrix.</span>
+                    ) : (<>
                     <input
                       type={startValues[i] === 'NA' ? 'text' : 'date'}
                       value={startValues[i]}
@@ -1153,13 +1180,26 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                       title="Upload evidence document for this stage"
                       style={{ flexShrink: 0, background: '#fff', border: `1px solid ${T.border}`, borderRadius: 6, cursor: 'pointer', width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     ><Paperclip size={13} /></button>
+                    </>)}
+                    {s.isDelivery ? (
+                      <span title="The Delivery step is mandatory" style={{ flexShrink: 0, width: 64 }} />
+                    ) : (
+                      <button
+                        onClick={toggleMark}
+                        disabled={!marked && removeMarks.size >= arr.filter(x => !x.isDelivery).length}
+                        title={marked ? 'Keep this step' : 'Not applicable: remove this step from the plan'}
+                        aria-label={marked ? `Keep ${s.name}` : `Mark ${s.name} not applicable`}
+                        style={{ flexShrink: 0, width: 64, height: 30, background: marked ? '#fff' : '#fef2f2', border: `1px solid ${marked ? T.border : '#fecaca'}`, borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: marked ? T.text : T.danger, fontFamily: 'inherit' }}
+                      >{marked ? 'Undo' : <><Trash2 size={12} /> NA</>}</button>
+                    )}
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
             <FlexRow justify="flex-end" gap={8}>
               <Btn variant="secondary" onClick={() => setShowEta(false)}>Cancel</Btn>
-              <Btn disabled={saving} onClick={submitEtaAdjust}>{saving ? 'Saving…' : 'Save Changes'}</Btn>
+              <Btn disabled={saving} onClick={submitEtaAdjust}>{saving ? 'Saving…' : removeMarks.size ? `Save and remove ${removeMarks.size} step${removeMarks.size > 1 ? 's' : ''}` : 'Save Changes'}</Btn>
             </FlexRow>
           </div>
         </Modal>
