@@ -1,4 +1,4 @@
-import { dayNumber, getToday, isStageDone, stageStatusOf, stageIsOverdue, effectiveEta, inFlightStages } from './constants.js'
+import { dayNumber, getToday, isStageDone, deliveryStatus, stageStatusOf, stageIsOverdue, effectiveEta, inFlightStages } from './constants.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dashboard "AI summary" - PLACEHOLDER GENERATOR.
@@ -29,7 +29,6 @@ function buildRows(orders, role, userId, todayNum) {
     for (const a of o.assignments || []) {
       if (role === 'manufacturer' && String(a.mid) !== String(userId)) continue
       const stages = a.stages || []
-      const allDone = stages.length > 0 && stages.every(isStageDone)
       const live = inFlightStages(a, { windowDays: 3650 })
       const blocked = live.filter(({ stage }) => stage.blocked)
       const late = live.filter(({ stage }) => stageIsOverdue(stage))
@@ -38,7 +37,7 @@ function buildRows(orders, role, userId, todayNum) {
         .filter(({ stage }) => { const e = effectiveEta(stage); return e && dayNumber(e) >= todayNum })
         .sort((x, y) => dayNumber(effectiveEta(x.stage)) - dayNumber(effectiveEta(y.stage)))[0] || null
       const deliveryDay = o.delivery ? dayNumber(new Date(o.delivery).toISOString()) : null
-      const delivered = allDone || a.status === 'Delivered'
+      const { delivered } = deliveryStatus(o, a)
       const lateBy = ({ stage }) => todayNum - dayNumber(effectiveEta(stage))
       const worstLate = late.reduce((w, x) => (!w || lateBy(x) > lateBy(w) ? x : w), null)
       const daysLate = worstLate ? lateBy(worstLate) : 0
@@ -195,7 +194,12 @@ export function rowCallout(r) {
     : daysToDelivery < 0 ? `delivery was due ${shortDate(order.delivery)}`
     : `delivery ${shortDate(order.delivery)} (${daysToDelivery === 0 ? 'today' : `${daysToDelivery}d`})`
 
-  if (health === 'done') return `Delivered, all ${total} steps complete${order.delivery ? ` (due ${shortDate(order.delivery)})` : ''}.`
+  if (health === 'done') {
+    const when = r.delivery?.isActual ? ` on ${shortDate(r.delivery.date)}` : ''
+    const due = order.delivery ? `, due ${shortDate(order.delivery)}` : ''
+    const open = total - doneCount
+    return `Delivered${when}${due}.${open > 0 ? ` ${plural(open, 'step')} left open in the plan.` : ''}`
+  }
 
   if (health === 'blocked') {
     const s = blocked[0].stage
