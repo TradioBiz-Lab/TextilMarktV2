@@ -102,6 +102,15 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   strips out other manufacturers' assignment data before a manufacturer-role response is sent —
   this is the actual security boundary for cross-tenant data, not a frontend-only concern.
   Buyers are blocked server-side from writing order status/stage fields (BRD §3).
+  Every route that returns an order must go through `enrichFor(order, req)`, never a bare
+  `enrichOrder(order)`, or a manufacturer's write response leaks every other split.
+  Manufacturers also cannot write plan fields (`eta`, `startDate`, `totalUnits`, `kind`,
+  `responsibleId`, `description`); `PLAN_ONLY_STAGE_KEYS` in `routes/orders.js` is the gate.
+- **Kriyaa tool input is untrusted.** IDs from the model are validated against strict shapes
+  before they go into a loopback URL, and request bodies are rebuilt from an allowlist
+  (`stageTarget` / `pick` in `routes/assistant.js`). Don't interpolate tool input into a path.
+- **Async route errors reach the error handler.** `middleware/asyncErrors.js` patches Express 4
+  so a rejected async handler calls `next(err)` instead of hanging the request.
 - **CORS preflight workaround.** `frontend/src/api.js` sends all requests as
   `Content-Type: text/plain;charset=UTF-8` (still JSON-encoded) rather than
   `application/json`, and `backend/src/app.js`'s `express.json()` is configured to parse both

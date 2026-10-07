@@ -96,8 +96,6 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
   const [moErr, setMoErr] = useState('')
   const [moSaving, setMoSaving] = useState(false)
 
-  if (loading) return <LoadingScreen />
-
   const buyerUsers = users.filter(u => u.role === 'buyer' && u.isActive)  // used in Master Order modal
 
   const toggleSort = col => {
@@ -181,6 +179,9 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
     if (o.assignments.every(a => a.status === 'Delivered')) return 'Delivered'
     return 'Processing'
   }
+
+  // Hooks above must run on every render, so the loading gate sits after them.
+  if (loading) return <LoadingScreen />
 
   return (
     <div>

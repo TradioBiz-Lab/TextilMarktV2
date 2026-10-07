@@ -21,11 +21,15 @@ export function AppProvider({ children }) {
   const [loadError, setLoadError]     = useState(false)
 
   const loadingRef = useRef(false)
+  // Bumped on logout. A load that started under an earlier value belongs to a
+  // previous session, so its results are discarded instead of landing in the next user's.
+  const sessionGenRef = useRef(0)
   useEffect(() => { setOrdersAt(Date.now()) }, [orders])
   const docDataCache = useRef({})
   const loadData = useCallback(async (user) => {
     if (loadingRef.current) return // prevent duplicate calls from StrictMode
     loadingRef.current = true
+    const gen = sessionGenRef.current
     setLoading(true)
     setLoadError(false)
     try {
@@ -40,6 +44,7 @@ export function AppProvider({ children }) {
         ...(isAdmin ? [usersApi.list(), auditApi.list(), actionItemsApi.list()] : []),
       ]
       const results = await Promise.all(promises)
+      if (gen !== sessionGenRef.current) return // logged out while loading
       setOrders(results[0])
       setDocs(results[1])
       setNotifs(results[2])
@@ -57,10 +62,12 @@ export function AppProvider({ children }) {
         setUsers([{ id: user.id, name: user.name, company: user.company, email: user.email, role: user.role }])
       }
     } catch {
-      setLoadError(true)
+      if (gen === sessionGenRef.current) setLoadError(true)
     } finally {
-      setLoading(false)
-      loadingRef.current = false
+      if (gen === sessionGenRef.current) {
+        setLoading(false)
+        loadingRef.current = false
+      }
     }
   }, [])
 
@@ -77,6 +84,9 @@ export function AppProvider({ children }) {
     try { await authApi.logout() } catch { /* best-effort */ }
     setStoredToken(null)
     setAuthToken(null)
+    sessionGenRef.current += 1
+    loadingRef.current = false
+    setLoading(false)
     setCurrentUser(null)
     setOrders([])
     setDocs([])

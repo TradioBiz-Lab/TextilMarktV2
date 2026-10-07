@@ -38,8 +38,6 @@ export function AdminDocuments() {
   const [fileErr, setFileErr] = useState('')
   const [saving, setSaving] = useState(false)
 
-  if (loading) return <LoadingScreen />
-
   const mfrUsers = users.filter(u => u.role === 'manufacturer')
   const buyerUsers = users.filter(u => u.role === 'buyer')
   const active = docs.filter(d => d.isActive !== false)
@@ -110,6 +108,9 @@ export function AdminDocuments() {
   }
 
   const certTypeName = type => DOC_TYPES.find(d => d.v === type)?.l || type
+
+  // Hooks above must run on every render, so the loading gate sits after them.
+  if (loading) return <LoadingScreen />
 
   return (
     <div>
