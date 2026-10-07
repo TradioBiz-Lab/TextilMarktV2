@@ -153,7 +153,7 @@ describe('parallel stages — no sequential reset', () => {
     await api.post(stageUrl(2), { unitsDone: 30 })
     await api.post(stageUrl(0), { unitsDone: 10 })
 
-    assert.deepEqual((await readStages()).map(s => s.unitsDone), [10, 50, 30])
+    assert.deepEqual((await readStages()).map(s => s.unitsDone), [10, 50, 30, 0])   // last is the Delivery step
   })
 
   test('a save on an earlier stage preserves later notes', async () => {
@@ -357,13 +357,17 @@ describe('stage delete', () => {
     assert.equal(status, 200)
 
     const stages = await readStages()
-    assert.deepEqual(stages.map(s => s.name), ['One', 'Two', 'Four'])
+    assert.deepEqual(stages.map(s => s.name), ['One', 'Two', 'Four', 'Delivery'])
     assert.equal(stages[0].unitsDone, 10)
   })
 
-  test('refuses to delete the last remaining stage', async () => {
-    const { api, mfr } = await arrange({ stageNames: ['Only'] })
-    const { status } = await api.post(`/api/orders/${ORDER_ID}/assignments/${mfr._id}/stages/0/delete`)
+  // Every plan ends in the mandatory Delivery step, so there is always at least
+  // one stage left, and that one can't be removed.
+  test('refuses to delete the mandatory Delivery step', async () => {
+    const { api, mfr, readStages } = await arrange({ stageNames: ['Only'] })
+    const { status, body } = await api.post(`/api/orders/${ORDER_ID}/assignments/${mfr._id}/stages/1/delete`)
     assert.equal(status, 400)
+    assert.match(body.error, /Delivery step is mandatory/)
+    assert.equal((await readStages()).length, 2)
   })
 })

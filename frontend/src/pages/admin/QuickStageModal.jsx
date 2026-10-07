@@ -264,6 +264,11 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
 
         <div>
           <SectionLabel>Progress</SectionLabel>
+          {stage.isDelivery && (
+            <div style={{ marginBottom: 10, padding: '9px 12px', borderRadius: 8, background: '#f0fdf4', border: '1px solid #bbf7d0', fontSize: 12, lineHeight: 1.5, color: '#166534' }}>
+              This is the mandatory Delivery step. Marking it done marks this order as delivered; reopening it puts the order back to Processing.
+            </div>
+          )}
           {kind === 'quantity' ? (
             <>
               <div style={{ background: '#f8fafc', borderRadius: 10, border: `1px solid ${T.border}`, padding: '10px 14px' }}>

@@ -77,7 +77,7 @@ describe('read tools', () => {
     const result = await TOOL_HANDLERS.get_order({ orderId: ORDER_ID }, ctx)
     assert.equal(result.ok, true)
     assert.equal(result.data.id, ORDER_ID)
-    assert.equal(result.data.assignments[0].stages.length, 2)
+    assert.equal(result.data.assignments[0].stages.length, 3)   // two named stages plus the mandatory Delivery step
   })
 
   // Regression test for a real production incident: 15 of 17 live orders carry

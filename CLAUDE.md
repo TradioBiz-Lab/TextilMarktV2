@@ -157,9 +157,11 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
 ## Domain model essentials
 - **Order** (`backend/src/models/Order.js`) uses a custom string `_id`
   (e.g. `ZAR-TPR-TSHRT-SS26-001`), with an embedded `assignments[]` array — one per
-  manufacturer split. Each assignment has a dynamic `stages[]` array (default 12 stages:
-  Lab Dip Approval, PP Sample, Material Sourcing → … → Dispatch; imported or custom TNAs can
-  have any number) tracking `unitsDone/totalUnits`.
+  manufacturer split. Each assignment has a dynamic `stages[]` array (default 13 stages:
+  Lab Dip Approval, PP Sample, Material Sourcing → … → Dispatch, Delivery; imported or custom
+  TNAs can have any number) tracking `unitsDone/totalUnits`. **Every plan ends in a mandatory
+  Delivery step** (`isDelivery`); closing it marks that split `Delivered`, reopening it reverts
+  it to `Processing`. See docs/SCHEMA.md.
 - Order status overlay is **4 values**: `Processing | On Hold | Delayed | Delivered`
   (`ORDER_STATUS_VALUES` in `Order.js`). `STATUS_FLOW` in `frontend/src/constants.js`
   (the 8-step `Order Confirmed → ... → Delivered` flow) is **legacy/unused** — don't
@@ -180,6 +182,10 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
 - Legacy stage documents are normalized in `enrichOrder` (reads are `.lean()`, so schema
   defaults never apply to them) — **a new stage field not added there is invisible to the
   frontend**.
+- **Dropping is recorded.** Deleting a style or an empty master order first writes a `DroppedRecord`
+  (full snapshot, who, when, why), then removes the live document; a failed record write aborts the
+  drop. Admins edit master orders (name, season) and drop styles from the Orders page; the record is
+  viewable on the Audit Log page. See docs/SCHEMA.md.
 - Categories are free-text; `season` is enum-restricted (`SS26, FW26, SS27, FW27, SS28`).
 
 ## Security posture (preserve all of this during any change)

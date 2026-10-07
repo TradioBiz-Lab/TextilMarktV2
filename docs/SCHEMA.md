@@ -17,6 +17,7 @@
 | `auditlogs`     | Immutable action trail (admin-visible)                  | ObjectId         |
 | `ribbons`       | Admin-published banner alerts                           | ObjectId         |
 | `inboundmessages` | Raw factory messages (photo, voice, text) and what the AI did with them | ObjectId |
+| `droppedrecords` | Permanent record of every dropped style and deleted master order, with a full copy | ObjectId |
 
 ---
 
@@ -119,6 +120,20 @@ Uses a human-readable custom string `_id` for traceability.
 **Order Status Values** (order-level overlay — does NOT reset stage progress):
 `Processing` | `On Hold` | `Delayed` | `Delivered`
 
+**The Delivery step.** Every plan ends in a stage with `isDelivery: true` (named "Delivery", kind
+`milestone`, target 1, planned for the order's promised `delivery` date, which is the one date it
+needs). It is added automatically when an order is created, when a manufacturer is added to a
+style, and by `backend/src/db/addDeliveryStep.js` for older plans. Rules, all enforced server-side:
+- it is always last: a step inserted at or after it lands in front of it, a second one is rejected,
+  and a plan that names a Delivery step anywhere but last is rejected at creation
+- it cannot be deleted
+- closing it (`status: done`, single or bulk route) sets that manufacturer split's `status` to
+  `Delivered`; reopening it sets a `Delivered` split back to `Processing`. A manual `Delayed` or
+  `On Hold` is left alone while the step moves between open states
+- factory messages (Zero Entry Capture) never close it on their own; they go to the review queue
+- a plan with no flagged step (created before this feature, until migrated) behaves as before,
+  with the status set by hand
+
 > ⚠️ This is a flat 4-value enum (`ORDER_STATUS_VALUES` in `backend/src/models/Order.js`),
 > **not** the 8-step flow (`Order Confirmed → ... → Delivered`) referenced in some legacy
 > frontend constants (`STATUS_FLOW` in `frontend/src/constants.js`). The legacy flow is
@@ -167,6 +182,8 @@ DEFAULT_STAGE_NAMES = [
   blocked:       Boolean  default: false — orthogonal to status; a stage can be in_progress
                        AND blocked (two colourways dyeing, the third awaiting a sample)
   blockedReason: String   default: "", max 300 chars
+  isDelivery    Boolean   default: false. True on the mandatory last step of every plan (see "The Delivery
+                          step" below). False on every stage that predates it
   updates:    [StageUpdate]   embedded array — ticket-style progress log, see below
   materials:  [StageMaterial] embedded array — procurement checklist, see below
   items:      [StageItem]     embedded array — the stage's own deliverables, see below
@@ -585,6 +602,45 @@ between states, never deletes it.
 
 An update never moves a stage backwards. The collection is created empty on first connect;
 no migration is needed.
+
+---
+
+## 10. `droppedrecords`
+
+Dropping a style (`POST /api/orders/:id/delete`) or deleting an empty master order
+(`POST /api/master-orders/:id/delete`) first writes one of these, then removes the live
+document, so nothing is ever lost silently. If the record can't be written, nothing is
+removed. Nothing in the app updates or deletes these. Admin-only read access via
+`GET /api/dropped` (a list without the snapshot, optional `?kind=` and `?masterOrderId=`) and
+`GET /api/dropped/:id` (the full record).
+
+```
+{
+  _id            ObjectId
+  kind           String              enum: ["style", "master_order"]
+  refId          String              the dropped order's or master order's own _id
+  label          String              e.g. "Slim Fit Jeans (JNS-01)", or the master order's name
+  masterOrderId  String | null       the master order a style was dropped from
+  buyerId        ObjectId → users | null
+  buyerCompany   String
+  snapshot       Mixed               the whole document as it was: stages, assignments, colourways, photo
+  documentIds    [ObjectId → documents]  documents attached to a dropped style. They are NOT removed
+                                     or hidden; they stay in the Documents tab, and this lists them
+  reason         String              optional, max 500 chars
+  droppedBy      ObjectId → users
+  droppedByName  String
+  droppedAt      Date
+  createdAt, updatedAt               auto
+}
+```
+
+**Indexes:** `{ droppedAt: -1 }`, `{ masterOrderId: 1, droppedAt: -1 }`, `{ refId: 1 }`
+
+Action items and notifications that mention a dropped style's order ID are left as they were.
+
+Master orders can be edited with `POST /api/master-orders/:id` (admin only): `orderName` and/or
+`season` (`""` clears it). The id, buyer and creator never change, and the styles under it keep
+their own season.
 
 ---
 

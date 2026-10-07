@@ -1,6 +1,8 @@
 import { Router } from 'express'
 import mongoose from 'mongoose'
-import { MasterOrder } from '../models/MasterOrder.js'
+import { MasterOrder, SEASONS } from '../models/MasterOrder.js'
+import { DroppedRecord } from '../models/DroppedRecord.js'
+import { parseDropReason } from '../lib/dropRecord.js'
 import { Order }        from '../models/Order.js'
 import { User }        from '../models/User.js'
 import { AuditLog }    from '../models/AuditLog.js'
@@ -95,6 +97,46 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
   }
 })
 
+// POST /api/master-orders/:id - edit the name and/or season (admin only). Only the
+// fields sent are changed; the id, buyer and creator never change. The styles under
+// it keep their own season, since each style carries its own.
+router.post('/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const mo = await MasterOrder.findById(req.params.id).lean()
+    if (!mo) return res.status(404).json({ error: 'Master order not found' })
+
+    const body = req.body || {}
+    const set = {}
+    if (Object.prototype.hasOwnProperty.call(body, 'orderName')) {
+      if (typeof body.orderName !== 'string' || !body.orderName.trim())
+        return res.status(400).json({ error: 'Order name cannot be blank' })
+      if (body.orderName.trim().length > 200) return res.status(400).json({ error: 'Order name too long' })
+      set.orderName = body.orderName.trim()
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'season')) {
+      if (body.season === '' || body.season === null) set.season = null
+      else if (!SEASONS.includes(body.season)) return res.status(400).json({ error: `Invalid season. Must be one of: ${SEASONS.join(', ')}` })
+      else set.season = body.season
+    }
+    if (Object.keys(set).length === 0) return res.status(400).json({ error: 'Nothing to change' })
+
+    await MasterOrder.updateOne({ _id: mo._id }, { $set: set })
+
+    const changes = Object.keys(set).map(k => `${k}: ${JSON.stringify(mo[k] ?? null)} -> ${JSON.stringify(set[k])}`).join('; ')
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Master Order Edited',
+      detail: `${mo._id}: ${changes} by ${req.user.name}`,
+    })
+
+    const populated = await MasterOrder.findById(mo._id).populate('buyerId', 'name company code').populate('createdBy', 'name').lean()
+    res.json(enrich(populated))
+  } catch (err) {
+    console.error('Master order edit error:', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
 // POST /api/master-orders/:id/delete — delete (admin only). Refuses if any order
 // still references this master order, to avoid orphaning real orders.
 router.post('/:id/delete', requireAuth, requireAdmin, async (req, res) => {
@@ -106,15 +148,26 @@ router.post('/:id/delete', requireAuth, requireAdmin, async (req, res) => {
     if (childCount > 0)
       return res.status(400).json({ error: `Cannot delete — ${childCount} order(s) still reference this master order. Delete those first.` })
 
+    const { reason, error: reasonErr } = parseDropReason(req.body?.reason)
+    if (reasonErr) return res.status(400).json({ error: reasonErr })
+
+    // Record first, then delete: if the record can't be written, nothing is removed.
+    const buyer = await User.findById(mo.buyerId, 'company').lean()
+    const record = await DroppedRecord.create({
+      kind: 'master_order', refId: String(mo._id), label: mo.orderName,
+      masterOrderId: String(mo._id), buyerId: mo.buyerId || null, buyerCompany: buyer?.company || '',
+      snapshot: mo, reason, droppedBy: req.user.id, droppedByName: req.user.name,
+    })
+
     await MasterOrder.findByIdAndDelete(mo._id)
 
     await AuditLog.create({
       byUser: req.user.id,
       action: 'Master Order Deleted',
-      detail: `${mo._id} — ${mo.orderName} deleted by ${req.user.name}`,
+      detail: `${mo._id} - ${mo.orderName} deleted by ${req.user.name}${reason ? ` | ${reason.slice(0, 200)}` : ''} [record ${record._id}]`,
     })
 
-    res.json({ ok: true })
+    res.json({ ok: true, recordId: String(record._id) })
   } catch (err) {
     console.error('Master order delete error:', err)
     res.status(500).json({ error: 'Server error' })

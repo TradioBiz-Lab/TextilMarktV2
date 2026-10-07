@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, List, LayoutGrid, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, ChevronUp, ArrowRight, X } from '../../icons.jsx'
+import { Plus, List, LayoutGrid, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, ChevronUp, ArrowRight, X, Pencil } from '../../icons.jsx'
 import {
   T, SEASONS, ORDER_STATUSES,
   isStageDone, stageIsOverdue, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct, fmtStageDate, effectiveEta,
@@ -11,6 +11,7 @@ import { capsFor } from '../../caps.js'
 import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
+import { EditMasterOrderModal } from './EditMasterOrderModal.jsx'
 import { QuickStageModal } from './QuickStageModal.jsx'
 import { CreateStyleWizard } from './CreateStyleWizard.jsx'
 
@@ -89,6 +90,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
   // ── Create Master Order state ──
   const [showMO, setShowMO] = useState(false)
   const [mo, setMo] = useState({ buyerId: '', orderName: '', season: 'SS26' })
+  const [editMo, setEditMo] = useState(null)   // the master order being edited
   const [moFile, setMoFile] = useState(null)
   const [moFileErr, setMoFileErr] = useState('')
   const [moErr, setMoErr] = useState('')
@@ -193,13 +195,14 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
           }}
         />
       )}
+      {editMo && <EditMasterOrderModal mo={editMo} onClose={() => setEditMo(null)} />}
       {deleteTarget && (
         <DeleteOrderModal
           order={deleteTarget}
           onClose={() => setDeleteTarget(null)}
-          onConfirm={async (id) => {
-            await deleteOrder(id)
-            toast(`Order ${id} deleted`, 'success')
+          onConfirm={async (id, reason) => {
+            await deleteOrder(id, reason)
+            toast(`Style ${id} dropped`, 'success')
             setDeleteTarget(null)
           }}
         />
@@ -403,6 +406,12 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
                         <span style={{ fontSize: 13, fontWeight: 800, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Folder size={13} /> {groupLabel}</span>
                         {g.mo?.season && <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', background: '#dbeafe', padding: '2px 7px', borderRadius: 4 }}>{g.mo.season}</span>}
                         <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{g.orders.length} order{g.orders.length !== 1 ? 's' : ''}</span>
+                        {caps.editOrders && g.mo && (
+                          <button onClick={e => { e.stopPropagation(); setEditMo(g.mo) }} title="Edit master order" aria-label={`Edit master order ${groupLabel}`}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.textMuted, cursor: 'pointer', fontFamily: 'inherit' }}>
+                            <Pencil size={11} /> Edit
+                          </button>
+                        )}
                       </FlexRow>
                     </td>
                   </tr>
@@ -453,7 +462,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
                           {caps.deleteOrders && <button
                             onClick={(e) => { e.stopPropagation(); setDeleteTarget(o) }}
                             style={{ padding: '4px 10px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: `1px solid ${T.dangerBorder}`, background: T.dangerBg, color: T.danger, cursor: 'pointer', fontFamily: 'inherit' }}
-                          >Delete</button>}
+                          >Drop</button>}
                         </FlexRow>
                       </td>
                     </tr>
@@ -502,6 +511,12 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
                     <span style={{ fontSize: 13, fontWeight: 800, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Folder size={13} /> {groupLabel}</span>
                     {g.mo?.season && <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', background: '#dbeafe', padding: '1px 7px', borderRadius: 4 }}>{g.mo.season}</span>}
                     <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{entries.length} style{entries.length !== 1 ? 's' : ''} · {spine.length} steps</span>
+                    {caps.editOrders && g.mo && (
+                          <button onClick={e => { e.stopPropagation(); setEditMo(g.mo) }} title="Edit master order" aria-label={`Edit master order ${groupLabel}`}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.textMuted, cursor: 'pointer', fontFamily: 'inherit' }}>
+                            <Pencil size={11} /> Edit
+                          </button>
+                        )}
                   </FlexRow>
 
                   {isOpen && (

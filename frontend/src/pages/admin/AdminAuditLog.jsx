@@ -3,6 +3,7 @@ import { Package, RotateCw, Paperclip, User, Ban, Check, KeyRound, Zap, Search, 
 import { T } from '../../constants.js'
 import { Card, PageHeader, EmptyState, FlexRow, LoadingScreen } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
+import { DroppedRecords } from './DroppedRecords.jsx'
 
 const ACTION_META = {
   'Order Created':     { bg: '#dcfce7', c: '#15803d', border: '#86efac', Icon: Package },
@@ -121,6 +122,8 @@ export function AdminAuditLog() {
         title="Audit Log"
         subtitle={`${audit.length.toLocaleString()} total entries · complete record of all platform actions`}
       />
+
+      <DroppedRecords />
 
       {/* ── Action type summary pills ── */}
       {audit.length > 0 && (

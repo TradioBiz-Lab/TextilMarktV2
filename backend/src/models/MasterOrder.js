@@ -1,6 +1,6 @@
 import mongoose from 'mongoose'
 
-const SEASONS = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
+export const SEASONS = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
 
 const masterOrderSchema = new mongoose.Schema({
   // Human-readable ID: MO-<BuyerCode>-<Season>-<NNN>

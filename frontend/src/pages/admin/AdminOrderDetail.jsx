@@ -172,6 +172,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
           const responsibleEmail = (raw.responsible_email || '').trim()
           const errors = []
           if (!name) errors.push('missing name')
+          if (/^delivery$/i.test(name)) errors.push('Delivery is added automatically as the last step')
           if (!startDate) errors.push('missing start_date')
           if (!endDate) errors.push('missing end_date')
           if (!['quantity', 'milestone', 'checklist'].includes(kind)) errors.push(`invalid kind "${kind}"`)
@@ -633,7 +634,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
             <button
               onClick={() => setShowDelete(true)}
               style={{ padding: '7px 14px', fontSize: 12, fontWeight: 700, borderRadius: 8, border: `1px solid ${T.dangerBorder}`, background: T.dangerBg, color: T.danger, cursor: 'pointer', fontFamily: 'inherit' }}
-            >Delete Style</button>
+            >Drop Style</button>
           )}
         </FlexRow>
 
@@ -830,7 +831,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
         )}
         {showDelete && (
           <DeleteOrderModal order={order} onClose={() => setShowDelete(false)}
-            onConfirm={async (id) => { await deleteOrder(id); toast(`Style ${id} deleted`, 'success'); setShowDelete(false); onBack() }} />
+            onConfirm={async (id, reason) => { await deleteOrder(id, reason); toast(`Style ${id} dropped`, 'success'); setShowDelete(false); onBack() }} />
         )}
 
         {renderSummary({ unassigned: true })}
@@ -956,9 +957,9 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
         <DeleteOrderModal
           order={order}
           onClose={() => setShowDelete(false)}
-          onConfirm={async (id) => {
-            await deleteOrder(id)
-            toast(`Order ${id} deleted`, 'success')
+          onConfirm={async (id, reason) => {
+            await deleteOrder(id, reason)
+            toast(`Style ${id} dropped`, 'success')
             setShowDelete(false)
             onBack()
           }}

@@ -67,7 +67,8 @@ export const ordersApi = {
   get: id => api.get(`/orders/${id}`),
   create: data => api.post('/orders', data),
   update: (id, data) => api.post(`/orders/${id}`, data),
-  delete: id => api.post(`/orders/${id}/delete`),
+  // `reason` is optional and is kept, with a full copy of the style, in the dropped record.
+  delete: (id, reason) => api.post(`/orders/${id}/delete`, reason ? { reason } : {}),
   updateAssignment: (orderId, mfrId, status, note) =>
     api.post(`/orders/${orderId}/assignments/${mfrId}`, { status, note }),
   // Adds a manufacturer to a style that has none yet (or a second split) —
@@ -174,7 +175,14 @@ export const voiceApi = {
 export const masterOrdersApi = {
   list: () => api.get('/master-orders'),
   create: data => api.post('/master-orders', data),
-  delete: id => api.post(`/master-orders/${id}/delete`),
+  update: (id, data) => api.post(`/master-orders/${id}`, data),
+  delete: (id, reason) => api.post(`/master-orders/${id}/delete`, reason ? { reason } : {}),
+}
+
+// Permanent record of dropped styles and master orders (admin only).
+export const droppedApi = {
+  list: params => api.get('/dropped', { params }),
+  get: id => api.get(`/dropped/${id}`),
 }
 
 // SANDBOX ONLY, TEMPORARY (see backend/src/routes/viewAs.js)
