@@ -1,0 +1,101 @@
+# Checks every push and pull request. It never deploys: AppSail is deployed by hand
+# (`catalyst deploy --only appsail`) and Slate rebuilds the frontend on push to main/staging.
+name: CI
+
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+    branches: [main, staging]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 4 * * 1'   # Mondays 04:00 UTC: re-run the dependency audit as new advisories appear
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-22.04   # mongod binaries are published for this image
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      # Where mongodb-memory-server keeps the mongod it downloads. Outside node_modules so the
+      # cache survives `npm ci`.
+      MONGOMS_DOWNLOAD_DIR: ${{ github.workspace }}/.mongodb-binaries
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - uses: actions/cache@v4
+        with:
+          path: .mongodb-binaries
+          key: mongod-${{ runner.os }}-${{ hashFiles('backend/package-lock.json') }}
+      - run: npm ci
+      - run: npm test   # node's built-in runner against an in-memory mongod; never touches Atlas
+
+  frontend:
+    name: Frontend tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  prod-guard:
+    name: Sandbox-only files stay off main
+    # Only meaningful for what is about to become production.
+    if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail if a sandbox-only file is present
+        run: |
+          found=0
+          for path in \
+            backend/src/db/demo.js backend/src/db/demoStyles.js backend/src/db/modelOrder.js \
+            backend/src/db/pdfLite.js backend/src/db/tp_extract.py backend/src/db/build_techpacks.py \
+            backend/src/db/demo-docs backend/src/db/demo-images backend/tests/auth.viewas.test.js; do
+            if [ -e "$path" ]; then echo "::error file=$path::sandbox-only file on a production branch"; found=1; fi
+          done
+          exit $found
+
+  audit:
+    name: Dependency audit (runtime)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Reported, not blocking: a new advisory should not stop an unrelated fix from merging,
+    # but it should be visible. The weekly run keeps it current.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Backend
+        working-directory: backend
+        run: npm audit --omit=dev --audit-level=high
+      - name: Frontend
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high
