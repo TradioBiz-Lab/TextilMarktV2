@@ -16,7 +16,7 @@ router.get('/', requireAuth, requireAdmin, async (req, res) => {
     ])
     res.json({
       total, limit, skip,
-      items: logs.map(a => ({ id: a._id, by: a.byUser, action: a.action, detail: a.detail, at: a.createdAt })),
+      items: logs.map(a => ({ id: a._id, by: a.byUser, viewAsBy: a.viewAsBy || null, action: a.action, detail: a.detail, at: a.createdAt })),
     })
   } catch (err) {
     console.error('[audit]', err)

@@ -273,7 +273,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
                       try {
                         await uploadDoc({
                           type: 'PO', name: `PO — ${moId}`, issuer: '', issueDate: getToday(),
-                          expiryDate: null, orderId: null, mfrId: null,
+                          expiryDate: null, orderId: null, mfrId: null, masterOrderId: moId,
                           ...fileUploadPayload(moFile),
                         })
                       } catch (e) { fileFailed = e?.message || 'upload failed' }

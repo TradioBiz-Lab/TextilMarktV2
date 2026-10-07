@@ -35,6 +35,10 @@ const documentSchema = new mongoose.Schema({
   // Production stage link (index into assignment.stages array, null for non-stage docs)
   stageIndex: { type: Number, default: null, min: 0 },
 
+  // A file that belongs to a whole master order rather than one style (e.g. the customer's PO
+  // attached when the master order is created). Without it that PO had no link to anything.
+  masterOrderId: { type: String, ref: 'MasterOrder', default: null },
+
   // Optional link to a specific materials/PO checklist line within that stage
   // (index into stages[stageIndex].materials array) — used for PO document attachments.
   materialLineIndex: { type: Number, default: null, min: 0 },
@@ -56,6 +60,7 @@ const documentSchema = new mongoose.Schema({
   mimeType:    { type: String, default: null },
 }, { timestamps: true })
 
+documentSchema.index({ masterOrderId: 1 })
 documentSchema.index({ mfrId: 1, isActive: 1 })
 documentSchema.index({ orderId: 1, isActive: 1 })
 documentSchema.index({ expiryDate: 1 })          // for expiry-alert queries

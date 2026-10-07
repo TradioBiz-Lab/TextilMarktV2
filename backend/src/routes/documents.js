@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
-import { Document, Order, User, Notification, AuditLog } from '../db/index.js'
+import { Document, Order, User, Notification, AuditLog, MasterOrder } from '../db/index.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { sendEmail, emailCertExpiry, emailBuyerDocumentReceived } from '../lib/email.js'
 import { notify, adminIds } from '../lib/notify.js'
@@ -125,6 +125,7 @@ const mapDoc = (d, includeData = false) => {
     id: d._id, type: d.type, name: d.name,
     mfrId: d.mfrId ? d.mfrId.toString() : null,
     orderId: d.orderId ? d.orderId.toString() : null,
+    masterOrderId: d.masterOrderId || null,
     stageIndex: d.stageIndex != null ? d.stageIndex : null,
     materialLineIndex: d.materialLineIndex != null ? d.materialLineIndex : null,
     issueDate: d.issueDate, expiryDate: d.expiryDate,
@@ -156,6 +157,7 @@ router.get('/', requireAuth, async (req, res) => {
       const buyerOrders = await Order.find({ buyerId: req.user.id }, { _id: 1, 'assignments.mfrId': 1 }).lean()
       const orderIds = buyerOrders.map(o => o._id)
       const mfrIds   = [...new Set(buyerOrders.flatMap(o => (o.assignments || []).map(a => a.mfrId?.toString()).filter(Boolean)))]
+      const masterIds = (await MasterOrder.find({ buyerId: req.user.id }, { _id: 1 }).lean()).map(m => m._id)
 
       // mfrId match only for docs without an orderId (standalone compliance certs),
       // not docs that belong to a different buyer's order
@@ -163,6 +165,7 @@ router.get('/', requireAuth, async (req, res) => {
         isActive: true,
         $or: [
           { orderId: { $in: orderIds } },
+          { masterOrderId: { $in: masterIds } },
           { mfrId: { $in: mfrIds }, orderId: null },
           { uploadedBy: req.user.id },
         ],
@@ -320,7 +323,8 @@ router.get('/:id/data', requireAuth, async (req, res) => {
         const buyerOrders = await Order.find({ buyerId: req.user.id }, { _id: 1, 'assignments.mfrId': 1 }).lean()
         const orderIds = buyerOrders.map(o => o._id.toString())
         const mfrIds   = [...new Set(buyerOrders.flatMap(o => (o.assignments || []).map(a => a.mfrId?.toString()).filter(Boolean)))]
-        const allowed  = (doc.orderId && orderIds.includes(doc.orderId.toString())) ||
+        const ownMaster = doc.masterOrderId && await MasterOrder.exists({ _id: doc.masterOrderId, buyerId: req.user.id })
+        const allowed  = (doc.orderId && orderIds.includes(doc.orderId.toString())) || !!ownMaster ||
                          // mfrId match only for standalone compliance certs (no orderId)
                          (!doc.orderId && doc.mfrId && mfrIds.includes(doc.mfrId.toString()))
         if (!allowed) return res.status(403).json({ error: 'Access denied' })
@@ -355,11 +359,17 @@ router.get('/:id/data', requireAuth, async (req, res) => {
 // POST /api/documents
 router.post('/', requireAuth, uploadLimiter, async (req, res) => {
   try {
-    const { type, name, mfrId, orderId, stageIndex, materialLineIndex, issueDate, expiryDate, issuer, dataUrl, externalUrl, fileName, fileSize, mimeType, notes } = req.body
+    const { type, name, mfrId, orderId, masterOrderId, stageIndex, materialLineIndex, issueDate, expiryDate, issuer, dataUrl, externalUrl, fileName, fileSize, mimeType, notes } = req.body
     if (!type || !name || !name.trim()) return res.status(400).json({ error: 'type and name required' })
     if (typeof type !== 'string' || typeof name !== 'string') return res.status(400).json({ error: 'Invalid input types' })
     if (name.length > 300 || type.length > 50) return res.status(400).json({ error: 'Input too long' })
     if (!Document.schema.path('type').enumValues.includes(type)) return res.status(400).json({ error: `Unknown document type "${type}"` })
+    // Only Tradio attaches files to a whole master order (the customer sees them).
+    if (masterOrderId != null && masterOrderId !== '') {
+      if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only an admin can attach a file to a master order' })
+      if (typeof masterOrderId !== 'string' || !(await MasterOrder.exists({ _id: masterOrderId })))
+        return res.status(400).json({ error: 'Master order not found' })
+    }
     if (issuer && typeof issuer === 'string' && issuer.length > 200)
       return res.status(400).json({ error: 'Issuer name too long (max 200 chars)' })
     if (fileName && typeof fileName === 'string' && fileName.length > 500)
@@ -429,6 +439,7 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
       type, name,
       mfrId:      mfrId     || null,
       orderId:    orderId   || null,
+      masterOrderId: masterOrderId || null,
       stageIndex: stageIndex != null && stageIndex !== '' ? stageIndex : null,
       materialLineIndex: hasMaterialLineIndex ? parseInt(materialLineIndex, 10) : null,
       issueDate:  issueDate ? new Date(issueDate) : new Date(),
