@@ -94,6 +94,23 @@ async function loopbackOrderFetch(cookie, method, path, body) {
   return result.ok ? { ...result, data: stripOrderImages(result.data) } : result
 }
 
+// Every Kriyaa tool calls back into this API over loopback, authenticated the
+// same way the chat request itself was. In production the frontend and the API
+// sit on different sites, so a browser that blocks third-party cookies sends
+// only the Authorization header and no session cookie. Forwarding just the
+// cookie then made every tool call 401, and Kriyaa answered "authorization
+// error" and asked for an order ID. requireAuth accepts the same JWT from
+// either place, so hand it over as the session cookie when it only arrived
+// as a Bearer token. The token was already verified by requireAuth on this
+// very request, so nothing new is trusted.
+export function loopbackAuthCookie(req) {
+  const cookie = req.headers.cookie || ''
+  if (/(^|;\s*)tradio_token=/.test(cookie)) return cookie
+  const header = req.headers.authorization
+  if (!header?.startsWith('Bearer ')) return cookie
+  return `${cookie ? `${cookie}; ` : ''}tradio_token=${header.slice(7)}`
+}
+
 const WRITE_TOOLS = new Set([
   'post_stage_update', 'update_stage_status', 'update_stage_dates',
   'add_action_item_update', 'update_action_item',
@@ -445,7 +462,7 @@ router.post('/chat', requireAuth, assistantLimiter, async (req, res) => {
       return res.status(400).json({ error: `Message too long (max ${MAX_MESSAGE_LENGTH} characters)` })
   }
 
-  const cookie = req.headers.cookie || ''
+  const cookie = loopbackAuthCookie(req)
   // Cache breakpoint on the system prompt's one block. Render order is
   // tools -> system -> messages, so this single marker caches TOOLS (a
   // static module-level array) together with the system prompt itself.
