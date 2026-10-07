@@ -127,6 +127,9 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   types. This exists because Catalyst AppSail's edge answers `OPTIONS` preflight requests itself
   with no CORS headers before they reach Express — sending a CORS-"simple" content type skips
   the preflight entirely. Don't revert this without re-confirming the platform bug is fixed.
+- **`trust proxy` is 1, and that is verified.** AppSail's edge is the single proxy hop: with 1,
+  `req.ip` is the real client and a forged `X-Forwarded-For` cannot change it (measured on the hosted
+  sandbox). Rate limits rely on this; don't change it unless another proxy is added in front.
 - **Catalyst PORT handling.** `backend/src/app.js` reads `X_ZOHO_CATALYST_LISTEN_PORT` before
   falling back to `PORT`/`3001`, since Catalyst AppSail injects the port under that name.
 - **Single-instance assumption.** `express-rate-limit`'s in-memory store, and any in-memory

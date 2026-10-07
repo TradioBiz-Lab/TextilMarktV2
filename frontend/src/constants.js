@@ -246,6 +246,17 @@ export const stageStatusOf = s => {
 
 export const isStageDone = s => stageStatusOf(s) === 'done'
 
+/**
+ * Progress of a plan (an order split's stages): the share of steps that are done. This is the one
+ * agreed definition of "% complete" everywhere an order or split shows progress. A stage's own
+ * units-done (stagePct) is a different, per-step measure and stays separate.
+ */
+export const planProgress = stages => {
+  const list = stages || []
+  const done = list.filter(isStageDone).length
+  return { done, total: list.length, pct: list.length ? Math.round((done / list.length) * 100) : 0 }
+}
+
 /** Percent complete, by kind. Checklists count items, not units. */
 export const stagePct = s => {
   if (stageKindOf(s) === 'checklist' && (s?.itemsTotal || 0) > 0)

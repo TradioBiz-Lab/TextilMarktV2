@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
-import { getToday, dayNumber, effectiveEta, stageIsOverdue, isStageDone, stageStatusOf } from '../constants.js'
+import { getToday, dayNumber, effectiveEta, stageIsOverdue, isStageDone, stageStatusOf, planProgress } from '../constants.js'
 
 describe('India-time day boundary', () => {
   beforeEach(() => vi.useFakeTimers())
@@ -57,5 +57,26 @@ describe('stage status', () => {
     expect(stageStatusOf({ unitsDone: 4, totalUnits: 10 })).toBe('in_progress')
     expect(isStageDone({ unitsDone: 10, totalUnits: 10 })).toBe(true)
     expect(isStageDone({ status: 'done' })).toBe(true)
+  })
+})
+
+describe('planProgress (the one definition of % complete: steps done)', () => {
+  test('counts steps that are done, not units', () => {
+    const stages = [
+      { kind: 'quantity', status: 'in_progress', unitsDone: 900, totalUnits: 1000 }, // 90% of units, but not done
+      { kind: 'milestone', status: 'done', unitsDone: 1, totalUnits: 1 },
+      { kind: 'milestone', status: 'not_started', unitsDone: 0, totalUnits: 1 },
+      { kind: 'milestone', status: 'done', unitsDone: 1, totalUnits: 1, isDelivery: true },
+    ]
+    expect(planProgress(stages)).toEqual({ done: 2, total: 4, pct: 50 })
+  })
+
+  test('uses the step status, so a done stage counts even if its units disagree', () => {
+    expect(planProgress([{ status: 'done', unitsDone: 0, totalUnits: 5 }]).pct).toBe(100)
+  })
+
+  test('an empty or missing plan is 0%, not NaN', () => {
+    expect(planProgress([])).toEqual({ done: 0, total: 0, pct: 0 })
+    expect(planProgress(undefined)).toEqual({ done: 0, total: 0, pct: 0 })
   })
 })
