@@ -204,6 +204,13 @@ async function withRetry(label, fn, attempts = 3) {
 
 // A product link is shown to buyers and factories as a clickable link, so it must be a real
 // http(s) address: anything else (javascript:, data:, ...) is refused rather than rendered.
+// People paste "amazon.in/x" without the scheme. A bare web address gets https:// added; anything
+// that already names a scheme is left alone so a javascript: or data: link still fails validation.
+const normalizeLink = v => {
+  const t = String(v ?? '').trim()
+  if (!t || /^[a-z][a-z0-9+.-]*:/i.test(t)) return t
+  return /^[\w-]+(\.[\w-]+)+(:\d+)?([/?#]\S*)?$/.test(t) ? `https://${t}` : t
+}
 const isHttpUrl = v => { try { const u = new URL(String(v)); return u.protocol === 'http:' || u.protocol === 'https:' } catch { return false } }
 const LINK_SCHEME_ERROR = 'E-commerce link must be a full web address starting with http:// or https://'
 
@@ -292,7 +299,7 @@ async function validateAndCreateOrder({ id, buyerId, product, styleNumber, categ
   if (ecommerceLink !== undefined && ecommerceLink !== null) {
     if (typeof ecommerceLink !== 'string') return { ok: false, error: 'E-commerce link must be text' }
     if (ecommerceLink.trim().length > 2000) return { ok: false, error: 'E-commerce link too long' }
-    if (ecommerceLink.trim() && !isHttpUrl(ecommerceLink.trim())) return { ok: false, error: LINK_SCHEME_ERROR }
+    if (normalizeLink(ecommerceLink) && !isHttpUrl(normalizeLink(ecommerceLink))) return { ok: false, error: LINK_SCHEME_ERROR }
   }
   if (!mongoose.Types.ObjectId.isValid(buyerId)) return { ok: false, error: 'Invalid buyer ID' }
   const buyerCheck = await User.findById(buyerId, 'role isActive').lean()
@@ -513,7 +520,7 @@ async function validateAndCreateOrder({ id, buyerId, product, styleNumber, categ
       baselineDelivery: new Date(delivery),
       colourways: colourwaysResolved,
       fabricDetails: fabricDetailsResolved,
-      ecommerceLink: ecommerceLink ? ecommerceLink.trim() : '',
+      ecommerceLink: normalizeLink(ecommerceLink),
       callout: callout ? callout.trim() : '',
       createdAt: createdAt ? new Date(createdAt) : undefined,
       assignments: !hasAssignments ? [] : asgns.map((a, i) => ({
@@ -836,6 +843,8 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimit
       if (req.user.role === 'buyer') {
         if (!buyerMayWriteStage(req.user, stage))
           return res.status(403).json({ error: `Forbidden on stage ${i + 1} — buyers may only update stages they own` })
+        if (stage.isDelivery)
+          return res.status(403).json({ error: 'Only Tradio or the manufacturer can confirm delivery' })
         const attempted = Object.keys(row).filter(k => !['index', 'status', 'blocked', 'blockedReason'].includes(k))
         if (attempted.length)
           return res.status(403).json({ error: `Buyers may only set status (not: ${attempted.join(', ')})` })
@@ -1178,6 +1187,10 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
     if (req.user.role === 'buyer') {
       if (!buyerMayWriteStage(req.user, stage))
         return res.status(403).json({ error: 'Buyers cannot update production stages' })
+      // Closing or reopening Delivery is what marks the split Delivered, which is a status the buyer
+      // may not set. Delivery is confirmed by Tradio or the manufacturer, never from the buyer side.
+      if (stage.isDelivery)
+        return res.status(403).json({ error: 'Only Tradio or the manufacturer can confirm delivery' })
       const BUYER_WRITABLE = new Set(['status', 'blocked', 'blockedReason'])
       const attempted = Object.keys(req.body).filter(k => !BUYER_WRITABLE.has(k))
       if (attempted.length)
@@ -2206,7 +2219,7 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
 
     if (ecommerceLink !== undefined) {
       if (ecommerceLink !== null && typeof ecommerceLink !== 'string') return res.status(400).json({ error: 'E-commerce link must be text' })
-      const link = (ecommerceLink || '').trim()
+      const link = normalizeLink(ecommerceLink)
       if (link.length > 2000) return res.status(400).json({ error: 'E-commerce link too long' })
       if (link && !isHttpUrl(link)) return res.status(400).json({ error: LINK_SCHEME_ERROR })
       updates.ecommerceLink = link
