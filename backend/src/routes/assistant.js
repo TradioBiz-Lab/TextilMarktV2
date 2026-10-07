@@ -34,8 +34,20 @@ const assistantLimiter = rateLimit({
 // Lazy — constructing the client only when a request actually needs it means
 // importing this file never throws just because ANTHROPIC_API_KEY is unset.
 let anthropicClient = null
+// An organisation-level API key is not tied to a workspace, and Anthropic then
+// rejects every request unless it names one in the anthropic-workspace-id
+// header. Set ANTHROPIC_WORKSPACE_ID for such a key; a key created inside a
+// workspace needs nothing, so the header is only sent when the variable is set.
+export function anthropicClientOptions(env = process.env) {
+  const workspaceId = (env.ANTHROPIC_WORKSPACE_ID || '').trim()
+  return {
+    apiKey: env.ANTHROPIC_API_KEY,
+    ...(workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': workspaceId } } : {}),
+  }
+}
+
 function getClient() {
-  if (!anthropicClient) anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  if (!anthropicClient) anthropicClient = new Anthropic(anthropicClientOptions())
   return anthropicClient
 }
 
