@@ -40,15 +40,15 @@ describe('POST /api/orders — creation rules', () => {
     assert.equal(status, 201)
     assert.equal(body.assignments.length, 1)
     const stages = body.assignments[0].stages
-    assert.equal(stages.length, 3)
-    assert.deepEqual(stages.map(s => s.name), ['Trims Order', 'Dyeing', 'Production'])
+    assert.equal(stages.length, 4)   // the three named stages plus the mandatory Delivery step
+    assert.deepEqual(stages.map(s => s.name), ['Trims Order', 'Dyeing', 'Production', 'Delivery'])
     assert.equal(stages[1].startDate, '2026-07-05')
     // eta ("New planned date") starts unset — the submitted date is the plan,
     // stored as baselineEta, not a revision.
     assert.equal(stages[1].eta, null)
     assert.equal(stages[1].baselineEta, '2026-07-18')
     // Every stage starts at zero progress.
-    assert.deepEqual(stages.map(s => s.unitsDone), [0, 0, 0])
+    assert.deepEqual(stages.map(s => s.unitsDone), [0, 0, 0, 0])
   })
 
   test('assignment quantities must sum to totalQty', async () => {
@@ -120,7 +120,7 @@ describe('POST /api/orders — creation rules', () => {
       stageEtas:       ['2026-08-07', '2026-08-10', '2026-08-10'],
     }))
     assert.equal(status, 201)
-    assert.equal(body.assignments[0].stages.length, 3)
+    assert.equal(body.assignments[0].stages.length, 4)   // plus the mandatory Delivery step
   })
 
   test('more than 50 stages is rejected', async () => {

@@ -172,6 +172,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
           const responsibleEmail = (raw.responsible_email || '').trim()
           const errors = []
           if (!name) errors.push('missing name')
+          if (/^delivery$/i.test(name)) errors.push('Delivery is added automatically as the last step')
           if (!startDate) errors.push('missing start_date')
           if (!endDate) errors.push('missing end_date')
           if (!['quantity', 'milestone', 'checklist'].includes(kind)) errors.push(`invalid kind "${kind}"`)

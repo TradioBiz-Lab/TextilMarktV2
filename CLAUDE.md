@@ -157,9 +157,10 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
 ## Domain model essentials
 - **Order** (`backend/src/models/Order.js`) uses a custom string `_id`
   (e.g. `ZAR-TPR-TSHRT-SS26-001`), with an embedded `assignments[]` array — one per
-  manufacturer split. Each assignment has a dynamic `stages[]` array (default 12 stages:
-  Lab Dip Approval, PP Sample, Material Sourcing → … → Dispatch; imported or custom TNAs can
-  have any number) tracking `unitsDone/totalUnits`.
+  manufacturer split. Each assignment has a dynamic `stages[]` array (default 13 stages:
+  Lab Dip Approval, PP Sample, Material Sourcing → … → Dispatch, Delivery; imported or custom
+  TNAs can have any number). **Every plan ends in a mandatory Delivery step** (`isDelivery`);
+  closing it marks that split `Delivered`, reopening it reverts to `Processing`. See docs/SCHEMA.md. tracking `unitsDone/totalUnits`.
 - Order status overlay is **4 values**: `Processing | On Hold | Delayed | Delivered`
   (`ORDER_STATUS_VALUES` in `Order.js`). `STATUS_FLOW` in `frontend/src/constants.js`
   (the 8-step `Order Confirmed → ... → Delivered` flow) is **legacy/unused** — don't

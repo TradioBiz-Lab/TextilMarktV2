@@ -50,7 +50,7 @@ const DESC = {
   'QC': 'Final inspection against the AQL and tech pack measurements.',
   'Dispatch': 'Cartons handed over to the carrier with dispatch documents.',
 }
-const MILESTONES = new Set(['PP Sample', 'QC', 'Dispatch'])
+const MILESTONES = new Set(['PP Sample', 'QC', 'Dispatch', 'Delivery'])
 const NOTES_DONE = {
   'Lab Dip Approval': 'All colourways approved by the client.',
   'PP Sample': 'PP sample approved with minor measurement comments.',
@@ -64,6 +64,7 @@ const NOTES_DONE = {
   'Packing': 'Packing completed to the buyer spec.',
   'QC': 'Final inspection passed at AQL 2.5, released for dispatch.',
   'Dispatch': 'Dispatched and delivered to the buyer warehouse.',
+  'Delivery': 'Goods received by the buyer. Closing this step marks the order delivered.',
 }
 
 /**
@@ -92,6 +93,7 @@ function stages(qty, active, ctx, extra = {}) {
       startDate: day(start + i * 6), eta: day(start + i * 6 + 5 + slip), baselineEta: eta,
       actualEnd: st === 'done' ? day(start + i * 6 + 4 + slip) : null,
       description: DESC[name], responsibleId: responsible._id,
+      isDelivery: name === 'Delivery',
       blocked: false, blockedReason: '',
       note: st === 'done' ? (NOTES_DONE[name] || '') : '',
       updates: st === 'done' && NOTES_DONE[name]
@@ -189,7 +191,7 @@ async function main() {
       callout: o.callout || '',
       colourways: (o.colours || ['Black', 'Charcoal']).map(n => ({ name: n })),
       fabricDetails: [{ name: fab.name, composition: fab.composition, gsm: fab.gsm, supplier: o.supplier || 'Sri Lakshmi Mills' }], imageDataUrl: photo(o.slug),
-      assignments: [{ mfrId: o.mfr._id, qty: o.qty, status: o.delivered ? 'Delivered' : (o.status || 'Processing'), sub: 'M1', stages: stages(o.qty, o.active, { buyer: o.buyer, mfr: o.mfr, admin, colours: o.colours || ['Black', 'Charcoal'], fabric: fabricLabel, supplier: o.supplier || 'Sri Lakshmi Mills', code: o.style }, EXTRAS[o.id]) }],
+      assignments: [{ mfrId: o.mfr._id, qty: o.qty, status: o.delivered ? 'Delivered' : (o.status || 'Processing'), sub: 'M1', stages: stages(o.qty, o.delivered ? DEFAULT_STAGE_NAMES.length : o.active, { buyer: o.buyer, mfr: o.mfr, admin, colours: o.colours || ['Black', 'Charcoal'], fabric: fabricLabel, supplier: o.supplier || 'Sri Lakshmi Mills', code: o.style }, EXTRAS[o.id]) }],
     })
     if (o.delivered) {
       const n = await seedModelOrder({ orderId: o.id, qty: o.qty, buyer: o.buyer, mfr: o.mfr, admin, day, startOffset: -(6 * o.active) - 2, slug: o.slug })

@@ -74,3 +74,30 @@ export const deliveryOverrunDays = (order, assignment) => {
   const last = Math.max(...etas)
   return last > deliveryDay ? last - deliveryDay : null
 }
+
+// ── The mandatory Delivery step ──────────────────────────────────────────────
+// Every TNA ends in a Delivery step, flagged `isDelivery` on the stage. Closing
+// it is what marks the manufacturer split delivered, and reopening it puts the
+// split back to Processing, so the status can never disagree with the step.
+export const DELIVERY_STEP_NAME = 'Delivery'
+export const isDeliveryName = name => String(name ?? '').trim().toLowerCase() === 'delivery'
+export const deliveryStageIndex = stages => (stages || []).findIndex(s => !!s?.isDelivery)
+
+/** A fresh, not-started Delivery step planned for `dateISO` ('YYYY-MM-DD'), the order's promised delivery date. */
+export const makeDeliveryStage = dateISO => ({
+  name: DELIVERY_STEP_NAME, unitsDone: 0, totalUnits: 1,
+  startDate: dateISO, eta: null, baselineEta: dateISO,
+  note: '', description: '', responsibleId: null,
+  kind: 'milestone', status: 'not_started', blocked: false, blockedReason: '',
+  isDelivery: true, updates: [], materials: [], items: [], actualEnd: null,
+})
+
+/**
+ * The split's new status after its Delivery step was written, or null to leave
+ * it alone. Done means Delivered; anything else only matters when the split was
+ * Delivered, in which case it goes back to Processing.
+ */
+export function statusAfterDeliveryStep(currentStatus, stepStatus) {
+  if (stepStatus === 'done') return currentStatus === 'Delivered' ? null : 'Delivered'
+  return currentStatus === 'Delivered' ? 'Processing' : null
+}

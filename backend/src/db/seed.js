@@ -39,10 +39,12 @@ const mkStages = (names, qty, overrides = {}) =>
     const o = overrides[i] || {}
     return {
       name,
-      kind: o.kind || 'quantity',
+      // The last default step is the mandatory Delivery step: a milestone, flagged so closing it delivers the split.
+      kind: o.kind || (name === 'Delivery' ? 'milestone' : 'quantity'),
+      isDelivery: name === 'Delivery',
       status: o.status || null,
       unitsDone: o.unitsDone ?? 0,
-      totalUnits: o.totalUnits ?? qty,
+      totalUnits: o.totalUnits ?? (name === 'Delivery' ? 1 : qty),
       startDate: o.startDate ?? null,
       eta: o.eta ?? null,
       baselineEta: o.baselineEta ?? o.eta ?? null,

@@ -47,7 +47,8 @@ async function arrange({ stageNames = ['One', 'Two', 'Three'], stageKinds, colou
 describe('stage kinds', () => {
   test('stages default to quantity — unchanged from before this feature', async () => {
     const { created } = await arrange()
-    assert.deepEqual(created.assignments[0].stages.map(s => s.kind), ['quantity', 'quantity', 'quantity'])
+    // The mandatory Delivery step is always a milestone; everything else keeps the old default.
+    assert.deepEqual(created.assignments[0].stages.map(s => s.kind), ['quantity', 'quantity', 'quantity', 'milestone'])
     // Quantity stages still target the assignment qty.
     assert.equal(created.assignments[0].stages[0].totalUnits, 100)
   })
@@ -59,8 +60,8 @@ describe('stage kinds', () => {
       totalQty: 10800,
     })
     const stages = created.assignments[0].stages
-    assert.deepEqual(stages.map(s => s.kind), ['milestone', 'checklist', 'quantity'])
-    assert.deepEqual(stages.map(s => s.totalUnits), [1, 1, 10800])
+    assert.deepEqual(stages.map(s => s.kind), ['milestone', 'checklist', 'quantity', 'milestone'])
+    assert.deepEqual(stages.map(s => s.totalUnits), [1, 1, 10800, 1])
   })
 
   test('an invalid kind is rejected at creation', async () => {
@@ -721,7 +722,8 @@ describe('bulk stage update', () => {
     assert.equal(status, 200)
 
     const stages = await readStages()
-    assert.ok(stages.every(s => s.actualEnd), 'every stage in the batch got actualEnd stamped')
+    assert.ok(stages.slice(0, 3).every(s => s.actualEnd), 'every stage in the batch got actualEnd stamped')
+    assert.equal(stages[3].actualEnd, null, 'the Delivery step was not in the batch')
   })
 })
 
@@ -737,23 +739,23 @@ describe('insert stage', () => {
     })
     assert.equal(status, 200)
     const stages = body.assignments[0].stages
-    assert.deepEqual(stages.map(s => s.name), ['New First', 'One', 'Two'])
+    assert.deepEqual(stages.map(s => s.name), ['New First', 'One', 'Two', 'Delivery'])
     assert.equal(stages[0].status, 'not_started')
     assert.equal(stages[0].kind, 'quantity')
 
     const fresh = await readStages()
-    assert.deepEqual(fresh.map(s => s.name), ['New First', 'One', 'Two'])
+    assert.deepEqual(fresh.map(s => s.name), ['New First', 'One', 'Two', 'Delivery'])
   })
 
   test('inserts in the middle and at the end', async () => {
     const { api, base, readStages } = await arrange({ stageNames: ['One', 'Two', 'Three'] })
     await api.post(`${base}/stages/insert`, { index: 2, name: 'Middle', startDate: 'NA', eta: 'NA' })
     let stages = await readStages()
-    assert.deepEqual(stages.map(s => s.name), ['One', 'Two', 'Middle', 'Three'])
+    assert.deepEqual(stages.map(s => s.name), ['One', 'Two', 'Middle', 'Three', 'Delivery'])
 
     await api.post(`${base}/stages/insert`, { name: 'Tail', startDate: 'NA', eta: 'NA' })
     stages = await readStages()
-    assert.deepEqual(stages.map(s => s.name), ['One', 'Two', 'Middle', 'Three', 'Tail'], 'omitting index appends to the end')
+    assert.deepEqual(stages.map(s => s.name), ['One', 'Two', 'Middle', 'Three', 'Tail', 'Delivery'], 'omitting index appends to the end, but always in front of Delivery')
   })
 
   test('completed sibling stages survive the insert unchanged', async () => {
@@ -764,7 +766,7 @@ describe('insert stage', () => {
     await api.post(`${base}/stages/insert`, { index: 1, name: 'Inserted', startDate: 'NA', eta: 'NA' })
 
     const stages = await readStages()
-    assert.deepEqual(stages.map(s => s.name), ['One', 'Inserted', 'Two', 'Three'])
+    assert.deepEqual(stages.map(s => s.name), ['One', 'Inserted', 'Two', 'Three', 'Delivery'])
     assert.equal(stages[0].status, 'done')
     assert.equal(stages[0].unitsDone, 100)
     assert.equal(stages[2].status, 'in_progress')
@@ -803,7 +805,7 @@ describe('insert stage', () => {
   })
 
   test('rejects when it would exceed 50 stages', async () => {
-    const names = Array.from({ length: 50 }, (_, i) => `S${i}`)
+    const names = Array.from({ length: 49 }, (_, i) => `S${i}`)   // plus the mandatory Delivery step makes 50
     const { api, base } = await arrange({ stageNames: names })
     const { status, body } = await api.post(`${base}/stages/insert`, { name: 'One more', startDate: 'NA', eta: 'NA' })
     assert.equal(status, 400)
@@ -843,9 +845,9 @@ describe('landmine: stage delete must not reset sibling stages', () => {
     assert.equal(status, 200)
 
     const stages = await readStages()
-    assert.equal(stages.length, 4)
-    assert.deepEqual(stages.map(s => s.status), ['done', 'done', 'in_progress', 'not_started'])
-    assert.deepEqual(stages.map(s => s.unitsDone), [100, 100, 60, 0])
+    assert.equal(stages.length, 5)   // four named stages plus the mandatory Delivery step
+    assert.deepEqual(stages.map(s => s.status), ['done', 'done', 'in_progress', 'not_started', 'not_started'])
+    assert.deepEqual(stages.map(s => s.unitsDone), [100, 100, 60, 0, 0])
   })
 
   test('baseline dates and blocked flags survive too', async () => {

@@ -11,7 +11,7 @@ import {
   DEFAULT_STAGE_NAMES, ORDER_STATUS_VALUES, STAGE_KINDS, STAGE_STATUS_VALUES,
   stageKindOf, deriveStageStatus, mirroredUnits, stageEtaVarianceDays, deriveActualEnd, deliveryVarianceDays,
 } from '../models/Order.js'
-import { dayNumber, getToday, effectiveEta } from '../lib/stageMath.js'
+import { dayNumber, getToday, effectiveEta, DELIVERY_STEP_NAME, isDeliveryName, deliveryStageIndex, makeDeliveryStage, statusAfterDeliveryStep } from '../lib/stageMath.js'
 
 // Categories are now free-text — no validation needed
 const VALID_SEASONS    = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
@@ -147,6 +147,7 @@ const enrichOrder = (o, viewerMfrId = null) => {
           status: deriveStageStatus(s),
           blocked: !!s.blocked,
           blockedReason: s.blockedReason || '',
+          isDelivery: !!s.isDelivery,
           // Falls back to eta so a stage that predates the field reads as zero
           // slippage; the /eta route captures the real baseline on first revision.
           baselineEta: s.baselineEta ?? s.eta ?? null,
@@ -269,6 +270,7 @@ async function validateAndCreateOrder({ id, buyerId, product, styleNumber, categ
   // assignments were actually submitted — a style created unassigned skips
   // all of it and gets manufacturer + TNA added later from Style Detail.
   let stages = [], etas = [], startDates = []
+  let deliveryIdx = -1   // index of the mandatory Delivery step, once the stage list is resolved
   let stageResponsibleIdsResolved = [], stageDescriptionsResolved = [], stageTotalUnitsResolved = [], stageKindsResolved = []
   if (hasAssignments) {
     // Validate each assignment has valid mid and qty
@@ -306,6 +308,23 @@ async function validateAndCreateOrder({ id, buyerId, product, styleNumber, categ
 
     etas = stageEtas || stages.map(() => null)
     startDates = stageStartDates || stages.map(() => null)
+
+    // The Delivery step is mandatory: it is how an order becomes Delivered. A
+    // plan that already ends in one keeps it, a plan with none gets one appended,
+    // and a Delivery step anywhere but last is rejected. Its dates default to the
+    // order's promised delivery date, so callers never have to supply them.
+    const deliveryISO = deliveryDate.toISOString().slice(0, 10)
+    const namedDelivery = stages.findIndex(isDeliveryName)
+    if (namedDelivery !== -1 && namedDelivery !== stages.length - 1)
+      return { ok: false, error: 'The Delivery step must be the last step' }
+    stages = [...stages]; etas = [...etas]; startDates = [...startDates]
+    if (namedDelivery === -1) {
+      if (stages.length >= 50) return { ok: false, error: 'Too many stages (max 50, including the mandatory Delivery step)' }
+      stages.push(DELIVERY_STEP_NAME)
+    }
+    deliveryIdx = stages.length - 1
+    if (!startDates[deliveryIdx]) startDates[deliveryIdx] = deliveryISO
+    if (!etas[deliveryIdx]) etas[deliveryIdx] = deliveryISO
 
     // Every stage requires an explicit start date AND end date — a valid date string or
     // literal 'NA'. No more blank/null — a stage with no enforced date is exactly the gap
@@ -389,6 +408,9 @@ async function validateAndCreateOrder({ id, buyerId, product, styleNumber, categ
       }
     }
   }
+
+  // A delivery has no garment count to track: always a milestone, whatever was sent.
+  if (deliveryIdx >= 0) stageKindsResolved[deliveryIdx] = 'milestone'
 
   // Optional colourway list — names the per-colour stages generate their
   // checklist items from.
@@ -477,6 +499,7 @@ async function validateAndCreateOrder({ id, buyerId, product, styleNumber, categ
             eta: null, note: '',
             baselineEta: etas[si] || null,
             kind, status: 'not_started', blocked: false, blockedReason: '',
+            isDelivery: si === deliveryIdx,
             description: stageDescriptionsResolved[si] || '',
             responsibleId: stageResponsibleIdsResolved[si] || null,
           }
@@ -650,7 +673,8 @@ router.post('/:orderId/assignments', requireAuth, requireAdmin, updateLimiter, a
 
     const order = await Order.findByIdAndUpdate(
       orderId,
-      { $push: { assignments: { mfrId, qty: aqty, status: 'Processing', sub: nextSub, note: '', stages: [] } } },
+      // Starts with just the mandatory Delivery step; the TNA builder adds the rest in front of it.
+      { $push: { assignments: { mfrId, qty: aqty, status: 'Processing', sub: nextSub, note: '', stages: [makeDeliveryStage(new Date(existing.delivery).toISOString().slice(0, 10))] } } },
       { new: true }
     ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
 
@@ -838,6 +862,12 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimit
       touched.push(i)
     }
 
+    // Closing the Delivery step marks this split delivered; reopening it puts it back to Processing.
+    const deliveryAtBulk = deliveryStageIndex(allStages)
+    const deliveryStepStatus = deliveryAtBulk !== -1 ? setFields[`assignments.$[asgn].stages.${deliveryAtBulk}.status`] : undefined
+    const bulkAsgnStatus = deliveryStepStatus !== undefined ? statusAfterDeliveryStep(existingAsgn.status, deliveryStepStatus) : null
+    if (bulkAsgnStatus) setFields['assignments.$[asgn].status'] = bulkAsgnStatus
+
     // One atomic write — single-document updates are atomic in MongoDB.
     const order = await Order.findOneAndUpdate(
       { _id: orderId, 'assignments.mfrId': mfrObjectId },
@@ -846,6 +876,12 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimit
     ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
 
     if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
+
+    if (bulkAsgnStatus) await AuditLog.create({
+      byUser: req.user.id,
+      action: bulkAsgnStatus === 'Delivered' ? 'Order Delivered' : 'Delivery Reopened',
+      detail: `${orderId}: split is now ${bulkAsgnStatus} (Delivery step ${deliveryStepStatus}) by ${req.user.name}`,
+    })
 
     // One audit entry summarizing the batch, not one per stage.
     await AuditLog.create({
@@ -914,9 +950,14 @@ router.post('/:orderId/assignments/:mfrId/stages/insert', requireAuth, requireAd
     if (stages.length >= 50)
       return res.status(400).json({ error: 'This order already has the maximum of 50 stages' })
 
-    const index = req.body.index === undefined || req.body.index === null ? stages.length : parseInt(req.body.index, 10)
+    let index = req.body.index === undefined || req.body.index === null ? stages.length : parseInt(req.body.index, 10)
     if (isNaN(index) || index < 0 || index > stages.length)
       return res.status(400).json({ error: `Invalid insert position (0–${stages.length})` })
+    // The Delivery step always stays last: anything aimed at or after it lands just before it.
+    const deliveryAt = deliveryStageIndex(stages)
+    if (isDeliveryName(name) && deliveryAt !== -1)
+      return res.status(400).json({ error: 'This plan already has a Delivery step' })
+    if (deliveryAt !== -1 && index > deliveryAt) index = deliveryAt
 
     const resolvedTotalUnits = totalUnits != null
       ? parseInt(totalUnits, 10)
@@ -939,7 +980,7 @@ router.post('/:orderId/assignments/:mfrId/stages/insert', requireAuth, requireAd
       eta: null, baselineEta: eta,
       stageDate: null, note: '',
       description: (description || '').trim(), responsibleId: resolvedResponsibleId,
-      kind: resolvedKind, status: resolvedStatus, blocked: false, blockedReason: '',
+      kind: resolvedKind, status: resolvedStatus, blocked: false, blockedReason: '', isDelivery: false,
       updates: [], materials: [], items: [], actualEnd: resolvedActualEnd,
     }
 
@@ -1121,6 +1162,9 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
     if (!isMasterOverride && pendingMaterials.length > 0 && nextUnits > currentUnits)
       return res.status(400).json({ error: `Cannot advance this stage — ${pendingMaterials.length} material(s) still pending${isTrimsOrderStage ? '' : '/ordered'}` })
 
+    // Closing the Delivery step marks this split delivered; reopening it puts it back to Processing.
+    const nextAsgnStatus = stage.isDelivery ? statusAfterDeliveryStep(existingAsgn.status, nextStatus) : null
+
     // Only fields actually present in the request are written. eta/startDate were
     // already conditional; note/stageDate now are too, because a status-only
     // update (the daily-update grid) must not silently blank a note someone typed.
@@ -1133,6 +1177,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
     if (has('note'))      setFields[`assignments.$[asgn].stages.${stageIndex}.note`] = note ?? ''
     if (has('stageDate')) setFields[`assignments.$[asgn].stages.${stageIndex}.stageDate`] = stageDate ?? null
     if (has('blocked'))   setFields[`assignments.$[asgn].stages.${stageIndex}.blocked`] = !!blocked
+    if (nextAsgnStatus) setFields['assignments.$[asgn].status'] = nextAsgnStatus
     if (has('blockedReason')) setFields[`assignments.$[asgn].stages.${stageIndex}.blockedReason`] = String(blockedReason ?? '').trim()
     if (hasEta) setFields[`assignments.$[asgn].stages.${stageIndex}.eta`] = eta
     if (hasStartDate) setFields[`assignments.$[asgn].stages.${stageIndex}.startDate`] = startDate
@@ -1163,6 +1208,11 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
       byUser: req.user.id,
       action: isMasterOverride ? 'Stage Override' : 'Stage Updated',
       detail: `${orderId}: ${stageName} — ${nextStatus}${kind === 'quantity' ? ` (${nextUnits}/${totalUnits} units)` : ''} by ${req.user.name}${isMasterOverride ? ' [MASTER OVERRIDE]' : ''}`,
+    })
+    if (nextAsgnStatus) await AuditLog.create({
+      byUser: req.user.id,
+      action: nextAsgnStatus === 'Delivered' ? 'Order Delivered' : 'Delivery Reopened',
+      detail: `${orderId}: split is now ${nextAsgnStatus} (Delivery step ${nextStatus}) by ${req.user.name}`,
     })
 
     // Real TNA plans aren't strictly sequential — FPT/PP/GPT approvals
@@ -1423,6 +1473,8 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/delete', requireAut
       return res.status(400).json({ error: 'Cannot delete the only remaining stage' })
 
     const removedStage = existingAsgn.stages[stageIndex]
+    if (removedStage.isDelivery)
+      return res.status(400).json({ error: 'The Delivery step is mandatory and cannot be removed' })
 
     const linkedDocs = await Document.countDocuments({ orderId, mfrId: mfrObjectId, stageIndex, isActive: true })
     if (linkedDocs > 0)

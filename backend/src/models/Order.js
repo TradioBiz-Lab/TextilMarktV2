@@ -5,7 +5,7 @@ import { getToday, effectiveEta } from '../lib/stageMath.js'
 export const DEFAULT_STAGE_NAMES = [
   'Lab Dip Approval', 'PP Sample',
   'Material Sourcing', 'Knitting', 'Dyeing', 'Processing',
-  'Cutting', 'Stitching', 'Finishing', 'Packing', 'QC', 'Dispatch',
+  'Cutting', 'Stitching', 'Finishing', 'Packing', 'QC', 'Dispatch', 'Delivery',
 ]
 
 // BRD §4 — Order-level status overlay (separate from stage progress)
@@ -88,6 +88,9 @@ const stageSchema = new mongoose.Schema({
   // dyeing, the third waiting on a sample).
   blocked:       { type: Boolean, default: false },
   blockedReason: { type: String, default: '', maxlength: 300 },
+  // The mandatory last step of every TNA. Closing it marks the split Delivered (see
+  // statusAfterDeliveryStep in lib/stageMath.js). False on every stage that predates it.
+  isDelivery:    { type: Boolean, default: false },
   updates:    [stageUpdateSchema],
   // Materials/PO checklist for this stage (e.g. fabric/trims to procure). A stage with
   // 1+ material lines cannot advance unitsDone while any line isn't 'received' —

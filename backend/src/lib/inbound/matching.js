@@ -57,6 +57,9 @@ export function gateChange({ confidence, stageIndex, status, stages, defect }) {
     return { ok: false, reason: `Low confidence (${confidence ?? 'none'})` }
   if (defect) return { ok: false, reason: 'Defect flagged, needs a human decision' }
   const cur = stages[stageIndex]
+  // Closing the Delivery step marks the order delivered, which is too consequential to do
+  // from a photo or a message nobody has looked at.
+  if (cur.isDelivery) return { ok: false, reason: 'Delivery needs a person to confirm it' }
   const curStatus = cur.status || 'not_started'
   const rank = { not_started: 0, in_progress: 1, done: 2 }
   if (curStatus === status) return { ok: true, noop: true }

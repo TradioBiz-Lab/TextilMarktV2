@@ -14,7 +14,7 @@ export const ALL_ST = [...STATUS_FLOW, 'On Hold', 'Delayed']
 export const DEFAULT_STAGE_NAMES = [
   'Lab Dip Approval', 'PP Sample',
   'Material Sourcing', 'Knitting', 'Dyeing', 'Processing',
-  'Cutting', 'Stitching', 'Finishing', 'Packing', 'QC', 'Dispatch',
+  'Cutting', 'Stitching', 'Finishing', 'Packing', 'QC', 'Dispatch', 'Delivery',
 ]
 
 // BRD §4 — Order-level status overlay (4 values, stored on assignment.status)
@@ -89,8 +89,11 @@ export const STAGE_DOC_MAP = STAGE_DOC_TYPES.reduce((acc, d) => {
 // what gets saved, and an empty list would save '' (the API rejects it). Anything off the default
 // plan, and the default plan's stages that have no specific type, therefore gets the generic type.
 const sameStageName = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase()
+// Plans created before the mandatory Delivery step was added have the same steps minus that last one.
+const PRE_DELIVERY_PLAN_LENGTH = DEFAULT_STAGE_NAMES.length - 1
 export const isDefaultPlan = stages =>
-  Array.isArray(stages) && stages.length === DEFAULT_STAGE_NAMES.length &&
+  Array.isArray(stages) &&
+  (stages.length === DEFAULT_STAGE_NAMES.length || stages.length === PRE_DELIVERY_PLAN_LENGTH) &&
   stages.every((s, i) => sameStageName(s?.name, DEFAULT_STAGE_NAMES[i]))
 const GENERIC_EVIDENCE_TYPE = STAGE_DOC_TYPES.find(d => d.v === 'floor_evidence')
 export const evidenceTypesFor = (stageIndex, stages) => {
