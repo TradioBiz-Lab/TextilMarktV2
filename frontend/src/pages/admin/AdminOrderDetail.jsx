@@ -7,7 +7,7 @@ import {
   stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber, getToday, planProgress,
   PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor,
 } from '../../constants.js'
-import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey } from '../../components/ui.jsx'
+import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, DateOrNA, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { normalizeCsvDate } from '../../csvDates.js'
 import { capsFor, canWriteStage, canSetAssignmentStatus } from '../../caps.js'
@@ -24,10 +24,13 @@ function fmtDate(d) {
   return `${dd}-${mm}-${dt.getFullYear()}`
 }
 
+// Bulk Edit row: step, start, end, responsible, target qty, description, evidence, NA / Undo.
+const BULK_EDIT_COLS = '170px 168px 168px 150px 78px minmax(120px, 1fr) 30px 64px'
+
 export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   const { currentUser, orders, docs, users, loading, updateAssignment, updateStage, uploadDoc, getDocData, refreshOrders, editOrder, deleteOrder,
     addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
-    addStageItem, updateStageItem, removeStageItem, addAssignment, insertStage, bulkUpdateStages } = useApp()
+    addStageItem, updateStageItem, removeStageItem, addAssignment, reassignAssignment, insertStage, bulkUpdateStages } = useApp()
   const toast = useToast()
   const isMaster = currentUser?.adminType === 'master'
   // Same screen for every role; this decides which controls each one gets.
@@ -119,6 +122,12 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
 
   const [saving, setSaving] = useState(false)
   const [selectedMid, setSelectedMid] = useState(initialMid || null)
+
+  // ── Change a split's manufacturer ──
+  const [reassignMid, setReassignMid] = useState(null) // mid of the split being handed over
+  const [reassignTo, setReassignTo] = useState('')
+  const [reassignQty, setReassignQty] = useState('')
+  const [reassigning, setReassigning] = useState(false)
 
   // ── Unassigned style: "Add Manufacturer" + lightweight document upload ──
   const [newMfrId, setNewMfrId] = useState('')
@@ -688,7 +697,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
           <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
           <div style={{ flex: 1 }} />
           {!unassigned && order.assignments?.length > 1 && (
-            <Btn variant="secondary" size="sm" onClick={() => setSelectedMid(null)} icon={<ArrowLeftRight size={13} />}>Change Mfr</Btn>
+            <Btn variant="secondary" size="sm" onClick={() => setSelectedMid(null)} icon={<ArrowLeftRight size={13} />}>All splits</Btn>
           )}
           {caps.editOrders && <Btn variant="secondary" size="sm" onClick={() => setShowEdit(true)} icon={<Pencil size={13} />}>Edit Style</Btn>}
           {caps.deleteOrders && (
@@ -1121,39 +1130,27 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
 
       {/* ── Stage Dates Adjustment Modal ── */}
       {showEta && etaTarget && (
-        <Modal title="Bulk Edit Stages" subtitle="Update dates, responsible person, target quantity, and description for every stage at once, or mark a step not applicable" size="xxl" onClose={() => setShowEta(false)}>
+        <Modal title="Bulk Edit Stages" subtitle="Update dates, responsible person, target quantity, and description for every stage at once, or mark a step not applicable" size="wide" onClose={() => setShowEta(false)}>
           <Alert type="info" style={{ marginBottom: 20 }}>Changes are logged in the audit trail.</Alert>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ background: '#f8fafc', borderRadius: 10, border: `1px solid ${T.border}`, padding: '12px 14px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ overflowX: 'auto' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 980 }}>
                 {(order.assignments.find(a => String(a.mid) === String(etaTarget))?.stages || []).map((s, i, arr) => {
                   const marked = removeMarks.has(i)
                   const toggleMark = () => setRemoveMarks(prev => { const next = new Set(prev); next.has(i) ? next.delete(i) : next.add(i); return next })
                   return (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 12, borderBottom: i < arr.length - 1 ? `1px solid ${T.border}` : 'none' }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: marked ? T.textLight : T.text, textDecoration: marked ? 'line-through' : 'none', width: 190, flexShrink: 0, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>{i + 1}. {s.name}</span>
+                  <div key={i} style={{ display: 'grid', gridTemplateColumns: BULK_EDIT_COLS, alignItems: 'center', gap: 8, paddingBottom: 12, borderBottom: i < arr.length - 1 ? `1px solid ${T.border}` : 'none' }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: marked ? T.textLight : T.text, textDecoration: marked ? 'line-through' : 'none', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>{i + 1}. {s.name}</span>
                     {marked ? (
-                      // As wide as the inputs it replaces, so the Undo button stays in the NA column.
-                      <span style={{ flex: 1, minWidth: 740, fontSize: 12, color: T.textMuted }}>Not applicable: this step is removed from the plan when you save and shows as NA in the matrix.</span>
+                      <span style={{ gridColumn: '2 / 8', fontSize: 12, color: T.textMuted }}>Not applicable: this step is removed from the plan when you save and shows as NA in the matrix.</span>
                     ) : (<>
-                    <input
-                      type={startValues[i] === 'NA' ? 'text' : 'date'}
-                      value={startValues[i]}
-                      onChange={e => setStartValues(prev => prev.map((v, j) => j === i ? e.target.value : v))}
-                      placeholder="NA or start date"
-                      style={{ width: 135, flexShrink: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: startValues[i] === 'NA' ? T.textLight : T.text }}
-                    />
-                    <input
-                      type={etaValues[i] === 'NA' ? 'text' : 'date'}
-                      value={etaValues[i]}
-                      onChange={e => setEtaValues(prev => prev.map((v, j) => j === i ? e.target.value : v))}
-                      placeholder="NA or end date"
-                      style={{ width: 135, flexShrink: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: etaValues[i] === 'NA' ? T.textLight : T.text }}
-                    />
+                    <DateOrNA label={`${s.name} start date`} value={startValues[i]} onChange={v => setStartValues(prev => prev.map((x, j) => j === i ? v : x))} />
+                    <DateOrNA label={`${s.name} end date`} value={etaValues[i]} onChange={v => setEtaValues(prev => prev.map((x, j) => j === i ? v : x))} />
                     <select
                       value={responsibleValues[i] || ''}
                       onChange={e => setResponsibleValues(prev => prev.map((v, j) => j === i ? e.target.value : v))}
-                      style={{ width: 170, flexShrink: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: responsibleValues[i] ? T.text : T.textLight, cursor: 'pointer' }}
+                      style={{ minWidth: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: responsibleValues[i] ? T.text : T.textLight, cursor: 'pointer' }}
                     >
                       <option value="">Unassigned</option>
                       {responsibleUsers.map(u => (
@@ -1167,13 +1164,13 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                       onChange={e => setTotalUnitsValues(prev => prev.map((v, j) => j === i ? e.target.value : v))}
                       placeholder="Target qty"
                       title="Target quantity for this stage — not every stage tracks the full order qty (e.g. Lab Dip Approval might target 3 dips, not 600 pieces)"
-                      style={{ width: 90, flexShrink: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit' }}
+                      style={{ minWidth: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit' }}
                     />
                     <input
                       value={descriptionValues[i] || ''}
                       onChange={e => setDescriptionValues(prev => prev.map((v, j) => j === i ? e.target.value : v))}
                       placeholder="Description (optional)"
-                      style={{ flex: 1, minWidth: 140, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit' }}
+                      style={{ minWidth: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit' }}
                     />
                     <button
                       onClick={() => openStageDocUpload(etaTarget, i)}
@@ -1182,19 +1179,20 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                     ><Paperclip size={13} /></button>
                     </>)}
                     {s.isDelivery ? (
-                      <span title="The Delivery step is mandatory" style={{ flexShrink: 0, width: 64 }} />
+                      <span title="The Delivery step is mandatory" />
                     ) : (
                       <button
                         onClick={toggleMark}
                         disabled={!marked && removeMarks.size >= arr.filter(x => !x.isDelivery).length}
                         title={marked ? 'Keep this step' : 'Not applicable: remove this step from the plan'}
                         aria-label={marked ? `Keep ${s.name}` : `Mark ${s.name} not applicable`}
-                        style={{ flexShrink: 0, width: 64, height: 30, background: marked ? '#fff' : '#fef2f2', border: `1px solid ${marked ? T.border : '#fecaca'}`, borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: marked ? T.text : T.danger, fontFamily: 'inherit' }}
+                        style={{ height: 30, background: marked ? '#fff' : '#fef2f2', border: `1px solid ${marked ? T.border : '#fecaca'}`, borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: marked ? T.text : T.danger, fontFamily: 'inherit' }}
                       >{marked ? 'Undo' : <><Trash2 size={12} /> NA</>}</button>
                     )}
                   </div>
                   )
                 })}
+              </div>
               </div>
             </div>
             <FlexRow justify="flex-end" gap={8}>
@@ -1204,6 +1202,56 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
           </div>
         </Modal>
       )}
+
+      {/* ── Change Manufacturer Modal ── */}
+      {reassignMid && (() => {
+        const a = order.assignments.find(x => String(x.mid) === String(reassignMid))
+        if (!a) return null
+        const taken = new Set(order.assignments.map(x => String(x.mid)))
+        const choices = mfrUsers.filter(m => !taken.has(String(m.id)))
+        const withProgress = (a.stages || []).filter(s => isStageDone(s) || (s.unitsDone || 0) > 0).length
+        const qtyOk = Number.isInteger(Number(reassignQty)) && Number(reassignQty) >= 1
+        const close = () => { if (!reassigning) setReassignMid(null) }
+        const submit = async () => {
+          setReassigning(true)
+          try {
+            const updated = await reassignAssignment(order.id, a.mid, { newMfrId: reassignTo, qty: Number(reassignQty) })
+            // The split is addressed by its manufacturer, so keep this page pointed at it.
+            if (selectedMid && String(selectedMid) === String(a.mid)) setSelectedMid(String(reassignTo))
+            toast(`${a.sub} now belongs to ${updated?.assignments?.find(x => String(x.mid) === String(reassignTo))?.mfrCompany || 'the new manufacturer'}`, 'success')
+            setReassignMid(null)
+          } catch (e) {
+            toast(typeof e === 'string' ? e : (e?.message || 'Could not change the manufacturer'), 'error')
+          } finally { setReassigning(false) }
+        }
+        return (
+          <Modal title="Change manufacturer" subtitle={`${order.product} · ${a.sub} · currently ${a.mfrCompany || 'unknown'}`} onClose={close}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <Alert type="info">
+                The plan, progress, notes and documents stay with this split. Steps owned by {a.mfrCompany || 'the current manufacturer'} move to the new one, {a.mfrCompany || 'the current manufacturer'} loses access to this style, and the new manufacturer is told.
+              </Alert>
+              {withProgress > 0 && (
+                <Alert type="warning">{withProgress} step{withProgress > 1 ? 's' : ''} already {withProgress > 1 ? 'have' : 'has'} progress recorded. It stays on the plan and carries over to the new manufacturer.</Alert>
+              )}
+              {choices.length === 0 ? (
+                <div style={{ fontSize: 12, color: T.textMuted }}>There is no other active manufacturer to hand this split to. Add the manufacturer under User Setup first.</div>
+              ) : (
+                <div className="form-grid-2" style={{ gap: 12, alignItems: 'flex-end' }}>
+                  <Select label="New manufacturer *" value={reassignTo} onChange={e => setReassignTo(e.target.value)}>
+                    <option value="">Select manufacturer…</option>
+                    {choices.map(m => <option key={m.id} value={m.id}>{m.company} ({m.code})</option>)}
+                  </Select>
+                  <Input label="Quantity *" type="number" value={reassignQty} onChange={e => setReassignQty(e.target.value)} />
+                </div>
+              )}
+              <FlexRow justify="flex-end" gap={8}>
+                <Btn variant="secondary" disabled={reassigning} onClick={close}>Cancel</Btn>
+                <Btn disabled={!reassignTo || !qtyOk || reassigning} onClick={submit}>{reassigning ? 'Changing…' : 'Change manufacturer'}</Btn>
+              </FlexRow>
+            </div>
+          </Modal>
+        )
+      })()}
 
       {/* ── Apply Responsibility to Master Order prompt ── */}
       {showApplyAll && (
@@ -1378,6 +1426,9 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                           <Btn size="sm" variant="outline" onClick={() => openStageOverride(a.mid)} icon={<ShieldAlert size={12} />}>Override</Btn>
                         )}
                         {caps.editPlan && <Btn size="sm" variant="secondary" onClick={() => openEtaAdjust(a.mid)} icon={<ClipboardEdit size={12} />}>Bulk Edit</Btn>}
+                        {caps.assignManufacturers && a.status !== 'Delivered' && (
+                          <Btn size="sm" variant="secondary" onClick={() => { setReassignMid(a.mid); setReassignTo(''); setReassignQty(String(a.qty || '')) }} icon={<ArrowLeftRight size={12} />}>Change Mfr</Btn>
+                        )}
                         {caps.editPlan && <Btn size="sm" variant="secondary" onClick={() => setTnaCsvOpen(p => ({ ...p, [a.mid]: !p[a.mid] }))} icon={<FileSpreadsheet size={12} />}>Upload CSV</Btn>}
                       </FlexRow>
                     </div>
@@ -1458,13 +1509,11 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                             </div>
                             <div style={{ flex: '1 1 120px' }}>
                               <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Start Date</label>
-                              <input type={newStageDraft(a.mid).startDate === 'NA' ? 'text' : 'date'} value={newStageDraft(a.mid).startDate} onChange={e => setNewStageDraft(a.mid, { startDate: e.target.value })}
-                                style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                              <DateOrNA label="Start date" value={newStageDraft(a.mid).startDate} onChange={v => setNewStageDraft(a.mid, { startDate: v })} />
                             </div>
                             <div style={{ flex: '1 1 120px' }}>
                               <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>End Date</label>
-                              <input type={newStageDraft(a.mid).eta === 'NA' ? 'text' : 'date'} value={newStageDraft(a.mid).eta} onChange={e => setNewStageDraft(a.mid, { eta: e.target.value })}
-                                style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                              <DateOrNA label="End date" value={newStageDraft(a.mid).eta} onChange={v => setNewStageDraft(a.mid, { eta: v })} />
                             </div>
                             <div style={{ flex: '1 1 110px' }}>
                               <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Kind</label>

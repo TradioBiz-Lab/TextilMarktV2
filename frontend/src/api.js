@@ -75,6 +75,9 @@ export const ordersApi = {
   // starts with an empty stage list; TNA is built separately afterward.
   addAssignment: (orderId, { mfrId, qty, sub }) =>
     api.post(`/orders/${orderId}/assignments`, { mfrId, qty, sub }),
+  // Hands one manufacturer split to a different manufacturer: { newMfrId, qty? }. Plan and progress stay.
+  reassignAssignment: (orderId, mfrId, data) =>
+    api.post(`/orders/${orderId}/assignments/${mfrId}/reassign`, data),
   updateStage: (orderId, mfrId, stageIndex, data) =>
     api.post(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}`, data),
   updateStageDates: (orderId, mfrId, stageIndex, dates) =>

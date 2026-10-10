@@ -781,6 +781,77 @@ router.post('/:orderId/assignments', requireAuth, requireAdmin, updateLimiter, a
   }
 })
 
+// POST /api/orders/:orderId/assignments/:mfrId/reassign — hand one manufacturer split to a
+// different manufacturer (admin only). The plan, progress, notes and updates stay exactly as they
+// are; only who owns the split changes. Stages the old manufacturer was responsible for move to the
+// new one, and the split's documents are re-pointed so they stay with it. The old manufacturer loses
+// access to the order, the new one gains it. Body: { newMfrId, qty? } (qty defaults to the current).
+router.post('/:orderId/assignments/:mfrId/reassign', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
+  try {
+    const { orderId, mfrId } = req.params
+    const { newMfrId, qty } = req.body || {}
+    if (!mongoose.Types.ObjectId.isValid(mfrId)) return res.status(400).json({ error: 'Invalid manufacturer ID' })
+    if (!newMfrId || !mongoose.Types.ObjectId.isValid(newMfrId)) return res.status(400).json({ error: 'Choose the new manufacturer' })
+    const oldId = new mongoose.Types.ObjectId(mfrId)
+    const newId = new mongoose.Types.ObjectId(String(newMfrId))
+    if (oldId.equals(newId)) return res.status(400).json({ error: 'That manufacturer is already assigned to this split' })
+
+    let newQty = null
+    if (qty !== undefined && qty !== null && qty !== '') {
+      newQty = Number(qty)
+      if (!Number.isInteger(newQty) || newQty < 1) return res.status(400).json({ error: 'Quantity must be a positive whole number' })
+    }
+
+    const target = await User.findById(newId, 'role isActive company').lean()
+    if (!target || target.role !== 'manufacturer') return res.status(400).json({ error: 'Manufacturer not found' })
+    if (!target.isActive) return res.status(400).json({ error: 'Manufacturer account is inactive' })
+
+    const existing = await Order.findById(orderId).lean()
+    if (!existing) return res.status(404).json({ error: 'Order not found' })
+    const asgn = (existing.assignments || []).find(a => a.mfrId?.toString() === mfrId)
+    if (!asgn) return res.status(404).json({ error: 'Assignment not found' })
+    if ((existing.assignments || []).some(a => a.mfrId?.toString() === String(newId)))
+      return res.status(400).json({ error: 'This manufacturer is already assigned to this style' })
+    if (asgn.status === 'Delivered')
+      return res.status(400).json({ error: 'This split is already delivered, so its manufacturer cannot be changed' })
+
+    // One atomic write, guarded on the split still belonging to the old manufacturer and the new
+    // one still not being on the order, so two admins cannot cross over or create a duplicate.
+    const set = { 'assignments.$[a].mfrId': newId, 'assignments.$[a].updatedAt': new Date(), 'assignments.$[a].stages.$[s].responsibleId': newId }
+    if (newQty != null) set['assignments.$[a].qty'] = newQty
+    const moved = await Order.updateOne(
+      { _id: orderId, assignments: { $elemMatch: { mfrId: oldId } }, 'assignments.mfrId': { $ne: newId } },
+      { $set: set },
+      { arrayFilters: [{ 'a.mfrId': oldId }, { 's.responsibleId': oldId }] }
+    )
+    if (moved.modifiedCount === 0) return res.status(409).json({ error: 'This split changed while you were working. Refresh the page and try again.' })
+
+    // The split's documents follow it, so the new manufacturer sees them and the old one does not.
+    await withRetry('document re-point after reassignment', () => Document.updateMany(
+      { orderId, mfrId: oldId }, { $set: { mfrId: newId } }
+    ))
+
+    const order = await Order.findById(orderId)
+      .populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS)
+      .populate('assignments.stages.responsibleId', 'name company code role')
+      .populate('assignments.stages.updates.byUser', 'name').lean()
+
+    const former = await User.findById(oldId, 'company').lean()
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Manufacturer Reassigned',
+      detail: `${orderId}: ${asgn.sub} moved from ${former?.company || oldId} to ${target.company || newId}${newQty != null && newQty !== asgn.qty ? `, qty ${asgn.qty} to ${newQty}` : ''} by ${req.user.name}`,
+    })
+    await notify([newId], { type: 'order', msg: `New order assigned to you: ${orderId}`, orderId }, { exceptUserId: req.user.id })
+    await notify([oldId], { type: 'order', msg: `${orderId} has been reassigned to another manufacturer`, orderId }, { exceptUserId: req.user.id })
+
+    res.json(enrichFor(order, req))
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
 // POST /api/orders/:orderId/assignments/:mfrId/stages/bulk — update many stages in one write.
 //
 // MUST stay registered ABOVE the /:stageIndex route below: Express matches in
