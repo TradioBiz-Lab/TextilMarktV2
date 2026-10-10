@@ -377,6 +377,12 @@ export function AppProvider({ children }) {
     return order
   }, [])
 
+  const reassignAssignment = useCallback(async (orderId, mfrId, data) => {
+    const order = await ordersApi.reassignAssignment(orderId, mfrId, data)
+    setOrders(p => p.map(o => o.id === orderId ? order : o))
+    return order
+  }, [])
+
   const insertStage = useCallback(async (orderId, mfrId, data) => {
     const order = await ordersApi.insertStage(orderId, mfrId, data)
     setOrders(p => p.map(o => o.id === orderId ? order : o))
@@ -561,7 +567,7 @@ export function AppProvider({ children }) {
       login, logout,
       updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
       bulkUpdateStages, addStageItem, updateStageItem, removeStageItem,
-      updateAssignment, addAssignment, insertStage, uploadDoc, updateDoc, deleteDoc, createOrder, createMasterOrder, updateMasterOrder, deleteMasterOrder,
+      updateAssignment, addAssignment, reassignAssignment, insertStage, uploadDoc, updateDoc, deleteDoc, createOrder, createMasterOrder, updateMasterOrder, deleteMasterOrder,
       editOrder, deleteOrder,
       createUser, updateUser, toggleUser, resetUserPw,
       markAllRead, markOneRead, getDocData, refreshAudit, loadMoreAudit,

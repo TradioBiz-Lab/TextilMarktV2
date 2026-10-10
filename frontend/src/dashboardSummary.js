@@ -22,6 +22,20 @@ const shortDate = d => {
 }
 const list = items => items.length <= 1 ? items.join('') : items.slice(0, -1).join(', ') + ' and ' + items[items.length - 1]
 
+// The step's date has been moved off its original plan (a revised ETA exists and differs).
+const isRevised = s => !!(s?.eta && s.eta !== 'NA' && s.baselineEta && s.baselineEta !== 'NA' && dayNumber(s.eta) !== dayNumber(s.baselineEta))
+
+// The latest effective date anywhere in the plan, which is when the style is now expected to land
+// (the mandatory Delivery step is last, so a pushed Delivery ETA shows up here too).
+const planEnd = stages => {
+  let best = null
+  for (const s of stages || []) {
+    const e = effectiveEta(s), d = e ? dayNumber(e) : null
+    if (d != null && (best == null || d > best.d)) best = { d, e }
+  }
+  return best
+}
+
 /** One row per order x factory split, with the health facts the lines are built from. */
 function buildRows(orders, role, userId, todayNum) {
   const rows = []
@@ -215,8 +229,19 @@ export function rowCallout(r) {
     const days = worstEntry ? lateBy(worstEntry) : 0
     // A manual callout only rides along when it is short enough to keep this a one-liner.
     const cause = order.callout && order.callout.length <= 50 ? ` ${order.callout}` : ''
-    if (worst) return `${plural(days, 'day')} behind at ${worst.name}${deliveryBit ? `, ${deliveryBit} at risk` : ''}.${cause}`
-    return `Past its delivery date.${cause}`
+    // Say where the date now stands, not just that it slipped: the step's planned and revised dates,
+    // and when the style is now expected to land against what was promised.
+    const end = planEnd(stages)
+    const promised = order.delivery ? dayNumber(new Date(order.delivery).toISOString()) : null
+    const over = end && promised != null && end.d > promised ? end.d - promised : 0
+    const landing = over
+      ? ` Now expected ${shortDate(end.e)}, ${plural(over, 'day')} past the ${shortDate(order.delivery)} delivery date.`
+      : deliveryBit ? ` ${deliveryBit[0].toUpperCase()}${deliveryBit.slice(1)} at risk.` : ''
+    if (worst) {
+      const dates = isRevised(worst) ? `planned ${shortDate(worst.baselineEta)}, revised to ${shortDate(worst.eta)}` : `due ${shortDate(effectiveEta(worst))}`
+      return `${plural(days, 'day')} behind at ${worst.name} (${dates}).${landing}${cause}`
+    }
+    return `Past its delivery date${order.delivery ? ` (${shortDate(order.delivery)})` : ''}.${over ? ` Now expected ${shortDate(end.e)}.` : ''}${cause}`
   }
 
   const w = working[0]?.stage

@@ -413,7 +413,7 @@ export function ReportingPage({ onOpen, initialMo }) {
                               return (
                                 <div title={text} style={{ display: 'flex', gap: 7, alignItems: 'flex-start', fontSize: 12, lineHeight: 1.45, color: r.health === 'blocked' || r.health === 'late' ? T.danger : T.text }}>
                                   <Sparkles size={12} color="#f97316" style={{ flexShrink: 0, marginTop: 2 }} />
-                                  <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{text}</span>
+                                  <span style={{ display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{text}</span>
                                 </div>
                               )
                             })()}

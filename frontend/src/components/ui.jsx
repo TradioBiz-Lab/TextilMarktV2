@@ -364,7 +364,7 @@ export function Modal({ title, subtitle, onClose, children, size = 'md' }) {
       if (i !== -1) openModals.splice(i, 1)
     }
   }, [])
-  const w = { sm: 420, md: 500, lg: 680, xl: 820, xxl: 1040 }[size] || 500
+  const w = { sm: 420, md: 500, lg: 680, xl: 820, xxl: 1040, wide: 1240 }[size] || 500
   return (
     <div className="modal-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }} onMouseDown={e => { backdropDown.current = e.target === e.currentTarget }} onClick={e => { if (e.target === e.currentTarget && backdropDown.current) onClose() }}>
       <div className="modal-inner" style={{ background: T.surface, border: `1px solid ${T.border}`, width: '100%', maxWidth: w, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
@@ -377,6 +377,33 @@ export function Modal({ title, subtitle, onClose, children, size = 'md' }) {
         </div>
         <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>{children}</div>
       </div>
+    </div>
+  )
+}
+
+// A date field that can also be "NA" (no date applies to this step). NA is a state you toggle, not
+// text you type: a plain date input cannot hold "NA", and swapping it for a text box when the value
+// is "NA" used to strand the field with no calendar and no way back. The toggle always works.
+export function DateOrNA({ value, onChange, label, placeholder, style }) {
+  const isNA = value === 'NA'
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, ...style }}>
+      <input
+        type={isNA ? 'text' : 'date'}
+        value={value || ''}
+        readOnly={isNA}
+        placeholder={placeholder}
+        aria-label={label}
+        onChange={e => onChange(e.target.value)}
+        style={{ flex: 1, minWidth: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: isNA ? T.textLight : T.text, background: isNA ? '#f8fafc' : '#fff', boxSizing: 'border-box' }}
+      />
+      <button
+        type="button"
+        onClick={() => onChange(isNA ? '' : 'NA')}
+        title={isNA ? 'Pick a date' : 'No date applies'}
+        aria-label={isNA ? `${label || 'Date'}: set a date` : `${label || 'Date'}: mark NA`}
+        style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 700, color: T.primary, padding: '0 2px', whiteSpace: 'nowrap' }}
+      >{isNA ? 'Set date' : 'NA'}</button>
     </div>
   )
 }
