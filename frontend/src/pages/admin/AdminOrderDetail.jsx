@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, Fragment } from 'react'
 import Papa from 'papaparse'
 import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight, Trash2 } from '../../icons.jsx'
 import {
-  T, ORDER_STATUSES, evidenceTypesFor, DOC_ICONS, isSystemDoc,
+  T, ORDER_STATUSES, evidenceTypesFor, productDocForStep, DOC_ICONS, isSystemDoc,
   stageKindOf, kindForCustomerOwner, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
   stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber, getToday, planProgress,
   PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor,
@@ -631,10 +631,11 @@ export function AdminOrderDetail({ orderId, initialMid, onBack, onNavigate }) {
         onFile: f => { setHeroPhotoFile(f); setHeroPhotoErr('') }, onErr: setHeroPhotoErr, onUpload: uploadHeroPhoto,
       },
       ...Object.keys(refDocLabels).map(type => {
-        const doc = orderDocs.find(d => d.type === type)
+        const typeDocs = orderDocs.filter(d => d.type === type)
+        const doc = typeDocs[0]
         const uploadProps = type === 'pattern' ? PATTERN_FILE_PROPS : type === 'measurements' ? MEASUREMENTS_FILE_PROPS : {}
         return {
-          key: type, label: refDocLabels[type], uploaded: !!doc, doc, uploadProps, canUpload: caps.uploadReferenceDocs,
+          key: type, label: refDocLabels[type], uploaded: !!doc, doc, docs: typeDocs, uploadProps, canUpload: caps.uploadReferenceDocs,
           file: refDocFiles[type], err: refDocErrs[type], uploading: refDocUploading === type,
           onFile: f => setRefDocFiles(p => ({ ...p, [type]: f })),
           onErr: e => setRefDocErrs(p => ({ ...p, [type]: e })),
@@ -803,7 +804,20 @@ export function AdminOrderDetail({ orderId, initialMid, onBack, onNavigate }) {
                           )}
                         </div>
                       ) : item.uploaded && item.doc ? (
-                        <DocCard doc={item.doc} users={users} onGetData={getDocData} />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {(item.docs || [item.doc]).map(d => {
+                            // A document uploaded on a step says which step, so the two places read as one record.
+                            const step = d.stageIndex != null
+                              ? order.assignments.find(a => String(a.mid) === String(d.mfrId))?.stages?.[d.stageIndex]?.name
+                              : null
+                            return (
+                              <div key={d.id}>
+                                {step && <div style={{ fontSize: 10, fontWeight: 700, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>From step: {step}</div>}
+                                <DocCard doc={d} users={users} onGetData={getDocData} />
+                              </div>
+                            )
+                          })}
+                        </div>
                       ) : !item.canUpload ? (
                         <div style={{ fontSize: 12, color: T.textMuted, padding: '4px 2px' }}>Not uploaded yet. {caps.isMfr ? 'The customer or Tradio uploads this.' : ''}</div>
                       ) : (
@@ -1265,6 +1279,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack, onNavigate }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <Alert type="info">
               Linked to the {(order.assignments.find(a => String(a.mid) === String(sdMfrId))?.stages?.[sdStageIdx]?.name) || `Stage ${sdStageIdx + 1}`} stage. Attach a file/link, or add SOP notes only — either is sufficient.
+              {productDocForStep(order.assignments.find(a => String(a.mid) === String(sdMfrId))?.stages?.[sdStageIdx]?.name) && ` It is also filed under "${productDocForStep(order.assignments.find(a => String(a.mid) === String(sdMfrId))?.stages?.[sdStageIdx]?.name).label}" in this product's documents, so there is no need to upload it again.`}
             </Alert>
             {sdItems.map((item, idx) => (
               <div key={idx} style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 16px', background: '#f8fafc', position: 'relative' }}>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { ArrowRight, X, AlertTriangle, Paperclip, Plus } from '../../icons.jsx'
-import { T, evidenceTypesFor, kindForCustomerOwner, stageKindOf, stageStatusOf, stageVariance, stageActualVariance, STAGE_STATUS_LABELS, fmtStageDate, getToday } from '../../constants.js'
+import { T, evidenceTypesFor, productDocForStep, kindForCustomerOwner, stageKindOf, stageStatusOf, stageVariance, stageActualVariance, STAGE_STATUS_LABELS, fmtStageDate, getToday } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, FlexRow, Input, FileUpload, DocCard, useToast, fileUploadPayload, SectionLabel } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { capsFor, canWriteStage, canEditPlan } from '../../caps.js'
@@ -661,6 +661,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ fontSize: 12, color: T.textMuted, background: '#f0f7ff', border: `1px solid #dbeafe`, borderRadius: 8, padding: '8px 12px' }}>
             Linked to the {stage?.name || `Stage ${stageIndex + 1}`} stage. Attach a file/link, or add SOP notes only — either is sufficient.
+            {productDocForStep(stage?.name) && ` It is also filed under "${productDocForStep(stage?.name).label}" in this product's documents, so there is no need to upload it again.`}
           </div>
           {sdItems.map((item, idx) => (
             <div key={idx} style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 16px', background: '#f8fafc', position: 'relative' }}>

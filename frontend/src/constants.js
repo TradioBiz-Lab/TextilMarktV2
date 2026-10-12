@@ -102,7 +102,19 @@ export const isDefaultPlan = stages =>
   (stages.length === DEFAULT_STAGE_NAMES.length || stages.length === PRE_DELIVERY_PLAN_LENGTH) &&
   stages.every((s, i) => sameStageName(s?.name, DEFAULT_STAGE_NAMES[i]))
 const GENERIC_EVIDENCE_TYPE = STAGE_DOC_TYPES.find(d => d.v === 'floor_evidence')
+
+// Lab dip and FPT/GPT test evidence is also the product's own document (Documents & Assets lists "Lab Dip
+// Receipts" and "Test Reports (FPT/GPT)"). Uploading it on the step files it under that type, so one upload
+// serves both and nobody uploads it twice. Matched by step name, so it works on any plan.
+export const PRODUCT_DOC_BY_STEP = [
+  { re: /lab\s*dip/i, type: 'lab_dip', label: 'Lab Dip Receipts', one: 'Lab Dip Receipt' },
+  { re: /\b(fpt|gpt)\b/i, type: 'test_report', label: 'Test Reports (FPT/GPT)', one: 'Test Report' },
+]
+export const productDocForStep = stageName => PRODUCT_DOC_BY_STEP.find(p => p.re.test(String(stageName || ''))) || null
+
 export const evidenceTypesFor = (stageIndex, stages) => {
+  const product = productDocForStep(stages?.[stageIndex]?.name)
+  if (product) return [{ v: product.type, l: product.one, stageIndex }]
   const mapped = isDefaultPlan(stages) ? STAGE_DOC_MAP[stageIndex] : null
   return mapped?.length ? mapped : [GENERIC_EVIDENCE_TYPE]
 }
