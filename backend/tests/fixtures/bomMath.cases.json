@@ -1,0 +1,401 @@
+[
+  {
+    "name": "5117 Polaire full zip Chevignon: 10,800 pcs, 3 colours, 7% buffer",
+    "plan": {
+      "sizes": [
+        "S",
+        "M",
+        "L",
+        "XL",
+        "XXL"
+      ],
+      "ratio": [
+        1,
+        2,
+        3,
+        2,
+        1
+      ],
+      "colours": [
+        {
+          "name": "BLACK",
+          "qty": 3600
+        },
+        {
+          "name": "NAVY",
+          "qty": 3600
+        },
+        {
+          "name": "CHARCOAL GREY",
+          "qty": 3600
+        }
+      ]
+    },
+    "line": {
+      "unit": "kg",
+      "consumption": 0.72,
+      "perSize": [
+        0.63,
+        0.675,
+        0.72,
+        0.765,
+        0.8325
+      ],
+      "wastagePct": 7,
+      "perColour": true
+    },
+    "expected": {
+      "perColour": [
+        {
+          "sizePcs": [
+            400.0,
+            800.0,
+            1200.0,
+            800.0,
+            400.0
+          ],
+          "net": 2601.0,
+          "buffer": 182.1,
+          "orderQty": 2783.0,
+          "colour": "BLACK",
+          "qty": 3600
+        },
+        {
+          "sizePcs": [
+            400.0,
+            800.0,
+            1200.0,
+            800.0,
+            400.0
+          ],
+          "net": 2601.0,
+          "buffer": 182.1,
+          "orderQty": 2783.0,
+          "colour": "NAVY",
+          "qty": 3600
+        },
+        {
+          "sizePcs": [
+            400.0,
+            800.0,
+            1200.0,
+            800.0,
+            400.0
+          ],
+          "net": 2601.0,
+          "buffer": 182.1,
+          "orderQty": 2783.0,
+          "colour": "CHARCOAL GREY",
+          "qty": 3600
+        }
+      ],
+      "net": 7803.0,
+      "buffer": 546.3,
+      "orderQty": 8349.0
+    }
+  },
+  {
+    "name": "5118 Polaire full zip Kaporal: 18,000 pcs, 3 colours, 7% buffer",
+    "plan": {
+      "sizes": [
+        "S",
+        "M",
+        "L",
+        "XL",
+        "XXL"
+      ],
+      "ratio": [
+        1,
+        2,
+        3,
+        2,
+        1
+      ],
+      "colours": [
+        {
+          "name": "BLACK",
+          "qty": 6000
+        },
+        {
+          "name": "NAVY",
+          "qty": 6000
+        },
+        {
+          "name": "CHARCOAL GREY",
+          "qty": 6000
+        }
+      ]
+    },
+    "line": {
+      "unit": "kg",
+      "consumption": 0.72,
+      "perSize": [
+        0.63,
+        0.675,
+        0.72,
+        0.765,
+        0.8325
+      ],
+      "wastagePct": 7,
+      "perColour": true
+    },
+    "expected": {
+      "perColour": [
+        {
+          "sizePcs": [
+            667.0,
+            1333.0,
+            2000.0,
+            1333.0,
+            667.0
+          ],
+          "net": 4335.0,
+          "buffer": 303.5,
+          "orderQty": 4639.0,
+          "colour": "BLACK",
+          "qty": 6000
+        },
+        {
+          "sizePcs": [
+            667.0,
+            1333.0,
+            2000.0,
+            1333.0,
+            667.0
+          ],
+          "net": 4335.0,
+          "buffer": 303.5,
+          "orderQty": 4639.0,
+          "colour": "NAVY",
+          "qty": 6000
+        },
+        {
+          "sizePcs": [
+            667.0,
+            1333.0,
+            2000.0,
+            1333.0,
+            667.0
+          ],
+          "net": 4335.0,
+          "buffer": 303.5,
+          "orderQty": 4639.0,
+          "colour": "CHARCOAL GREY",
+          "qty": 6000
+        }
+      ],
+      "net": 13005.0,
+      "buffer": 910.5,
+      "orderQty": 13917.0
+    }
+  },
+  {
+    "name": "a trim counted in pieces is rounded up, not to nearest",
+    "plan": {
+      "sizes": [
+        "S",
+        "M",
+        "L",
+        "XL",
+        "XXL"
+      ],
+      "ratio": [
+        1,
+        2,
+        3,
+        2,
+        1
+      ],
+      "colours": [
+        {
+          "name": "BLACK",
+          "qty": 3600
+        },
+        {
+          "name": "NAVY",
+          "qty": 3600
+        },
+        {
+          "name": "CHARCOAL GREY",
+          "qty": 3600
+        }
+      ]
+    },
+    "line": {
+      "unit": "pcs",
+      "consumption": 1,
+      "wastagePct": 2.5,
+      "perColour": false
+    },
+    "expected": {
+      "perColour": [],
+      "net": 10800.0,
+      "buffer": 270.0,
+      "orderQty": 11070.0,
+      "sizePcs": [
+        1200.0,
+        2400.0,
+        3600.0,
+        2400.0,
+        1200.0
+      ]
+    }
+  },
+  {
+    "name": "colours of different size each get their own order quantity",
+    "plan": {
+      "sizes": [
+        "M",
+        "L"
+      ],
+      "ratio": [
+        1,
+        1
+      ],
+      "colours": [
+        {
+          "name": "RED",
+          "qty": 1000
+        },
+        {
+          "name": "BLUE",
+          "qty": 501
+        }
+      ]
+    },
+    "line": {
+      "unit": "m",
+      "consumption": 1.5,
+      "wastagePct": 5,
+      "perColour": true
+    },
+    "expected": {
+      "perColour": [
+        {
+          "sizePcs": [
+            500.0,
+            500.0
+          ],
+          "net": 1500.0,
+          "buffer": 75.0,
+          "orderQty": 1575.0,
+          "colour": "RED",
+          "qty": 1000
+        },
+        {
+          "sizePcs": [
+            251.0,
+            251.0
+          ],
+          "net": 753.0,
+          "buffer": 37.7,
+          "orderQty": 791.0,
+          "colour": "BLUE",
+          "qty": 501
+        }
+      ],
+      "net": 2253.0,
+      "buffer": 112.7,
+      "orderQty": 2366.0
+    }
+  },
+  {
+    "name": "no ratio entered: one size takes everything",
+    "plan": {
+      "sizes": [
+        "ONE"
+      ],
+      "ratio": [
+        1
+      ],
+      "colours": [
+        {
+          "name": "ALL",
+          "qty": 250
+        }
+      ]
+    },
+    "line": {
+      "unit": "m",
+      "consumption": 2.1,
+      "wastagePct": 0,
+      "perColour": true
+    },
+    "expected": {
+      "perColour": [
+        {
+          "sizePcs": [
+            250.0
+          ],
+          "net": 525.0,
+          "buffer": 0.0,
+          "orderQty": 525.0,
+          "colour": "ALL",
+          "qty": 250
+        }
+      ],
+      "net": 525.0,
+      "buffer": 0.0,
+      "orderQty": 525.0
+    }
+  },
+  {
+    "name": "a per-size value left blank falls back to the line consumption",
+    "plan": {
+      "sizes": [
+        "S",
+        "M",
+        "L",
+        "XL",
+        "XXL"
+      ],
+      "ratio": [
+        1,
+        2,
+        3,
+        2,
+        1
+      ],
+      "colours": [
+        {
+          "name": "ALL",
+          "qty": 900
+        }
+      ]
+    },
+    "line": {
+      "unit": "kg",
+      "consumption": 0.5,
+      "perSize": [
+        0.4,
+        null,
+        0.5,
+        null,
+        0.6
+      ],
+      "wastagePct": 3,
+      "perColour": true
+    },
+    "expected": {
+      "perColour": [
+        {
+          "sizePcs": [
+            100.0,
+            200.0,
+            300.0,
+            200.0,
+            100.0
+          ],
+          "net": 450.0,
+          "buffer": 13.5,
+          "orderQty": 464.0,
+          "colour": "ALL",
+          "qty": 900
+        }
+      ],
+      "net": 450.0,
+      "buffer": 13.5,
+      "orderQty": 464.0
+    }
+  }
+]

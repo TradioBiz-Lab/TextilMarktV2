@@ -1,0 +1,595 @@
+[
+  {
+    "name": "FLGCW17 Baggy Active Jacket",
+    "sheet": {
+      "fabric": [
+        {
+          "name": "NS Lycra",
+          "consumption": 1.65,
+          "unit": "m",
+          "rate": 135
+        }
+      ],
+      "process": [
+        {
+          "name": "Fitleasure - Transfer",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 4
+        }
+      ],
+      "trims": [
+        {
+          "name": "Zipper",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 45
+        },
+        {
+          "name": "Cord Elastic",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 5
+        },
+        {
+          "name": "Stopper",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 4
+        },
+        {
+          "name": "Cuff Elastic",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 4
+        }
+      ],
+      "labelsPackaging": [
+        {
+          "name": "Main Label",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 1.5
+        },
+        {
+          "name": "Washcare",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 1
+        },
+        {
+          "name": "Kimble",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 0.5
+        },
+        {
+          "name": "Transport (internal)",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 3
+        },
+        {
+          "name": "Carton",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 3
+        }
+      ],
+      "labour": {
+        "cuttingThreads": 14,
+        "making": 116,
+        "finishingPacking": 12
+      },
+      "overheadPct": 5,
+      "rejectionPct": 3,
+      "marginPct": 20,
+      "tradioPct": 10,
+      "discountPct": 3.6
+    },
+    "expected": {
+      "fabric": 222.75,
+      "process": 4.0,
+      "trims": 58.0,
+      "labelsPackaging": 9.0,
+      "materials": 293.75,
+      "labour": 142.0,
+      "base": 435.75,
+      "overhead": 21.7875,
+      "rejection": 13.7261,
+      "margin": 94.2527,
+      "tradio": 43.575,
+      "price": 609.09,
+      "negotiated": 587.16
+    }
+  },
+  {
+    "name": "FLGCW16 Cuffed Joggers",
+    "sheet": {
+      "fabric": [
+        {
+          "name": "NS Lycra",
+          "consumption": 1.345,
+          "unit": "m",
+          "rate": 135
+        }
+      ],
+      "process": [
+        {
+          "name": "Fitleasure - Transfer",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 4
+        },
+        {
+          "name": "Waistband Elastic",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 8
+        },
+        {
+          "name": "Bottom Elastic",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 6
+        }
+      ],
+      "trims": [
+        {
+          "name": "Drawcord",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 7.5
+        }
+      ],
+      "labelsPackaging": [
+        {
+          "name": "Main Label",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 1.5
+        },
+        {
+          "name": "Washcare",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 1
+        },
+        {
+          "name": "Kimble",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 0.5
+        },
+        {
+          "name": "Transport (internal)",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 3
+        },
+        {
+          "name": "Carton",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 3
+        }
+      ],
+      "labour": {
+        "cuttingThreads": 14,
+        "making": 67,
+        "finishingPacking": 12
+      },
+      "overheadPct": 5,
+      "rejectionPct": 3,
+      "marginPct": 20,
+      "tradioPct": 10,
+      "discountPct": 3.5
+    },
+    "expected": {
+      "fabric": 181.575,
+      "process": 18.0,
+      "trims": 7.5,
+      "labelsPackaging": 9.0,
+      "materials": 216.075,
+      "labour": 93.0,
+      "base": 309.075,
+      "overhead": 15.4538,
+      "rejection": 9.7359,
+      "margin": 66.8529,
+      "tradio": 30.9075,
+      "price": 432.03,
+      "negotiated": 416.9
+    }
+  },
+  {
+    "name": "FLGCM16 Recovery Joggers",
+    "sheet": {
+      "fabric": [
+        {
+          "name": "NS Lycra",
+          "consumption": 1.35,
+          "unit": "m",
+          "rate": 135
+        }
+      ],
+      "process": [
+        {
+          "name": "Fitleasure - Transfer",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 4
+        },
+        {
+          "name": "Waistband Elastic",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 8
+        },
+        {
+          "name": "Bottom Elastic",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 6
+        }
+      ],
+      "trims": [
+        {
+          "name": "Zipper",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 24
+        },
+        {
+          "name": "Drawcord",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 7.5
+        }
+      ],
+      "labelsPackaging": [
+        {
+          "name": "Main Label",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 1.5
+        },
+        {
+          "name": "Washcare",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 1
+        },
+        {
+          "name": "Kimble",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 0.5
+        },
+        {
+          "name": "Transport (internal)",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 3
+        },
+        {
+          "name": "Carton",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 3
+        }
+      ],
+      "labour": {
+        "cuttingThreads": 14,
+        "making": 67,
+        "finishingPacking": 12
+      },
+      "overheadPct": 5,
+      "rejectionPct": 3,
+      "marginPct": 20,
+      "tradioPct": 10,
+      "discountPct": 2.1
+    },
+    "expected": {
+      "fabric": 182.25,
+      "process": 18.0,
+      "trims": 31.5,
+      "labelsPackaging": 9.0,
+      "materials": 240.75,
+      "labour": 93.0,
+      "base": 333.75,
+      "overhead": 16.6875,
+      "rejection": 10.5131,
+      "margin": 72.1901,
+      "tradio": 33.375,
+      "price": 466.52,
+      "negotiated": 456.72
+    }
+  },
+  {
+    "name": "FLGCW14 Hooded Tank",
+    "sheet": {
+      "fabric": [
+        {
+          "name": "POS#3503G",
+          "consumption": 0.21,
+          "unit": "kg",
+          "rate": 975
+        }
+      ],
+      "process": [
+        {
+          "name": "Fitleasure - Transfer",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 4
+        }
+      ],
+      "trims": [],
+      "labelsPackaging": [
+        {
+          "name": "Main Label",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 1.5
+        },
+        {
+          "name": "Washcare",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 1
+        },
+        {
+          "name": "Kimble",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 0.5
+        },
+        {
+          "name": "Transport (internal)",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 3
+        },
+        {
+          "name": "Carton",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 3
+        }
+      ],
+      "labour": {
+        "cuttingThreads": 14,
+        "making": 34,
+        "finishingPacking": 12
+      },
+      "overheadPct": 5,
+      "rejectionPct": 3,
+      "marginPct": 20,
+      "tradioPct": 10,
+      "discountPct": 1.7
+    },
+    "expected": {
+      "fabric": 204.75,
+      "process": 4.0,
+      "trims": 0.0,
+      "labelsPackaging": 9.0,
+      "materials": 217.75,
+      "labour": 60.0,
+      "base": 277.75,
+      "overhead": 13.8875,
+      "rejection": 8.7491,
+      "margin": 60.0773,
+      "tradio": 27.775,
+      "price": 388.24,
+      "negotiated": 381.64
+    }
+  },
+  {
+    "name": "FLGCM14 Recovery Tee",
+    "sheet": {
+      "fabric": [
+        {
+          "name": "POS#2633",
+          "consumption": 0.265,
+          "unit": "kg",
+          "rate": 670
+        }
+      ],
+      "process": [
+        {
+          "name": "Fitleasure - Hd Print",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 15
+        },
+        {
+          "name": "Fitleasure - Logo",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 2
+        },
+        {
+          "name": "Laser Punches",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 18
+        }
+      ],
+      "trims": [
+        {
+          "name": "Reflective Strips-Shoulder",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 6
+        }
+      ],
+      "labelsPackaging": [
+        {
+          "name": "Main Label",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 1.5
+        },
+        {
+          "name": "Washcare",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 1
+        },
+        {
+          "name": "Kimble",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 0.5
+        },
+        {
+          "name": "Transport (internal)",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 3
+        },
+        {
+          "name": "Carton",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 3
+        }
+      ],
+      "labour": {
+        "cuttingThreads": 14,
+        "making": 36,
+        "finishingPacking": 12
+      },
+      "overheadPct": 5,
+      "rejectionPct": 3,
+      "marginPct": 20,
+      "tradioPct": 10,
+      "discountPct": 0.8
+    },
+    "expected": {
+      "fabric": 177.55,
+      "process": 35.0,
+      "trims": 6.0,
+      "labelsPackaging": 9.0,
+      "materials": 227.55,
+      "labour": 62.0,
+      "base": 289.55,
+      "overhead": 14.4775,
+      "rejection": 9.1208,
+      "margin": 62.6297,
+      "tradio": 28.955,
+      "price": 404.73,
+      "negotiated": 401.5
+    }
+  },
+  {
+    "name": "FLGCM17 Zip Up Recovery Jacket",
+    "sheet": {
+      "fabric": [
+        {
+          "name": "NS Lycra",
+          "consumption": 1,
+          "unit": "m",
+          "rate": 223
+        },
+        {
+          "name": "Mesh",
+          "consumption": 1,
+          "unit": "m",
+          "rate": 17.5
+        }
+      ],
+      "process": [
+        {
+          "name": "Fitleasure - Transfer",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 4
+        }
+      ],
+      "trims": [
+        {
+          "name": "Zipper",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 45
+        },
+        {
+          "name": "Cord Elastic",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 5
+        },
+        {
+          "name": "Stopper",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 4
+        },
+        {
+          "name": "Pocket Zippers",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 12
+        }
+      ],
+      "labelsPackaging": [
+        {
+          "name": "Main Label",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 1.5
+        },
+        {
+          "name": "Washcare",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 1
+        },
+        {
+          "name": "Kimble",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 0.5
+        },
+        {
+          "name": "Transport (internal)",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 3
+        },
+        {
+          "name": "Carton",
+          "consumption": 1,
+          "unit": "pc",
+          "rate": 3
+        }
+      ],
+      "labour": {
+        "cuttingThreads": 14,
+        "making": 112,
+        "finishingPacking": 12
+      },
+      "overheadPct": 5,
+      "rejectionPct": 3,
+      "marginPct": 20,
+      "tradioPct": 10,
+      "discountPct": 2.9
+    },
+    "expected": {
+      "fabric": 240.5,
+      "process": 4.0,
+      "trims": 66.0,
+      "labelsPackaging": 9.0,
+      "materials": 319.5,
+      "labour": 138.0,
+      "base": 457.5,
+      "overhead": 22.875,
+      "rejection": 14.4113,
+      "margin": 98.9573,
+      "tradio": 45.75,
+      "price": 639.49,
+      "negotiated": 620.95
+    }
+  }
+]

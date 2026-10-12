@@ -48,6 +48,17 @@ const poLineSchema = new mongoose.Schema({
     }, { _id: false }),
     default: null,
   },
+  // The bill of materials lines this buys for: one entry per style and colour, with the part of this
+  // line's quantity that is for it. Only the server's "generate POs" sets these (lib/poDraft.js), and the
+  // BOM aggregate counts them so the same requirement is not ordered twice.
+  bomRefs: {
+    type: [new mongoose.Schema({
+      bomId: { type: mongoose.Schema.Types.ObjectId, ref: 'Bom' },
+      orderId: { type: String, required: true }, lineId: { type: String, required: true },
+      colour: { type: String, default: '' }, qty: { type: Number, required: true, min: 0 },
+    }, { _id: false })],
+    default: [],
+  },
   receivedQty: { type: Number, default: 0, min: 0 },
   note: { type: String, default: '', maxlength: 300 },
 }, { _id: false })

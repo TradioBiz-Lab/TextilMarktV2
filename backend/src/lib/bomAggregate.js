@@ -1,0 +1,62 @@
+// Adding up what a factory has to buy across its orders: every frozen bill of materials, line by line,
+// grouped by what is bought and from whom, less what already sits on a purchase order. Pure: the route
+// loads the data (the company's own, always) and this works it out.
+import { computeBom, roundTo } from './bomMath.js'
+
+const norm = v => String(v ?? '').trim().toLowerCase().replace(/\s+/g, ' ')
+
+/** What identifies one thing to buy: the item, its spec, its unit, who supplies it, and the colour when it is bought per colour. */
+export const rowKey = ({ item, spec, unit, supplierId, colour }) => [norm(item), norm(spec), norm(unit), supplierId ? String(supplierId) : '', norm(colour)].join('|')
+
+/** The key a purchase order line's link to a BOM line uses. */
+export const refKey = ({ orderId, lineId, colour }) => `${orderId}|${lineId}|${norm(colour)}`
+
+/**
+ * @param {Array<{ bom: object, order: { id, product, styleNumber } }>} frozen  the latest frozen BOM of each order
+ * @param {Map<string, number>} onPo  quantity already on a PO, by refKey
+ * @param {{ suppliers: Map<string, object>, items: Map<string, object> }} lookups  the company's own suppliers and catalog items
+ * @returns {{ rows: object[], unsupplied: number, orders: number }}
+ */
+export function aggregate(frozen, onPo = new Map(), { suppliers = new Map(), items = new Map() } = {}) {
+  const rows = new Map()
+  for (const { bom, order } of frozen) {
+    const worked = computeBom({ sizes: bom.sizes, ratio: bom.sizeRatio, colours: bom.colours }, bom.lines || [])
+    for (const line of worked.lines) {
+      const parts = line.computed.perColour.length
+        ? line.computed.perColour.map(c => ({ colour: c.colour, qty: c.orderQty }))
+        : [{ colour: '', qty: line.computed.orderQty }]
+      for (const part of parts) {
+        if (!(part.qty > 0)) continue
+        const supplierId = line.supplierId ? String(line.supplierId) : ''
+        const key = rowKey({ item: line.item, spec: line.spec, unit: line.unit, supplierId, colour: part.colour })
+        const row = rows.get(key) || {
+          key, section: line.section, item: line.item, spec: line.spec || '', unit: line.unit || '', colour: part.colour,
+          supplierId: supplierId || null, supplierName: supplierId ? suppliers.get(supplierId)?.name || '' : '',
+          itemId: line.itemId ? String(line.itemId) : null, required: 0, onPo: 0, rateTotal: 0, rated: 0, sources: [],
+        }
+        const already = onPo.get(refKey({ orderId: bom.orderId, lineId: line.lineId, colour: part.colour })) || 0
+        row.required += part.qty
+        row.onPo += Math.min(already, part.qty)
+        if (line.rate > 0) { row.rateTotal += line.rate * part.qty; row.rated += part.qty }
+        if (!row.itemId && line.itemId) row.itemId = String(line.itemId)
+        row.sources.push({
+          bomId: String(bom._id), orderId: bom.orderId, product: order?.product || '', styleNumber: order?.styleNumber || '',
+          lineId: line.lineId, colour: part.colour, qty: part.qty, onPo: Math.min(already, part.qty),
+        })
+        rows.set(key, row)
+      }
+    }
+  }
+  const out = [...rows.values()].map(r => {
+    const item = r.itemId ? items.get(r.itemId) : null
+    const rate = r.rated > 0 ? roundTo(r.rateTotal / r.rated, 4) : (item?.defaultRate || 0)
+    const required = roundTo(r.required, 3), onPoQty = roundTo(r.onPo, 3)
+    const remaining = roundTo(Math.max(0, required - onPoQty), 3)
+    const { rateTotal, rated, ...rest } = r
+    return {
+      ...rest, required, onPo: onPoQty, remaining, rate, moq: item?.moq || 0,
+      belowMoq: !!(item?.moq > 0 && remaining > 0 && remaining < item.moq),
+    }
+  }).sort((a, b) => (a.supplierName || '￿').localeCompare(b.supplierName || '￿') || a.section.localeCompare(b.section) || a.item.localeCompare(b.item) || a.colour.localeCompare(b.colour))
+  return { rows: out, unsupplied: out.filter(r => !r.supplierId && r.remaining > 0).length, orders: new Set(frozen.map(f => f.bom.orderId)).size }
+}

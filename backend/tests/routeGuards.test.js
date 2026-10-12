@@ -59,13 +59,14 @@ describe('the organization routes', async () => {
   })
 })
 
-describe('the procurement routers (suppliers and purchase orders)', async () => {
+describe('the procurement routers (suppliers, purchase orders, bills of materials)', async () => {
   const { default: suppliersRouter } = await import('../src/routes/suppliers.js')
   const { default: purchaseOrdersRouter } = await import('../src/routes/purchaseOrders.js')
+  const { default: bomsRouter } = await import('../src/routes/boms.js')
   const { requireAuth } = await import('../src/middleware/auth.js')
   const { requireProcurement } = await import('../src/lib/procurement.js')
 
-  for (const [name, router] of [['suppliers', suppliersRouter], ['purchase orders', purchaseOrdersRouter]]) {
+  for (const [name, router] of [['suppliers', suppliersRouter], ['purchase orders', purchaseOrdersRouter], ['bills of materials', bomsRouter]]) {
     test(`every ${name} route sits behind sign-in and the manufacturer-only gate`, () => {
       // router.use(requireAuth, requireProcurement) is registered before any route, so a route added
       // later cannot be reached without passing both. If someone reorders the file this fails.
@@ -79,7 +80,7 @@ describe('the procurement routers (suppliers and purchase orders)', async () => 
   }
 
   test('write routes are rate limited', () => {
-    for (const router of [suppliersRouter, purchaseOrdersRouter]) {
+    for (const router of [suppliersRouter, purchaseOrdersRouter, bomsRouter]) {
       const writes = router.stack.filter(l => l.route?.methods?.post)
       const limited = writes.filter(l => l.route.stack.length >= 2)
       assert.equal(limited.length, writes.length, 'a write route has no limiter')

@@ -77,11 +77,24 @@ export function cleanLine(raw, position = 1) {
     materialRef = { orderId: r.orderId, stageIndex, materialIndex, name: typeof r.name === 'string' ? r.name.slice(0, 200) : '' }
   }
 
+  // The bill of materials lines this is bought for (set only by the server's own generator, see poDraft.js).
+  let bomRefs = []
+  if (Array.isArray(raw.bomRefs) && raw.bomRefs.length) {
+    if (raw.bomRefs.length > 60) return { ok: false, error: `${at}: too many linked styles` }
+    for (const r of raw.bomRefs) {
+      const refQty = Number(r?.qty)
+      if (!r || typeof r.orderId !== 'string' || !r.orderId || r.orderId.length > 100 || typeof r.lineId !== 'string' || !r.lineId || r.lineId.length > 40
+        || !mongoose.Types.ObjectId.isValid(r.bomId) || !Number.isFinite(refQty) || refQty < 0)
+        return { ok: false, error: `${at}: a linked bill of materials line is not valid` }
+      bomRefs.push({ bomId: String(r.bomId), orderId: r.orderId, lineId: r.lineId, colour: typeof r.colour === 'string' ? r.colour.slice(0, 60) : '', qty: roundTo(refQty, 3) })
+    }
+  }
+
   return {
     ok: true,
     line: {
       description, itemId, hsnCode, unit, qty: roundTo(qty, 3), rate: roundTo(rate, 4),
-      discountPct: roundTo(discountPct, 2), taxPct: roundTo(taxPct, 2), expectedDate, materialRef, note,
+      discountPct: roundTo(discountPct, 2), taxPct: roundTo(taxPct, 2), expectedDate, materialRef, bomRefs, note,
     },
   }
 }

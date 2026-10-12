@@ -301,3 +301,83 @@ describe('procurement: a company\'s suppliers and purchase orders are its own (s
     assert.equal(closed.body.code, 'VIEW_BLOCKED')
   })
 })
+
+describe('bills of materials: a company\'s BOMs and shopping list are its own (standalone product)', () => {
+  beforeEach(() => { process.env.PLATFORM_MODE = 'standalone' })
+
+  /** Both factories work the shared order XAB (competitors for brand X) and each keeps its own frozen BOM and supplier for it. */
+  async function stock() {
+    const w = await world()
+    await Supplier.init()
+    const out = {}
+    for (const [key, u] of [['A', w.A], ['B', w.B]]) {
+      const supplier = (await as(u).post('/api/suppliers', { name: `${key} Mills`, email: `${key.toLowerCase()}@mill.test` })).body
+      const bom = (await as(u).post('/api/boms', { orderId: 'XAB' })).body
+      const line = { section: 'fabric', item: `${key} secret fleece`, unit: 'kg', consumption: 0.7, wastagePct: 5, rate: key === 'A' ? 410 : 395, supplierId: supplier.id }
+      assert.equal((await as(u).post(`/api/boms/${bom.id}`, { lines: [line] })).status, 200)
+      const frozen = (await as(u).post(`/api/boms/${bom.id}/freeze`)).body
+      out[`data${key}`] = { supplier, bom: frozen }
+    }
+    return { ...w, ...out }
+  }
+
+  test('competing factories on one order each see only their own BOM, rates and suppliers', async () => {
+    const { A, B, dataA, dataB } = await stock()
+    const seenByA = (await as(A).get('/api/boms?orderId=XAB')).body
+    const seenByB = (await as(B).get('/api/boms?orderId=XAB')).body
+    assert.deepEqual(seenByA.versions.map(v => v.id), [dataA.bom.id])
+    assert.deepEqual(seenByB.versions.map(v => v.id), [dataB.bom.id])
+    assert.ok(!JSON.stringify(seenByA).includes('B secret fleece'))
+    assert.ok(!JSON.stringify(seenByA).includes('395'))
+    assert.ok(!JSON.stringify(seenByB).includes('A secret fleece'))
+    assert.ok(!JSON.stringify(seenByB).includes('A Mills'))
+  })
+
+  test('a direct read or write of another factory\'s BOM is "not found" and changes nothing', async () => {
+    const { A, B, dataA } = await stock()
+    assert.equal((await as(B).get(`/api/boms/${dataA.bom.id}`)).status, 404)
+    assert.equal((await as(B).post(`/api/boms/${dataA.bom.id}`, { lines: [] })).status, 404)
+    assert.equal((await as(B).post(`/api/boms/${dataA.bom.id}/revise`)).status, 404)
+    assert.equal((await as(B).post(`/api/boms/${dataA.bom.id}/delete`)).status, 404)
+    assert.equal((await as(B).post('/api/boms', { orderId: 'AX' })).status, 404)          // an order A is on and B is not
+    assert.equal((await as(A).get(`/api/boms/${dataA.bom.id}`)).body.lines.length, 1)
+  })
+
+  test('the shopping list and generated purchase orders cover only the caller\'s own BOMs and suppliers', async () => {
+    const { A, B } = await stock()
+    const rowsA = (await as(A).get('/api/boms/aggregate')).body.rows
+    const rowsB = (await as(B).get('/api/boms/aggregate')).body.rows
+    assert.deepEqual(rowsA.map(r => r.item), ['A secret fleece'])
+    assert.deepEqual(rowsB.map(r => r.item), ['B secret fleece'])
+    const made = await as(A).post('/api/boms/generate-pos', {})
+    assert.deepEqual(made.body.created.map(c => c.supplierName), ['A Mills'])
+    assert.equal((await as(B).get('/api/purchase-orders')).body.length, 0)
+    assert.deepEqual((await as(B).get('/api/boms/aggregate')).body.rows.map(r => r.onPo), [0])      // A's PO does not count against B
+  })
+
+  test('a BOM line cannot name another factory\'s supplier', async () => {
+    const { B, dataA, dataB } = await stock()
+    const r = await as(B).post('/api/boms', { orderId: 'BY' })
+    assert.equal(r.status, 201)
+    const line = { section: 'trims', item: 'Zip', consumption: 1, supplierId: dataA.supplier.id }
+    assert.equal((await as(B).post(`/api/boms/${r.body.id}`, { lines: [line] })).status, 400)
+    assert.equal((await as(B).post(`/api/boms/${r.body.id}`, { lines: [{ ...line, supplierId: dataB.supplier.id }] })).status, 200)
+  })
+
+  test('brands, Tradio staff and visitors cannot use them at all', async () => {
+    const { X, Y, admin, master } = await stock()
+    for (const u of [X, Y, admin, master]) {
+      assert.equal((await as(u).get('/api/boms?orderId=XAB')).status, 403, u.role)
+      assert.equal((await as(u).get('/api/boms/aggregate')).status, 403, u.role)
+      assert.equal((await as(u).post('/api/boms/generate-pos', {})).status, 403, u.role)
+    }
+    assert.equal((await req('GET', '/api/boms/aggregate')).status, 401)
+  })
+
+  test('the Tradio portal has none of it', async () => {
+    const { A } = await stock()
+    delete process.env.PLATFORM_MODE
+    assert.equal((await as(A).get('/api/boms?orderId=XAB')).status, 404)
+    assert.equal((await as(A).get('/api/boms/aggregate')).status, 404)
+  })
+})

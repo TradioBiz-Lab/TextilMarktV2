@@ -9,16 +9,15 @@
 // Private to the company: every query is scoped by the caller's own organization, and brands and
 // Tradio staff cannot use these routes (requireProcurement). A PO that is not yours is a 404.
 import { Router } from 'express'
-import mongoose from 'mongoose'
 import rateLimit from 'express-rate-limit'
-import { PurchaseOrder, Supplier, SupplierItem, Organization, Order, Document, AuditLog } from '../db/index.js'
+import { PurchaseOrder, SupplierItem, Document, AuditLog } from '../db/index.js'
 import { requireAuth } from '../middleware/auth.js'
 import { userKey } from '../lib/limiterKey.js'
 import { requireProcurement, isId } from '../lib/procurement.js'
-import { allocatePoId } from '../lib/counters.js'
-import { cleanLine, computeTotals, moqWarnings } from '../lib/poMath.js'
-import { taxModeFor, stateName } from '../lib/gst.js'
-import { locateMaterial, syncOnSend, syncOnReceive, syncOnCancel } from '../lib/poSync.js'
+import { prepare, createDraft, stamp } from '../lib/poDraft.js'
+import { moqWarnings } from '../lib/poMath.js'
+import { stateName } from '../lib/gst.js'
+import { syncOnSend, syncOnReceive, syncOnCancel } from '../lib/poSync.js'
 import { renderPurchaseOrderPdf } from '../lib/pdf/po.js'
 import { sendEmailDetailed, emailPurchaseOrder } from '../lib/email.js'
 
@@ -49,6 +48,7 @@ const lineView = l => ({
   unit: l.unit || 'pcs', qty: l.qty, rate: l.rate, discountPct: l.discountPct || 0, taxPct: l.taxPct || 0,
   amount: l.amount || 0, taxAmount: l.taxAmount || 0, lineTotal: l.lineTotal || 0,
   expectedDate: l.expectedDate || null, materialRef: l.materialRef || null, receivedQty: l.receivedQty || 0, note: l.note || '',
+  bomRefs: (l.bomRefs || []).map(r => ({ orderId: r.orderId, colour: r.colour || '', qty: r.qty })),
 })
 
 const receivedPct = po => {
@@ -83,99 +83,6 @@ const summaryView = po => ({
   orderIds: [...new Set((po.lines || []).map(l => l.materialRef?.orderId).filter(Boolean))],
 })
 
-// ── Building a PO from a request ─────────────────────────────────────────────
-
-const supplierSnapshot = s => ({
-  name: s.name, email: s.email || '', phone: s.phone || '', gstin: s.gstin || '', stateCode: s.stateCode || '',
-  address: s.address || '', city: s.city || '', pincode: s.pincode || '', contactName: s.contacts?.[0]?.name || '',
-})
-const buyerSnapshot = (org, user) => {
-  const p = org.profile || {}
-  return {
-    name: p.legalName || org.name, email: p.email || user.email || '', phone: p.phone || '', gstin: p.gstin || '', pan: p.pan || '',
-    stateCode: p.stateCode || '', address: p.address || '', city: p.city || '', pincode: p.pincode || '',
-  }
-}
-
-const newLineId = () => String(new mongoose.Types.ObjectId())
-
-/**
- * Check a request and compute the PO it describes. `existing` is the draft being edited (its
- * supplier and lines carry over unless the request replaces them).
- * @returns {Promise<{ok: true, data: object, warnings: object[]} | {ok: false, status: number, error: string}>}
- */
-async function prepare(req, body, existing = null, { dropStaleLinks = false } = {}) {
-  const supplierId = body.supplierId ?? existing?.supplierId
-  if (!isId(supplierId)) return { ok: false, status: 400, error: 'Choose a supplier' }
-  const supplier = await Supplier.findOne({ _id: supplierId, ...mine(req) }).lean()
-  if (!supplier) return { ok: false, status: 400, error: 'Choose one of your suppliers' }
-  if (supplier.isActive === false && String(existing?.supplierId) !== String(supplier._id)) return { ok: false, status: 400, error: 'That supplier is archived. Restore it first' }
-
-  const raw = body.lines ?? existing?.lines ?? []
-  if (!Array.isArray(raw) || raw.length > 200) return { ok: false, status: 400, error: 'A purchase order can have at most 200 lines' }
-  const keepIds = new Set((existing?.lines || []).map(l => l.lineId))
-  const lines = []
-  for (const [i, r] of raw.entries()) {
-    const c = cleanLine(r, i + 1)
-    if (!c.ok) return { ok: false, status: 400, error: c.error }
-    lines.push({ ...c.line, lineId: typeof r.lineId === 'string' && keepIds.has(r.lineId) ? r.lineId : newLineId(), receivedQty: 0 })
-  }
-  // Carry received quantities over when the same line is kept (an edit never loses what arrived).
-  for (const l of lines) l.receivedQty = (existing?.lines || []).find(e => e.lineId === l.lineId)?.receivedQty || 0
-
-  // Catalog items must be this supplier's own.
-  const itemIds = [...new Set(lines.map(l => l.itemId).filter(Boolean))]
-  const items = itemIds.length ? await SupplierItem.find({ _id: { $in: itemIds }, supplierId: supplier._id, ...mine(req) }).lean() : []
-  if (items.length !== itemIds.length) return { ok: false, status: 400, error: 'A line names an item that is not in this supplier\'s catalog' }
-
-  // Material links must be on orders this factory is on, and the material must still be there.
-  const staleLinks = []
-  const orderIds = [...new Set(lines.map(l => l.materialRef?.orderId).filter(Boolean))]
-  if (orderIds.length) {
-    const orders = await Order.find({ _id: { $in: orderIds }, 'assignments.mfrId': req.user.id }, 'assignments').lean()
-    const byId = new Map(orders.map(o => [o._id, o]))
-    for (const [i, l] of lines.entries()) {
-      if (!l.materialRef) continue
-      const order = byId.get(l.materialRef.orderId)
-      const at = order && locateMaterial(order, req.user.id, l.materialRef)
-      if (!at) {
-        // Sending must not be held up by a material line that has since been removed: the link is dropped and reported.
-        if (dropStaleLinks) { staleLinks.push(l.description); l.materialRef = null; continue }
-        return { ok: false, status: 400, error: `Line ${i + 1}: that material is not on one of your orders any more` }
-      }
-      l.materialRef = { orderId: l.materialRef.orderId, stageIndex: at.stageIndex, materialIndex: at.materialIndex, name: at.material.name }
-    }
-  }
-
-  const org = await Organization.findById(req.user.orgId).lean()
-  const taxMode = taxModeFor(supplier.stateCode, org?.profile?.stateCode)
-  const calc = computeTotals(lines, taxMode)
-  const priced = lines.map((l, i) => ({ ...l, ...calc.lines[i] }))
-
-  const expectedDate = body.expectedDate === undefined ? existing?.expectedDate ?? null : (body.expectedDate || null)
-  if (expectedDate && !/^\d{4}-\d{2}-\d{2}$/.test(expectedDate)) return { ok: false, status: 400, error: 'The delivery date is not a valid date' }
-  const pick = (key, label, max) => {
-    const v = body[key] === undefined ? existing?.[key] ?? '' : String(body[key] ?? '').trim()
-    if (v.length > max) return { error: `${label} is too long (most ${max} characters)` }
-    return { v }
-  }
-  const shipTo = pick('shipTo', 'Deliver to', 400), terms = pick('terms', 'Terms', 2000), note = pick('internalNote', 'Note', 1000)
-  const pay = body.paymentTerms === undefined && !existing ? { v: supplier.paymentTerms || '' } : pick('paymentTerms', 'Payment terms', 200)
-  for (const p of [shipTo, terms, note, pay]) if (p.error) return { ok: false, status: 400, error: p.error }
-
-  return {
-    ok: true, supplier, org,
-    data: {
-      supplierId: supplier._id, supplierSnapshot: supplierSnapshot(supplier), buyerSnapshot: buyerSnapshot(org, req.user),
-      lines: priced, taxMode: calc.taxMode, totals: calc.totals, expectedDate,
-      shipTo: shipTo.v, paymentTerms: pay.v, terms: terms.v, internalNote: note.v,
-    },
-    warnings: moqWarnings(lines, new Map(items.map(i => [String(i._id), i]))),
-    staleLinks,
-  }
-}
-
-const stamp = (req, action, note = '') => ({ at: new Date(), by: req.user.actorId, byName: req.user.name, action, note })
 const idParam = (req, res) => {
   if (!PO_ID.test(req.params.id)) { fail(res, 404, 'Purchase order not found'); return null }
   return req.params.id
@@ -198,18 +105,11 @@ router.get('/', async (req, res) => {
 // POST /api/purchase-orders - start a draft
 router.post('/', writeLimiter, async (req, res) => {
   try {
-    const p = await prepare(req, req.body || {})
-    if (!p.ok) return fail(res, p.status, p.error)
-    let po
-    for (let attempt = 0; ; attempt++) {
-      const _id = await allocatePoId({ orgId: String(req.user.orgId), orgCode: p.org.code })
-      try {
-        po = await PurchaseOrder.create({ _id, ...mine(req), ...p.data, status: 'draft', createdBy: req.user.actorId, timeline: [stamp(req, 'Draft created')] })
-        break
-      } catch (err) { if (err?.code !== 11000 || attempt >= 4) throw err }   // a number taken by a hand-made id: take the next
-    }
-    await AuditLog.create({ byUser: req.user.id, action: 'Purchase Order Drafted', detail: `${po._id} to ${p.supplier.name} drafted by ${req.user.name}` })
-    res.status(201).json(poView(po.toObject(), { warnings: p.warnings }))
+    const made = await createDraft(req, req.body)
+    if (!made.ok) return fail(res, made.status, made.error)
+    const { po, supplier, warnings } = made
+    await AuditLog.create({ byUser: req.user.id, action: 'Purchase Order Drafted', detail: `${po._id} to ${supplier.name} drafted by ${req.user.name}` })
+    res.status(201).json(poView(po.toObject(), { warnings }))
   } catch (err) { console.error('[po]', err); fail(res, 500, 'Server error') }
 })
 

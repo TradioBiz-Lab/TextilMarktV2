@@ -24,6 +24,8 @@
 | `suppliers`     | A manufacturer's private supplier book (mills, dyers, trims shops) | ObjectId |
 | `supplieritems` | What each supplier sells, as structured records (marketplace-ready) | ObjectId |
 | `purchaseorders` | Purchase orders a manufacturer raises with its suppliers, emailed as PDF | String (custom) |
+| `boms`         | A manufacturer's bill of materials for an order: sizes, colours and every fabric, trim and label line (private) | ObjectId |
+| `specsheets`   | The measurement spec of a style read from its tech pack (shared by the order's brand and factory) | ObjectId |
 
 ---
 
@@ -556,6 +558,8 @@ brand. `_id` is a number from `lib/counters.js`: `PO-<company code>-<financial y
   lines[]           { lineId, description, itemId → supplieritems | null, hsnCode, unit, qty, rate,
                       discountPct, taxPct, amount, taxAmount, lineTotal, expectedDate,
                       materialRef { orderId, stageIndex, materialIndex, name } | null,
+                      bomRefs[]: { bomId, orderId, lineId, colour, qty } (the bill of materials lines this
+                      buys for, set only by the server's "generate POs"; a browser cannot add them),
                       receivedQty, note }
                     amount, taxAmount and lineTotal are COMPUTED on the server (lib/poMath.js), in whole
                     paise; a total sent by the browser is never trusted
@@ -585,6 +589,68 @@ order". **Receiving** adds to the lines' received quantity (a line may arrive up
 material lines', which become `received` once they have the quantity they need, opening the stage's
 materials gate. See `lib/poSync.js`: a PO line finds its material by where it was picked plus the
 material's name, and a link that can no longer be found is reported, never guessed.
+
+---
+
+## 17. `boms`
+
+A manufacturer's bill of materials for one order: how the quantity is divided over sizes and colours,
+and a line for everything bought. **Private to the company** (rates and suppliers are its own business);
+a brand never sees one. A cost sheet is seeded from a frozen BOM, and the frozen BOMs of many orders add
+up into the shopping list that turns into draft purchase orders.
+
+```
+{
+  ownerOrgId     ObjectId → organizations   required
+  mfrId          ObjectId → users           the factory (party id) whose split of the order this is
+  orderId        String   → orders          required
+  version        Number   1, 2, ...         a change after freezing starts the next version
+  status         String   enum: ["draft","frozen"]    a frozen BOM is the record; it cannot be edited or deleted
+  sizes[]        String        e.g. ["S","M","L","XL","XXL"]
+  sizeRatio[]    Number        one per size, e.g. [1,2,3,2,1]
+  colours[]      { name, qty }  pieces per colour
+  totalQty       Number        the order quantity this is for
+  lines[]        { lineId, section, item, spec, unit, consumption, perSize[], wastagePct, perColour,
+                   supplierId, itemId, rate, note, source, confidence, needsReview, evidence }
+                 section: fabric | process | trims | labels_packaging | other. lineId is stable across
+                 versions so a PO or cost sheet can point at the line. perSize holds a consumption for each
+                 size (null where the base figure applies). source: manual | ai | import. A line from the
+                 AI starts needing review and stays flagged until a person changes it; a BOM with flagged
+                 lines cannot be frozen.
+  techPackDocumentId  ObjectId → documents | null   the tech pack it was drafted from
+  extraction     { at, model, confidence, notes[] } | null
+  frozenAt, frozenBy, createdBy, updatedBy
+}
+```
+
+**Indexes:** `{ ownerOrgId: 1, orderId: 1, version: -1 }` (unique), `{ ownerOrgId: 1, updatedAt: -1 }`
+
+**Quantities** are never stored: `lib/bomMath.js` works them on every read, the way the factory's own
+fabric plan is worked (pieces split by the size ratio and rounded, each size's material rounded to one
+decimal, a wastage buffer, the order quantity rounded up for things bought by the piece and to nearest for
+cloth). `lib/bomAggregate.js` groups frozen lines by item, spec, unit, supplier and (for cloth) colour, and
+takes off what already sits on a non-cancelled purchase order (`purchaseorders.lines[].bomRefs`).
+
+---
+
+## 18. `specsheets`
+
+The measurement spec of a style as read from its tech pack: each point to measure, its tolerance and the
+target for every size. Kept so extraction runs once and QC measures against the same numbers. It belongs to
+the order, not one company: the brand and the factory on the order can read it; the factory that
+extracted it can correct it.
+
+```
+{
+  orderId, ownerOrgId, mfrId, sourceDocumentId
+  header   { brand, styleNo, description, category, gender, fabricComposition, gsm, sizeRange, collection, designer, season }
+  sizes[]  String
+  points[] { code, name, tolPlus, tolMinus, values[] (per size, null where none), confidence, needsReview }
+  extractedAt, model, updatedBy
+}
+```
+
+**Indexes:** `{ orderId: 1, ownerOrgId: 1 }` (unique)
 
 ---
 
