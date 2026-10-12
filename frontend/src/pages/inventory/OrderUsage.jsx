@@ -48,7 +48,7 @@ export function OrderUsage({ orderId, refreshKey = 0 }) {
           </div>
           {l.colours.length > 0 && (
             <div style={{ fontSize: 11, color: T.textLight, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
-              {l.colours.map(c => `${c.colour || 'All'}: ${fmtQty(c.issued)} of ${fmtQty(c.planned)}`).join(' · ')}
+              {[...l.colours.map(c => `${c.colour || 'All'}: ${fmtQty(c.issued)} of ${fmtQty(c.planned)}`), l.anyColour > 0 ? `Not tied to a colour: ${fmtQty(l.anyColour)}` : null].filter(Boolean).join(' · ')}
             </div>
           )}
           {l.actualPerPiece !== null && (

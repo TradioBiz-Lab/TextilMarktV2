@@ -46,13 +46,20 @@ export function reconcile(bom, used, produced) {
         colours.push({ colour: p.colour, planned: p.planned, issued: round3(got), itemId: hit?.itemId || null })
         planned += p.planned; issued += got; net += p.net
       }
+      // A store that keeps one item for the cloth whatever its colour still used it up: what was issued of it counts toward the
+      // line, shown apart because nothing says which colour it went to.
+      let anyColour = 0
+      if (parts.some(p => p.colour)) {
+        const plain = byKey.get(itemKey(poDescription({ item: line.item, spec: line.spec, colour: '' }), line.unit))
+        if (plain && !claimed.has(plain.itemId)) { claimed.add(plain.itemId); anyColour = plain.issued; issued += anyColour }
+      }
       if (!(planned > 0) && !(issued > 0)) continue
       const bomPerPiece = weightedConsumption(plan, line)
       const pieces = produced?.pieces || 0
       const actualPerPiece = pieces > 0 && issued > 0 ? roundTo(issued / pieces, 4) : null
       rows.push({
         lineId: line.lineId, section: line.section, item: line.item, spec: line.spec || '', unit: line.unit, colours: colours.length > 1 || colours[0]?.colour ? colours : [],
-        planned: round3(planned), issued: round3(issued), difference: round3(issued - planned),
+        planned: round3(planned), issued: round3(issued), anyColour: round3(anyColour), difference: round3(issued - planned),
         // Used so far against what the pieces made so far were planned to take (wastage allowance included).
         bomPerPiece, wastagePct: line.wastagePct || 0, actualPerPiece,
         perPieceVariancePct: actualPerPiece !== null && bomPerPiece > 0 ? roundTo(((actualPerPiece - bomPerPiece * (1 + (line.wastagePct || 0) / 100)) / (bomPerPiece * (1 + (line.wastagePct || 0) / 100))) * 100, 1) : null,

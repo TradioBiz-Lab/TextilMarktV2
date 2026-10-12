@@ -614,6 +614,18 @@ describe('what an order used against its plan', () => {
     assert.deepEqual(r.body.extra.map(e => [e.name, e.issued]), [['Drawcord 140 cm', 20]])           // issued, but not on the bill of materials
   })
 
+  test('a store item with no colour in its name counts toward the cloth line, shown apart from the colours', async () => {
+    const { mfr, id, issue } = await planned()
+    await post(mfr, (await startGrn(mfr, { lines: [{ description: 'Polar fleece 300 GSM', unit: 'kg', qty: 100 }] })).body.id)
+    const plain = (await as(mfr).get('/api/inventory/items')).body.find(i => i.name === 'Polar fleece 300 GSM').id
+    await issue([{ itemId: id('BLACK'), qty: 150 }, { itemId: plain, qty: 40 }])
+    const r = (await usage(mfr)).body
+    const fleece = r.lines[0]
+    assert.deepEqual([fleece.issued, fleece.anyColour, fleece.difference], [190, 40, -710])
+    assert.deepEqual(fleece.colours.map(c => [c.colour, c.issued]), [['BLACK', 150], ['NAVY', 0], ['CHARCOAL', 0]])
+    assert.deepEqual(r.extra, [])
+  })
+
   test('what is returned comes off what was used, and no pieces made yet means no per-piece figure', async () => {
     const { mfr, id, issue } = await planned()
     await issue([{ itemId: id('BLACK'), qty: 200 }])
