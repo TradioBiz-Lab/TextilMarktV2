@@ -256,6 +256,53 @@ export const purchaseOrdersApi = {
   receive: (id, data) => api.post(`/purchase-orders/${id}/receive`, data),
 }
 
+// Bills of materials (a factory's, per order), the shopping list across orders, and reading tech packs.
+// Quantities are computed by the server; what is sent is what the person typed.
+export const bomsApi = {
+  // the order's versions, the working one in full, and what a new one would start as
+  forOrder: orderId => api.get(`/boms?orderId=${encodeURIComponent(orderId)}`),
+  create: orderId => api.post('/boms', { orderId }),
+  get: id => api.get(`/boms/${id}`),
+  // { plan?, lines?, updatedAt?, confirmAll? }
+  save: (id, data) => api.post(`/boms/${id}`, data),
+  freeze: id => api.post(`/boms/${id}/freeze`),
+  revise: id => api.post(`/boms/${id}/revise`),
+  remove: id => api.post(`/boms/${id}/delete`),
+  // reads a tech pack with AI: the slowest call in the app
+  extract: (orderId, documentId) => api.post('/boms/extract', { orderId, documentId }, { timeout: 150000 }),
+  aggregate: ({ masterOrderId, orderIds } = {}) => {
+    const q = new URLSearchParams()
+    if (masterOrderId) q.set('masterOrderId', masterOrderId)
+    if (orderIds?.length) q.set('orderIds', orderIds.join(','))
+    const qs = q.toString()
+    return api.get(`/boms/aggregate${qs ? `?${qs}` : ''}`)
+  },
+  // { masterOrderId?, orderIds?, keys?, expectedDate? } -> { created, skipped, failed }
+  generatePos: data => api.post('/boms/generate-pos', data || {}, { timeout: 60000 }),
+}
+
+// Open cost sheets: the factory drafts and shares, the brand comments and approves.
+export const costSheetsApi = {
+  list: () => api.get('/cost-sheets'),
+  get: id => api.get(`/cost-sheets/${id}`),
+  // { brandId, styleName, bomId?, orderId?, ...sheet }
+  create: data => api.post('/cost-sheets', data),
+  save: (id, data) => api.post(`/cost-sheets/${id}`, data),
+  remove: id => api.post(`/cost-sheets/${id}/delete`),
+  // { message?, extraEmails? } renders the PDF and emails the brand's team, so it is slower than the rest
+  share: (id, data) => api.post(`/cost-sheets/${id}/share`, data || {}, { timeout: 60000 }),
+  revise: id => api.post(`/cost-sheets/${id}/revise`),
+  comment: (id, text, kind = 'comment') => api.post(`/cost-sheets/${id}/comments`, { text, kind }),
+  approve: id => api.post(`/cost-sheets/${id}/approve`),
+  pdf: id => api.get(`/cost-sheets/${id}/pdf`),
+}
+
+// The measurement spec read from a tech pack, by order.
+export const specSheetsApi = {
+  forOrder: orderId => api.get(`/spec-sheets?orderId=${encodeURIComponent(orderId)}`),
+  save: (id, data) => api.post(`/spec-sheets/${id}`, data),
+}
+
 export const inboundApi = {
   upload: data => api.post('/inbound/upload', data, { timeout: 90000 }),
 }

@@ -117,6 +117,8 @@ export function cleanBomLine(raw, position, sizeCount, previous = null) {
       && JSON.stringify(previous.perSize || []) === JSON.stringify(line.perSize)
       && String(previous.supplierId || '') === String(line.supplierId || '') && String(previous.itemId || '') === String(line.itemId || '')
     line.needsReview = same
+    // "Looks right": the person checked this line as it is. Like confirm-all this is their say, not the browser's guess.
+    if (raw.confirmed === true) line.needsReview = false
   }
   return { ok: true, line }
 }

@@ -97,10 +97,10 @@ async function buildAggregate(req, scope) {
     }
   }
   const supplierIds = [...new Set(frozen.flatMap(f => f.bom.lines.map(l => l.supplierId)).filter(Boolean).map(String))]
-  const itemIds = [...new Set(frozen.flatMap(f => f.bom.lines.map(l => l.itemId)).filter(Boolean).map(String))]
   const [suppliers, items] = await Promise.all([
     supplierIds.length ? Supplier.find({ _id: { $in: supplierIds }, ...mine(req) }).lean() : [],
-    itemIds.length ? SupplierItem.find({ _id: { $in: itemIds }, ...mine(req) }).lean() : [],
+    // the catalog of every supplier on a line: lines are tied to an item by id, or matched to one by name
+    supplierIds.length ? SupplierItem.find({ supplierId: { $in: supplierIds }, isActive: { $ne: false }, ...mine(req) }).lean() : [],
   ])
   return aggregate(frozen, onPo, {
     suppliers: new Map(suppliers.map(s => [String(s._id), s])), items: new Map(items.map(i => [String(i._id), i])),

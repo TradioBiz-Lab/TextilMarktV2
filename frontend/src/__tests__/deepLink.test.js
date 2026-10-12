@@ -24,6 +24,13 @@ describe('deep links', () => {
     for (const bad of ['#po=', '#po=PO-1', '#po=../x', '#po=PO-TPR-2627-0001/../x', '#po=po-tpr-2627-0001', '#po=<b>']) expect(parseDeepLink(bad), bad).toBeNull()
   })
 
+  test('a cost sheet opens by its id, and the costing screens can be linked', () => {
+    expect(parseDeepLink('#cost=0123456789abcdef01234567')).toEqual({ view: 'cost_sheet', costId: '0123456789abcdef01234567' })
+    expect(parseDeepLink('#view=costing')).toEqual({ view: 'costing' })
+    expect(parseDeepLink('#view=shopping_list')).toEqual({ view: 'shopping_list' })
+    for (const bad of ['#cost=', '#cost=123', '#cost=0123456789ABCDEF01234567', '#cost=../x', '#cost=0123456789abcdef0123456g', '#cost=<b>']) expect(parseDeepLink(bad), bad).toBeNull()
+  })
+
   test('an order id wins over a screen when both are given', () => {
     expect(parseDeepLink('#view=orders&order=ZAR-1')).toEqual({ view: 'order_detail', orderId: 'ZAR-1' })
   })

@@ -63,6 +63,14 @@ export function capsFor(user) {
     // admin viewing a factory read-only is that factory's session, so sees them but cannot write.
     seeProcurement: standalone && isMfr,
     manageProcurement: w(standalone && isMfr),
+    // Bills of materials and the shopping list are a factory's own (like purchasing). Cost sheets have two
+    // sides: the factory drafts, revises and shares; the brand it is shared with comments and approves.
+    seeBom: standalone && isMfr,
+    manageBom: w(standalone && isMfr),
+    seeCosting: standalone && isCompany,
+    manageCosting: w(standalone && isMfr),
+    commentCosting: w(standalone && isCompany),
+    approveCosting: w(standalone && isBuyer),
     changeTradioAccess: standalone && isCompany && user?.orgRole === 'owner' && !user?.viewAsBy,
   }
 }

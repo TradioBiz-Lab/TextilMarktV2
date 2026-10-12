@@ -271,6 +271,16 @@ describe('AI lines that need a look', () => {
     assert.equal(r.lines[0].source, 'ai')
   })
 
+  test('one line can be confirmed as it is ("looks right"), the others stay flagged', async () => {
+    const { mfr, brand } = await world()
+    const b = await start(mfr, await styleOrder(mfr, brand))
+    await save(mfr, b.id, { lines: [zipLine(), zipLine({ item: 'Toggle' })] })
+    await Bom.updateOne({ _id: b.id }, { $set: { 'lines.0.source': 'ai', 'lines.0.needsReview': true, 'lines.1.source': 'ai', 'lines.1.needsReview': true } })
+    const flagged = (await as(mfr).get(`/api/boms/${b.id}`)).body
+    const r = await save(mfr, b.id, { lines: [{ ...flagged.lines[0], confirmed: true }, flagged.lines[1]] })
+    assert.deepEqual(r.body.lines.map(l => l.needsReview), [false, true])
+  })
+
   test('block freezing until confirmed, and "confirm all" clears them', async () => {
     const { mfr, brand } = await world()
     const { id } = await withAiLine(mfr, brand)
@@ -405,6 +415,23 @@ describe('the shopping list across orders', () => {
     assert.equal(cancel.status, 200, JSON.stringify(cancel.body))
     const back = await as(mfr).post('/api/boms/generate-pos', { masterOrderId: mo._id })
     assert.equal(back.body.created.length, 1)
+  })
+
+  test('a line with a supplier but no catalog tie is matched by name, so the rate, HSN, GST and minimum still apply', async () => {
+    const { mfr, brand } = await world()
+    const zips = await supplier(mfr, { name: 'YKK India', email: 'ykk@test.in' })
+    await item(mfr, zips, { name: 'YKK zip 5', unit: 'pcs', defaultRate: 45, moq: 50000, hsnCode: '960719', taxPct: 18 })
+    const orderId = await styleOrder(mfr, brand)
+    await frozenBom(mfr, orderId, [{ section: 'trims', item: ' ykk ZIP 5 ', unit: 'pcs', consumption: 1, supplierId: zips.id }])
+    const row = (await as(mfr).get('/api/boms/aggregate')).body.rows[0]
+    assert.equal(row.rate, 45)                                   // the BOM had no rate: the catalog's
+    assert.equal(row.moq, 50000)
+    assert.equal(row.belowMoq, true)
+    const made = await as(mfr).post('/api/boms/generate-pos', {})
+    const po = await PurchaseOrder.findById(made.body.created[0].id).lean()
+    assert.deepEqual([po.lines[0].taxPct, po.lines[0].hsnCode, po.lines[0].rate], [18, '960719', 45])
+    assert.ok(po.lines[0].itemId)
+    assert.equal(made.body.created[0].warnings[0].code, 'BELOW_MOQ')
   })
 
   test('only the rows asked for are ordered', async () => {

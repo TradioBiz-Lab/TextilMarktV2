@@ -18,20 +18,23 @@ describe('the sidebar', () => {
 
   test('standalone: other admins keep the working tabs; companies gain their Company page', () => {
     expect(ids({ ...S, role: 'admin', adminType: 'user' })).toEqual(['dashboard', 'action_items', 'kriyaa', 'orders', 'review', 'documents', 'reports', 'audit'])
-    expect(ids({ ...S, role: 'manufacturer', orgRole: 'owner' })).toEqual(['dashboard', 'action_items', 'kriyaa', 'orders', 'documents', 'reports', 'suppliers', 'purchase_orders', 'company'])
-    expect(ids({ ...S, role: 'buyer', orgRole: 'owner' })).toContain('company')
+    expect(ids({ ...S, role: 'manufacturer', orgRole: 'owner' })).toEqual(['dashboard', 'action_items', 'kriyaa', 'orders', 'documents', 'reports', 'shopping_list', 'suppliers', 'purchase_orders', 'costing', 'company'])
+    expect(ids({ ...S, role: 'buyer', orgRole: 'owner' })).toEqual(['dashboard', 'action_items', 'kriyaa', 'orders', 'documents', 'reports', 'costing', 'company'])
   })
 
-  test('standalone: a manufacturer buys too, so it gets a Purchasing section; a brand does not', () => {
+  test('standalone: a manufacturer buys and costs, so it gets Purchasing and Commercial sections; a brand only reviews cost sheets', () => {
     const mfr = navSections({ ...S, role: 'manufacturer', orgRole: 'owner' })
-    expect(mfr.map(s => s.label || null)).toEqual([null, 'Purchasing', 'Account'])
-    expect(mfr[1].items.map(i => i.label)).toEqual(['Suppliers', 'Purchase Orders'])
-    expect(ids({ ...S, role: 'buyer', orgRole: 'owner' })).not.toContain('suppliers')
-    expect(ids({ ...S, role: 'buyer', orgRole: 'owner' })).not.toContain('purchase_orders')
+    expect(mfr.map(s => s.label || null)).toEqual([null, 'Purchasing', 'Commercial', 'Account'])
+    expect(mfr[1].items.map(i => i.label)).toEqual(['Shopping List', 'Suppliers', 'Purchase Orders'])
+    expect(mfr[2].items.map(i => i.label)).toEqual(['Cost Sheets'])
+    const brand = navSections({ ...S, role: 'buyer', orgRole: 'owner' })
+    expect(brand.map(s => s.label || null)).toEqual([null, 'Commercial', 'Account'])
+    for (const id of ['suppliers', 'purchase_orders', 'shopping_list']) expect(ids({ ...S, role: 'buyer', orgRole: 'owner' })).not.toContain(id)
   })
 
   test('the Tradio portal has no purchasing section at all', () => {
     expect(ids({ role: 'manufacturer' })).not.toContain('suppliers')
+    expect(ids({ role: 'buyer' })).not.toContain('costing')
     expect(navSections({ role: 'manufacturer' })).toHaveLength(1)
   })
 
@@ -48,6 +51,7 @@ describe('the sidebar', () => {
     expect(navIdForView('po_detail')).toBe('purchase_orders')
     expect(navIdForView('po_builder')).toBe('purchase_orders')
     expect(navIdForView('supplier_detail')).toBe('suppliers')
+    expect(navIdForView('cost_sheet')).toBe('costing')
   })
 
   test('every item has an id, an icon name and a label', () => {

@@ -15,9 +15,13 @@ export const refKey = ({ orderId, lineId, colour }) => `${orderId}|${lineId}|${n
  * @param {Array<{ bom: object, order: { id, product, styleNumber } }>} frozen  the latest frozen BOM of each order
  * @param {Map<string, number>} onPo  quantity already on a PO, by refKey
  * @param {{ suppliers: Map<string, object>, items: Map<string, object> }} lookups  the company's own suppliers and catalog items
+ *   (items by id). A line with a supplier but no catalog tie is matched by name to that supplier's items, so the
+ *   shopping list still carries the catalog's rate, HSN, GST and minimum order.
  * @returns {{ rows: object[], unsupplied: number, orders: number }}
  */
 export function aggregate(frozen, onPo = new Map(), { suppliers = new Map(), items = new Map() } = {}) {
+  const bySupplierAndName = new Map()
+  for (const it of items.values()) bySupplierAndName.set(`${it.supplierId}|${norm(it.name)}`, it)
   const rows = new Map()
   for (const { bom, order } of frozen) {
     const worked = computeBom({ sizes: bom.sizes, ratio: bom.sizeRatio, colours: bom.colours }, bom.lines || [])
@@ -28,17 +32,18 @@ export function aggregate(frozen, onPo = new Map(), { suppliers = new Map(), ite
       for (const part of parts) {
         if (!(part.qty > 0)) continue
         const supplierId = line.supplierId ? String(line.supplierId) : ''
+        const itemId = line.itemId ? String(line.itemId) : (supplierId && bySupplierAndName.get(`${supplierId}|${norm(line.item)}`)?._id?.toString()) || null
         const key = rowKey({ item: line.item, spec: line.spec, unit: line.unit, supplierId, colour: part.colour })
         const row = rows.get(key) || {
           key, section: line.section, item: line.item, spec: line.spec || '', unit: line.unit || '', colour: part.colour,
           supplierId: supplierId || null, supplierName: supplierId ? suppliers.get(supplierId)?.name || '' : '',
-          itemId: line.itemId ? String(line.itemId) : null, required: 0, onPo: 0, rateTotal: 0, rated: 0, sources: [],
+          itemId, required: 0, onPo: 0, rateTotal: 0, rated: 0, sources: [],
         }
         const already = onPo.get(refKey({ orderId: bom.orderId, lineId: line.lineId, colour: part.colour })) || 0
         row.required += part.qty
         row.onPo += Math.min(already, part.qty)
         if (line.rate > 0) { row.rateTotal += line.rate * part.qty; row.rated += part.qty }
-        if (!row.itemId && line.itemId) row.itemId = String(line.itemId)
+        if (!row.itemId && itemId) row.itemId = itemId
         row.sources.push({
           bomId: String(bom._id), orderId: bom.orderId, product: order?.product || '', styleNumber: order?.styleNumber || '',
           lineId: line.lineId, colour: part.colour, qty: part.qty, onPo: Math.min(already, part.qty),

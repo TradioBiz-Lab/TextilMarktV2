@@ -13,7 +13,7 @@ function fmtAge(at) {
   return new Date(at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
 }
 
-export function NotifPanel({ onClose, onOpenOrder }) {
+export function NotifPanel({ onClose, onOpenOrder, onOpenLink }) {
   const { notifs, markAllRead, markOneRead } = useApp()
   const panelRef = useRef(null)
 
@@ -33,6 +33,8 @@ export function NotifPanel({ onClose, onOpenOrder }) {
     if (n.orderId && onOpenOrder) {
       onOpenOrder(n.orderId)
       onClose()
+    } else if (n.link && onOpenLink && onOpenLink(n.link)) {
+      onClose()
     }
   }
 
@@ -49,7 +51,7 @@ export function NotifPanel({ onClose, onOpenOrder }) {
         {notifs.length === 0
           ? <EmptyState icon={<Bell size={26} color={T.textLight} />} title="All caught up" desc="No notifications" />
           : notifs.map(n => {
-            const clickable = !n.read || (n.orderId && onOpenOrder)
+            const clickable = !n.read || (n.orderId && onOpenOrder) || (n.link && onOpenLink)
             return (
               <div key={n.id} onClick={() => handleNotifClick(n)} role={clickable ? 'button' : undefined} tabIndex={clickable ? 0 : undefined} onKeyDown={clickable ? activateOnKey(() => handleNotifClick(n)) : undefined}
                 style={{ padding: '12px 18px', borderBottom: `1px solid ${T.border}`, background: n.read ? T.surface : '#fafbff', display: 'flex', gap: 10, alignItems: 'flex-start', cursor: clickable ? 'pointer' : 'default' }}>
@@ -60,6 +62,9 @@ export function NotifPanel({ onClose, onOpenOrder }) {
                   <div style={{ fontSize: 12, color: T.text, fontWeight: n.read ? 400 : 600, lineHeight: 1.5 }}>{n.msg}</div>
                   {n.orderId && onOpenOrder && (
                     <div style={{ fontSize: 10, color: T.primary, marginTop: 2, fontWeight: 600 }}>View order →</div>
+                  )}
+                  {!n.orderId && n.link && onOpenLink && (
+                    <div style={{ fontSize: 10, color: T.primary, marginTop: 2, fontWeight: 600 }}>Open →</div>
                   )}
                   <div style={{ fontSize: 10, color: T.textLight, marginTop: 3 }}>{fmtAge(n.at)}</div>
                 </div>

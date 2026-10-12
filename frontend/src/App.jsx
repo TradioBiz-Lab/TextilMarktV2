@@ -19,6 +19,10 @@ import { SuppliersPage } from './pages/procurement/SuppliersPage.jsx'
 import { PoListPage } from './pages/procurement/PoListPage.jsx'
 import { PoBuilder } from './pages/procurement/PoBuilder.jsx'
 import { PoDetail } from './pages/procurement/PoDetail.jsx'
+import { ShoppingListPage } from './pages/procurement/ShoppingListPage.jsx'
+import { CostingProviders } from './stores/costing.jsx'
+import { CostingPage } from './pages/costing/CostingPage.jsx'
+import { CostSheetPage } from './pages/costing/CostSheetPage.jsx'
 import { LiveRefresh } from './components/LiveRefresh.jsx'
 import { KriyaaChatProvider } from './kriyaaChatContext.jsx'
 import { ReportingPage } from './pages/shared/ReportingPage.jsx'
@@ -89,6 +93,7 @@ function Inner() {
   const [reportsMo, setReportsMo] = useState(null)   // master order to open on the Reports page
   const [selPo, setSelPo] = useState(null)           // purchase order open (or being edited) on the purchasing screens
   const [selSupplier, setSelSupplier] = useState(null) // supplier to open on the Suppliers page, or to start a new PO for
+  const [selCost, setSelCost] = useState(null)       // cost sheet open on the costing screens
 
   // ── Navigation with real history ──
   // Every screen change is a snapshot pushed onto a stack that is mirrored into the browser's own
@@ -96,11 +101,11 @@ function Inner() {
   // you came from. Before leaving a list for an order, that list's snapshot is stamped with the
   // order's master order, so coming back re-opens (and scrolls to) the group you were in.
   const hist = useRef({ stack: [], idx: -1 })
-  const BLANK = { view: 'dashboard', selOid: null, selMid: null, ordersStatus: null, ordersMo: null, reportsMo: null, selPo: null, selSupplier: null }
+  const BLANK = { view: 'dashboard', selOid: null, selMid: null, ordersStatus: null, ordersMo: null, reportsMo: null, selPo: null, selSupplier: null, selCost: null }
   const apply = useCallback(s => {
     setView(s.view); setSelOid(s.selOid); setSelMid(s.selMid)
     setOrdersStatus(s.ordersStatus); setOrdersMo(s.ordersMo); setReportsMo(s.reportsMo)
-    setSelPo(s.selPo ?? null); setSelSupplier(s.selSupplier ?? null)
+    setSelPo(s.selPo ?? null); setSelSupplier(s.selSupplier ?? null); setSelCost(s.selCost ?? null)
   }, [])
   const go = useCallback(next => {
     const h = hist.current
@@ -112,6 +117,16 @@ function Inner() {
   const goBack = useCallback(fallback => {
     if (hist.current.idx > 0) window.history.back()
     else go(fallback || { view: 'orders' })
+  }, [go])
+
+  // Open what a link names (an email's #cost=..., a notification's link): an order, a PO, a cost sheet or a screen.
+  const openLink = useCallback(link => {
+    if (!link) return false
+    go(link.view === 'order_detail' ? { view: 'order_detail', selOid: link.orderId }
+      : link.view === 'po_detail' ? { view: 'po_detail', selPo: link.poId }
+      : link.view === 'cost_sheet' ? { view: 'cost_sheet', selCost: link.costId }
+      : { view: link.view })
+    return true
   }, [go])
 
   // Start on the user's home screen on login or session restore, with a fresh history: the dashboard,
@@ -127,9 +142,9 @@ function Inner() {
     const link = parseDeepLink(window.location.hash)
     if (link) {
       window.history.replaceState({ nav: 0 }, '', window.location.pathname + window.location.search)
-      go(link.view === 'order_detail' ? { view: 'order_detail', selOid: link.orderId } : link.view === 'po_detail' ? { view: 'po_detail', selPo: link.poId } : { view: link.view })
+      openLink(link)
     }
-  }, [user?.id, apply, go])
+  }, [user?.id, apply, go, openLink])
 
   // Browser Back / Forward move along the same stack.
   useEffect(() => {
@@ -162,6 +177,7 @@ function Inner() {
     reportsMo: v === 'reports' ? (params?.mo ?? null) : null,
     selPo: params?.po ?? null,
     selSupplier: params?.supplier ?? null,
+    selCost: params?.cost ?? null,
   })
   const openOrder = (id, mid) => {
     // Remember which master order we are leaving from, so Back re-opens that group.
@@ -196,10 +212,24 @@ function Inner() {
         </ProcurementProviders>
       )
     }
+    // The shopping list is a factory's own, built from its frozen bills of materials; it ends in draft POs, so it
+    // lives with the purchasing screens and shares their providers.
+    if (view === 'shopping_list' && caps.seeBom) {
+      return <ProcurementProviders><ShoppingListPage onNavigate={navTo} onOpenOrder={openOrder} /></ProcurementProviders>
+    }
+    // Cost sheets: a factory's own, or what has been shared with a brand. One provider for both screens.
+    if (caps.seeCosting && ['costing', 'cost_sheet'].includes(view)) {
+      const toList = () => goBack({ view: 'costing' })
+      return (
+        <CostingProviders>
+          {view === 'cost_sheet' && selCost ? <CostSheetPage key={`c:${selCost}`} costId={selCost} onBack={toList} onNavigate={navTo} /> : <CostingPage onNavigate={navTo} />}
+        </CostingProviders>
+      )
+    }
     if (view === 'viewer' && caps.seeViewerHome) return <ViewerHome />
     if (view === 'company' && caps.seeCompanyPage) return <CompanyPage />
     if (view === 'orders') return <AdminOrders key={`o:${ordersMo || 'all'}`} onOpen={openOrder} initialStatus={ordersStatus} initialMo={ordersMo} onSubmitReq={user.role === 'buyer' ? () => navTo('submit_req') : undefined} />
-    if (view === 'order_detail' && selOid) return <AdminOrderDetail orderId={selOid} initialMid={selMid} onBack={() => goBack({ view: 'orders', ordersMo: orders?.find(o => o.id === selOid)?.masterOrderId || '__none__' })} />
+    if (view === 'order_detail' && selOid) return <AdminOrderDetail orderId={selOid} initialMid={selMid} onNavigate={navTo} onBack={() => goBack({ view: 'orders', ordersMo: orders?.find(o => o.id === selOid)?.masterOrderId || '__none__' })} />
     if (view === 'documents') return <AdminDocuments />
     if (view === 'reports') return <ReportingPage key={`r:${reportsMo || 'all'}`} onOpen={openOrder} initialMo={reportsMo} />
     if (user.role === 'buyer' && view === 'submit_req') return <BuyerSubmitReq />
@@ -214,7 +244,7 @@ function Inner() {
   return (
     <KriyaaChatProvider>
       <LiveRefresh />
-      <Shell view={view} setView={navTo} onOpenOrder={openOrder}>
+      <Shell view={view} setView={navTo} onOpenOrder={openOrder} onOpenLink={link => openLink(parseDeepLink(link))}>
         {renderView()}
       </Shell>
     </KriyaaChatProvider>

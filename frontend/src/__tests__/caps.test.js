@@ -92,6 +92,19 @@ describe('the standalone product: brands and manufacturers create their own work
     expect(capsFor({ ...viewing(sMfr), actingFor: true }).manageProcurement).toBe(true)
   })
 
+  test('bills of materials are a factory\'s own; cost sheets have two sides: the factory prepares, the brand reviews and approves', () => {
+    const c = u => capsFor(u)
+    expect([c(sMfr).seeBom, c(sMfr).manageBom, c(sMfr).seeCosting, c(sMfr).manageCosting, c(sMfr).commentCosting, c(sMfr).approveCosting]).toEqual([true, true, true, true, true, false])
+    expect([c(sBuyer).seeBom, c(sBuyer).manageBom, c(sBuyer).seeCosting, c(sBuyer).manageCosting, c(sBuyer).commentCosting, c(sBuyer).approveCosting]).toEqual([false, false, true, false, true, true])
+    for (const u of [sAdmin, sMaster, mfr, buyer]) for (const k of ['seeBom', 'manageBom', 'seeCosting', 'manageCosting', 'commentCosting', 'approveCosting']) expect(c(u)[k], `${u.role} ${k}`).toBe(false)
+    // looked at by Tradio's master admin: they see what the company sees and can change nothing, approving included
+    for (const company of [sMfr, sBuyer]) {
+      const v = c(viewing(company))
+      expect(v.seeCosting).toBe(true)
+      expect([v.manageBom, v.manageCosting, v.commentCosting, v.approveCosting]).toEqual([false, false, false, false])
+    }
+  })
+
   test('only a company\'s owner changes Tradio\'s access, and never from inside a view-as session', () => {
     expect(capsFor(sMfr).changeTradioAccess).toBe(true)
     expect(capsFor({ ...sMfr, orgRole: 'member' }).changeTradioAccess).toBe(false)

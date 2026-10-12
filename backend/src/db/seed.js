@@ -28,6 +28,10 @@ import { Supplier } from '../models/Supplier.js'
 import { SupplierItem } from '../models/SupplierItem.js'
 import { PurchaseOrder } from '../models/PurchaseOrder.js'
 import { gstinCheckChar } from '../lib/gst.js'
+import { Bom } from '../models/Bom.js'
+import { CostSheet } from '../models/CostSheet.js'
+import { computeCostSheet, linesFromBom } from '../lib/costing.js'
+import { weightedConsumption } from '../lib/bomMath.js'
 import { computeTotals } from '../lib/poMath.js'
 import { taxModeFor } from '../lib/gst.js'
 import { syncOnSend, syncOnReceive } from '../lib/poSync.js'
@@ -334,6 +338,7 @@ async function seed() {
     ])
     console.log('Standalone extras seeded: a teammate (anita@tiruppur.com), Surat Mills (Tradio view access OFF), a master order and 2 orders created by the parties themselves')
     await seedProcurement({ tiruppur, tprOrg: orgOf.TPR })
+    await seedCosting({ tiruppur, tprOrg: orgOf.TPR, zaraBuyer, zaraOrg: orgOf.ZAR })
   }
 
   console.log('\n✓ Sandbox seed complete.')
@@ -413,6 +418,60 @@ async function seedProcurement({ tiruppur, tprOrg }) {
   }
   await Counter.updateOne({ _id: `po:${tprOrg._id}:${fy}` }, { $set: { seq: 3 } }, { upsert: true })
   console.log('Procurement seeded: 6 suppliers, 5 catalog items, 3 purchase orders (1 draft, 1 sent, 1 part received) for Tiruppur Textiles')
+}
+
+// A frozen bill of materials on Tiruppur's sweatshirt order, and three cost sheets for Zara India in different
+// states (approved, commented on and waiting for the factory, and a draft), so costing can be walked by hand.
+async function seedCosting({ tiruppur, tprOrg, zaraBuyer, zaraOrg }) {
+  const order = 'ZAR-SWTSHT-FW26-001'
+  await Order.updateOne({ _id: order }, { $set: { styleNumber: 'SWT-100', colourways: [{ name: 'BLACK' }, { name: 'CHARCOAL' }, { name: 'NAVY' }] } })
+  const sup = async name => (await Supplier.findOne({ ownerOrgId: tprOrg._id, name }, '_id').lean())?._id || null
+  const [mill, rib, zips, labels] = await Promise.all(['Coimbatore Knit Fabrics', 'Erode Rib and Collar', 'YKK India (Mumbai depot)', 'Tiruppur Label Works'].map(sup))
+  const L = (n, o) => ({ lineId: `5e0000000000000000000${String(n).padStart(3, '0')}`, perSize: [], wastagePct: 0, perColour: false, supplierId: null, itemId: null, rate: 0, note: '', source: 'manual', confidence: null, needsReview: false, evidence: '', spec: '', ...o })
+  const lines = [
+    L(1, { section: 'fabric', item: 'Brushed fleece 280 GSM', unit: 'kg', consumption: 0.7, perSize: [0.62, 0.66, 0.7, 0.74, 0.8], wastagePct: 6, perColour: true, supplierId: mill, rate: 410 }),
+    L(2, { section: 'fabric', item: 'Rib 2x2 collar and cuff', unit: 'kg', consumption: 0.05, wastagePct: 5, perColour: true, supplierId: rib, rate: 520 }),
+    L(3, { section: 'process', item: 'Puff print logo', unit: 'pcs', consumption: 1, rate: 14 }),
+    L(4, { section: 'trims', item: 'Flat drawcord, 140 cm', unit: 'pcs', consumption: 1, wastagePct: 2, rate: 7.5 }),
+    L(5, { section: 'trims', item: 'Cord stopper', unit: 'pcs', consumption: 2, wastagePct: 2, supplierId: zips, rate: 4 }),
+    L(6, { section: 'labels_packaging', item: 'Woven main label', unit: 'pcs', consumption: 1, wastagePct: 2, supplierId: labels, rate: 1.6 }),
+    L(7, { section: 'labels_packaging', item: 'Polybag', unit: 'pcs', consumption: 1, rate: 2.5 }),
+  ]
+  const bom = await Bom.create({
+    ownerOrgId: tprOrg._id, mfrId: tiruppur._id, orderId: order, version: 1, status: 'frozen',
+    sizes: ['S', 'M', 'L', 'XL', 'XXL'], sizeRatio: [1, 2, 3, 2, 1], colours: [{ name: 'BLACK', qty: 1000 }, { name: 'CHARCOAL', qty: 1000 }, { name: 'NAVY', qty: 1000 }], totalQty: 3000,
+    lines, frozenAt: new Date('2026-10-06T11:00:00+05:30'), frozenBy: tiruppur._id, createdBy: tiruppur._id, updatedBy: tiruppur._id,
+  })
+
+  const plan = { sizes: bom.sizes, ratio: bom.sizeRatio }
+  const seeded = linesFromBom(lines, l => weightedConsumption(plan, l))
+  const base = { ownerOrgId: tprOrg._id, mfrId: tiruppur._id, brandOrgId: zaraOrg._id, brandId: zaraBuyer._id, createdBy: tiruppur._id, updatedBy: tiruppur._id, overheadPct: 5, rejectionPct: 3, marginPct: 20, tradioPct: 10 }
+  const priced = (inputs) => ({ ...inputs, computed: computeCostSheet(inputs) })
+  const sweat = priced({ styleName: 'Heavy sweatshirt', styleCode: 'SWT-100', qty: 3000, ...seeded, labour: { cuttingThreads: 14, making: 78, finishingPacking: 12 }, discountPct: 2.5, ...{ overheadPct: 5, rejectionPct: 3, marginPct: 20, tradioPct: 10 } })
+  const fy = '2627'
+  const sheets = await CostSheet.insertMany([
+    { ...base, chainId: `CS-TPR-${fy}-0001`, version: 1, status: 'approved', orderId: order, bomId: bom._id, ...sweat,
+      sharedAt: new Date('2026-10-07T10:00:00+05:30'), sharedBy: tiruppur._id, sharedMessage: 'Prices valid until 30 October.', approvedAt: new Date('2026-10-08T16:30:00+05:30'), approvedBy: zaraBuyer._id, approvedByName: zaraBuyer.name, approvedPrice: sweat.computed.negotiated,
+      comments: [{ at: new Date('2026-10-08T12:00:00+05:30'), byUser: zaraBuyer._id, byName: zaraBuyer.name, byRole: 'buyer', kind: 'comment', text: 'Happy with the fleece. Please keep the rib at this rate for the repeat.' }, { at: new Date('2026-10-08T14:00:00+05:30'), byUser: tiruppur._id, byName: tiruppur.name, byRole: 'manufacturer', kind: 'comment', text: 'Yes, held for the repeat order.' }] },
+    { ...base, chainId: `CS-TPR-${fy}-0002`, version: 1, status: 'commented', ...priced({ styleName: 'Zip hoodie', styleCode: 'HD-210', qty: 1500, overheadPct: 5, rejectionPct: 3, marginPct: 20, tradioPct: 10, discountPct: 0,
+        fabric: [{ name: 'Brushed fleece 320 GSM', spec: 'Charcoal melange', unit: 'kg', consumption: 0.82, wastagePct: 6, rate: 430, freight: 0, dutyPct: 0, note: '' }],
+        process: [{ name: 'Embroidered chest logo', spec: '', unit: 'pcs', consumption: 1, wastagePct: 0, rate: 18, freight: 0, dutyPct: 0, note: '' }],
+        trims: [{ name: 'YKK metal zip, 24 inch', spec: '', unit: 'pcs', consumption: 1, wastagePct: 2, rate: 38, freight: 0, dutyPct: 0, note: 'Antique brass' }, { name: 'Drawcord', spec: '', unit: 'pcs', consumption: 1, wastagePct: 2, rate: 7.5, freight: 0, dutyPct: 0, note: '' }],
+        labelsPackaging: [{ name: 'Main label', spec: '', unit: 'pcs', consumption: 1, wastagePct: 0, rate: 1.6, freight: 0, dutyPct: 0, note: '' }, { name: 'Polybag and carton', spec: '', unit: 'pcs', consumption: 1, wastagePct: 0, rate: 5.5, freight: 0, dutyPct: 0, note: '' }],
+        labour: { cuttingThreads: 14, making: 96, finishingPacking: 12 } }),
+      sharedAt: new Date('2026-10-10T11:00:00+05:30'), sharedBy: tiruppur._id, sharedMessage: 'First costing for the zip hoodie.',
+      comments: [{ at: new Date('2026-10-11T10:00:00+05:30'), byUser: zaraBuyer._id, byName: zaraBuyer.name, byRole: 'buyer', kind: 'changes', text: 'The zip looks high. Can it come down to 34 with a different supplier, or is YKK required?' }] },
+    { ...base, chainId: `CS-TPR-${fy}-0003`, version: 1, status: 'draft', ...priced({ styleName: 'Cuffed joggers', styleCode: 'JG-118', qty: 2000, overheadPct: 5, rejectionPct: 3, marginPct: 20, tradioPct: 10, discountPct: 0,
+        fabric: [{ name: 'French terry 260 GSM', spec: '', unit: 'kg', consumption: 0.55, wastagePct: 6, rate: 360, freight: 0, dutyPct: 0, note: '' }], process: [], trims: [{ name: 'Waistband elastic', spec: '', unit: 'm', consumption: 1.1, wastagePct: 3, rate: 8, freight: 0, dutyPct: 0, note: '' }], labelsPackaging: [],
+        labour: { cuttingThreads: 12, making: 60, finishingPacking: 10 } }), internalNote: 'Waiting on a rate for the terry. Margin is thin here.' },
+  ])
+  await Counter.updateOne({ _id: `cs:${tprOrg._id}:${fy}` }, { $set: { seq: 3 } }, { upsert: true })
+  const hoodie = sheets[1]
+  await Notification.insertMany([
+    { toUser: tiruppur._id, type: 'costing', msg: `Zara India asked for changes on cost sheet CS-TPR-${fy}-0002 v1 (Zip hoodie)`, link: `#cost=${hoodie._id}`, isRead: false },
+    { toUser: zaraBuyer._id, type: 'costing', msg: `Tiruppur Textiles shared cost sheet CS-TPR-${fy}-0002 for Zip hoodie`, link: `#cost=${hoodie._id}`, isRead: false },
+  ])
+  console.log('Costing seeded: a frozen bill of materials on the sweatshirt order, and 3 cost sheets for Zara India (approved, commented, draft)')
 }
 
 seed().catch(err => { console.error('Seed failed:', err); process.exit(1) })

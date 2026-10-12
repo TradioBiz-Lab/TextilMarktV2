@@ -9,6 +9,7 @@ import {
 } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, DateOrNA, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
+import { BomTab } from '../bom/BomTab.jsx'
 import { normalizeCsvDate } from '../../csvDates.js'
 import { capsFor, canWriteStage, canSetAssignmentStatus, canEditPlan, orderCaps } from '../../caps.js'
 import { usePartners } from '../../lib/usePartners.js'
@@ -30,7 +31,7 @@ function fmtDate(d) {
 // Bulk Edit row: step, start, end, responsible, target qty, description, evidence, NA / Undo.
 const BULK_EDIT_COLS = '170px 168px 168px 150px 78px minmax(120px, 1fr) 30px 64px'
 
-export function AdminOrderDetail({ orderId, initialMid, onBack }) {
+export function AdminOrderDetail({ orderId, initialMid, onBack, onNavigate }) {
   const { currentUser, orders, docs, users, loading, updateAssignment, updateStage, uploadDoc, getDocData, refreshOrders, editOrder, deleteOrder,
     addStageUpdate,
     addStageItem, updateStageItem, removeStageItem, addAssignment, reassignAssignment, insertStage, bulkUpdateStages } = useApp()
@@ -958,6 +959,8 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     { id: 'production', label: `Production` },
     { id: 'stage_evidence', label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><ImageIcon size={13} /> Stage Evidence ({stageDocs.length})</span> },
     { id: 'compliance', label: `Compliance (${mfrDocs.length})` },
+    // A factory's bill of materials for its own split (standalone product): private to it, so no one else gets the tab.
+    ...(caps.seeBom && selectedAsgn && String(selectedAsgn.mid) === String(currentUser?.id) ? [{ id: 'bom', label: 'Bill of materials' }] : []),
   ]
 
   return (
@@ -1736,6 +1739,9 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
               )}
             </div>
           )}
+
+          {/* ── Bill of materials (the factory's own, standalone product) ── */}
+          {tab === 'bom' && caps.seeBom && selectedAsgn && <BomTab order={order} asgn={selectedAsgn} onNavigate={onNavigate} />}
 
           {/* ── Compliance Tab ── */}
           {tab === 'compliance' && (

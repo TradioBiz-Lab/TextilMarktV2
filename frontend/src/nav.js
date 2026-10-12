@@ -42,9 +42,19 @@ export function navSections(user) {
     return [
       { items: main },
       { label: 'Purchasing', items: [
+        { id: 'shopping_list', icon: 'ShoppingCart', label: 'Shopping List' },
         { id: 'suppliers', icon: 'Storefront', label: 'Suppliers' },
         { id: 'purchase_orders', icon: 'Receipt', label: 'Purchase Orders' },
       ] },
+      ...(caps.seeCosting ? [{ label: 'Commercial', items: [{ id: 'costing', icon: 'Calculator', label: 'Cost Sheets' }] }] : []),
+      ...(company.length ? [{ label: 'Account', items: company }] : []),
+    ]
+  }
+  // A brand in the standalone product reviews the cost sheets its factories share with it.
+  if (caps.seeCosting) {
+    return [
+      { items: main },
+      { label: 'Commercial', items: [{ id: 'costing', icon: 'Calculator', label: 'Cost Sheets' }] },
       ...(company.length ? [{ label: 'Account', items: company }] : []),
     ]
   }
@@ -56,5 +66,6 @@ export function navIdForView(view) {
   if (view === 'order_detail' || view === 'submit_req') return 'orders'
   if (view === 'po_builder' || view === 'po_detail') return 'purchase_orders'
   if (view === 'supplier_detail') return 'suppliers'
+  if (view === 'cost_sheet') return 'costing'
   return view
 }
