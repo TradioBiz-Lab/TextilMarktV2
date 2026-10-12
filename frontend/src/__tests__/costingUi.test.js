@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest'
 import costCases from '../../../backend/tests/fixtures/costing.cases.json'
 import { toForm, toNumbers, figures, payloadFrom, isDirty, blankMaterial, costStatus, awaitingReview, decimal } from '../lib/costing.js'
-import { SECTIONS, blankLine, toDraft, numeric, preview, payloadFrom as bomPayload, reviewCount, isDirty as bomDirty, alignPerSize, shareEvenly, BOM_COLUMNS, linesFromRows, matchSupplier } from '../lib/bomUi.js'
+import { SECTIONS, blankLine, toDraft, numeric, preview, payloadFrom as bomPayload, reviewCount, isDirty as bomDirty, alignPerSize, shareEvenly, BOM_COLUMNS, linesFromRows, matchSupplier, splitExactly, gridOn, toGrid, fromGrid, setGridCell, addGridSize, removeGridSize, gridColumns, gridExample, sizeNamesUsable, coloursFromRows } from '../lib/bomUi.js'
 import { mapRows } from '../lib/excelIO.js'
 
 const sheet = { styleName: 'Baggy Active Jacket', styleCode: 'FLGCW17', qty: 1000, ...costCases[0].sheet }
@@ -186,3 +186,92 @@ describe('importing bill of materials lines from Excel', () => {
     expect(skipped.map(s => [s.row, s.error])).toEqual([[3, 'No item'], [4, 'No section']])
   })
 })
+
+describe('the size and colour grid in the editor', () => {
+  const ratio = [1, 2, 3, 2, 1]
+  const server = (colours, extra = {}) => ({ plan: { totalQty: 2300, sizes: ['S', 'M', 'L', 'XL', 'XXL'], ratio, colours, ...extra }, lines: [] })
+
+  test('a quantity is split over the sizes so it adds up exactly, the largest leftovers taking the odd pieces', () => {
+    expect(splitExactly(1000, ratio)).toEqual([111, 222, 334, 222, 111])
+    expect(splitExactly(3600, ratio)).toEqual([400, 800, 1200, 800, 400])
+    expect(splitExactly(7, [1, 1, 1])).toEqual([3, 2, 2])
+    expect(splitExactly(10, [0, 0])).toEqual([0, 0])
+    expect(splitExactly('x', ratio)).toEqual([0, 0, 0, 0, 0])
+  })
+
+  test('starting a grid keeps each colour\'s total; going back keeps it too', () => {
+    const colours = [{ key: 'a', name: 'BLACK', qty: '1000', sizes: null }, { key: 'b', name: 'NAVY', qty: '300', sizes: null }]
+    const grid = toGrid(colours, ['1', '2', '3', '2', '1'])
+    expect(grid.map(c => c.sizes)).toEqual([['111', '222', '334', '222', '111'], ['33', '67', '100', '67', '33']])
+    expect(grid.map(c => c.qty)).toEqual(['1000', '300'])
+    expect(gridOn(grid)).toBe(true)
+    expect(gridOn(colours)).toBe(false)
+    expect(fromGrid(grid).map(c => [c.sizes, c.qty])).toEqual([[null, '1000'], [null, '300']])
+  })
+
+  test('typing in a cell moves the colour\'s total, and the grid follows the size list', () => {
+    const grid = toGrid([{ key: 'a', name: 'BLACK', qty: '90', sizes: null }], [1, 1, 1])
+    const typed = setGridCell(grid, 'a', 1, '50')
+    expect(typed[0].sizes).toEqual(['30', '50', '30'])
+    expect(typed[0].qty).toBe('110')
+    expect(addGridSize(typed)[0].sizes).toEqual(['30', '50', '30', ''])
+    const dropped = removeGridSize(typed, 1)
+    expect(dropped[0].sizes).toEqual(['30', '30'])
+    expect(dropped[0].qty).toBe('60')
+    expect(setGridCell(grid, 'nobody', 0, '1')).toEqual(grid)
+  })
+
+  test('a BOM from the server with a grid opens as one; a half grid is made whole by the ratio', () => {
+    const whole = toDraft(server([{ name: 'BLACK', qty: 1300, sizes: [100, 300, 500, 300, 100] }, { name: 'NAVY', qty: 650, sizes: [50, 150, 250, 150, 50] }]))
+    expect(whole.plan.colours.map(c => c.sizes)).toEqual([['100', '300', '500', '300', '100'], ['50', '150', '250', '150', '50']])
+    const half = toDraft(server([{ name: 'BLACK', qty: 1300, sizes: [100, 300, 500, 300, 100] }, { name: 'NAVY', qty: 900 }]))
+    expect(half.plan.colours[1].sizes).toEqual(['100', '200', '300', '200', '100'])
+    expect(toDraft(server([{ name: 'RED', qty: 500 }])).plan.colours[0].sizes).toBe(null)
+  })
+
+  test('what is saved carries the grid with each colour\'s total as the sum, and a change is noticed', () => {
+    const draft = toDraft(server([{ name: 'BLACK', qty: 1300, sizes: [100, 300, 500, 300, 100] }]))
+    const body = bomPayload(draft, '2026-01-01')
+    expect(body.plan.colours).toEqual([{ name: 'BLACK', qty: 1300, sizes: [100, 300, 500, 300, 100] }])
+    const edited = { ...draft, plan: { ...draft.plan, colours: setGridCell(draft.plan.colours, draft.plan.colours[0].key, 0, '110') } }
+    expect(bomPayload(edited).plan.colours[0].qty).toBe(1310)
+    expect(bomDirty(edited, draft)).toBe(true)
+    expect(bomDirty(draft, toDraft(server([{ name: 'BLACK', qty: 1300, sizes: [100, 300, 500, 300, 100] }])))).toBe(false)
+    expect(bomPayload(toDraft(server([{ name: 'RED', qty: 5 }]))).plan.colours).toEqual([{ name: 'RED', qty: 5 }])
+  })
+
+  test('the live figures are worked from the grid', () => {
+    const draft = toDraft(server([{ name: 'BLACK', qty: 1300, sizes: [100, 300, 500, 300, 100] }, { name: 'NAVY', qty: 650, sizes: [50, 150, 250, 150, 50] }], { totalQty: 1950 }))
+    draft.lines = [{ ...blankLine('fabric'), item: 'Polar fleece', unit: 'kg', consumption: '0.72', wastagePct: '7', perSize: ['0.63', '0.675', '0.72', '0.765', '0.8325'] }]
+    const r = preview(draft)
+    expect(r.lines[0].computed.perColour.map(c => c.orderQty)).toEqual([1004, 502])
+    expect(r.warnings).toEqual([])
+  })
+
+  test('the sheet has a column for each size and an example in the plan\'s own proportions', () => {
+    const cols = gridColumns(['S', 'M', 'L'])
+    expect(cols.map(c => c.header)).toEqual(['Colour', 'S', 'M', 'L'])
+    expect(gridExample(['S', 'M', 'L'], ['1', '2', '3'])).toEqual({ colour: 'Black', size0: 100, size1: 200, size2: 300 })
+    expect(sizeNamesUsable(['S', 'M'])).toBe(true)
+    expect(sizeNamesUsable(['S', ' s '])).toBe(false)
+    expect(sizeNamesUsable(['S', ''])).toBe(false)
+  })
+
+  test('a filled-in sheet becomes colours; bad rows are left out and say why', () => {
+    const cols = gridColumns(['S', 'M', 'L'])
+    const m = mapRows([
+      ['Colour', 'S', 'M', 'L'],
+      ['Black', 100, 200, '1,000'],
+      ['Navy', 50, null, 70.4],
+      ['black', 1, 1, 1],
+      ['', 5, 5, 5],
+      ['Olive', -3, 4, 5],
+    ], cols)
+    expect(m.errors.map(e => [e.row, e.column])).toEqual([[5, 'Colour']])                    // the dialog leaves that row out before importing
+    const { colours, skipped } = coloursFromRows(m.rows.filter(r => !m.errors.some(e => e.row === r._row)), 3)
+    expect(colours.map(c => [c.name, c.qty, c.sizes])).toEqual([['Black', '1300', ['100', '200', '1000']], ['Navy', '120', ['50', '0', '70']]])
+    expect(skipped.map(x => [x.row, x.error])).toEqual([[4, 'This colour is already in the file'], [6, 'Pieces cannot be negative']])
+    expect(coloursFromRows([{ _row: 9, colour: '', size0: 1 }], 3).skipped).toEqual([{ row: 9, name: '', error: 'No colour' }])
+  })
+})
+

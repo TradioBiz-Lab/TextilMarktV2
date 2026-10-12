@@ -113,7 +113,7 @@ router.post('/', writeLimiter, async (req, res) => {
       const bom = isId(body.bomId) ? await Bom.findOne({ _id: body.bomId, ownerOrgId: req.user.orgId }).lean() : null
       if (!bom) return fail(res, 400, 'Choose one of your bills of materials')
       bomId = bom._id
-      const plan = { sizes: bom.sizes, ratio: bom.sizeRatio }
+      const plan = { sizes: bom.sizes, ratio: bom.sizeRatio, colours: bom.colours }
       seed = { ...linesFromBom(bom.lines, l => weightedConsumption(plan, l)), qty: bom.totalQty }
       if (!order && bom.orderId) order = await Order.findOne({ _id: bom.orderId, 'assignments.mfrId': req.user.id, buyerId: body.brandId }, 'product styleNumber').lean()
     }

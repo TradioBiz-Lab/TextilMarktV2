@@ -39,7 +39,16 @@ const bomSchema = new mongoose.Schema({
   status: { type: String, enum: BOM_STATUSES, default: 'draft' },
   sizes: { type: [String], default: [] },
   sizeRatio: { type: [Number], default: [] },
-  colours: { type: [new mongoose.Schema({ name: { type: String, required: true, maxlength: 60 }, qty: { type: Number, default: 0, min: 0 } }, { _id: false })], default: [] },
+  // A colour's pieces, and optionally its own pieces for each size (parallel to `sizes`) when the order was
+  // given as a size and colour grid; its qty is then their total.
+  colours: {
+    type: [new mongoose.Schema({
+      name: { type: String, required: true, maxlength: 60 },
+      qty: { type: Number, default: 0, min: 0 },
+      sizes: { type: [Number], default: undefined },
+    }, { _id: false })],
+    default: [],
+  },
   totalQty: { type: Number, default: 0, min: 0 },
   lines: { type: [lineSchema], default: [] },
   // The tech pack this was drafted from, and how the draft went.

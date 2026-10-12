@@ -6,6 +6,8 @@
 // wastage percent of that total, rounded to one decimal; and the order quantity is the two added and
 // rounded to the unit (up for things bought by the piece, nearest for cloth, as the sheet does).
 // A line that does not depend on colour (labels, zips) is worked once over the whole order.
+// A colour may instead carry its own pieces for each size (a size and colour grid, as buyers send an
+// order): its pieces are then those figures as they stand, and its quantity is their total.
 // These are the quantities a factory buys against, so they are computed here, never trusted from the browser.
 
 /**
@@ -52,23 +54,40 @@ export function consumptionBySize(line, sizeCount) {
 export function weightedConsumption(planInput, line) {
   const plan = normalisePlan(planInput)
   const cons = consumptionBySize(line, plan.sizes.length)
-  const total = sum(plan.ratio)
+  const weights = hasGrid(plan) ? piecesBySize(plan) : plan.ratio
+  const total = sum(weights)
   if (!(total > 0)) return roundTo(Number(line?.consumption) || 0, 4)
-  return roundTo(sum(plan.ratio.map((r, i) => r * cons[i])) / total, 4)
+  return roundTo(sum(weights.map((w, i) => w * cons[i])) / total, 4)
 }
 
-/** The plan with its colours always present: an order with none entered is one colour of the whole quantity. */
+/**
+ * The plan with its colours always present: an order with none entered is one colour of the whole quantity.
+ * A colour with `sizes` (its pieces for each size, as many as the plan has sizes) is a gridded colour: whole
+ * pieces, and its quantity is their total whatever `qty` says.
+ */
 export function normalisePlan(plan) {
   const sizes = plan?.sizes?.length ? plan.sizes : ['ONE']
   const ratio = sizes.map((_, i) => Number(plan?.ratio?.[i]) || (plan?.ratio?.length ? 0 : 1))
-  let colours = (plan?.colours || []).map(c => ({ name: c.name, qty: Number(c.qty) || 0 }))
+  let colours = (plan?.colours || []).map(c => {
+    if (!Array.isArray(c.sizes) || c.sizes.length === 0) return { name: c.name, qty: Number(c.qty) || 0 }
+    const pieces = sizes.map((_, i) => Math.max(0, Math.round(Number(c.sizes[i]) || 0)))
+    return { name: c.name, qty: sum(pieces), sizes: pieces }
+  })
   if (colours.length === 0 && Number(plan?.totalQty) > 0) colours = [{ name: 'All', qty: Number(plan.totalQty) }]
   return { sizes, ratio, colours }
 }
 
-/** One run of pieces (a colour, or the whole order) worked through the sizes. */
-function run(qty, ratio, cons, wastagePct, count) {
-  const sizePcs = splitBySize(qty, ratio)
+const hasGrid = plan => plan.colours.some(c => c.sizes)
+
+/** Pieces of each size over the whole order: a gridded colour's own figures, any other colour split by the ratio. */
+function piecesBySize(plan) {
+  const parts = plan.colours.map(c => c.sizes || splitBySize(c.qty, plan.ratio))
+  return plan.sizes.map((_, i) => sum(parts, p => p[i]))
+}
+
+/** One run of pieces (a colour, or the whole order) worked through the sizes; `fixed` is the pieces of each size when they are given rather than split by the ratio. */
+function run(qty, ratio, cons, wastagePct, count, fixed = null) {
+  const sizePcs = fixed || splitBySize(qty, ratio)
   const net = roundTo(sum(sizePcs.map((p, i) => roundTo(p * cons[i], 1))), 6)
   const buffer = roundTo((net * wastagePct) / 100, 1)
   const orderQty = count ? ceilClean(net + buffer) : roundTo(net + buffer, 0)
@@ -86,7 +105,7 @@ export function computeLine(planInput, line) {
   const wastage = Math.max(0, Number(line?.wastagePct) || 0)
   const count = isCountUnit(line?.unit)
   if (line?.perColour === true && plan.colours.length) {
-    const perColour = plan.colours.map(c => ({ colour: c.name, qty: c.qty, ...run(c.qty, plan.ratio, cons, wastage, count) }))
+    const perColour = plan.colours.map(c => ({ colour: c.name, qty: c.qty, ...run(c.qty, plan.ratio, cons, wastage, count, c.sizes) }))
     return {
       net: roundTo(sum(perColour, c => c.net), 6),
       buffer: roundTo(sum(perColour, c => c.buffer), 6),
@@ -94,7 +113,7 @@ export function computeLine(planInput, line) {
       perColour,
     }
   }
-  const whole = run(sum(plan.colours, c => c.qty), plan.ratio, cons, wastage, count)
+  const whole = run(sum(plan.colours, c => c.qty), plan.ratio, cons, wastage, count, hasGrid(plan) ? piecesBySize(plan) : null)
   return { net: whole.net, buffer: whole.buffer, orderQty: whole.orderQty, sizePcs: whole.sizePcs, sizeTotal: whole.sizeTotal, perColour: [] }
 }
 

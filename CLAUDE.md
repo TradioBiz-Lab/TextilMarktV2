@@ -321,6 +321,11 @@ admin enables them in User Setup.
     through the shared `SpreadsheetImport`): the rows are appended to the draft for the person to check and save,
     never saved on their own. A supplier is matched to the company's book by name, exactly or by the one
     supplier whose name holds the typed text; ambiguous or unknown names are left blank and counted.
+    The plan can be a size and colour grid (each colour's own pieces for every size, `colours[].sizes`; an
+    Excel sheet with a column per size imports it): `bomMath.js` then works that colour from its figures, a
+    line bought for the whole order over the pieces of each size across the colours, and a cost sheet seeded
+    from it averages consumption over the grid's own size mix. The editor never shows half a grid
+    (`toDraft` makes the rest whole by the ratio).
   - *Live refresh.* `/api/floor/feed` carries per-company versions: a factory gets `suppliers`,
     `purchase-orders`, `boms` and `cost-sheets`; a brand gets `cost-sheets` (shared ones only).
 - **Run it locally.** `npm run dev:local` (backend) starts an ephemeral in-memory mongod, seeds a

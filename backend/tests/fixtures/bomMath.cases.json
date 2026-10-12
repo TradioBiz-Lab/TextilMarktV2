@@ -397,5 +397,323 @@
       "buffer": 13.5,
       "orderQty": 464.0
     }
+  },
+  {
+    "name": "a size and colour grid: each colour has its own pieces for every size",
+    "plan": {
+      "sizes": [
+        "S",
+        "M",
+        "L",
+        "XL",
+        "XXL"
+      ],
+      "ratio": [
+        1,
+        2,
+        3,
+        2,
+        1
+      ],
+      "colours": [
+        {
+          "name": "BLACK",
+          "sizes": [
+            100,
+            300,
+            500,
+            300,
+            100
+          ]
+        },
+        {
+          "name": "NAVY",
+          "sizes": [
+            50,
+            150,
+            250,
+            150,
+            50
+          ]
+        },
+        {
+          "name": "OLIVE",
+          "sizes": [
+            0,
+            400,
+            400,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    "line": {
+      "unit": "kg",
+      "consumption": 0.72,
+      "perSize": [
+        0.63,
+        0.675,
+        0.72,
+        0.765,
+        0.8325
+      ],
+      "wastagePct": 7,
+      "perColour": true
+    },
+    "expected": {
+      "perColour": [
+        {
+          "sizePcs": [
+            100,
+            300,
+            500,
+            300,
+            100
+          ],
+          "net": 938.3,
+          "buffer": 65.7,
+          "orderQty": 1004.0,
+          "colour": "BLACK",
+          "qty": 1300
+        },
+        {
+          "sizePcs": [
+            50,
+            150,
+            250,
+            150,
+            50
+          ],
+          "net": 469.2,
+          "buffer": 32.8,
+          "orderQty": 502.0,
+          "colour": "NAVY",
+          "qty": 650
+        },
+        {
+          "sizePcs": [
+            0,
+            400,
+            400,
+            0,
+            0
+          ],
+          "net": 558.0,
+          "buffer": 39.1,
+          "orderQty": 597.0,
+          "colour": "OLIVE",
+          "qty": 800
+        }
+      ],
+      "net": 1965.5,
+      "buffer": 137.6,
+      "orderQty": 2103.0
+    }
+  },
+  {
+    "name": "a grid and a line bought for the whole order: worked over each size across all colours",
+    "plan": {
+      "sizes": [
+        "S",
+        "M",
+        "L",
+        "XL",
+        "XXL"
+      ],
+      "ratio": [
+        1,
+        2,
+        3,
+        2,
+        1
+      ],
+      "colours": [
+        {
+          "name": "BLACK",
+          "sizes": [
+            100,
+            300,
+            500,
+            300,
+            100
+          ]
+        },
+        {
+          "name": "NAVY",
+          "sizes": [
+            50,
+            150,
+            250,
+            150,
+            50
+          ]
+        }
+      ]
+    },
+    "line": {
+      "unit": "pcs",
+      "consumption": 1,
+      "perSize": [
+        1,
+        1,
+        1,
+        1.5,
+        1.5
+      ],
+      "wastagePct": 2.5,
+      "perColour": false
+    },
+    "expected": {
+      "perColour": [],
+      "net": 2250.0,
+      "buffer": 56.3,
+      "orderQty": 2307.0,
+      "sizePcs": [
+        150,
+        450,
+        750,
+        450,
+        150
+      ]
+    }
+  },
+  {
+    "name": "one colour given as a grid and another by the ratio",
+    "plan": {
+      "sizes": [
+        "S",
+        "M",
+        "L",
+        "XL",
+        "XXL"
+      ],
+      "ratio": [
+        1,
+        2,
+        3,
+        2,
+        1
+      ],
+      "colours": [
+        {
+          "name": "BLACK",
+          "sizes": [
+            111,
+            222,
+            333,
+            222,
+            112
+          ]
+        },
+        {
+          "name": "NAVY",
+          "qty": 1000
+        }
+      ]
+    },
+    "line": {
+      "unit": "m",
+      "consumption": 1.5,
+      "perSize": [
+        1.4,
+        1.45,
+        1.5,
+        1.55,
+        1.6
+      ],
+      "wastagePct": 5,
+      "perColour": true
+    },
+    "expected": {
+      "perColour": [
+        {
+          "sizePcs": [
+            111,
+            222,
+            333,
+            222,
+            112
+          ],
+          "net": 1500.1,
+          "buffer": 75.0,
+          "orderQty": 1575.0,
+          "colour": "BLACK",
+          "qty": 1000
+        },
+        {
+          "sizePcs": [
+            111.0,
+            222.0,
+            333.0,
+            222.0,
+            111.0
+          ],
+          "net": 1498.5,
+          "buffer": 74.9,
+          "orderQty": 1573.0,
+          "colour": "NAVY",
+          "qty": 1000
+        }
+      ],
+      "net": 2998.6,
+      "buffer": 149.9,
+      "orderQty": 3148.0
+    }
+  },
+  {
+    "name": "a grid colour with a blank (zero) size and a line over the whole order",
+    "plan": {
+      "sizes": [
+        "28",
+        "30",
+        "32",
+        "34"
+      ],
+      "ratio": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "colours": [
+        {
+          "name": "INDIGO",
+          "sizes": [
+            0,
+            200,
+            300,
+            100
+          ]
+        },
+        {
+          "name": "BLACK",
+          "sizes": [
+            40,
+            0,
+            0,
+            60
+          ]
+        }
+      ]
+    },
+    "line": {
+      "unit": "m",
+      "consumption": 1.2,
+      "wastagePct": 4,
+      "perColour": false
+    },
+    "expected": {
+      "perColour": [],
+      "net": 840.0,
+      "buffer": 33.6,
+      "orderQty": 874.0,
+      "sizePcs": [
+        40,
+        200,
+        300,
+        160
+      ]
+    }
   }
 ]

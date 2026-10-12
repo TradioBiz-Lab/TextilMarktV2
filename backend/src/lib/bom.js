@@ -15,7 +15,8 @@ const text = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '')
 const finite = v => (v === null || v === undefined || v === '' ? null : Number.isFinite(Number(v)) ? Number(v) : NaN)
 
 /**
- * The quantity plan: sizes with their ratio, the colours with their pieces, and the order total.
+ * The quantity plan: sizes with their ratio, the colours with their pieces (each may give its pieces for every
+ * size instead, a size and colour grid, and then its total is the sum), and the order total.
  * Anything left out falls back to `fallback` (the plan already on the BOM) or the defaults.
  * @returns {{ok: true, plan: {sizes, sizeRatio, colours, totalQty}} | {ok: false, error: string}}
  */
@@ -39,16 +40,25 @@ export function cleanPlan(raw, fallback = null) {
   }
   if (!(sizeRatio.reduce((a, b) => a + b, 0) > 0)) return { ok: false, error: 'The size ratio cannot all be zero' }
 
-  let colours = (fallback?.colours || []).map(c => ({ name: c.name, qty: c.qty }))
+  // A grid kept from before the sizes changed no longer lines up with them, so it falls back to the colour's total.
+  let colours = (fallback?.colours || []).map(c => (c.sizes?.length === sizes.length ? { name: c.name, qty: c.qty, sizes: Array.from(c.sizes, Number) } : { name: c.name, qty: c.qty }))
   if (src.colours !== undefined) {
     if (!Array.isArray(src.colours) || src.colours.length > BOM_LIMITS.colours) return { ok: false, error: `At most ${BOM_LIMITS.colours} colours` }
     colours = []
     for (const c of src.colours) {
       const name = text(c?.name, 60)
-      const qty = Number(c?.qty ?? 0)
       if (!name) return { ok: false, error: 'A colour has no name' }
+      let qty = Number(c?.qty ?? 0)
+      let grid = null
+      if (c?.sizes !== undefined && c?.sizes !== null) {
+        if (!Array.isArray(c.sizes) || c.sizes.length !== sizes.length) return { ok: false, error: `${name}: give the pieces for each of the ${sizes.length} sizes` }
+        grid = c.sizes.map(v => (v === '' || v === null ? 0 : Number(v)))
+        if (grid.some(v => !Number.isFinite(v) || v < 0 || v > 1e8)) return { ok: false, error: `${name}: the pieces of a size must be numbers from 0 up` }
+        grid = grid.map(Math.round)
+        qty = grid.reduce((a, b) => a + b, 0)
+      }
       if (!Number.isFinite(qty) || qty < 0 || qty > 1e8) return { ok: false, error: `${name}: pieces must be a number from 0 up` }
-      colours.push({ name, qty: Math.round(qty) })
+      colours.push(grid ? { name, qty, sizes: grid } : { name, qty: Math.round(qty) })
     }
     if (new Set(colours.map(c => c.name.toLowerCase())).size !== colours.length) return { ok: false, error: 'Two colours have the same name' }
   }

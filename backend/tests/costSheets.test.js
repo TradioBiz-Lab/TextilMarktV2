@@ -157,6 +157,21 @@ describe('starting one', () => {
     assert.equal(r.body.bomId, b.id)
   })
 
+  test('seeded from a bill of materials with a size and colour grid, the consumption is averaged over the grid\'s own mix', async () => {
+    const { mfr, brand } = await world()
+    await makeOrder({ id: 'FIT-GRID', buyer: brand, mfrs: [mfr], product: 'Polaire full zip', totalQty: 1950 })
+    const b = (await as(mfr).post('/api/boms', { orderId: 'FIT-GRID' })).body
+    const saved = await as(mfr).post(`/api/boms/${b.id}`, {
+      plan: { sizes: ['S', 'M', 'L', 'XL', 'XXL'], ratio: [1, 2, 3, 2, 1], totalQty: 1950, colours: [{ name: 'BLACK', sizes: [100, 300, 500, 300, 100] }, { name: 'NAVY', sizes: [50, 150, 250, 150, 50] }] },
+      lines: [{ section: 'fabric', item: 'Polar fleece 300 GSM', unit: 'kg', consumption: 0.72, perSize: [0.63, 0.675, 0.72, 0.765, 0.8325], wastagePct: 7, rate: 410 }],
+    })
+    assert.equal(saved.status, 200, JSON.stringify(saved.body))
+    await as(mfr).post(`/api/boms/${b.id}/freeze`)
+    const r = await as(mfr).post('/api/cost-sheets', { brandId: String(brand._id), bomId: b.id })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    assert.equal(r.body.fabric[0].consumption, 0.7217)        // sizes sell 1:3:5:3:1, not the 1:2:3:2:1 ratio (0.7225)
+  })
+
   test('another factory\'s bill of materials cannot seed it', async () => {
     const { mfr, brand } = await world()
     const rival = await makeMfr({ code: 'RVL' })

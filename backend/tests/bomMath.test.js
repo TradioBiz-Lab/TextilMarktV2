@@ -103,3 +103,46 @@ describe('plans and warnings', () => {
     assert.equal(computeLine(plan, {}).orderQty, 0)
   })
 })
+
+describe('a size and colour grid', () => {
+  const sizes = ['S', 'M', 'L', 'XL', 'XXL']
+  const fleece = { unit: 'kg', consumption: 0.72, perSize: [0.63, 0.675, 0.72, 0.765, 0.8325], wastagePct: 7, perColour: true }
+
+  test('a gridded colour\'s quantity is the total of its sizes, whatever qty says; the pieces are whole and not negative', () => {
+    const p = normalisePlan({ sizes, ratio: [1, 2, 3, 2, 1], colours: [{ name: 'BLACK', qty: 9999, sizes: [100, 300.4, 500, -5, '100'] }, { name: 'NAVY', qty: 70 }] })
+    assert.deepEqual(p.colours, [{ name: 'BLACK', qty: 1000, sizes: [100, 300, 500, 0, 100] }, { name: 'NAVY', qty: 70 }])
+  })
+
+  test('a grid shorter than the sizes counts the missing sizes as none, an empty one is not a grid', () => {
+    const p = normalisePlan({ sizes, colours: [{ name: 'A', sizes: [10, 20] }, { name: 'B', qty: 40, sizes: [] }] })
+    assert.deepEqual(p.colours, [{ name: 'A', qty: 30, sizes: [10, 20, 0, 0, 0] }, { name: 'B', qty: 40 }])
+  })
+
+  test('each colour is worked from its own pieces, not the ratio', () => {
+    const plan = { sizes, ratio: [1, 2, 3, 2, 1], colours: [{ name: 'BLACK', sizes: [100, 300, 500, 300, 100] }, { name: 'NAVY', sizes: [50, 150, 250, 150, 50] }] }
+    const r = computeLine(plan, fleece)
+    assert.deepEqual(r.perColour.map(c => c.sizePcs), [[100, 300, 500, 300, 100], [50, 150, 250, 150, 50]])
+    assert.deepEqual(r.perColour.map(c => c.orderQty), [1004, 502])
+    assert.equal(r.orderQty, 1506)
+  })
+
+  test('a line for the whole order is worked over the pieces of each size across the colours', () => {
+    const plan = { sizes, ratio: [1, 2, 3, 2, 1], colours: [{ name: 'BLACK', sizes: [100, 300, 500, 300, 100] }, { name: 'NAVY', sizes: [50, 150, 250, 150, 50] }] }
+    const r = computeLine(plan, { unit: 'pcs', consumption: 1, wastagePct: 0, perColour: false })
+    assert.deepEqual(r.sizePcs, [150, 450, 750, 450, 150])
+    assert.equal(r.orderQty, 1950)
+  })
+
+  test('the cost sheet figure is the average over the grid\'s own size mix', () => {
+    const grid = { sizes, ratio: [1, 2, 3, 2, 1], colours: [{ name: 'BLACK', sizes: [100, 300, 500, 300, 100] }, { name: 'NAVY', sizes: [50, 150, 250, 150, 50] }] }
+    assert.equal(weightedConsumption(grid, fleece), 0.7217)                                    // sizes sell 1:3:5:3:1 here
+    assert.equal(weightedConsumption({ ...grid, colours: [{ name: 'ALL', qty: 1950 }] }, fleece), 0.7225)   // by the 1:2:3:2:1 ratio
+  })
+
+  test('a gridded colour has no rounding to warn about; colours that miss the order total still do', () => {
+    const plan = { sizes, ratio: [1, 2, 3, 2, 1], colours: [{ name: 'BLACK', sizes: [111, 222, 333, 222, 112] }] }
+    assert.deepEqual(computeBom(plan, [fleece], { totalQty: 1000 }).warnings, [])
+    assert.deepEqual(computeBom(plan, [fleece], { totalQty: 1200 }).warnings.map(w => w.code), ['colour_total'])
+  })
+})
+

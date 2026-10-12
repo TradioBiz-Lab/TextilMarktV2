@@ -35,20 +35,68 @@ const lineToForm = l => ({
   needsReview: !!l.needsReview, evidence: l.evidence || '', confirmed: false,
 })
 
-/** A server BOM as editable state. */
+/**
+ * A server BOM as editable state. A colour with its own pieces for each size has `sizes` (strings); one without
+ * has null. When any colour has them every colour does here, so the editor never shows half a grid: the others
+ * are split by the ratio, keeping their total.
+ */
 export function toDraft(bom) {
   const sizes = bom.plan.sizes.map((name, i) => ({ name, ratio: str(bom.plan.ratio[i] ?? 1) }))
+  const colours = bom.plan.colours.map(c => ({ key: newKey(), name: c.name, qty: str(c.qty), sizes: c.sizes?.length ? c.sizes.map(str) : null }))
   return {
-    plan: { totalQty: str(bom.plan.totalQty || ''), sizes, colours: bom.plan.colours.map(c => ({ key: newKey(), name: c.name, qty: str(c.qty) })) },
+    plan: { totalQty: str(bom.plan.totalQty || ''), sizes, colours: colours.some(c => c.sizes) ? toGrid(colours, bom.plan.ratio) : colours },
     lines: bom.lines.map(lineToForm),
   }
 }
+
+const sum = list => list.reduce((a, b) => a + b, 0)
+
+/** A quantity split over the sizes by the ratio so it adds up exactly (the largest leftovers take the odd pieces). */
+export function splitExactly(qty, ratio) {
+  const total = sum(ratio.map(num))
+  const n = Math.max(0, Math.round(num(qty)))
+  if (!(total > 0) || n === 0) return ratio.map(() => 0)
+  const exact = ratio.map(r => (n * num(r)) / total)
+  const out = exact.map(Math.floor)
+  let left = n - sum(out)
+  const byLeftover = exact.map((x, i) => [x - Math.floor(x), i]).sort((a, b) => b[0] - a[0] || a[1] - b[1])
+  for (const [, i] of byLeftover) { if (left <= 0) break; out[i] += 1; left -= 1 }
+  return out
+}
+
+/** Has the order been given as pieces for each size and colour? */
+export const gridOn = colours => colours.some(c => c.sizes)
+
+/** Colours as a size and colour grid, each starting as its total split by the ratio (a colour already a grid is kept). */
+export const toGrid = (colours, ratio) => colours.map(c => {
+  if (c.sizes) return { ...c, qty: String(sum(c.sizes.map(num))) }
+  const pieces = splitExactly(c.qty, ratio)
+  return { ...c, sizes: pieces.map(String), qty: String(sum(pieces)) }
+})
+
+/** Back to one ratio for every colour: each keeps its total. */
+export const fromGrid = colours => colours.map(c => ({ ...c, sizes: null, qty: c.sizes ? String(sum(c.sizes.map(num))) : c.qty }))
+
+/** One cell of the grid changed: the colour's total follows. */
+export const setGridCell = (colours, key, index, value) => colours.map(c => {
+  if (c.key !== key || !c.sizes) return c
+  const sizes = c.sizes.map((v, i) => (i === index ? value : v))
+  return { ...c, sizes, qty: String(sum(sizes.map(num))) }
+})
+
+/** The grid follows the size list when a size is added (a new empty column) or removed. */
+export const addGridSize = colours => colours.map(c => (c.sizes ? { ...c, sizes: [...c.sizes, ''] } : c))
+export const removeGridSize = (colours, index) => colours.map(c => {
+  if (!c.sizes) return c
+  const sizes = c.sizes.filter((_, i) => i !== index)
+  return { ...c, sizes, qty: String(sum(sizes.map(num))) }
+})
 
 /** The plan and lines as numbers, for the live preview. */
 export function numeric(draft) {
   const plan = {
     sizes: draft.plan.sizes.map(s => s.name.trim() || ' '), ratio: draft.plan.sizes.map(s => num(s.ratio)),
-    colours: draft.plan.colours.filter(c => c.name.trim()).map(c => ({ name: c.name.trim(), qty: num(c.qty) })),
+    colours: draft.plan.colours.filter(c => c.name.trim()).map(c => (c.sizes ? { name: c.name.trim(), qty: sum(c.sizes.map(num)), sizes: c.sizes.map(num) } : { name: c.name.trim(), qty: num(c.qty) })),
   }
   const lines = draft.lines.map(l => ({
     ...l, consumption: num(l.consumption), wastagePct: num(l.wastagePct), rate: num(l.rate),
@@ -72,7 +120,7 @@ export function payloadFrom(draft, updatedAt, { confirmAll = false } = {}) {
       totalQty: num(draft.plan.totalQty),
       sizes: draft.plan.sizes.map(s => s.name.trim()),
       sizeRatio: draft.plan.sizes.map(s => num(s.ratio)),
-      colours: draft.plan.colours.filter(c => c.name.trim()).map(c => ({ name: c.name.trim(), qty: num(c.qty) })),
+      colours: draft.plan.colours.filter(c => c.name.trim()).map(c => (c.sizes ? { name: c.name.trim(), qty: sum(c.sizes.map(num)), sizes: c.sizes.map(num) } : { name: c.name.trim(), qty: num(c.qty) })),
     },
     lines: draft.lines.filter(l => l.item.trim()).map(l => ({
       ...(l.lineId ? { lineId: l.lineId } : {}), section: l.section, item: l.item.trim(), spec: l.spec.trim(), unit: l.unit.trim(),
@@ -115,6 +163,39 @@ export const BOM_COLUMNS = [
   { key: 'perColour', header: 'Per colour', type: 'enum', options: ['Yes', 'No'], aliases: ['by colour', 'colour wise', 'order per colour'] },
 ]
 export const BOM_EXAMPLE = { section: 'Fabric', item: 'Polar fleece 300 GSM', spec: '150 cm width', unit: 'kg', consumption: 0.72, wastagePct: 7, supplier: 'Coimbatore Knit Fabrics', rate: 410, perColour: 'Yes' }
+
+// ── Excel import of the size and colour grid ─────────────────────────────────────────────────────────
+// The sheet is a colour in each row and a column for each of the plan's sizes, as buyers send an order.
+export const gridColumns = sizeNames => [
+  { key: 'colour', header: 'Colour', required: true, aliases: ['color', 'colourway', 'colorway', 'shade'] },
+  ...sizeNames.map((name, i) => ({ key: `size${i}`, header: name, type: 'number' })),
+]
+export const gridExample = (sizeNames, ratio) => ({ colour: 'Black', ...Object.fromEntries(sizeNames.map((_, i) => [`size${i}`, 100 * (num(ratio[i]) || 1)])) })
+
+/** Whether every size has its own name, so the sheet's columns can be told apart. */
+export const sizeNamesUsable = names => names.every(n => n.trim()) && new Set(names.map(n => n.trim().toLowerCase())).size === names.length
+
+/**
+ * The colours of a filled-in grid sheet, as editor state. A row with no colour, a colour named twice or a
+ * negative number of pieces is left out and says why; a blank cell is no pieces.
+ * @returns {{ colours: object[], skipped: Array<{ row, name, error }> }}
+ */
+export function coloursFromRows(rows, sizeCount) {
+  const colours = []
+  const skipped = []
+  const seen = new Set()
+  for (const r of rows || []) {
+    const name = String(r.colour || '').trim().slice(0, 60)
+    const pieces = Array.from({ length: sizeCount }, (_, i) => (r[`size${i}`] === null || r[`size${i}`] === undefined ? 0 : Number(r[`size${i}`])))
+    if (!name) { skipped.push({ row: r._row, name: '', error: 'No colour' }); continue }
+    if (seen.has(name.toLowerCase())) { skipped.push({ row: r._row, name, error: 'This colour is already in the file' }); continue }
+    if (pieces.some(v => !Number.isFinite(v) || v < 0)) { skipped.push({ row: r._row, name, error: 'Pieces cannot be negative' }); continue }
+    seen.add(name.toLowerCase())
+    const whole = pieces.map(Math.round)
+    colours.push({ key: newKey(), name, qty: String(sum(whole)), sizes: whole.map(String) })
+  }
+  return { colours, skipped }
+}
 
 const normName = v => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ')
 

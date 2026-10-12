@@ -218,6 +218,68 @@ describe('editing a draft', () => {
   })
 })
 
+describe('a size and colour grid', () => {
+  const GRID = { sizes: ['S', 'M', 'L', 'XL', 'XXL'], ratio: [1, 2, 3, 2, 1], colours: [{ name: 'BLACK', sizes: [100, 300, 500, 300, 100] }, { name: 'NAVY', sizes: [50, 150, 250, 150, 50] }], totalQty: 1950 }
+
+  test('is kept as the person gave it, each colour\'s pieces are its sizes added up, and the lines are worked from it', async () => {
+    const { mfr, brand } = await world()
+    const b = await start(mfr, await styleOrder(mfr, brand))
+    const r = await save(mfr, b.id, { plan: { ...GRID, colours: GRID.colours.map(c => ({ ...c, qty: 1 })) }, lines: [fleeceLine()] })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.deepEqual(r.body.plan.colours, [{ name: 'BLACK', qty: 1300, sizes: [100, 300, 500, 300, 100] }, { name: 'NAVY', qty: 650, sizes: [50, 150, 250, 150, 50] }])
+    assert.deepEqual(r.body.lines[0].computed.perColour.map(c => c.orderQty), [1004, 502])
+    assert.deepEqual(r.body.warnings, [])
+    const again = (await as(mfr).get(`/api/boms/${b.id}`)).body
+    assert.deepEqual(again.plan.colours[0].sizes, [100, 300, 500, 300, 100])
+  })
+
+  test('has to give every size, and whole numbers from zero up', async () => {
+    const { mfr, brand } = await world()
+    const b = await start(mfr, await styleOrder(mfr, brand))
+    const short = await save(mfr, b.id, { plan: { ...GRID, colours: [{ name: 'BLACK', sizes: [100, 300] }] } })
+    assert.equal(short.status, 400)
+    assert.match(short.body.error, /BLACK: give the pieces for each of the 5 sizes/)
+    const negative = await save(mfr, b.id, { plan: { ...GRID, colours: [{ name: 'BLACK', sizes: [100, -1, 5, 5, 5] }] } })
+    assert.equal(negative.status, 400)
+    assert.match(negative.body.error, /pieces of a size must be numbers from 0 up/)
+    const text = await save(mfr, b.id, { plan: { ...GRID, colours: [{ name: 'BLACK', sizes: [100, 'many', 5, 5, 5] }] } })
+    assert.equal(text.status, 400)
+  })
+
+  test('a colour can still be given as a total, beside one given as a grid', async () => {
+    const { mfr, brand } = await world()
+    const b = await start(mfr, await styleOrder(mfr, brand))
+    const r = await save(mfr, b.id, { plan: { ...GRID, colours: [GRID.colours[0], { name: 'NAVY', qty: 630 }], totalQty: 1930 }, lines: [fleeceLine()] })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.equal(r.body.plan.colours[1].sizes, undefined)
+    assert.deepEqual(r.body.lines[0].computed.perColour[1].sizePcs, [70, 140, 210, 140, 70])    // split by the ratio
+    assert.deepEqual(r.body.warnings, [])
+  })
+
+  test('changing the sizes without sending the colours again drops a grid that no longer lines up, and keeps the totals', async () => {
+    const { mfr, brand } = await world()
+    const b = await start(mfr, await styleOrder(mfr, brand))
+    await save(mfr, b.id, { plan: GRID })
+    const r = await save(mfr, b.id, { plan: { sizes: ['M', 'L'], ratio: [1, 1] } })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.deepEqual(r.body.plan.colours.map(c => [c.name, c.qty, c.sizes]), [['BLACK', 1300, undefined], ['NAVY', 650, undefined]])
+  })
+
+  test('a new version keeps it, and the shopping list buys from it', async () => {
+    const { mfr, brand } = await world()
+    const mill = await supplier(mfr)
+    const orderId = await styleOrder(mfr, brand)
+    const b = await start(mfr, orderId)
+    assert.equal((await save(mfr, b.id, { plan: GRID, lines: [fleeceLine({ supplierId: mill.id })] })).status, 200)
+    const frozen = (await as(mfr).post(`/api/boms/${b.id}/freeze`)).body
+    assert.deepEqual(frozen.plan.colours[0].sizes, [100, 300, 500, 300, 100])
+    const aggregate = (await as(mfr).get('/api/boms/aggregate')).body
+    assert.deepEqual(aggregate.rows.filter(r => r.item.includes('Polar fleece')).map(r => [r.colour, r.required]).sort(), [['BLACK', 1004], ['NAVY', 502]])
+    const revised = (await as(mfr).post(`/api/boms/${frozen.id}/revise`)).body
+    assert.deepEqual(revised.plan.colours.map(c => c.sizes), [[100, 300, 500, 300, 100], [50, 150, 250, 150, 50]])
+  })
+})
+
 describe('suppliers on the lines', () => {
   test('only the company\'s own suppliers and catalog items', async () => {
     const { mfr, brand } = await world()

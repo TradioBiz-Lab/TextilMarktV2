@@ -1,8 +1,12 @@
 import { useMemo, useState } from 'react'
-import { Plus, X } from '../../icons.jsx'
+import { Plus, X, FileSpreadsheet } from '../../icons.jsx'
 import { T } from '../../constants.js'
 import { Btn, Card, Alert, Input, SectionLabel } from '../../components/ui.jsx'
-import { SECTIONS, blankLine, newKey, decimal, preview, alignPerSize, shareEvenly, num } from '../../lib/bomUi.js'
+import { SpreadsheetImport } from '../../components/SpreadsheetImport.jsx'
+import {
+  SECTIONS, blankLine, newKey, decimal, preview, alignPerSize, shareEvenly, num,
+  gridOn, toGrid, fromGrid, setGridCell, addGridSize, removeGridSize, gridColumns, gridExample, sizeNamesUsable, coloursFromRows,
+} from '../../lib/bomUi.js'
 import { fmtQty } from '../../lib/procurement.js'
 
 const COLS = 'minmax(190px, 3fr) 64px 84px 72px minmax(120px, 1.3fr) 84px 108px 34px'
@@ -21,6 +25,7 @@ const colourSummary = c => {
  */
 export function BomEditor({ draft, setDraft, suppliers, readOnly, totalQty }) {
   const [perSizeOpen, setPerSizeOpen] = useState(() => new Set())
+  const [importingGrid, setImportingGrid] = useState(false)
   const worked = useMemo(() => preview(draft, totalQty), [draft, totalQty])
   const computedOf = key => worked.lines.find(l => l.key === key)?.computed
   const supplierName = id => suppliers.find(s => s.id === id)?.name || ''
@@ -28,14 +33,22 @@ export function BomEditor({ draft, setDraft, suppliers, readOnly, totalQty }) {
 
   const setPlan = patch => setDraft(d => ({ ...d, plan: { ...d.plan, ...patch } }))
   const setSize = (i, patch) => setPlan({ sizes: draft.plan.sizes.map((s, j) => (j === i ? { ...s, ...patch } : s)) })
-  const addSize = () => setDraft(d => ({ plan: { ...d.plan, sizes: [...d.plan.sizes, { name: '', ratio: '1' }] }, lines: alignPerSize(d.lines, d.plan.sizes.length + 1) }))
+  const addSize = () => setDraft(d => ({ plan: { ...d.plan, sizes: [...d.plan.sizes, { name: '', ratio: '1' }], colours: addGridSize(d.plan.colours) }, lines: alignPerSize(d.lines, d.plan.sizes.length + 1) }))
   const removeSize = i => setDraft(d => ({
-    plan: { ...d.plan, sizes: d.plan.sizes.filter((_, j) => j !== i) },
+    plan: { ...d.plan, sizes: d.plan.sizes.filter((_, j) => j !== i), colours: removeGridSize(d.plan.colours, i) },
     lines: d.lines.map(l => ({ ...l, perSize: l.perSize.filter((_, j) => j !== i) })),
   }))
+  const grid = gridOn(draft.plan.colours)
   const setColour = (key, patch) => setPlan({ colours: draft.plan.colours.map(c => (c.key === key ? { ...c, ...patch } : c)) })
-  const addColour = () => setPlan({ colours: [...draft.plan.colours, { key: newKey(), name: '', qty: '' }] })
+  const addColour = () => setPlan({ colours: [...draft.plan.colours, { key: newKey(), name: '', qty: grid ? '0' : '', sizes: grid ? draft.plan.sizes.map(() => '') : null }] })
   const removeColour = key => setPlan({ colours: draft.plan.colours.filter(c => c.key !== key) })
+  const setCell = (key, i, value) => setPlan({ colours: setGridCell(draft.plan.colours, key, i, decimal(value).split('.')[0]) })
+  const useGrid = () => setPlan({ colours: toGrid(draft.plan.colours, draft.plan.sizes.map(s => s.ratio)) })
+  const useRatio = () => {
+    if (!window.confirm('Go back to one size ratio for every colour? The pieces you gave for each size are dropped; each colour keeps its total.')) return
+    setPlan({ colours: fromGrid(draft.plan.colours) })
+  }
+  const sizeTotals = draft.plan.sizes.map((_, i) => draft.plan.colours.reduce((t, c) => t + num(c.sizes?.[i]), 0))
 
   const setLine = (key, patch) => setDraft(d => ({ ...d, lines: d.lines.map(l => (l.key === key ? { ...l, ...patch } : l)) }))
   const addLine = section => setDraft(d => ({ ...d, lines: [...d.lines, { ...blankLine(section), perSize: d.plan.sizes.map(() => '') }] }))
@@ -66,19 +79,46 @@ export function BomEditor({ draft, setDraft, suppliers, readOnly, totalQty }) {
           </div>
           <div style={{ fontSize: 11, color: T.textLight, marginTop: 6 }}>For example S 1, M 2, L 3, XL 2, XXL 1: of every 9 pieces, 3 are size L.</div>
         </div>
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>Colours and their pieces</div>
+        <div style={grid ? { gridColumn: '1 / -1', order: 4 } : undefined}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>{grid ? 'Colours and their pieces, size by size' : 'Colours and their pieces'}</div>
           {draft.plan.colours.map(c => (
-            <div key={c.key} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-              <input value={c.name} readOnly={readOnly} onChange={e => setColour(c.key, { name: e.target.value.slice(0, 60) })} placeholder="Colour" aria-label="Colour name" style={{ flex: 1, minWidth: 0, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 13, fontFamily: 'inherit', minHeight: 40, boxSizing: 'border-box' }} />
-              <input value={c.qty} readOnly={readOnly} inputMode="numeric" onChange={e => setColour(c.key, { qty: decimal(e.target.value).split('.')[0] })} placeholder="Pieces" aria-label={`${c.name || 'Colour'} pieces`} style={{ width: 92, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 13, textAlign: 'right', fontFamily: 'inherit', minHeight: 40, boxSizing: 'border-box' }} />
-              {!readOnly && <button type="button" className="gl-remove" onClick={() => removeColour(c.key)} aria-label={`Remove colour ${c.name || ''}`}><X size={14} /></button>}
-            </div>
+            grid ? (
+              <div key={c.key} style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: 10, marginBottom: 8, background: '#fcfcfd' }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8 }}>
+                  <input value={c.name} readOnly={readOnly} onChange={e => setColour(c.key, { name: e.target.value.slice(0, 60) })} placeholder="Colour" aria-label="Colour name" style={{ flex: 1, minWidth: 0, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 13, fontWeight: 700, fontFamily: 'inherit', minHeight: 40, boxSizing: 'border-box' }} />
+                  <div style={{ minWidth: 78, textAlign: 'right', fontSize: 13, fontWeight: 700, color: T.text }} aria-label={`${c.name || 'Colour'} pieces`}>{fmtQty(num(c.qty))} pcs</div>
+                  {!readOnly && <button type="button" className="gl-remove" onClick={() => removeColour(c.key)} aria-label={`Remove colour ${c.name || ''}`}><X size={14} /></button>}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(52px, 1fr))', gap: 6 }}>
+                  {draft.plan.sizes.map((s, i) => (
+                    <label key={i} style={{ display: 'block', minWidth: 0 }}>
+                      <span style={{ display: 'block', textAlign: 'center', fontSize: 11, fontWeight: 700, color: T.textMuted, marginBottom: 2 }}>{sizeNames[i]}</span>
+                      <input value={c.sizes?.[i] ?? ''} readOnly={readOnly} inputMode="numeric" onChange={e => setCell(c.key, i, e.target.value)} aria-label={`${c.name || 'Colour'} ${sizeNames[i]} pieces`} style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 4px', fontSize: 13, textAlign: 'center', fontFamily: 'inherit', minHeight: 40, boxSizing: 'border-box' }} />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div key={c.key} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                <input value={c.name} readOnly={readOnly} onChange={e => setColour(c.key, { name: e.target.value.slice(0, 60) })} placeholder="Colour" aria-label="Colour name" style={{ flex: 1, minWidth: 0, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 13, fontFamily: 'inherit', minHeight: 40, boxSizing: 'border-box' }} />
+                <input value={c.qty} readOnly={readOnly} inputMode="numeric" onChange={e => setColour(c.key, { qty: decimal(e.target.value).split('.')[0] })} placeholder="Pieces" aria-label={`${c.name || 'Colour'} pieces`} style={{ width: 92, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 13, textAlign: 'right', fontFamily: 'inherit', minHeight: 40, boxSizing: 'border-box' }} />
+                {!readOnly && <button type="button" className="gl-remove" onClick={() => removeColour(c.key)} aria-label={`Remove colour ${c.name || ''}`}><X size={14} /></button>}
+              </div>
+            )
           ))}
+          {grid && draft.plan.colours.length > 1 && (
+            <div style={{ fontSize: 12, color: T.textMuted, margin: '2px 0 8px', display: 'flex', gap: 10, flexWrap: 'wrap' }} aria-label="Pieces of each size over all colours">
+              <strong style={{ color: T.text }}>All colours:</strong>
+              {draft.plan.sizes.map((_, i) => <span key={i}>{sizeNames[i]} {fmtQty(sizeTotals[i])}</span>)}
+            </div>
+          )}
           {!readOnly && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
               <Btn variant="secondary" size="sm" icon={<Plus size={12} />} onClick={addColour}>Add colour</Btn>
-              {draft.plan.colours.length > 1 && orderQty > 0 && <Btn variant="secondary" size="sm" onClick={() => setPlan({ colours: shareEvenly(draft.plan.colours, orderQty) })}>Share evenly</Btn>}
+              {!grid && draft.plan.colours.length > 1 && orderQty > 0 && <Btn variant="secondary" size="sm" onClick={() => setPlan({ colours: shareEvenly(draft.plan.colours, orderQty) })}>Share evenly</Btn>}
+              {!grid && draft.plan.colours.length > 0 && draft.plan.sizes.length > 1 && <Btn variant="secondary" size="sm" onClick={useGrid}>Pieces for each size</Btn>}
+              {grid && <Btn variant="secondary" size="sm" onClick={useRatio}>One ratio for all colours</Btn>}
+              {sizeNamesUsable(draft.plan.sizes.map(s => s.name)) && <Btn variant="secondary" size="sm" icon={<FileSpreadsheet size={12} />} onClick={() => setImportingGrid(true)}>Import sizes and colours</Btn>}
             </div>
           )}
           {draft.plan.colours.length > 0 && <div style={{ fontSize: 11, marginTop: 6, color: orderQty && colourTotal !== orderQty ? T.warning : T.textLight }}>Colours add up to {fmtQty(colourTotal)} pieces{orderQty && colourTotal !== orderQty ? `, not ${fmtQty(orderQty)}` : ''}.</div>}
@@ -179,6 +219,17 @@ export function BomEditor({ draft, setDraft, suppliers, readOnly, totalQty }) {
           </div>
         )
       })}
+      {importingGrid && (
+        <SpreadsheetImport title="Import sizes and colours" noun="colours" templateName="sizes-and-colours"
+          columns={gridColumns(draft.plan.sizes.map(s => s.name.trim()))} example={gridExample(draft.plan.sizes.map(s => s.name.trim()), draft.plan.sizes.map(s => s.ratio))}
+          onImport={async rows => {
+            // The colours in the file replace the ones in the plan; nothing is saved until the person saves.
+            const { colours, skipped } = coloursFromRows(rows, draft.plan.sizes.length)
+            if (colours.length) setDraft(d => ({ ...d, plan: { ...d.plan, colours, totalQty: num(d.plan.totalQty) > 0 ? d.plan.totalQty : String(colours.reduce((t, c) => t + num(c.qty), 0)) } }))
+            return { created: colours.length, skipped }
+          }}
+          onClose={() => setImportingGrid(false)} />
+      )}
     </div>
   )
 }

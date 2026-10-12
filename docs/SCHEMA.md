@@ -609,7 +609,10 @@ up into the shopping list that turns into draft purchase orders.
   status         String   enum: ["draft","frozen"]    a frozen BOM is the record; it cannot be edited or deleted
   sizes[]        String        e.g. ["S","M","L","XL","XXL"]
   sizeRatio[]    Number        one per size, e.g. [1,2,3,2,1]
-  colours[]      { name, qty }  pieces per colour
+  colours[]      { name, qty, sizes[]? }  pieces per colour. `sizes` (one whole number per size) is the size and
+                 colour grid: the order as buyers send it, each colour with its own pieces for every size. When
+                 present, qty is their total and the colour is worked from those figures instead of the ratio;
+                 a colour without it is split by sizeRatio.
   totalQty       Number        the order quantity this is for
   lines[]        { lineId, section, item, spec, unit, consumption, perSize[], wastagePct, perColour,
                    supplierId, itemId, rate, note, source, confidence, needsReview, evidence }
@@ -627,7 +630,7 @@ up into the shopping list that turns into draft purchase orders.
 **Indexes:** `{ ownerOrgId: 1, orderId: 1, version: -1 }` (unique), `{ ownerOrgId: 1, updatedAt: -1 }`
 
 **Quantities** are never stored: `lib/bomMath.js` works them on every read, the way the factory's own
-fabric plan is worked (pieces split by the size ratio and rounded, each size's material rounded to one
+fabric plan is worked (pieces split by the size ratio, or taken from the colour's own grid, and rounded, each size's material rounded to one
 decimal, a wastage buffer, the order quantity rounded up for things bought by the piece and to nearest for
 cloth). `lib/bomAggregate.js` groups frozen lines by item, spec, unit, supplier and (for cloth) colour, and
 takes off what already sits on a non-cancelled purchase order (`purchaseorders.lines[].bomRefs`).
