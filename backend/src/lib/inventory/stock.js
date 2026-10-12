@@ -103,13 +103,15 @@ export async function balanceOf(orgId, itemId, location = STORE, { throughId = n
  * are written, then each balance is read again counting only the rows up to this move's own: if another request
  * took the stock in between, the one written later loses, its rows are removed and it is refused. Exactly one
  * of two moves racing for the last of it wins, and the store never ends up negative.
- * @param {object[]} rows  negative-qty ledger rows, one item per row
+ * @param {object[]} rows  ledger rows, the negative ones being the takes that are checked; a positive row (the other half of a
+ *   move) is written with them and removed with them if a take is refused
  * @returns {Promise<{ ok: true } | { ok: false, error: string, itemId: string, available: number }>}
  */
 export async function takeStock(orgId, rows, namesById = new Map()) {
   const mine = rows.map(r => ({ ...r, _id: r._id || new mongoose.Types.ObjectId() }))
   const need = new Map()
   for (const r of mine) {
+    if (r.qty >= 0) continue                                      // rows that add are written with the takes, and need no check
     const k = `${r.itemId}|${r.location || STORE}`
     const e = need.get(k) || { itemId: String(r.itemId), location: r.location || STORE, qty: 0, through: r._id }
     e.qty = round3(e.qty + Math.abs(r.qty))

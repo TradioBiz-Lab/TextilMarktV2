@@ -352,6 +352,17 @@ admin enables them in User Setup.
     (`saveNow`); a line is tied to the stock item it is (`stockMatch`: the exact name, or a one-tap suggestion; nothing is
     guessed, two colours of one cloth are two items). `lib/inventory.js` holds the form state and helpers (tested).
     Receiving from a PO opens this page (`onNavigate('grn', { po })`); the old receive dialog is gone.
+  - *Job work* (`/api/jobwork`, `lib/inventory/jobwork.js`, `JobWork`). Goods sent to a dyer, printer or embroiderer stay the factory's
+    but move in the ledger from `store` to `jw:<supplierId>`; the delivery challan PDF (`job_challan`, a system document hidden from brands)
+    states their value (the rate starts from what the item last cost: `lastRate`). A return says how much of each sent line it accounts for and
+    what came back in its place (dyed cloth for grey: a new item is made by name and unit), so process loss is plain; the rest can be written
+    off with a reason, or the challan cancelled while nothing has come back. What each job worker holds is the ledger's own figure
+    (`/api/jobwork/outstanding`). **Every attempt writes ledger rows under its own keys**: a request that loses a race (two returns at once)
+    removes exactly what it wrote and never a winner's rows. `takeStock` accepts a mixed batch (the negative rows are checked, the positive ones
+    written with them). Photos use the shared `lib/photoRoutes.js`.
+  - *Shopping list and the store.* Each shopping list row says how much of it is already in the store (`inStock`, found by the PO line description
+    and unit, the same rule as goods received, aliases included); stock is counted once across rows that are the same item. `generate-pos` takes
+    `netOfStock` to buy only what is left; it is the person's choice and never the default, because stock is not reserved for an order.
   - *Reading a challan or invoice.* `POST /api/grns/scan` (and a WhatsApp photo or PDF) sends the document to Claude
     (`lib/ai/goodsdoc.js`: what is printed, never a guess), matches it to the company's own open POs and suppliers
     (`lib/inventory/match.js`: the PO number it quotes, else the supplier, lines paired by their words and unit; an unsure match

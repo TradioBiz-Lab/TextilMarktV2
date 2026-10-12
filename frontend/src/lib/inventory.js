@@ -173,3 +173,44 @@ export function stockMatch(items, description, unit) {
   }).slice(0, 3)
   return { exact: null, near }
 }
+
+// ── Job work ──────────────────────────────────────────────────────────────────────────────────────────
+
+/** The work a job worker is usually sent goods for. */
+export const PROCESSES = ['Dyeing', 'Printing', 'Embroidery', 'Washing', 'Heat transfer', 'Knitting', 'Stitching', 'Cutting']
+
+export const JOBWORK_STATE = {
+  open: { label: 'Out', tone: 'warn' }, partially_returned: { label: 'Part back', tone: 'info' },
+  closed: { label: 'Closed', tone: 'good' }, cancelled: { label: 'Cancelled', tone: 'neutral' },
+}
+export const jobworkStateLabel = s => JOBWORK_STATE[s]?.label || s
+
+/** What came back, as the person sees it: "92 kg for 100 kg sent, 8 kg (8%) lost in the process" (same unit only). */
+export function lossNote(inputQty, inputUnit, outputs) {
+  const sameUnit = outputs.filter(o => String(o.unit || inputUnit).trim().toLowerCase() === String(inputUnit).trim().toLowerCase())
+  if (sameUnit.length !== outputs.length || !(num(inputQty) > 0)) return null
+  const got = round3(sameUnit.reduce((t, o) => t + num(o.qty), 0))
+  if (!(got > 0)) return null
+  const lost = round3(num(inputQty) - got)
+  if (lost === 0) return `${got} ${inputUnit} back for ${num(inputQty)} ${inputUnit}: nothing lost`
+  if (lost < 0) return `${got} ${inputUnit} back for ${num(inputQty)} ${inputUnit}: ${-lost} ${inputUnit} more than went (check the figures)`
+  return `${got} ${inputUnit} back for ${num(inputQty)} ${inputUnit}: ${lost} ${inputUnit} (${Math.round((lost / num(inputQty)) * 100)}%) lost in the process`
+}
+
+/**
+ * Check a delivery coming back before it is sent. `lines` are the form's { lineId, inputQty, outputs: [{ itemId, description, unit, qty }] }
+ * and `job` the challan: a message (or null) for each line.
+ */
+export function returnProblems(lines, job) {
+  return lines.map(l => {
+    const sent = job.lines.find(x => x.lineId === l.lineId)
+    if (!sent) return null
+    const input = num(l.inputQty), outs = l.outputs.filter(o => num(o.qty) > 0)
+    if (str(l.inputQty).trim() === '' && outs.length === 0) return null
+    if (!(input > 0)) return 'Say how much of it this delivery accounts for'
+    if (input > sent.outstanding + 1e-9) return `Only ${sent.outstanding} ${sent.unit} is still with the job worker`
+    if (outs.length === 0) return 'Say what came back for it'
+    if (outs.some(o => !o.itemId && !o.description.trim())) return 'Say what came back'
+    return null
+  })
+}

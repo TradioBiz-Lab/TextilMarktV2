@@ -275,7 +275,7 @@ describe('procurement: a company\'s suppliers and purchase orders are its own (s
     const { A, B, X, admin } = await stock()
     const v = async u => (await as(u).get('/api/floor/feed')).body.versions
     const [a0, b0] = [await v(A), await v(B)]
-    assert.deepEqual(Object.keys(a0).sort(), ['boms', 'cost-sheets', 'grns', 'inventory', 'purchase-orders', 'suppliers'])
+    assert.deepEqual(Object.keys(a0).sort(), ['boms', 'cost-sheets', 'grns', 'inventory', 'jobwork', 'purchase-orders', 'suppliers'])
     // A changes something; B's numbers do not move, and A's do.
     await as(A).post('/api/suppliers', { name: 'Another A Mill' })
     const [a1, b1] = [await v(A), await v(B)]
@@ -587,7 +587,74 @@ describe('stock and goods received notes: a company\'s inventory is its own (sta
   test('the Tradio portal has none of it', async () => {
     const { A } = await stock()
     delete process.env.PLATFORM_MODE
-    for (const url of ['/api/inventory/items', '/api/grns', '/api/inventory/issues']) assert.equal((await as(A).get(url)).status, 404, url)
+    for (const url of ['/api/inventory/items', '/api/grns', '/api/inventory/issues', '/api/jobwork']) assert.equal((await as(A).get(url)).status, 404, url)
+  })
+
+  /** Each factory has sent 5 kg of its fleece to its own dyer. */
+  async function sentToDyers() {
+    const w = await stock()
+    const out = {}
+    for (const [key, u, data] of [['A', w.A, w.dataA], ['B', w.B, w.dataB]]) {
+      const dyer = (await as(u).post('/api/suppliers', { name: `${key} Dyers`, type: 'dyer', email: `${key.toLowerCase()}@dye.test` })).body
+      const job = (await as(u).post('/api/jobwork', { supplierId: dyer.id, process: 'Dyeing', lines: [{ itemId: data.item.id, qty: 5 }] })).body
+      assert.ok(job.id, JSON.stringify(job))
+      await as(u).post(`/api/jobwork/${job.id}/photos`, { dataUrl: PHOTO, kind: 'goods' })
+      out[`job${key}`] = { dyer, job }
+    }
+    return { ...w, ...out }
+  }
+
+  test('job work: each factory lists only its own challans and who holds its goods', async () => {
+    const { A, B, jobA, jobB } = await sentToDyers()
+    assert.deepEqual((await as(A).get('/api/jobwork')).body.map(j => j.id), [jobA.job.id])
+    assert.deepEqual((await as(B).get('/api/jobwork')).body.map(j => j.id), [jobB.job.id])
+    assert.deepEqual((await as(A).get('/api/jobwork/outstanding')).body.map(o => o.supplierName), ['A Dyers'])
+    assert.deepEqual((await as(B).get('/api/jobwork/outstanding')).body.map(o => o.supplierName), ['B Dyers'])
+  })
+
+  test('job work: a direct read, return, write-off, cancel, photo or PDF of another factory\'s challan is "not found" and changes nothing', async () => {
+    const { A, B, jobA } = await sentToDyers()
+    const id = jobA.job.id, lineId = jobA.job.lines[0].lineId
+    const photoId = (await as(A).get(`/api/jobwork/${id}/photos`)).body[0].id
+    for (const url of [`/api/jobwork/${id}`, `/api/jobwork/${id}/pdf`, `/api/jobwork/${id}/photos`, `/api/jobwork/${id}/photos/${photoId}`]) assert.equal((await as(B).get(url)).status, 404, url)
+    assert.equal((await as(B).post(`/api/jobwork/${id}/return`, { lines: [{ lineId, inputQty: 1, outputs: [{ description: 'x', unit: 'kg', qty: 1 }] }] })).status, 404)
+    assert.equal((await as(B).post(`/api/jobwork/${id}/close`, { reason: 'x' })).status, 404)
+    assert.equal((await as(B).post(`/api/jobwork/${id}/cancel`, { reason: 'x' })).status, 404)
+    assert.equal((await as(B).post(`/api/jobwork/${id}/photos`, { dataUrl: PHOTO })).status, 404)
+    assert.equal((await as(B).post(`/api/jobwork/${id}/photos/${photoId}/delete`)).status, 404)
+    const after = (await as(A).get(`/api/jobwork/${id}`)).body
+    assert.deepEqual([after.status, after.lines[0].outstanding, after.returns.length], ['open', 5, 0])
+  })
+
+  test('job work: cannot send to another factory\'s dyer, or send another factory\'s stock', async () => {
+    const { A, B, dataA, jobA } = await sentToDyers()
+    const bItem = (await as(B).get('/api/inventory/items')).body[0]
+    assert.equal((await as(B).post('/api/jobwork', { supplierId: jobA.dyer.id, process: 'Dyeing', lines: [{ itemId: bItem.id, qty: 1 }] })).status, 400)
+    assert.equal((await as(B).post('/api/jobwork', { supplierId: (await as(B).get('/api/suppliers')).body[0].id, process: 'Dyeing', lines: [{ itemId: dataA.item.id, qty: 1 }] })).status, 400)
+    assert.equal((await as(A).get('/api/inventory/items')).body[0].atJobWork, 5)
+  })
+
+  test('job work: brands, Tradio staff and visitors cannot use it, and Tradio\'s master admin viewing a factory reads it read-only', async () => {
+    const { A, X, Y, admin, master, jobA } = await sentToDyers()
+    for (const u of [X, Y, admin, master]) for (const url of ['/api/jobwork', '/api/jobwork/outstanding', `/api/jobwork/${jobA.job.id}`]) assert.equal((await as(u).get(url)).status, 403, `${u.role} ${url}`)
+    assert.equal((await req('GET', '/api/jobwork')).status, 401)
+    const open = await as(master).post('/api/auth/view-as', { userId: String(A._id) })
+    const token = open.body.token
+    assert.deepEqual((await req('GET', '/api/jobwork', { token })).body.map(j => j.id), [jobA.job.id])
+    for (const [path, body] of [['/api/jobwork', {}], [`/api/jobwork/${jobA.job.id}/return`, {}], [`/api/jobwork/${jobA.job.id}/close`, { reason: 'x' }], [`/api/jobwork/${jobA.job.id}/cancel`, { reason: 'x' }]]) {
+      const w = await req('POST', path, { token, body })
+      assert.equal(w.status, 403, path)
+      assert.equal(w.body.code, 'VIEW_ONLY')
+    }
+  })
+
+  test('job work: a brand never receives the challan PDF, even on the order it was for', async () => {
+    const { A, X, jobA } = await sentToDyers()
+    const doc = await Document.findOne({ jobworkId: jobA.job.id })
+    await Document.updateOne({ _id: doc._id }, { $set: { orderId: 'AX' } })
+    assert.equal((await as(X).get('/api/documents')).body.some(d => d.type === 'job_challan'), false)
+    assert.equal((await as(X).get(`/api/documents/${doc._id}/data`)).status, 404)
+    assert.equal((await as(A).get(`/api/documents/${doc._id}/data`)).status, 200)
   })
 })
 

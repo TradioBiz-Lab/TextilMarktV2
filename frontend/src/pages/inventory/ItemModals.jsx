@@ -107,7 +107,7 @@ export function AdjustModal({ item, onClose, onDone }) {
 }
 
 /** One item: how much is where, and every movement that made it so. */
-export function ItemModal({ itemId, canWrite, onClose, onEdit, onCount, onIssue, onCombine, onOpenGrn, onChanged }) {
+export function ItemModal({ itemId, canWrite, onClose, onEdit, onCount, onIssue, onCombine, onSendOut, onOpenGrn, onChanged }) {
   const toast = useToast()
   const [item, setItem] = useState(null)
   const [err, setErr] = useState('')
@@ -143,6 +143,7 @@ export function ItemModal({ itemId, canWrite, onClose, onEdit, onCount, onIssue,
           {canWrite && (
             <FlexRow gap={8} style={{ flexWrap: 'wrap' }}>
               <Btn onClick={() => onIssue(item)} disabled={!item.isActive || item.onHand <= 0}>Issue to an order</Btn>
+              <Btn variant="secondary" onClick={() => onSendOut(item)} disabled={!item.isActive || item.onHand <= 0}>Send for job work</Btn>
               <Btn variant="secondary" onClick={() => onCount(item)}>Count stock</Btn>
               <Btn variant="secondary" onClick={() => onEdit(item)}>Edit</Btn>
               {item.isActive && <Btn variant="secondary" onClick={() => onCombine(item)}>Combine with another</Btn>}

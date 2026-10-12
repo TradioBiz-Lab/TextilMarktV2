@@ -24,6 +24,7 @@ export function ShoppingListPage({ onNavigate, onOpenOrder }) {
   const [chosen, setChosen] = useState(() => new Set())
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
+  const [useStock, setUseStock] = useState(false)      // take what the store already holds off what is bought
 
   const load = useCallback(async (mo = scope) => {
     setError('')
@@ -45,8 +46,11 @@ export function ShoppingListPage({ onNavigate, onOpenOrder }) {
     return [...m.values()].sort((a, b) => (a.id ? 0 : 1) - (b.id ? 0 : 1) || a.name.localeCompare(b.name))
   }, [data])
 
-  const buyable = r => !!r.supplierId && r.remaining > 0
-  const estimate = r => r.remaining * (r.rate || 0)
+  // What would be bought: all that is left to order, or less what the store already holds when the person chooses so.
+  const qtyOf = r => (useStock ? r.toBuy : r.remaining)
+  const buyable = r => !!r.supplierId && qtyOf(r) > 0
+  const estimate = r => qtyOf(r) * (r.rate || 0)
+  const anyStock = (data?.rows || []).some(r => r.inStock > 0)
   const picked = (data?.rows || []).filter(r => chosen.has(r.key) && buyable(r))
   const suppliersPicked = new Set(picked.map(r => r.supplierId)).size
   const toggle = key => setChosen(s => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n })
@@ -59,7 +63,7 @@ export function ShoppingListPage({ onNavigate, onOpenOrder }) {
   const generate = async () => {
     setBusy(true)
     try {
-      const r = await bomsApi.generatePos({ masterOrderId: scope || undefined, keys: picked.map(p => p.key) })
+      const r = await bomsApi.generatePos({ masterOrderId: scope || undefined, keys: picked.map(p => p.key), ...(useStock ? { netOfStock: true } : {}) })
       setResult(r)
       await Promise.all([refreshPos(), load(scope)])
     } catch (e) { toast(e?.message || 'Could not create the purchase orders', 'error') } finally { setBusy(false) }
@@ -82,6 +86,13 @@ export function ShoppingListPage({ onNavigate, onOpenOrder }) {
             {mos.map(m => <option key={m.id} value={m.id}>{m.orderName} ({m.id})</option>)}
           </Select>
         </div>
+      )}
+
+      {anyStock && (
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 14, padding: '10px 14px', border: `1px solid ${T.border}`, borderRadius: 10, background: T.surface, cursor: 'pointer', fontSize: 13, color: T.text }}>
+          <input type="checkbox" checked={useStock} onChange={e => setUseStock(e.target.checked)} style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
+          <span><strong>Take what is already in my store off what I buy.</strong> <span style={{ color: T.textMuted }}>Stock is not set aside for an order, so if you plan other orders from it, leave this off or buy a little more.</span></span>
+        </label>
       )}
 
       {data.rows.length === 0 ? (
@@ -107,7 +118,7 @@ export function ShoppingListPage({ onNavigate, onOpenOrder }) {
                 </FlexRow>
                 <div style={{ border: `1px solid ${T.border}`, borderRadius: 12, background: T.surface, overflow: 'hidden' }}>
                   {rows.map((r, i) => (
-                    <div key={r.key} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '12px 14px', borderTop: i ? `1px solid ${T.border}` : 'none', opacity: r.remaining > 0 ? 1 : 0.6, minHeight: 44 }}>
+                    <div key={r.key} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '12px 14px', borderTop: i ? `1px solid ${T.border}` : 'none', opacity: qtyOf(r) > 0 ? 1 : 0.6, minHeight: 44 }}>
                       <input type="checkbox" checked={chosen.has(r.key) && buyable(r)} disabled={!buyable(r)} onChange={() => toggle(r.key)} aria-label={`Buy ${r.item}${r.colour ? ` in ${r.colour}` : ''}`} style={{ width: 20, height: 20, marginTop: 2, flexShrink: 0 }} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{r.item}{r.colour ? <span style={{ fontWeight: 600, color: T.textMuted }}> · {r.colour}</span> : null}</div>
@@ -119,11 +130,12 @@ export function ShoppingListPage({ onNavigate, onOpenOrder }) {
                           {r.belowMoq && <Pill tone="warn" title={`The supplier's minimum is ${fmtQty(r.moq)} ${r.unit}`}>Below the minimum of {fmtQty(r.moq)} {r.unit}</Pill>}
                           {!r.supplierId && <button type="button" className="gl-link" onClick={() => onOpenOrder(r.sources[0].orderId)}>Choose a supplier on the bill of materials</button>}
                           {r.onPo > 0 && <Pill tone="info">{fmtQty(r.onPo)} {r.unit} already on purchase orders</Pill>}
+                          {r.inStock > 0 && r.remaining > 0 && <Pill tone="good" title="What is in your store now">{fmtQty(r.inStock)} {r.unit} in your store</Pill>}
                         </FlexRow>
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                        <div style={{ fontSize: 15, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: r.remaining > 0 ? T.text : T.success }}>{r.remaining > 0 ? `${fmtQty(r.remaining)} ${r.unit}` : 'Ordered'}</div>
-                        <div style={{ fontSize: 11, color: T.textLight, fontVariantNumeric: 'tabular-nums' }}>of {fmtQty(r.required)}{r.rate ? ` · ${rupeesWhole(estimate(r))}` : ''}</div>
+                        <div style={{ fontSize: 15, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: qtyOf(r) > 0 ? T.text : T.success }}>{qtyOf(r) > 0 ? `${fmtQty(qtyOf(r))} ${r.unit}` : r.remaining > 0 ? 'In stock' : 'Ordered'}</div>
+                        <div style={{ fontSize: 11, color: T.textLight, fontVariantNumeric: 'tabular-nums' }}>of {fmtQty(r.required)}{useStock && r.fromStock > 0 ? ` · ${fmtQty(r.fromStock)} from store` : ''}{r.rate ? ` · ${rupeesWhole(estimate(r))}` : ''}</div>
                       </div>
                     </div>
                   ))}

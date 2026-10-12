@@ -301,6 +301,25 @@ export const grnsApi = {
   removePhoto: (id, photoId) => api.post(`/grns/${id}/photos/${photoId}/delete`),
 }
 
+// Goods sent to job workers (dyers, printers, embroiderers) and what comes back (standalone product).
+export const jobworkApi = {
+  list: params => api.get(`/jobwork${query(params)}`),
+  // every job worker with goods still out
+  outstanding: () => api.get('/jobwork/outstanding'),
+  get: id => api.get(`/jobwork/${id}`),
+  // { supplierId, process, lines: [{ itemId, qty, rate? }], orderId?, sentOn?, expectedBack?, vehicleNo?, note? }
+  send: data => api.post('/jobwork', data, { timeout: 60000 }),
+  // { lines: [{ lineId, inputQty, outputs: [{ itemId? | description, unit?, qty }] }], note? }
+  returnGoods: (id, data) => api.post(`/jobwork/${id}/return`, data),
+  close: (id, reason) => api.post(`/jobwork/${id}/close`, { reason }),
+  cancel: (id, reason) => api.post(`/jobwork/${id}/cancel`, { reason }),
+  pdf: id => api.get(`/jobwork/${id}/pdf`),
+  photos: id => api.get(`/jobwork/${id}/photos`),
+  addPhoto: (id, data) => api.post(`/jobwork/${id}/photos`, data, { timeout: 60000 }),
+  photo: (id, photoId) => api.get(`/jobwork/${id}/photos/${photoId}`),
+  removePhoto: (id, photoId) => api.post(`/jobwork/${id}/photos/${photoId}/delete`),
+}
+
 export const bomsApi = {
   // the order's versions, the working one in full, and what a new one would start as
   forOrder: orderId => api.get(`/boms?orderId=${encodeURIComponent(orderId)}`),

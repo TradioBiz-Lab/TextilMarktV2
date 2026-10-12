@@ -12,12 +12,13 @@
 // BOM that is not yours is a 404.
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
-import { Bom, Order, Supplier, SupplierItem, PurchaseOrder, Document, SpecSheet, AuditLog } from '../db/index.js'
+import { Bom, Order, Supplier, SupplierItem, PurchaseOrder, Document, SpecSheet, InventoryItem, AuditLog } from '../db/index.js'
 import { requireAuth } from '../middleware/auth.js'
 import { userKey } from '../lib/limiterKey.js'
 import { requireProcurement, isId } from '../lib/procurement.js'
 import { cleanPlan, cleanBomLine, seedPlan, bomView, bomSummary, BOM_LIMITS, newLineId } from '../lib/bom.js'
-import { aggregate } from '../lib/bomAggregate.js'
+import { aggregate, applyStock, poDescription } from '../lib/bomAggregate.js'
+import { itemKey, balances } from '../lib/inventory/stock.js'
 import { roundTo } from '../lib/bomMath.js'
 import { createDraft } from '../lib/poDraft.js'
 import { readTechPack, linesFromTechPack, specFromTechPack, sizesOf, techPackModel } from '../lib/ai/techpack.js'
@@ -102,8 +103,23 @@ async function buildAggregate(req, scope) {
     // the catalog of every supplier on a line: lines are tied to an item by id, or matched to one by name
     supplierIds.length ? SupplierItem.find({ supplierId: { $in: supplierIds }, isActive: { $ne: false }, ...mine(req) }).lean() : [],
   ])
-  return aggregate(frozen, onPo, {
+  const result = aggregate(frozen, onPo, {
     suppliers: new Map(suppliers.map(s => [String(s._id), s])), items: new Map(items.map(i => [String(i._id), i])),
+  })
+  return { ...result, rows: await coverFromStock(req, result.rows) }
+}
+
+/** Beside each row, how much of it the factory's own store already holds (the stock list names things as a PO line does). */
+async function coverFromStock(req, rows) {
+  if (!rows.length) return rows
+  const keys = [...new Set(rows.map(r => itemKey(poDescription(r), r.unit)))]
+  const stockItems = await InventoryItem.find({ ...mine(req), isActive: true, $or: [{ key: { $in: keys } }, { aliases: { $in: keys } }] }, 'key aliases').lean()
+  const bal = stockItems.length ? await balances(req.user.orgId, { itemIds: stockItems.map(i => i._id) }) : new Map()
+  const byKey = new Map()
+  for (const i of stockItems) { byKey.set(i.key, i); for (const a of i.aliases || []) byKey.set(a, i) }
+  return applyStock(rows, (description, unit) => {
+    const i = byKey.get(itemKey(description, unit))
+    return i ? { itemId: String(i._id), onHand: bal.get(String(i._id))?.store || 0 } : null
   })
 }
 
@@ -147,10 +163,15 @@ router.post('/generate-pos', generateLimiter, async (req, res) => {
     const { rows } = await buildAggregate(req, scopeOf(body))
     const wanted = Array.isArray(body.keys) ? new Set(body.keys.filter(k => typeof k === 'string')) : null
     const chosen = rows.filter(r => !wanted || wanted.has(r.key))
+    // With `netOfStock` what the store already holds comes off what is bought (stock is not reserved, so this is the
+    // person's choice, never the default). The need still counts as covered on the BOM: a PO plus stock is all it asked for.
+    const net = body.netOfStock === true
+    const qtyOf = r => (net ? r.toBuy : r.remaining)
     const skipped = []
     const bySupplier = new Map()
     for (const r of chosen) {
       if (r.remaining <= 0) { skipped.push({ item: r.item, colour: r.colour, reason: 'Already on a purchase order' }); continue }
+      if (qtyOf(r) <= 0) { skipped.push({ item: r.item, colour: r.colour, reason: 'Covered by what is in your store' }); continue }
       if (!r.supplierId) { skipped.push({ item: r.item, colour: r.colour, reason: 'No supplier chosen on the BOM' }); continue }
       if (!bySupplier.has(r.supplierId)) bySupplier.set(r.supplierId, [])
       bySupplier.get(r.supplierId).push(r)
@@ -165,8 +186,8 @@ router.post('/generate-pos', generateLimiter, async (req, res) => {
         const item = r.itemId ? items.get(r.itemId) : null
         const usable = item && String(item.supplierId) === supplierId ? item : null
         return {
-          description: `${r.item}${r.spec ? `, ${r.spec}` : ''}${r.colour ? ` - ${r.colour}` : ''}`.slice(0, 300),
-          itemId: usable ? String(usable._id) : null, unit: r.unit || 'pcs', qty: r.remaining, rate: r.rate || usable?.defaultRate || 0,
+          description: poDescription(r),
+          itemId: usable ? String(usable._id) : null, unit: r.unit || 'pcs', qty: qtyOf(r), rate: r.rate || usable?.defaultRate || 0,
           taxPct: usable?.taxPct ?? 5, hsnCode: usable?.hsnCode || '',
           bomRefs: r.sources.filter(s => s.qty - s.onPo > 0).map(s => ({ bomId: s.bomId, orderId: s.orderId, lineId: s.lineId, colour: s.colour, qty: roundTo(s.qty - s.onPo, 3) })),
         }

@@ -32,6 +32,7 @@
 | `grns`         | Goods received notes: what came in from a supplier, checked against its PO, with evidence photos | ObjectId |
 | `stockissues`  | Slips for stock issued to (or returned from) a factory's order | ObjectId |
 | `attachments`  | Evidence photos kept against a record (a GRN's challan, goods or damage), apart from the documents | ObjectId |
+| `jobworks`     | Goods a factory sent to a job worker (dyer, printer, embroiderer) under a delivery challan, and what came back | ObjectId |
 
 ---
 
@@ -706,7 +707,7 @@ version marks the older ones `superseded`.
 
 ---
 
-## 20. `inventoryitems`, `stockledger`, `grns`, `stockissues`, `attachments`
+## 20. `inventoryitems`, `stockledger`, `grns`, `stockissues`, `attachments`, `jobworks`
 
 A factory's store. **Everything here is private to the company** (`ownerOrgId`); brands and Tradio staff
 cannot reach any of it, and another company's id is always "not found".
@@ -745,6 +746,21 @@ attachments {                        a photo kept as evidence; its bytes are rea
   ownerOrgId, refType: grn | jobwork, refId, kind: challan | goods | damage | other, name, caption, mimeType, size, dataUrl
 }
 ```
+
+```
+jobworks {                           goods sent to a job worker; still the factory's, held at the job worker's location until they return
+  ownerOrgId, number (JWC-<code>-<financial year>-NNNN), status: open | partially_returned | closed | cancelled
+  supplierId (the job worker), supplierSnapshot, consignorSnapshot (frozen for the challan), process ("Dyeing"), orderId | null,
+  sentOn, expectedBack | null, vehicleNo, note,
+  lines[]   { lineId, itemId, name, unit, hsnCode, qty (sent), rate (value per unit), returnedQty, writtenOffQty }
+  returns[] { at, by, note, lines[{ lineId, inputQty, outputs[{ itemId, name, unit, qty }] }] }
+            how much of each sent line a delivery accounts for, and what came back in its place (dyed cloth for grey), which went into the store
+  documentId (the challan PDF, a job_challan system document), closedReason, cancelReason
+}
+```
+Sending writes two ledger rows per line (store -qty, `jw:<supplierId>` +qty); a return takes `inputQty` off the job worker's location and
+puts each output into the store; writing off what is left is an adjustment at the job worker's location; cancelling (only before anything
+came back) puts it all back. Every attempt writes its rows under its own keys, so a request that loses a race removes only what it wrote.
 
 **Posting a GRN** is the one thing that adds stock, in a fixed order so a crash can be finished by posting again:
 claim the note (draft to posting), write the ledger rows (keyed by GRN and line), give the purchase order its receipt

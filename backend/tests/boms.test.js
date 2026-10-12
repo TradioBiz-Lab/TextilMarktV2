@@ -522,6 +522,84 @@ describe('the shopping list across orders', () => {
   })
 })
 
+describe('the shopping list and the store', () => {
+  /** Receive `qty` of something into the factory's store, as a posted goods received note. */
+  async function receive(u, description, unit, qty) {
+    const g = (await as(u).post('/api/grns', { supplierName: 'Local', lines: [{ description, unit, qty }] })).body
+    assert.equal((await as(u).post(`/api/grns/${g.id}/post`)).status, 200)
+  }
+  async function frozenFleece(mfr, brand, { id = 'FIT-5117', totalQty = 10800, supplierId = null } = {}) {
+    const orderId = await styleOrder(mfr, brand, { id, totalQty })
+    return frozenBom(mfr, orderId, [fleeceLine({ ...(supplierId ? { supplierId } : {}) })])
+  }
+  const rowOf = (rows, colour) => rows.find(r => r.item.includes('Polar fleece') && r.colour === colour)
+
+  test('each row says how much of it is already in the store, and what is left to buy', async () => {
+    const { mfr, brand } = await world()
+    await frozenFleece(mfr, brand)
+    await receive(mfr, 'Polar fleece 300 GSM - BLACK', 'kg', 1000)
+    const rows = (await as(mfr).get('/api/boms/aggregate')).body.rows
+    const black = rowOf(rows, 'BLACK')
+    assert.deepEqual([black.remaining, black.inStock, black.fromStock, black.toBuy], [2783, 1000, 1000, 1783])
+    assert.ok(black.stockItemId)
+    const navy = rowOf(rows, 'NAVY')                                                  // nothing of it in the store
+    assert.deepEqual([navy.inStock, navy.fromStock, navy.toBuy, navy.stockItemId], [0, 0, 2783, null])
+  })
+
+  test('a stock item is counted once, however many rows are that item', async () => {
+    const { mfr, brand } = await world()
+    const a = await supplier(mfr), b = await supplier(mfr, { name: 'Salem Knits', email: 'sales@salem.test' })
+    await frozenFleece(mfr, brand, { id: 'FIT-5117', supplierId: a.id })
+    await frozenFleece(mfr, brand, { id: 'FIT-5118', totalQty: 18000, supplierId: b.id })        // the same cloth from another mill: a second row
+    await receive(mfr, 'Polar fleece 300 GSM - BLACK', 'kg', 3000)
+    const rows = (await as(mfr).get('/api/boms/aggregate')).body.rows.filter(r => r.colour === 'BLACK')
+    assert.equal(rows.length, 2)
+    assert.equal(rows.reduce((t, r) => t + r.fromStock, 0), 3000)                          // not 6000
+    assert.ok(rows.every(r => r.inStock === 3000))
+    assert.equal(rows.reduce((t, r) => t + r.toBuy, 0), rows.reduce((t, r) => t + r.remaining, 0) - 3000)
+  })
+
+  test('only the company\'s own store is counted', async () => {
+    const { mfr, brand } = await world()
+    await frozenFleece(mfr, brand)
+    const rival = await makeMfr({ code: 'RVL' })
+    await receive(rival, 'Polar fleece 300 GSM - BLACK', 'kg', 9999)
+    assert.equal(rowOf((await as(mfr).get('/api/boms/aggregate')).body.rows, 'BLACK').inStock, 0)
+  })
+
+  test('draft POs buy the full quantity unless the person chooses to take the store\'s stock off', async () => {
+    const { mfr, brand } = await world()
+    const mill = await supplier(mfr)
+    await frozenFleece(mfr, brand, { supplierId: mill.id })
+    await receive(mfr, 'Polar fleece 300 GSM - BLACK', 'kg', 1000)
+    const full = await as(mfr).post('/api/boms/generate-pos', { keys: [rowOf((await as(mfr).get('/api/boms/aggregate')).body.rows, 'BLACK').key] })
+    assert.equal(full.status, 201, JSON.stringify(full.body))
+    const poFull = (await as(mfr).get(`/api/purchase-orders/${full.body.created[0].id}`)).body
+    assert.equal(poFull.lines[0].qty, 2783)
+    await as(mfr).post(`/api/purchase-orders/${poFull.id}/cancel`, { reason: 'try again' })
+
+    const keys = (await as(mfr).get('/api/boms/aggregate')).body.rows.map(r => r.key)
+    const net = await as(mfr).post('/api/boms/generate-pos', { keys, netOfStock: true })
+    assert.equal(net.status, 201, JSON.stringify(net.body))
+    const po = (await as(mfr).get(`/api/purchase-orders/${net.body.created[0].id}`)).body
+    assert.deepEqual(po.lines.map(l => [l.description, l.qty]).sort(), [['Polar fleece 300 GSM - BLACK', 1783], ['Polar fleece 300 GSM - CHARCOAL GREY', 2783], ['Polar fleece 300 GSM - NAVY', 2783]])
+    // The need still counts as handled: the PO and the stock are what it asked for.
+    assert.equal(po.lines.find(l => l.description.includes('BLACK')).bomRefs[0].qty, 2783)
+  })
+
+  test('a row the store covers completely is left out, and says why', async () => {
+    const { mfr, brand } = await world()
+    const mill = await supplier(mfr)
+    await frozenFleece(mfr, brand, { supplierId: mill.id })
+    await receive(mfr, 'Polar fleece 300 GSM - BLACK', 'kg', 5000)
+    const r = await as(mfr).post('/api/boms/generate-pos', { keys: [rowOf((await as(mfr).get('/api/boms/aggregate')).body.rows, 'BLACK').key], netOfStock: true })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.deepEqual(r.body.created, [])
+    assert.deepEqual(r.body.skipped.map(x => x.reason), ['Covered by what is in your store'])
+    assert.equal(await PurchaseOrder.countDocuments({}), 0)
+  })
+})
+
 describe('no company can reach another\'s bills of materials', () => {
   test('every route says "not found" to another factory, and changes nothing', async () => {
     const { mfr, brand } = await world()

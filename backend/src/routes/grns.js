@@ -11,9 +11,9 @@ import { userKey } from '../lib/limiterKey.js'
 import { requireInventory } from '../lib/procurement.js'
 import { createGrn, prepareGrn, postGrn, acceptedOf, outstandingOf } from '../lib/inventory/grn.js'
 import { renderGrnPdf } from '../lib/pdf/grn.js'
-import { checkPhoto, checkDocumentFile } from '../lib/imageUpload.js'
+import { checkDocumentFile } from '../lib/imageUpload.js'
+import { mountPhotoRoutes, photoView } from '../lib/photoRoutes.js'
 import { draftFromDocument } from '../lib/inventory/ingest.js'
-import { ATTACHMENT_KINDS } from '../models/Attachment.js'
 import { poView } from './purchaseOrders.js'
 
 const router = Router()
@@ -30,7 +30,6 @@ const photoLimiter = limiter(240, 'Too many photos. Please wait.')
 const scanLimiter = limiter(40, 'Too many documents read. Please wait.')
 
 const OBJECT_ID = /^[a-f0-9]{24}$/
-const MAX_PHOTOS = 12
 const mine = req => ({ ownerOrgId: req.user.orgId })
 const fail = (res, status, error, extra = {}) => res.status(status).json({ error, ...extra })
 const idOk = (req, res, key = 'id') => {
@@ -58,8 +57,6 @@ const summaryView = (g, photos = 0) => ({
   challanNo: g.challanNo || '', receivedOn: g.receivedOn || null, lineCount: (g.lines || []).length,
   preview: (g.lines || []).slice(0, 2).map(l => l.description), photoCount: photos, postedAt: g.postedAt || null, createdAt: g.createdAt,
 })
-
-const photoView = a => ({ id: String(a._id), kind: a.kind, name: a.name || '', caption: a.caption || '', mimeType: a.mimeType, size: a.size || 0, createdAt: a.createdAt })
 
 /** What the purchase order still waits for on each line, so the person sees "100 ordered, 60 already in, 40 to come". */
 async function poContext(req, poId) {
@@ -180,60 +177,11 @@ router.get('/:id/pdf', async (req, res) => {
   } catch (err) { console.error('[grn]', err); fail(res, 500, 'Server error') }
 })
 
-// ── Photos ──
-
-// GET /api/grns/:id/photos
-router.get('/:id/photos', async (req, res) => {
-  try {
-    if (!idOk(req, res)) return
-    if (!await Grn.exists({ _id: req.params.id, ...mine(req) })) return fail(res, 404, 'Goods received note not found')
-    const photos = await Attachment.find({ ownerOrgId: req.user.orgId, refType: 'grn', refId: req.params.id }, '-dataUrl').sort({ createdAt: 1 }).lean()
-    res.json(photos.map(photoView))
-  } catch (err) { console.error('[grn]', err); fail(res, 500, 'Server error') }
-})
-
-// POST /api/grns/:id/photos { dataUrl, kind?, name?, caption? } - a photo of the challan, the goods or damage
-router.post('/:id/photos', photoLimiter, async (req, res) => {
-  try {
-    if (!idOk(req, res)) return
-    const g = await Grn.findOne({ _id: req.params.id, ...mine(req) }, 'status').lean()
-    if (!g) return fail(res, 404, 'Goods received note not found')
-    const checked = checkPhoto(req.body?.dataUrl, req.body?.mimeType)
-    if (!checked.ok) return fail(res, 400, checked.error)
-    const kind = ATTACHMENT_KINDS.includes(req.body?.kind) ? req.body.kind : 'other'
-    const have = await Attachment.countDocuments({ ownerOrgId: req.user.orgId, refType: 'grn', refId: req.params.id })
-    if (have >= MAX_PHOTOS) return fail(res, 400, `A goods received note can have at most ${MAX_PHOTOS} photos`)
-    const a = await Attachment.create({
-      ownerOrgId: req.user.orgId, refType: 'grn', refId: req.params.id, kind,
-      name: typeof req.body?.name === 'string' ? req.body.name.trim().slice(0, 200) : '',
-      caption: typeof req.body?.caption === 'string' ? req.body.caption.trim().slice(0, 300) : '',
-      mimeType: checked.mimeType, size: checked.size, dataUrl: req.body.dataUrl, uploadedBy: req.user.actorId,
-    })
-    res.status(201).json(photoView(a.toObject()))
-  } catch (err) { console.error('[grn]', err); fail(res, 500, 'Server error') }
-})
-
-// GET /api/grns/:id/photos/:photoId - { id, mimeType, name, dataUrl }
-router.get('/:id/photos/:photoId', async (req, res) => {
-  try {
-    if (!idOk(req, res) || !idOk(req, res, 'photoId')) return
-    const a = await Attachment.findOne({ _id: req.params.photoId, ownerOrgId: req.user.orgId, refType: 'grn', refId: req.params.id }).lean()
-    if (!a) return fail(res, 404, 'Photo not found')
-    res.json({ ...photoView(a), dataUrl: a.dataUrl })
-  } catch (err) { console.error('[grn]', err); fail(res, 500, 'Server error') }
-})
-
-// POST /api/grns/:id/photos/:photoId/delete - only while the note is a draft: a posted note's evidence stays
-router.post('/:id/photos/:photoId/delete', writeLimiter, async (req, res) => {
-  try {
-    if (!idOk(req, res) || !idOk(req, res, 'photoId')) return
-    const g = await Grn.findOne({ _id: req.params.id, ...mine(req) }, 'status').lean()
-    if (!g) return fail(res, 404, 'Goods received note not found')
-    if (g.status !== 'draft') return fail(res, 409, 'The photos of a posted goods received note are kept as evidence')
-    const r = await Attachment.deleteOne({ _id: req.params.photoId, ownerOrgId: req.user.orgId, refType: 'grn', refId: req.params.id })
-    if (r.deletedCount === 0) return fail(res, 404, 'Photo not found')
-    res.json({ ok: true })
-  } catch (err) { console.error('[grn]', err); fail(res, 500, 'Server error') }
+// ── Photos ── (lib/photoRoutes.js: the same five routes as a job work challan's)
+mountPhotoRoutes(router, {
+  refType: 'grn', writeLimiter, photoLimiter, notFound: 'Goods received note not found',
+  owned: req => Grn.findOne({ _id: req.params.id, ...mine(req) }, 'status').lean(),
+  removable: g => g.status === 'draft', removeRefused: 'The photos of a posted goods received note are kept as evidence',
 })
 
 export default router

@@ -136,7 +136,7 @@ describe('receiving against a purchase order', () => {
     assert.equal(r.body.vehicleNo, 'TN39 AB 1234')
     assert.equal(r.body.po.status, 'closed')                                        // everything ordered has come in
     const item = await stockOf(mfr, 'Polar fleece')
-    assert.deepEqual([item.onHand, item.unit, item.category], [100, 'kg', 'fabric'])
+    assert.deepEqual([item.onHand, item.unit, item.category, item.lastRate], [100, 'kg', 'fabric', 410])           // and what it last cost, to start a challan's value from
     const rows = await ledgerRows({ itemId: item.id })
     assert.deepEqual(rows.map(x => [x.type, x.qty, x.location, x.refType, x.unitCost]), [['receipt', 100, 'store', 'grn', 410]])
     assert.equal((await po(p.id)).receipts[0].grnId, g.id)

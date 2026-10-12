@@ -6,7 +6,7 @@
 // all of the numbers in a series, and two people creating at once collide. Numbering lives here
 // instead, advanced with one atomic update per number, so it is correct for concurrent requests and
 // would stay correct if the server ever ran more than one process.
-import { Counter, Order, MasterOrder, PurchaseOrder, CostSheet, Grn, StockIssue } from '../db/index.js'
+import { Counter, Order, MasterOrder, PurchaseOrder, CostSheet, Grn, StockIssue, JobWork } from '../db/index.js'
 import { fiscalYearCode } from './fiscalYear.js'
 
 const escapeRe = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -97,6 +97,17 @@ export async function allocateIssueNumber({ orgId, orgCode, now = new Date() }) 
   const prefix = `ISS-${orgCode}-${fy}-`
   const seq = await nextSeq(`iss:${orgId}:${fy}`, async () => {
     const nums = await StockIssue.find({ number: new RegExp(`^${escapeRe(prefix)}\\d+$`) }, { number: 1 }).lean()
+    return nums.reduce((max, g) => Math.max(max, trailingNumber(g.number)), 0)
+  })
+  return `${prefix}${String(seq).padStart(4, '0')}`
+}
+
+/** Next job work challan number, e.g. JWC-TPR-2627-0002, numbered the same way. */
+export async function allocateJobworkNumber({ orgId, orgCode, now = new Date() }) {
+  const fy = fiscalYearCode(now)
+  const prefix = `JWC-${orgCode}-${fy}-`
+  const seq = await nextSeq(`jwc:${orgId}:${fy}`, async () => {
+    const nums = await JobWork.find({ number: new RegExp(`^${escapeRe(prefix)}\\d+$`) }, { number: 1 }).lean()
     return nums.reduce((max, g) => Math.max(max, trailingNumber(g.number)), 0)
   })
   return `${prefix}${String(seq).padStart(4, '0')}`

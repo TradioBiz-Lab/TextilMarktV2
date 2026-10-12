@@ -33,13 +33,20 @@ const text = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '')
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const newId = () => new mongoose.Types.ObjectId()
 
-const itemView = (i, bal) => {
+const itemView = (i, bal, lastRate = 0) => {
   const onHand = bal?.store || 0
   return {
     id: String(i._id), name: i.name, unit: i.unit, category: i.category, supplierIds: (i.supplierIds || []).map(String),
     reorderLevel: i.reorderLevel || 0, hsnCode: i.hsnCode || '', notes: i.notes || '', isActive: i.isActive !== false,
-    onHand, atJobWork: bal?.atJobWork || 0, low: (i.reorderLevel || 0) > 0 && onHand < i.reorderLevel,
+    onHand, atJobWork: bal?.atJobWork || 0, low: (i.reorderLevel || 0) > 0 && onHand < i.reorderLevel, lastRate,
   }
+}
+
+/** What each item last cost when it came in (receipts only): a starting figure for the value on a challan. */
+async function lastRates(orgId, itemIds = null) {
+  const match = { ownerOrgId: new mongoose.Types.ObjectId(String(orgId)), type: 'receipt', unitCost: { $gt: 0 }, ...(itemIds ? { itemId: { $in: itemIds.map(i => new mongoose.Types.ObjectId(String(i))) } } : {}) }
+  const rows = await StockLedger.aggregate([{ $match: match }, { $sort: { at: -1, _id: -1 } }, { $group: { _id: '$itemId', rate: { $first: '$unitCost' } } }])
+  return new Map(rows.map(r => [String(r._id), r.rate]))
 }
 
 const ledgerView = (r, names = new Map()) => ({
@@ -88,8 +95,8 @@ router.get('/items', async (req, res) => {
     if (req.query.archived !== '1') filter.isActive = true
     if (INVENTORY_CATEGORIES.includes(req.query.category)) filter.category = req.query.category
     if (typeof req.query.q === 'string' && req.query.q.trim()) filter.name = new RegExp(escapeRe(req.query.q.trim().slice(0, 60)), 'i')
-    const [items, bal] = await Promise.all([InventoryItem.find(filter).sort({ name: 1 }).limit(1000).lean(), balances(req.user.orgId)])
-    let out = items.map(i => itemView(i, bal.get(String(i._id))))
+    const [items, bal, rates] = await Promise.all([InventoryItem.find(filter).sort({ name: 1 }).limit(1000).lean(), balances(req.user.orgId), lastRates(req.user.orgId)])
+    let out = items.map(i => itemView(i, bal.get(String(i._id)), rates.get(String(i._id)) || 0))
     if (req.query.low === '1') out = out.filter(i => i.low)
     res.json(out)
   } catch (err) { console.error('[inventory]', err); fail(res, 500, 'Server error') }
@@ -122,7 +129,7 @@ router.get('/items/:id', async (req, res) => {
     const sup = jwIds.length ? await Supplier.find({ _id: { $in: jwIds }, ...mine(req) }, 'name').lean() : []
     const names = new Map(sup.map(s => [String(s._id), s.name]))
     const locations = Object.entries(b?.byLocation || {}).filter(([, q]) => q !== 0).map(([loc, qty]) => ({ location: loc, label: loc === STORE ? 'In the store' : `With ${names.get(loc.slice(3)) || 'a job worker'}`, qty }))
-    res.json({ ...itemView(item, b), locations, ledger: ledger.map(r => ledgerView(r)) })
+    res.json({ ...itemView(item, b, (await lastRates(req.user.orgId, [item._id])).get(String(item._id)) || 0), locations, ledger: ledger.map(r => ledgerView(r)) })
   } catch (err) { console.error('[inventory]', err); fail(res, 500, 'Server error') }
 })
 
@@ -185,8 +192,12 @@ router.post('/items/:id/merge', writeLimiter, async (req, res) => {
       rows.push({ ...base, itemId: from._id, qty: -qty, note: `Combined into ${into.name}`.slice(0, 300), key: `merge:${refId}:out:${location}` })
       rows.push({ ...base, itemId: into._id, qty, note: `Combined from ${from.name}`.slice(0, 300), key: `merge:${refId}:in:${location}` })
     }
-    // The ledger rows go first: if the server stopped after them the stock is already where it belongs, and merging again finishes the rest.
-    await writeLedger(rows)
+    // The ledger rows go first, checked like any move out (a second merge at the same moment finds nothing left to take and is refused):
+    // if the server stopped after them the stock is already where it belongs, and merging again finishes the rest.
+    if (rows.length) {
+      const taken = await takeStock(req.user.orgId, rows, new Map([[String(from._id), from]]))
+      if (!taken.ok) return fail(res, 409, 'This item changed while it was being combined. Open it and try again')
+    }
     await InventoryItem.updateOne({ _id: from._id, ...mine(req) }, { $set: { isActive: false, key: `merged:${from._id}` } })
     await InventoryItem.updateOne({ _id: into._id, ...mine(req) }, { $addToSet: { aliases: from.key, supplierIds: { $each: from.supplierIds || [] } } })
     await AuditLog.create({ byUser: req.user.id, action: 'Stock Items Combined', detail: `${from.name} was combined into ${into.name} by ${req.user.name}` }).catch(() => {})

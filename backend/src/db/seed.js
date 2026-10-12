@@ -42,9 +42,11 @@ import { StockLedger } from '../models/StockLedger.js'
 import { Grn } from '../models/Grn.js'
 import { StockIssue } from '../models/StockIssue.js'
 import { Attachment } from '../models/Attachment.js'
+import { JobWork } from '../models/JobWork.js'
 import { SpecSheet } from '../models/SpecSheet.js'
 import { itemKey } from '../lib/inventory/stock.js'
 import { renderGrnPdf } from '../lib/pdf/grn.js'
+import { renderJobworkChallanPdf } from '../lib/pdf/jobwork.js'
 
 // This script deletes every User/Order/Document/Notification/AuditLog in
 // whatever database MONGO_DB_URI resolves to, then inserts fake data. Local
@@ -119,7 +121,7 @@ async function seed() {
     MasterOrder.deleteMany({}),
     // The standalone modules' data hangs off those companies, so it goes too.
     Supplier.deleteMany({}), SupplierItem.deleteMany({}), PurchaseOrder.deleteMany({}), Bom.deleteMany({}), SpecSheet.deleteMany({}), CostSheet.deleteMany({}),
-    InventoryItem.deleteMany({}), StockLedger.deleteMany({}), Grn.deleteMany({}), StockIssue.deleteMany({}), Attachment.deleteMany({}),
+    InventoryItem.deleteMany({}), StockLedger.deleteMany({}), Grn.deleteMany({}), StockIssue.deleteMany({}), Attachment.deleteMany({}), JobWork.deleteMany({}),
   ])
   console.log(`Collections cleared in sandbox db "${dbName}".`)
 
@@ -487,9 +489,29 @@ async function seedInventory({ tiruppur, tprOrg }) {
     lines: [{ lineId: lid(5), itemId: rib._id, name: rib.name, unit: 'kg', qty: 20 }] })
   await StockLedger.create({ ownerOrgId: tprOrg._id, itemId: rib._id, location: 'store', type: 'issue', qty: -20, unit: 'kg', refType: 'issue', refId: String(slipId), refLineId: lid(5), orderId: 'ZAR-SWTSHT-FW26-001', note: 'Issued to ZAR-SWTSHT-FW26-001', at: issueAt, by: tiruppur._id, key: `issue:${slipId}:${lid(5)}` })
 
+  // Thirty kilos of the rib are at the dyer, due back a couple of days ago: the job work tab shows an overdue challan.
+  const salem = await Supplier.findOne({ ownerOrgId: tprOrg._id, name: 'Salem Dyeing Works' }).lean()
+  const jwId = new mongoose.Types.ObjectId()
+  const sentAt = new Date('2026-10-06T10:00:00+05:30')
+  const snap = p => ({ name: p.legalName || p.name || '', gstin: p.gstin || '', stateCode: p.stateCode || '', address: p.address || '', city: p.city || '', pincode: p.pincode || '', phone: p.phone || '', contactName: '' })
+  const jwLine = { lineId: lid(6), itemId: rib._id, name: rib.name, unit: 'kg', hsnCode: rib.hsnCode, qty: 30, rate: 520, returnedQty: 0, writtenOffQty: 0 }
+  const job = await JobWork.create({
+    _id: jwId, ownerOrgId: tprOrg._id, number: `JWC-TPR-${fy}-0001`, status: 'open', supplierId: salem._id, supplierSnapshot: snap(salem), consignorSnapshot: snap({ ...org.profile, name: org.name }),
+    process: 'Dyeing', orderId: 'ZAR-SWTSHT-FW26-001', sentOn: '2026-10-06', expectedBack: '2026-10-10', vehicleNo: 'TN33 AB 7782', note: 'Charcoal, shade card with the driver', lines: [jwLine], createdBy: tiruppur._id, createdAt: sentAt,
+  })
+  const jwPdf = await renderJobworkChallanPdf(job.toObject())
+  const jwDoc = await Document.create({ type: 'job_challan', name: `Job work challan ${job.number}`, mfrId: tiruppur._id, orderId: null, issueDate: sentAt, uploadedBy: tiruppur._id, issuer: salem.name, jobworkId: String(jwId), dataUrl: `data:application/pdf;base64,${jwPdf.toString('base64')}`, fileName: `${job.number}.pdf`, fileSize: jwPdf.length, mimeType: 'application/pdf' })
+  await JobWork.updateOne({ _id: jwId }, { $set: { documentId: jwDoc._id } })
+  const jwBase = { ownerOrgId: tprOrg._id, itemId: rib._id, type: 'jobwork_out', unit: 'kg', refType: 'jobwork', refId: String(jwId), refLineId: lid(6), orderId: 'ZAR-SWTSHT-FW26-001', note: `${job.number} to ${salem.name}`, at: sentAt, by: tiruppur._id }
+  await StockLedger.insertMany([
+    { ...jwBase, location: 'store', qty: -30, key: `jw:${jwId}:${lid(6)}:out` },
+    { ...jwBase, location: `jw:${salem._id}`, qty: 30, key: `jw:${jwId}:${lid(6)}:at` },
+  ])
+  await Counter.updateOne({ _id: `jwc:${tprOrg._id}:${fy}` }, { $set: { seq: 1 } }, { upsert: true })
+
   await Counter.updateOne({ _id: `grn:${tprOrg._id}:${fy}` }, { $set: { seq: 2 } }, { upsert: true })
   await Counter.updateOne({ _id: `iss:${tprOrg._id}:${fy}` }, { $set: { seq: 1 } }, { upsert: true })
-  console.log('Inventory seeded: 5 items, 2 posted goods received notes, 1 draft note, 1 stock issue for Tiruppur Textiles')
+  console.log('Inventory seeded: 5 items, 2 posted goods received notes, 1 draft note, 1 stock issue, 1 overdue job work challan for Tiruppur Textiles')
   void fleece; void zip
 }
 

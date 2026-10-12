@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { requireAuth } from '../middleware/auth.js'
-import { InboundMessage, Order, ActionItem, Supplier, SupplierItem, PurchaseOrder, Bom, CostSheet, InventoryItem, StockLedger, Grn, StockIssue } from '../db/index.js'
+import { InboundMessage, Order, ActionItem, Supplier, SupplierItem, PurchaseOrder, Bom, CostSheet, InventoryItem, StockLedger, Grn, StockIssue, JobWork } from '../db/index.js'
 import { adminOrderVisibility } from '../lib/authz.js'
 import { isStandalone } from '../lib/platform.js'
 
@@ -56,9 +56,9 @@ async function featureVersions(user) {
   }
   if (user.role !== 'manufacturer') return undefined
   const own = { ownerOrgId: user.orgId }
-  const [sup, item, po, bom, sheets, stock, moves, grn, issue] = await Promise.all([
+  const [sup, item, po, bom, sheets, stock, moves, grn, issue, jw] = await Promise.all([
     stamp(Supplier, own), stamp(SupplierItem, own), stamp(PurchaseOrder, own), stamp(Bom, own), stamp(CostSheet, own),
-    stamp(InventoryItem, own), stamp(StockLedger, own, 'createdAt'), stamp(Grn, own), stamp(StockIssue, own),
+    stamp(InventoryItem, own), stamp(StockLedger, own, 'createdAt'), stamp(Grn, own), stamp(StockIssue, own), stamp(JobWork, own),
   ])
   return {
     suppliers: `${sup.n}:${sup.at}:${item.n}:${item.at}`,
@@ -67,6 +67,7 @@ async function featureVersions(user) {
     'cost-sheets': `${sheets.n}:${sheets.at}`,
     inventory: `${stock.n}:${stock.at}:${moves.n}:${moves.at}:${issue.n}:${issue.at}`,
     grns: `${grn.n}:${grn.at}`,
+    jobwork: `${jw.n}:${jw.at}`,
   }
 }
 

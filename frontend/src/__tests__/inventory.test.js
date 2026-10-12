@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest'
 import {
-  categoryLabel, ledgerLabel, signedQty, grnStateLabel, acceptedOf, blankLine, formFromGrn, payloadFromForm, formKey, readiness, lineHint, suggestItems, issueProblems, round3, adoptIds, isBlankLine, itemKey, stockMatch,
+  categoryLabel, ledgerLabel, signedQty, grnStateLabel, acceptedOf, blankLine, formFromGrn, payloadFromForm, formKey, readiness, lineHint, suggestItems, issueProblems, round3, adoptIds, isBlankLine, itemKey, stockMatch, lossNote, returnProblems, jobworkStateLabel, PROCESSES,
 } from '../lib/inventory.js'
 
 const grn = (over = {}) => ({
@@ -158,5 +158,36 @@ describe('which stock item a line goes into', () => {
   test('archived items and very short words are never offered', () => {
     expect(stockMatch(items, 'Old item with a longer description', 'kg').near).toEqual([])
     expect(stockMatch(items, 'Zi', 'pcs')).toEqual({ exact: null, near: [] })
+  })
+})
+
+describe('job work', () => {
+  test('what came back is told against what went: nothing lost, a loss with its share, or more than went', () => {
+    expect(lossNote(100, 'kg', [{ qty: 92, unit: 'kg' }])).toBe('92 kg back for 100 kg: 8 kg (8%) lost in the process')
+    expect(lossNote(100, 'kg', [{ qty: 60 }, { qty: 40, unit: 'KG' }])).toBe('100 kg back for 100 kg: nothing lost')
+    expect(lossNote(100, 'kg', [{ qty: 104 }])).toMatch(/4 kg more than went/)
+    expect(lossNote(100, 'kg', [{ qty: 90, unit: 'm' }])).toBeNull()                       // different units cannot be compared
+    expect(lossNote(0, 'kg', [{ qty: 5 }])).toBeNull()
+    expect(lossNote(100, 'kg', [{ qty: '' }])).toBeNull()
+  })
+
+  test('a delivery is checked before it is sent: how much it accounts for, that something came back, and no more than is out', () => {
+    const job = { lines: [{ lineId: 'a', outstanding: 40, unit: 'kg' }, { lineId: 'b', outstanding: 10, unit: 'kg' }] }
+    const out = (o = {}) => ({ itemId: '', description: 'Navy', unit: 'kg', qty: '5', ...o })
+    expect(returnProblems([
+      { lineId: 'a', inputQty: '41', outputs: [out()] },
+      { lineId: 'b', inputQty: '', outputs: [] },
+      { lineId: 'a', inputQty: '10', outputs: [] },
+      { lineId: 'a', inputQty: '10', outputs: [out({ description: '', itemId: '' })] },
+      { lineId: 'a', inputQty: '10', outputs: [out({ description: '', itemId: 'i1' })] },
+      { lineId: 'a', inputQty: '0', outputs: [out()] },
+      { lineId: 'zzz', inputQty: '1', outputs: [] },
+    ], job)).toEqual(['Only 40 kg is still with the job worker', null, 'Say what came back for it', 'Say what came back', null, 'Say how much of it this delivery accounts for', null])
+  })
+
+  test('the states and the usual work read as words', () => {
+    expect(jobworkStateLabel('partially_returned')).toBe('Part back')
+    expect(jobworkStateLabel('nope')).toBe('nope')
+    expect(PROCESSES).toContain('Dyeing')
   })
 })

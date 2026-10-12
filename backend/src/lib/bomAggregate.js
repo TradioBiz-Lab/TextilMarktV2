@@ -65,3 +65,25 @@ export function aggregate(frozen, onPo = new Map(), { suppliers = new Map(), ite
   }).sort((a, b) => (a.supplierName || '￿').localeCompare(b.supplierName || '￿') || a.section.localeCompare(b.section) || a.item.localeCompare(b.item) || a.colour.localeCompare(b.colour))
   return { rows: out, unsupplied: out.filter(r => !r.supplierId && r.remaining > 0).length, orders: new Set(frozen.map(f => f.bom.orderId)).size }
 }
+
+/** What a purchase order line for a shopping list row is called: also how the stock list names the same thing. */
+export const poDescription = r => `${r.item}${r.spec ? `, ${r.spec}` : ''}${r.colour ? ` - ${r.colour}` : ''}`.slice(0, 300)
+
+/**
+ * Say, row by row, how much of what is left to order is already in the store. `find(description, unit)` returns the
+ * stock item a row is ({ itemId, onHand }) or null. A stock item is counted once however many rows are that item:
+ * the first rows take it, later ones see what is left. Stock is not reserved for an order, so this is advice on what
+ * to buy now, not a promise that the stock stays there.
+ * @returns the rows with `stockItemId`, `inStock` (all there is), `fromStock` (what covers this row) and `toBuy`
+ */
+export function applyStock(rows, find) {
+  const pool = new Map()
+  return rows.map(r => {
+    const hit = find(poDescription(r), r.unit)
+    if (!hit) return { ...r, stockItemId: null, inStock: 0, fromStock: 0, toBuy: r.remaining }
+    if (!pool.has(hit.itemId)) pool.set(hit.itemId, Math.max(0, hit.onHand))
+    const covered = roundTo(Math.min(pool.get(hit.itemId), r.remaining), 3)
+    pool.set(hit.itemId, roundTo(pool.get(hit.itemId) - covered, 3))
+    return { ...r, stockItemId: hit.itemId, inStock: Math.max(0, hit.onHand), fromStock: covered, toBuy: roundTo(r.remaining - covered, 3) }
+  })
+}

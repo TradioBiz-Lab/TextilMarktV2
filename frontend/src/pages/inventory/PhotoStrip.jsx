@@ -19,9 +19,10 @@ const prepare = async file => blobToDataUrl(await compressImage(file, { maxEdge:
  * photo is sent the moment it is taken, so nothing is lost if the page is closed. Photos of a posted note
  * stay as they are (`canRemove` is false and the server refuses it too); more can still be added.
  *
- * `photos` is [{ id, kind, name, createdAt, dataUrl? }]: one that arrived without its bytes is fetched here.
+ * `photos` is [{ id, kind, name, createdAt, dataUrl? }]: one that arrived without its bytes is fetched here. `grnId` is the
+ * id of the record (a goods received note by default; pass `api={jobworkApi}` for a job work challan, which has the same calls).
  */
-export function PhotoStrip({ grnId, photos, setPhotos, canAdd = true, canRemove = true, onError }) {
+export function PhotoStrip({ grnId, photos, setPhotos, canAdd = true, canRemove = true, onError, api = grnsApi }) {
   const cam = useRef(null)
   const gallery = useRef(null)
   const [kind, setKind] = useState(() => (photos.some(p => p.kind === 'challan') ? 'goods' : 'challan'))
@@ -33,7 +34,7 @@ export function PhotoStrip({ grnId, photos, setPhotos, canAdd = true, canRemove 
   useEffect(() => {
     if (!missing) return undefined
     let dead = false
-    grnsApi.photo(grnId, missing.id)
+    api.photo(grnId, missing.id)
       .then(full => { if (!dead) setPhotos(list => list.map(p => (p.id === missing.id ? { ...p, dataUrl: full.dataUrl } : p))) })
       .catch(() => { if (!dead) setPhotos(list => list.map(p => (p.id === missing.id ? { ...p, failed: true } : p))) })
     return () => { dead = true }
@@ -47,7 +48,7 @@ export function PhotoStrip({ grnId, photos, setPhotos, canAdd = true, canRemove 
       setBusy(n => n + 1)
       try {
         const dataUrl = await prepare(file)
-        const saved = await grnsApi.addPhoto(grnId, { dataUrl, kind, name: file.name || '' })
+        const saved = await api.addPhoto(grnId, { dataUrl, kind, name: file.name || '' })
         setPhotos(list => [...list, { ...saved, dataUrl }])
         if (kind === 'challan') setKind('goods')
       } catch (e) { onError?.(e?.message || 'The photo could not be saved. Try again') } finally { setBusy(n => n - 1) }
@@ -55,7 +56,7 @@ export function PhotoStrip({ grnId, photos, setPhotos, canAdd = true, canRemove 
   }
 
   const remove = async photo => {
-    try { await grnsApi.removePhoto(grnId, photo.id); setPhotos(list => list.filter(p => p.id !== photo.id)); setView(null) }
+    try { await api.removePhoto(grnId, photo.id); setPhotos(list => list.filter(p => p.id !== photo.id)); setView(null) }
     catch (e) { onError?.(e?.message || 'The photo could not be removed') }
   }
 
