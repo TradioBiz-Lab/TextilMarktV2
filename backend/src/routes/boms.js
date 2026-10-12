@@ -12,7 +12,7 @@
 // BOM that is not yours is a 404.
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
-import { Bom, Order, Supplier, SupplierItem, PurchaseOrder, AuditLog } from '../db/index.js'
+import { Bom, Order, Supplier, SupplierItem, PurchaseOrder, Document, SpecSheet, AuditLog } from '../db/index.js'
 import { requireAuth } from '../middleware/auth.js'
 import { userKey } from '../lib/limiterKey.js'
 import { requireProcurement, isId } from '../lib/procurement.js'
@@ -20,6 +20,8 @@ import { cleanPlan, cleanBomLine, seedPlan, bomView, bomSummary, BOM_LIMITS, new
 import { aggregate } from '../lib/bomAggregate.js'
 import { roundTo } from '../lib/bomMath.js'
 import { createDraft } from '../lib/poDraft.js'
+import { readTechPack, linesFromTechPack, specFromTechPack, sizesOf, techPackModel } from '../lib/ai/techpack.js'
+import { specView } from '../lib/specSheet.js'
 
 const router = Router()
 router.use(requireAuth, requireProcurement)
@@ -31,6 +33,9 @@ const limiter = (max, message) => rateLimit({
 })
 const writeLimiter = limiter(300, 'Too many changes. Please wait.')
 const generateLimiter = limiter(60, 'Too many purchase orders generated. Please wait.')
+const extractLimiter = limiter(20, 'Too many tech packs read. Please wait.')
+const MAX_TECHPACK_BYTES = 10 * 1024 * 1024
+const READABLE = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp']
 
 const mine = req => ({ ownerOrgId: req.user.orgId })
 const fail = (res, status, error, extra = {}) => res.status(status).json({ error, ...extra })
@@ -172,6 +177,70 @@ router.post('/generate-pos', generateLimiter, async (req, res) => {
       created.push({ id: made.po._id, supplierName: made.supplier.name, lineCount: made.po.lines.length, grandTotal: made.po.totals?.grandTotal || 0, warnings: made.warnings })
     }
     res.status(created.length ? 201 : 200).json({ created, skipped, failed })
+  } catch (err) { console.error('[bom]', err); fail(res, 500, 'Server error') }
+})
+
+// POST /api/boms/extract { orderId, documentId } - read a tech pack on the order into a draft BOM (and keep its measurement spec).
+// Everything it finds is a suggestion: lines come back marked as needing a look, and the BOM cannot be frozen until they are checked.
+router.post('/extract', extractLimiter, async (req, res) => {
+  try {
+    const order = await ownOrder(req, req.body?.orderId)
+    if (!order) return fail(res, 404, 'Order not found')
+    const docId = req.body?.documentId
+    const doc = isId(docId) ? await Document.findOne({ _id: docId, orderId: order._id, type: 'tech_pack', isActive: { $ne: false } }, 'dataUrl mimeType name').lean() : null
+    if (!doc) return fail(res, 404, 'Tech pack not found on this order')
+    if (!doc.dataUrl) return fail(res, 400, 'This tech pack is a link, not a file. Upload the PDF to have it read')
+    const mime = doc.mimeType || /^data:([^;,]+)/.exec(doc.dataUrl)?.[1]
+    if (!READABLE.includes(mime)) return fail(res, 400, 'Only a PDF or an image can be read')
+    const buffer = Buffer.from(doc.dataUrl.split(',')[1] || '', 'base64')
+    if (!buffer.length) return fail(res, 400, 'This tech pack file is empty')
+    if (buffer.length > MAX_TECHPACK_BYTES) return fail(res, 400, 'This tech pack is too large to read (most 10 MB)')
+
+    const latest = await Bom.findOne({ ...mine(req), orderId: order._id }).sort({ version: -1 }).lean()
+    if (latest && latest.status !== 'draft') return fail(res, 409, 'This order\'s bill of materials is frozen. Start a new version before reading a tech pack into it')
+
+    const { data, error } = await readTechPack(buffer, mime)
+    if (!data) return fail(res, 502, 'The tech pack could not be read automatically. You can still enter the bill of materials by hand', { reason: error || null })
+
+    const asgn = ownSplit(req, order)
+    const lines = linesFromTechPack(data, latest?.lines || [])
+    if ((latest?.lines.length || 0) + lines.length > BOM_LIMITS.lines) return fail(res, 409, `That would take the bill of materials past ${BOM_LIMITS.lines} lines`)
+    const extraction = { at: new Date(), model: techPackModel(), confidence: data.confidence, notes: data.notes.slice(0, 20).map(n => n.slice(0, 300)) }
+
+    let bom
+    if (latest) {
+      bom = await Bom.findOneAndUpdate(
+        { _id: latest._id, ...mine(req), status: 'draft' },
+        { $push: { lines: { $each: lines } }, $set: { techPackDocumentId: doc._id, extraction, updatedBy: req.user.actorId } }, { new: true },
+      ).lean()
+      if (!bom) return fail(res, 409, 'This bill of materials changed while the tech pack was being read. Reload it and try again')
+    } else {
+      const seeded = seedPlan(!order.colourways?.length && data.colourways.length ? { ...order, colourways: data.colourways.map(name => ({ name })) } : order, asgn)
+      const pl = cleanPlan({ sizes: sizesOf(data).length ? sizesOf(data) : undefined }, seeded)
+      const plan = pl.ok ? pl.plan : { ...seeded, sizes: seeded.sizes, sizeRatio: seeded.sizeRatio }
+      bom = (await Bom.create({
+        ...mine(req), mfrId: req.user.id, orderId: order._id, version: 1, status: 'draft',
+        sizes: plan.sizes, sizeRatio: plan.sizeRatio, colours: seeded.colours, totalQty: seeded.totalQty, lines,
+        techPackDocumentId: doc._id, extraction, createdBy: req.user.actorId, updatedBy: req.user.actorId,
+      })).toObject()
+    }
+
+    // The measurement spec is kept, so it is read once and QC later measures against the same numbers.
+    let spec = null
+    const sp = specFromTechPack(data)
+    if (sp.points.length) {
+      const saved = await SpecSheet.findOneAndUpdate(
+        { orderId: order._id, ownerOrgId: req.user.orgId },
+        { $set: { mfrId: req.user.id, sourceDocumentId: doc._id, header: sp.header, sizes: sp.sizes, points: sp.points, extractedAt: new Date(), model: extraction.model, updatedBy: req.user.actorId } },
+        { upsert: true, new: true },
+      ).lean()
+      spec = specView(saved, { editable: true })
+    }
+    await AuditLog.create({ byUser: req.user.id, action: 'BOM Drafted From Tech Pack', detail: `${order._id}: ${lines.length} line(s) and ${sp.points.length} measurement point(s) read from "${doc.name}" by ${req.user.name}` })
+    res.json({
+      bom: await present(req, bom), spec,
+      extraction: { confidence: data.confidence, notes: extraction.notes, lines: lines.length, specPoints: sp.points.length, skipped: (data.bomCandidates || []).length - lines.length },
+    })
   } catch (err) { console.error('[bom]', err); fail(res, 500, 'Server error') }
 })
 

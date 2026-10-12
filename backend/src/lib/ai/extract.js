@@ -53,27 +53,38 @@ export function parseJsonReply(text) {
 }
 
 /**
- * One Claude call returning strict, schema-validated JSON. Retries once on a
- * parse/validation failure; returns null after that so the caller routes the
- * message to human review instead of writing a guess.
+ * One Claude call returning strict, schema-validated JSON, with the reason when it fails. Retries once on
+ * a parse/validation failure. `model` and `maxTokens` let a caller with a bigger job (a whole tech pack)
+ * ask for more than the short message prompts do.
+ * @returns {Promise<{ data: object | null, error: string | null }>}
  */
-async function callJson({ content, schema, sdk = getClient() }) {
+export async function callJsonDetailed({ content, schema, sdk = getClient(), model = MODEL(), maxTokens = 1024 }) {
+  let error = null
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await sdk.messages.create({
-        model: MODEL(), max_tokens: 1024,
+        model, max_tokens: maxTokens,
         messages: [{ role: 'user', content }],
       })
       const text = (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('')
-      return schema.parse(parseJsonReply(text))
+      return { data: schema.parse(parseJsonReply(text)), error: null }
     } catch (err) {
+      error = err.message
       console.error(`[ai] extraction attempt ${attempt + 1} failed:`, err.message)
     }
   }
-  return null
+  return { data: null, error }
 }
 
-const mediaBlock = (buffer, mimeType) => mimeType === 'application/pdf'
+/**
+ * One Claude call returning strict, schema-validated JSON; null after a failed retry so the caller
+ * routes the message to human review instead of writing a guess.
+ */
+export async function callJson(opts) {
+  return (await callJsonDetailed(opts)).data
+}
+
+export const mediaBlock = (buffer, mimeType) => mimeType === 'application/pdf'
   ? { type: 'document', source: { type: 'base64', media_type: mimeType, data: buffer.toString('base64') } }
   : { type: 'image', source: { type: 'base64', media_type: mimeType, data: buffer.toString('base64') } }
 

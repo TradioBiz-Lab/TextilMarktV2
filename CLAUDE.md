@@ -55,13 +55,15 @@ backend/src/
   models/             # User, Order, Document, Notification, AuditLog, Ribbon, MasterOrder,
                        # ActionItem, DroppedRecord, InboundMessage,
                        # Organization, Partnership, Counter (standalone product, see below),
-                       # Supplier, SupplierItem, PurchaseOrder (procurement, standalone only)
+                       # Supplier, SupplierItem, PurchaseOrder, Bom, SpecSheet, CostSheet (standalone only)
   routes/             # auth, viewAs, orders, documents, users, notifications, audit, ribbons,
                        # masterOrders, signup, actionItems, assistant (Kriyaa), voice, inbound,
-                       # review, floor, dropped, orgs, partners, suppliers, purchaseOrders
+                       # review, floor, dropped, orgs, partners, suppliers, purchaseOrders, boms,
+                       # costSheets, specSheets
   lib/                # email, stageMath, notify, redact, dropRecord, sarvam, ai/, inbound/,
                        # platform, authz, orgs, session, orderCreate, counters, migrate,
-                       # procurement, poMath, poSync, gst, fiscalYear, words, orgProfile, pdf/
+                       # procurement, poMath, poSync, poDraft, gst, fiscalYear, words, orgProfile, pdf/,
+                       # bom, bomMath, bomAggregate, costing, costSheet, specSheet, ai/techpack
 frontend/src/
   App.jsx             # top-level view router (hand-rolled, no react-router)
   context.jsx         # AppProvider — single global data/actions store
@@ -277,6 +279,36 @@ admin enables them in User Setup.
   - *Deploy.* `pdfkit` is a new dependency (`predeploy` runs `npm install`) and `backend/assets/fonts` ships
     with the backend. Seed data: `seedProcurement` in `db/seed.js` (6 suppliers, 5 catalog items, 3 POs for
     Tiruppur Textiles).
+- **Bills of materials, tech pack reading and cost sheets** (standalone only; `/api/boms`,
+  `/api/cost-sheets`, `/api/spec-sheets`).
+  - *BOM.* One per order and factory (`Bom`), private to the company like POs: sizes with a ratio, colours
+    with their pieces, and lines (fabric, process, trims, labels, other) with consumption (per size when it
+    differs), wastage, supplier and rate. Quantities are never stored: `lib/bomMath.js` works them on every
+    read exactly as the factory's own 5117/5118 fabric plan does (checked against that sheet and against an
+    independent implementation; fixture `tests/fixtures/bomMath.cases.json`). Drafts save with optimistic
+    concurrency (`updatedAt`); freezing makes the master list (a BOM with AI lines still needing a look
+    cannot be frozen); a change after that is `revise`, a new version that keeps the line ids.
+  - *Shopping list.* `GET /api/boms/aggregate` groups the latest frozen BOM of every order (or one master
+    order) by item, spec, unit, supplier and, for cloth, colour, less what is already on a non-cancelled PO.
+    `POST /api/boms/generate-pos` turns it into one draft PO per supplier through `lib/poDraft.js`, the same
+    builder hand-made POs use. PO lines carry `bomRefs` that only the server can set (a browser's are
+    ignored), which is how a need is not ordered twice and how a cancelled PO gives it back.
+  - *Tech pack reading.* `lib/ai/techpack.js` sends the PDF to Claude with a prompt that asks for facts the
+    pack states and never a consumption; `POST /api/boms/extract` turns the answer into a draft (lines marked
+    `source: 'ai'`, `needsReview`) and keeps the pack's measurement spec as a `SpecSheet` (shared by the order's
+    brand and factory, corrected by the factory, used later by QC). Tests swap the reader
+    (`setTechPackReaderForTests`); `node scripts/read-techpack.mjs <file.pdf>` runs the real model on a pack
+    (needs a valid `ANTHROPIC_API_KEY`; `ANTHROPIC_TECHPACK_MODEL` overrides the model).
+  - *Cost sheets.* `lib/costing.js` is the approved Fitleasure core costing sheet line for line (all six real
+    styles reproduce its figures; fixture `tests/fixtures/costing.cases.json`). A factory drafts a sheet (seeded
+    from a frozen BOM if it likes), `share` freezes that version, tells the brand's team in the app (a
+    notification with a `link` such as `#cost=<id>`) and emails them the PDF, and the brand comments and
+    approves. Approval is the brand's alone (a Tradio view-as session is read-only, so staff cannot do it for
+    them). A change is `revise`, a new version; sharing it marks older ones `superseded`. A brand never sees a
+    draft, the factory's `internalNote`, or the BOM it came from. Tradio's fee line is forced to 0 unless the
+    factory is managed by Tradio. Routes use `requireCosting` (factory or brand) and scope per side.
+  - *Live refresh.* `/api/floor/feed` carries per-company versions: a factory gets `suppliers`,
+    `purchase-orders`, `boms` and `cost-sheets`; a brand gets `cost-sheets` (shared ones only).
 - **Run it locally.** `npm run dev:local` (backend) starts an ephemeral in-memory mongod, seeds a
   standalone environment and blanks the email key, so nothing touches Atlas and no email is sent. It
   uses the same seed logins as `npm run seed:sandbox` (never run that against the shared sandbox DB
