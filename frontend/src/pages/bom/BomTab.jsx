@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Sparkles, Plus, Calculator, Trash2 } from '../../icons.jsx'
+import { Sparkles, Plus, Calculator, Trash2, FileSpreadsheet } from '../../icons.jsx'
 import { T } from '../../constants.js'
 import { Btn, Card, Alert, LoadingScreen, EmptyState, FlexRow, useToast } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { capsFor } from '../../caps.js'
 import { bomsApi, specSheetsApi, costSheetsApi } from '../../api.js'
 import { ProcurementProviders, suppliersStore } from '../../stores/procurement.jsx'
-import { toDraft, payloadFrom, isDirty, reviewCount, num } from '../../lib/bomUi.js'
+import { toDraft, payloadFrom, isDirty, reviewCount, num, BOM_COLUMNS, BOM_EXAMPLE, linesFromRows } from '../../lib/bomUi.js'
+import { SpreadsheetImport } from '../../components/SpreadsheetImport.jsx'
 import { Pill } from '../procurement/common.jsx'
 import { BomEditor } from './BomEditor.jsx'
 import { SpecSheetPanel } from './SpecSheetPanel.jsx'
@@ -35,6 +36,7 @@ function BomTabInner({ order, asgn, onNavigate }) {
   const [busy, setBusy] = useState(false)
   const [reading, setReading] = useState(false)
   const [note, setNote] = useState(null)        // what the tech pack reading said, kept until dismissed
+  const [importing, setImporting] = useState(false)
 
   const packs = useMemo(() => (docs || []).filter(d => d.orderId === order.id && d.type === 'tech_pack' && d.isActive !== false), [docs, order.id])
 
@@ -63,7 +65,7 @@ function BomTabInner({ order, asgn, onNavigate }) {
     try { const r = await fn(); if (ok) toast(ok, 'success'); return r } catch (e) { toast(e?.message || 'That did not work', e?.code === 'STALE' ? 'warning' : 'error'); if (e?.code === 'STALE') load(); return null } finally { setBusy(false) }
   }
 
-  const start = async () => { const b = await act(() => bomsApi.create(order.id)); if (b) { await load() } }
+  const start = async ({ thenImport = false } = {}) => { const b = await act(() => bomsApi.create(order.id)); if (b) { await load(); if (thenImport) setImporting(true) } }
   const save = async ({ confirmAll = false } = {}) => {
     const b = await act(() => bomsApi.save(bom.id, payloadFrom(draft, bom.updatedAt, { confirmAll })), confirmAll ? 'All lines confirmed and saved' : 'Bill of materials saved')
     if (b) show(b)
@@ -105,11 +107,12 @@ function BomTabInner({ order, asgn, onNavigate }) {
     return (
       <div>
         <EmptyState icon={<Sparkles size={28} color={T.textLight} />} title="No bill of materials yet"
-          desc={manage ? 'Read the tech pack and the AI drafts the list of fabrics, trims and labels for you to check. Or start with a blank list and type it in.' : 'The factory has not made a bill of materials for this order yet.'} />
+          desc={manage ? 'Read the tech pack and the AI drafts the list of fabrics, trims and labels for you to check. Or bring your own list from Excel, or start with a blank one and type it in.' : 'The factory has not made a bill of materials for this order yet.'} />
         {manage && (
           <FlexRow justify="center" gap={10} style={{ marginTop: 6, flexWrap: 'wrap' }}>
             <Btn icon={<Sparkles size={14} />} onClick={() => setReading(true)}>Read the tech pack</Btn>
-            <Btn variant="secondary" icon={<Plus size={14} />} onClick={start} disabled={busy}>Start a blank list</Btn>
+            <Btn variant="secondary" icon={<FileSpreadsheet size={14} />} onClick={() => start({ thenImport: true })} disabled={busy}>Import from Excel</Btn>
+            <Btn variant="secondary" icon={<Plus size={14} />} onClick={() => start()} disabled={busy}>Start a blank list</Btn>
           </FlexRow>
         )}
         {reading && <TechPackModal orderId={order.id} packs={packs} onClose={() => setReading(false)} onRead={read} />}
@@ -137,6 +140,7 @@ function BomTabInner({ order, asgn, onNavigate }) {
         {manage && (
           <FlexRow gap={8} style={{ marginLeft: 'auto', flexWrap: 'wrap' }}>
             {!frozen && <Btn variant="secondary" size="sm" icon={<Sparkles size={13} />} onClick={() => setReading(true)} disabled={busy}>Read a tech pack</Btn>}
+            {!frozen && <Btn variant="secondary" size="sm" icon={<FileSpreadsheet size={13} />} onClick={() => setImporting(true)} disabled={busy}>Import Excel</Btn>}
             {!frozen && flagged > 0 && <Btn variant="secondary" size="sm" onClick={() => save({ confirmAll: true })} disabled={busy}>Looks right: confirm all {flagged}</Btn>}
             {!frozen && <Btn variant="secondary" size="sm" onClick={() => save()} disabled={busy || !dirty}>{busy ? 'Saving...' : 'Save'}</Btn>}
             {!frozen && <Btn size="sm" onClick={freeze} disabled={busy || draft?.lines.every(l => !l.item.trim())}>Freeze</Btn>}
@@ -171,6 +175,17 @@ function BomTabInner({ order, asgn, onNavigate }) {
       {frozen && <div style={{ marginTop: 14 }}><Card pad={false}><div style={{ padding: '12px 16px', fontSize: 12, color: T.textMuted, lineHeight: 1.6 }}>A frozen bill of materials is the record and cannot be edited. To change something, start a new version: the lines and their ids carry over, so purchase orders already raised stay linked. Use the Shopping List to buy what is needed.</div></Card></div>}
 
       {reading && <TechPackModal orderId={order.id} packs={packs} onClose={() => setReading(false)} onRead={read} />}
+      {importing && draft && (
+        <SpreadsheetImport title="Import bill of materials lines" noun="lines" columns={BOM_COLUMNS} example={BOM_EXAMPLE} templateName="bill-of-materials"
+          onImport={async rows => {
+            // The lines join the draft for the person to look over; nothing is saved until they save.
+            const { lines, skipped, unmatched } = linesFromRows(rows, suppliers, draft.plan.sizes.length)
+            setDraft(d => ({ ...d, lines: [...d.lines, ...lines] }))
+            return { created: lines.length, skipped, unmatched }
+          }}
+          onDone={a => toast(`${a.created} line${a.created === 1 ? '' : 's'} added${a.unmatched ? `, ${a.unmatched} with a supplier that is not in your book` : ''}. Check them, then save.`, 'success')}
+          onClose={() => setImporting(false)} />
+      )}
     </div>
   )
 }

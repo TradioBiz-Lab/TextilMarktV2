@@ -317,6 +317,10 @@ admin enables them in User Setup.
     byte-for-byte copies of the server's files (`src/__tests__/mathParity.test.js` fails if either drifts and
     runs both against the backend fixtures). Notifications carry a `link` (`#cost=<id>`) that opens a screen.
     Material lines use the shared `.gl-*` styles (a grid on wide screens, a card per line on phones).
+    A bill of materials can also be filled from Excel or CSV (`BOM_COLUMNS` and `linesFromRows` in `lib/bomUi.js`,
+    through the shared `SpreadsheetImport`): the rows are appended to the draft for the person to check and save,
+    never saved on their own. A supplier is matched to the company's book by name, exactly or by the one
+    supplier whose name holds the typed text; ambiguous or unknown names are left blank and counted.
   - *Live refresh.* `/api/floor/feed` carries per-company versions: a factory gets `suppliers`,
     `purchase-orders`, `boms` and `cost-sheets`; a brand gets `cost-sheets` (shared ones only).
 - **Run it locally.** `npm run dev:local` (backend) starts an ephemeral in-memory mongod, seeds a

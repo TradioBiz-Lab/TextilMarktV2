@@ -98,3 +98,68 @@ export function shareEvenly(colours, totalQty) {
   const each = Math.floor(totalQty / n)
   return colours.map((c, i) => ({ ...c, qty: String(each + (i === 0 ? totalQty - each * n : 0)) }))
 }
+
+// ── Excel import of lines ─────────────────────────────────────────────────────────────────────────────
+// The columns of the template a factory fills in (see components/SpreadsheetImport.jsx and lib/excelIO.js). The
+// section is written in words, as a person would, and mapped back to the section id.
+const SECTION_WORDS = SECTIONS.map(s => s.label)
+export const BOM_COLUMNS = [
+  { key: 'section', header: 'Section', required: true, type: 'enum', options: SECTION_WORDS, aliases: ['group', 'category', 'type'] },
+  { key: 'item', header: 'Item', required: true, aliases: ['material', 'name', 'description'] },
+  { key: 'spec', header: 'Detail', aliases: ['spec', 'specification', 'details'] },
+  { key: 'unit', header: 'Unit', aliases: ['uom'] },
+  { key: 'consumption', header: 'Per piece', type: 'number', aliases: ['consumption', 'qty per piece', 'quantity per piece', 'consumption per piece'] },
+  { key: 'wastagePct', header: 'Wastage %', type: 'number', aliases: ['wastage', 'wastage percent', 'buffer', 'buffer %'] },
+  { key: 'supplier', header: 'Supplier', aliases: ['vendor'] },
+  { key: 'rate', header: 'Rate', type: 'number', aliases: ['price', 'unit rate', 'rate per unit'] },
+  { key: 'perColour', header: 'Per colour', type: 'enum', options: ['Yes', 'No'], aliases: ['by colour', 'colour wise', 'order per colour'] },
+]
+export const BOM_EXAMPLE = { section: 'Fabric', item: 'Polar fleece 300 GSM', spec: '150 cm width', unit: 'kg', consumption: 0.72, wastagePct: 7, supplier: 'Coimbatore Knit Fabrics', rate: 410, perColour: 'Yes' }
+
+const normName = v => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ')
+
+/**
+ * The supplier a typed name means: the exact name (ignoring case and spacing), else the one supplier whose name
+ * holds it or is held by it ("YKK" for "YKK India (Mumbai depot)"). Two or more candidates is no match, so a
+ * line is never tied to a guess between suppliers.
+ */
+export function matchSupplier(name, suppliers) {
+  const n = normName(name)
+  if (!n) return null
+  const book = (suppliers || []).map(s => ({ id: s.id, n: normName(s.name) }))
+  const exact = book.find(s => s.n === n)
+  if (exact) return exact.id
+  if (n.length < 3) return null
+  const near = book.filter(s => s.n.includes(n) || (s.n.length >= 3 && n.includes(s.n)))
+  return near.length === 1 ? near[0].id : null
+}
+
+/**
+ * Draft lines from the rows of a filled-in template. A supplier is matched to the factory's own book by name;
+ * one that is not there leaves the line without a supplier for the person to set, and is counted in `unmatched`.
+ * @returns {{ lines: object[], skipped: Array<{ row, name, error }>, unmatched: number }}
+ */
+export function linesFromRows(rows, suppliers, sizeCount) {
+  const bySection = new Map(SECTIONS.map(s => [s.label.toLowerCase(), s.id]))
+  const lines = []
+  const skipped = []
+  let unmatched = 0
+  for (const r of rows || []) {
+    const section = bySection.get(String(r.section || '').trim().toLowerCase())
+    const item = String(r.item || '').trim()
+    if (!section || !item) { skipped.push({ row: r._row, name: item, error: !item ? 'No item' : 'No section' }); continue }
+    const line = blankLine(section)
+    line.item = item.slice(0, 200)
+    line.spec = String(r.spec || '').trim().slice(0, 300)
+    if (r.unit) line.unit = String(r.unit).trim().slice(0, 20)
+    line.consumption = r.consumption ? String(r.consumption) : ''
+    line.wastagePct = r.wastagePct ? String(r.wastagePct) : ''
+    line.rate = r.rate ? String(r.rate) : ''
+    if (r.perColour) line.perColour = r.perColour === 'Yes'
+    line.supplierId = matchSupplier(r.supplier, suppliers) || ''
+    if (normName(r.supplier) && !line.supplierId) unmatched += 1
+    line.perSize = Array.from({ length: sizeCount }, () => '')
+    lines.push(line)
+  }
+  return { lines, skipped, unmatched }
+}

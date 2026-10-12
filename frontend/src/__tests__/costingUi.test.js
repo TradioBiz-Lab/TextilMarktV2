@@ -1,7 +1,8 @@
 import { describe, test, expect } from 'vitest'
 import costCases from '../../../backend/tests/fixtures/costing.cases.json'
 import { toForm, toNumbers, figures, payloadFrom, isDirty, blankMaterial, costStatus, awaitingReview, decimal } from '../lib/costing.js'
-import { SECTIONS, blankLine, toDraft, numeric, preview, payloadFrom as bomPayload, reviewCount, isDirty as bomDirty, alignPerSize, shareEvenly } from '../lib/bomUi.js'
+import { SECTIONS, blankLine, toDraft, numeric, preview, payloadFrom as bomPayload, reviewCount, isDirty as bomDirty, alignPerSize, shareEvenly, BOM_COLUMNS, linesFromRows, matchSupplier } from '../lib/bomUi.js'
+import { mapRows } from '../lib/excelIO.js'
 
 const sheet = { styleName: 'Baggy Active Jacket', styleCode: 'FLGCW17', qty: 1000, ...costCases[0].sheet }
 
@@ -129,5 +130,59 @@ describe('the bill of materials editor', () => {
     const n = numeric(d)
     expect(n.lines[0].perSize[1]).toBeNull()
     expect(n.plan.ratio).toEqual([1, 2, 3, 2, 1])
+  })
+})
+
+describe('importing bill of materials lines from Excel', () => {
+  const suppliers = [{ id: 's1', name: 'Coimbatore Knit Fabrics' }, { id: 's2', name: 'YKK India' }]
+  const sheet = [
+    ['Section', 'Item', 'Detail', 'Unit', 'Per piece', 'Wastage %', 'Supplier', 'Rate', 'Per colour'],
+    ['Fabric', 'Polar fleece 300 GSM', '150 cm', 'kg', '0.72', '7', ' coimbatore  knit fabrics ', '410', 'Yes'],
+    ['Trims', 'YKK zip 5', '', 'pcs', '1', '2', 'YKK India', '45', ''],
+    ['Labels and packaging', 'Main label', '', '', '1', '', 'Some unknown mill', '1.6', 'No'],
+    ['Nonsense', 'Mystery', '', '', '', '', '', '', ''],
+    ['Other', '', '', '', '', '', '', '', ''],
+  ]
+
+  test('the template\'s columns are found and the rows read', () => {
+    const m = mapRows(sheet, BOM_COLUMNS)
+    expect(m.missingColumns).toEqual([])
+    expect(m.rows.length).toBe(5)
+    expect(m.errors.some(e => e.column === 'Section')).toBe(true)         // "Nonsense" is not a section
+  })
+
+  test('good rows become draft lines: section, numbers, per-colour rule and a supplier matched by name', () => {
+    const m = mapRows(sheet, BOM_COLUMNS)
+    const { lines, skipped } = linesFromRows(m.rows.filter(r => !m.errors.some(e => e.row === r._row)), suppliers, 5)
+    expect(lines.map(l => [l.section, l.item])).toEqual([['fabric', 'Polar fleece 300 GSM'], ['trims', 'YKK zip 5'], ['labels_packaging', 'Main label']])
+    expect(lines[0]).toMatchObject({ unit: 'kg', consumption: '0.72', wastagePct: '7', rate: '410', supplierId: 's1', perColour: true, spec: '150 cm' })
+    expect(lines[1]).toMatchObject({ supplierId: 's2', perColour: false })                // a trim is not per colour unless it says so
+    expect(lines[2]).toMatchObject({ supplierId: '', perColour: false, unit: 'pcs' })     // an unknown supplier leaves it for the person to set
+    expect(lines[0].perSize).toHaveLength(5)
+    expect(skipped).toEqual([])
+  })
+
+  test('lines with a supplier that is not in the book are counted so the person is told', () => {
+    const m = mapRows(sheet, BOM_COLUMNS)
+    const { unmatched } = linesFromRows(m.rows.filter(r => !m.errors.some(e => e.row === r._row)), suppliers, 5)
+    expect(unmatched).toBe(1)                                                              // "Some unknown mill"; a blank supplier is not counted
+  })
+
+  test('a supplier is matched by exact name, then by one unambiguous partial name, never by a guess between two', () => {
+    const book = [{ id: 'a', name: 'YKK India (Mumbai depot)' }, { id: 'b', name: 'Coimbatore Knit Fabrics' }, { id: 'c', name: 'Coimbatore Dyeing Works' }, { id: 'd', name: 'ab' }]
+    expect(matchSupplier('  coimbatore   KNIT fabrics ', book)).toBe('b')
+    expect(matchSupplier('YKK', book)).toBe('a')                                           // the typed name is part of one supplier's name
+    expect(matchSupplier('YKK India (Mumbai depot) Ltd', book)).toBe('a')                  // a supplier's whole name is part of the typed one
+    expect(matchSupplier('Coimbatore', book)).toBe(null)                                   // two suppliers hold it
+    expect(matchSupplier('ab', book)).toBe('d')                                            // short names match only exactly
+    expect(matchSupplier('a', book)).toBe(null)
+    expect(matchSupplier('', book)).toBe(null)
+    expect(matchSupplier('anything', [])).toBe(null)
+  })
+
+  test('a row with no item or no section is left out and says why', () => {
+    const { lines, skipped } = linesFromRows([{ _row: 3, section: 'Fabric', item: '' }, { _row: 4, section: 'Nope', item: 'x' }, { _row: 5, section: 'fabric', item: 'Jersey' }], [], 3)
+    expect(lines.map(l => l.item)).toEqual(['Jersey'])
+    expect(skipped.map(s => [s.row, s.error])).toEqual([[3, 'No item'], [4, 'No section']])
   })
 })
