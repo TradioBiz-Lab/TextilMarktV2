@@ -8,6 +8,7 @@ import { toCsvCell } from '../../csvCell.js'
 import { Btn, Card, EmptyState, FlexRow, Modal, Mono, LoadingScreen, PageHeader, ProductThumb, StatCard, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { rowCallout } from '../../dashboardSummary.js'
+import { reportModel, summaryCsvRows, reportXlsxBlob } from '../../reportExport.js'
 
 // This page answers one question per row: WHERE IS THIS ORDER?
 //
@@ -24,10 +25,7 @@ function fmtDate(d) {
   return `${dd}-${mm}-${dt.getFullYear()}`
 }
 
-function downloadCsv(rows, filename) {
-  // The BOM makes Excel read the file as UTF-8 (otherwise dashes and Indic text come out garbled).
-  const csv = '\uFEFF' + rows.map(r => r.map(toCsvCell).join(',')).join('\r\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+function saveBlob(blob, filename) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -36,6 +34,12 @@ function downloadCsv(rows, filename) {
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
+}
+
+function downloadCsv(rows, filename) {
+  // The BOM makes Excel read the file as UTF-8 (otherwise dashes and Indic text come out garbled).
+  const csv = '\uFEFF' + rows.map(r => r.map(toCsvCell).join(',')).join('\r\n')
+  saveBlob(new Blob([csv], { type: 'text/csv;charset=utf-8;' }), filename)
 }
 
 const HEALTH = {
@@ -287,22 +291,19 @@ export function ReportingPage({ onOpen, initialMo }) {
     return () => clearTimeout(t)
   }, [initialMo, groups.length])
 
-  const exportCsv = () => {
-    const header = ['Customer', 'Master order', 'Order ID', 'Style', 'Manufacturer', 'Qty',
-      'Steps done', 'Total steps', '% complete', 'Health', 'Open now', 'Blocked', 'Past deadline',
-      'Next due', 'Next due date', 'Delivery', 'Days to delivery', 'Delivered qty', 'Qty difference', 'Callout', 'Latest update']
-    const body = filtered.map(r => [
-      r.order.buyerCompany || '',
-      (r.order.masterOrderId && (masterOrders || []).find(m => m.id === r.order.masterOrderId)?.orderName) || '',
-      r.order.id, r.order.product, r.asgn.mfrCompany || '', r.asgn.qty ?? '',
-      r.doneCount, r.stages.length, r.pct, HEALTH[r.health].label,
-      r.live.map(({ stage }) => stage.name).join(' | '),
-      r.blocked.length, r.late.length,
-      r.upcoming?.stage.name || '', r.upcoming ? fmtDate(effectiveEta(r.upcoming.stage)) : '',
-      fmtDate(r.delivery.date), r.daysToDelivery ?? '', r.delivery.deliveredQty ?? '', r.delivery.diff ?? '', r.order.callout || '',
-      r.lastUpdate ? `${r.lastUpdate.stageName}: ${r.lastUpdate.text}` : '',
-    ])
-    downloadCsv([header, ...body], `order-status-${getToday()}.csv`)
+  // Both downloads export what is on screen (the filtered rows), built from one model.
+  const exportModel = () => reportModel(filtered, { masterOrders, isBuyer, healthLabel: h => HEALTH[h].label, summaryText: rowCallout })
+  const exportCsv = () => downloadCsv(summaryCsvRows(exportModel()), `order-status-${getToday()}.csv`)
+  const [exporting, setExporting] = useState(false)
+  const exportExcel = async () => {
+    if (exporting) return
+    setExporting(true)
+    try {
+      saveBlob(await reportXlsxBlob(exportModel()), `order-status-${getToday()}.xlsx`)
+    } catch (err) {
+      console.error('Excel export failed', err)
+      window.alert('Could not build the Excel file. Please try again, or use the CSV export.')
+    } finally { setExporting(false) }
   }
 
   if (loading) return <LoadingScreen />
@@ -315,7 +316,12 @@ export function ReportingPage({ onOpen, initialMo }) {
       <PageHeader
         title="Order Status"
         subtitle="Where every order stands right now — what's open, what's stuck, what's next"
-        action={<Btn variant="secondary" icon={<Download size={16} />} onClick={exportCsv} disabled={filtered.length === 0}>Export CSV</Btn>}
+        action={(
+          <FlexRow gap={8}>
+            <Btn variant="secondary" icon={<Download size={16} />} onClick={exportExcel} disabled={filtered.length === 0 || exporting}>{exporting ? 'Preparing…' : 'Export to Excel'}</Btn>
+            <Btn variant="secondary" onClick={exportCsv} disabled={filtered.length === 0}>CSV</Btn>
+          </FlexRow>
+        )}
       />
 
       <div style={{ gap: 12, marginBottom: 14 }} className="grid-responsive-5">
