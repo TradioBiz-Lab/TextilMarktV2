@@ -39,8 +39,10 @@ async function arrange() {
 describe('a buyer cannot write the Delivery step', () => {
   test('even when they own it', async () => {
     const { api, buyer, base, deliveryIdx, asgn } = await arrange()
-    // The coordinator makes the buyer responsible for the Delivery step.
-    assert.equal((await api.post(`${base}/stages/${deliveryIdx}/eta`, { responsibleId: String(buyer._id) })).status, 200)
+    // The API no longer lets the coordinator hand Delivery to a buyer (see orders.stageowner.test.js), but an
+    // older plan may already have it that way, so set the ownership directly and check the write is still refused.
+    assert.equal((await api.post(`${base}/stages/${deliveryIdx}/eta`, { responsibleId: String(buyer._id) })).status, 400)
+    await Order.updateOne({ _id: ORDER_ID }, { $set: { [`assignments.0.stages.${deliveryIdx}.responsibleId`]: buyer._id } })
     const b = as(buyer)
     const r = await b.post(`${base}/stages/${deliveryIdx}`, { status: 'done' })
     assert.equal(r.status, 403, JSON.stringify(r.body))
