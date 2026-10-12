@@ -387,6 +387,41 @@ describe('purchase orders and the order\'s material lines', () => {
   })
 })
 
+describe('keeping a step\'s purchasing and checklist current', () => {
+  const stageUrl = (mfr, tail = '') => `/api/orders/MAT-1/assignments/${mfr._id}/stages/0${tail}`
+
+  test('a factory works the materials and checklist of every step of its own split, named owner or not', async () => {
+    const mfr = await factory(), brand = await makeBuyer()
+    await orderWithMaterial(mfr, brand)
+    const added = await as(mfr).post(stageUrl(mfr, '/materials'), { name: 'Elastic tape', requiredQty: 400, unit: 'm' })
+    assert.equal(added.status, 200, JSON.stringify(added.body))
+    assert.equal((await material()).name, 'Single jersey 180 GSM')
+    assert.equal((await as(mfr).post(stageUrl(mfr, '/materials/1'), { note: 'ask for the 25 mm one' })).status, 200)
+    assert.equal((await as(mfr).post(stageUrl(mfr, '/materials/1/delete'))).status, 200)
+    assert.equal((await as(mfr).post(stageUrl(mfr, '/items'), { name: 'Swatch signed off' })).status, 200)
+  })
+
+  test('the Tradio portal is unchanged: only an admin or the step\'s named owner', async () => {
+    delete process.env.PLATFORM_MODE
+    const mfr = await factory(), brand = await makeBuyer()
+    await orderWithMaterial(mfr, brand)
+    assert.equal((await as(mfr).post(stageUrl(mfr, '/materials'), { name: 'Elastic tape', requiredQty: 400 })).status, 403)
+    assert.equal((await as(mfr).post(stageUrl(mfr, '/items'), { name: 'Swatch signed off' })).status, 403)
+  })
+
+  test('another factory and the brand are still refused', async () => {
+    const mfr = await factory(), other = await factory({ code: 'ERD' }), brand = await makeBuyer()
+    await orderWithMaterial(mfr, brand)
+    for (const who of [other, brand]) {
+      assert.equal((await as(who).post(stageUrl(mfr, '/materials'), { name: 'Elastic tape', requiredQty: 400 })).status, 403)
+      assert.equal((await as(who).post(stageUrl(mfr, '/materials/0'), { status: 'received' })).status, 403)
+      assert.equal((await as(who).post(stageUrl(mfr, '/materials/0/delete'))).status, 403)
+      assert.equal((await as(who).post(stageUrl(mfr, '/items'), { name: 'Swatch signed off' })).status, 403)
+    }
+    assert.equal((await Order.findById('MAT-1').lean()).assignments[0].stages[0].materials.length, 1)
+  })
+})
+
 describe('receiving goods', () => {
   test('a part delivery, then the rest: partially received, then closed', async () => {
     const mfr = await factory(), s = await supplier(mfr)

@@ -18,7 +18,7 @@ import { notify, notifyOrderChange } from '../lib/notify.js'
 import { userKey } from '../lib/limiterKey.js'
 import { isStandalone } from '../lib/platform.js'
 import {
-  canCreateOrders, orderWriteGuard, requireOrderOwner, requirePlanEditor, requireAssigner, mayEditPlanFor,
+  canCreateOrders, orderWriteGuard, requireOrderOwner, requirePlanEditor, requireAssigner, mayEditPlanFor, mayRunStep,
   adminOrderVisibility, adminMayViewOrder, staffMayActForMfrs, NOT_ENABLED,
 } from '../lib/authz.js'
 import { allocateOrderId } from '../lib/counters.js'
@@ -1982,8 +1982,7 @@ async function loadStageForItems(req, res) {
     res.status(403).json({ error: 'Buyers cannot manage checklist items' })
     return null
   }
-  const isResponsible = stage.responsibleId && String(stage.responsibleId) === String(req.user.id)
-  if (req.user.role !== 'admin' && !isResponsible) {
+  if (!mayRunStep(req.user, mfrId, stage)) {
     res.status(403).json({ error: "Only an admin or this stage's responsible person can manage checklist items" })
     return null
   }
@@ -2175,13 +2174,12 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials', require
       return res.status(400).json({ error: `Invalid stage index (0–${stageCount - 1})` })
 
     const stage = existingAsgn.stages[stageIndex]
-    // Explicit deny, load-bearing: the isResponsible check below used to exclude
+    // Explicit deny, load-bearing: the step-owner check below used to exclude
     // buyers only as a side effect of their never being assignable as a stage
     // owner. They now are, so procurement needs its own guard (BRD §3).
     if (req.user.role === 'buyer')
       return res.status(403).json({ error: 'Buyers cannot manage materials' })
-    const isResponsible = stage.responsibleId && String(stage.responsibleId) === String(req.user.id)
-    if (req.user.role !== 'admin' && !isResponsible)
+    if (!mayRunStep(req.user, mfrId, stage))
       return res.status(403).json({ error: "Only an admin or this stage's responsible person can manage materials" })
 
     let chosen = null
@@ -2239,13 +2237,12 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineInde
       return res.status(400).json({ error: `Invalid stage index (0–${stageCount - 1})` })
 
     const stage = existingAsgn.stages[stageIndex]
-    // Explicit deny, load-bearing: the isResponsible check below used to exclude
+    // Explicit deny, load-bearing: the step-owner check below used to exclude
     // buyers only as a side effect of their never being assignable as a stage
     // owner. They now are, so procurement needs its own guard (BRD §3).
     if (req.user.role === 'buyer')
       return res.status(403).json({ error: 'Buyers cannot manage materials' })
-    const isResponsible = stage.responsibleId && String(stage.responsibleId) === String(req.user.id)
-    if (req.user.role !== 'admin' && !isResponsible)
+    if (!mayRunStep(req.user, mfrId, stage))
       return res.status(403).json({ error: "Only an admin or this stage's responsible person can manage materials" })
 
     const lineCount = stage.materials?.length || 0
@@ -2331,13 +2328,12 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineInde
       return res.status(400).json({ error: `Invalid stage index (0–${stageCount - 1})` })
 
     const stage = existingAsgn.stages[stageIndex]
-    // Explicit deny, load-bearing: the isResponsible check below used to exclude
+    // Explicit deny, load-bearing: the step-owner check below used to exclude
     // buyers only as a side effect of their never being assignable as a stage
     // owner. They now are, so procurement needs its own guard (BRD §3).
     if (req.user.role === 'buyer')
       return res.status(403).json({ error: 'Buyers cannot manage materials' })
-    const isResponsible = stage.responsibleId && String(stage.responsibleId) === String(req.user.id)
-    if (req.user.role !== 'admin' && !isResponsible)
+    if (!mayRunStep(req.user, mfrId, stage))
       return res.status(403).json({ error: "Only an admin or this stage's responsible person can manage materials" })
 
     const lineCount = stage.materials?.length || 0

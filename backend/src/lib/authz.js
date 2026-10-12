@@ -142,6 +142,20 @@ export const mayEditPlanFor = (user, mfrId) =>
   user?.role === 'admin' || (isStandalone() && user?.role === 'manufacturer' && String(user.id) === String(mfrId))
 
 /**
+ * May this caller add, change or remove the material lines and checklist items on a step of the split
+ * owned by `mfrId`? Admins (orderWriteGuard has already vetted them), the step's named owner, and, in
+ * the standalone product, the split's own manufacturer on any of its steps: with no coordinator in the
+ * middle, nobody else could keep the step's purchasing and checklist current. Buyers never (the routes
+ * also deny them explicitly).
+ */
+export const mayRunStep = (user, mfrId, stage) => {
+  if (!user || user.role === 'buyer') return false
+  if (user.role === 'admin') return true
+  if (stage?.responsibleId && idOf(stage.responsibleId) === String(user.id)) return true
+  return mayEditPlanFor(user, mfrId)
+}
+
+/**
  * Who may create orders at all. Tradio portal: admin only. Standalone: also brands and
  * manufacturers; the route then applies the rules for the caller's role (lib/orderCreate.js).
  */
