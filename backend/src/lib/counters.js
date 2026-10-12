@@ -6,7 +6,7 @@
 // all of the numbers in a series, and two people creating at once collide. Numbering lives here
 // instead, advanced with one atomic update per number, so it is correct for concurrent requests and
 // would stay correct if the server ever ran more than one process.
-import { Counter, Order, MasterOrder, PurchaseOrder, CostSheet } from '../db/index.js'
+import { Counter, Order, MasterOrder, PurchaseOrder, CostSheet, Grn, StockIssue } from '../db/index.js'
 import { fiscalYearCode } from './fiscalYear.js'
 
 const escapeRe = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -76,6 +76,28 @@ export async function allocateCostSheetRef({ orgId, orgCode, now = new Date() })
   const seq = await nextSeq(`cs:${orgId}:${fy}`, async () => {
     const ids = await CostSheet.distinct('chainId', { chainId: new RegExp(`^${escapeRe(prefix)}\\d+$`) })
     return ids.reduce((max, id) => Math.max(max, trailingNumber(id)), 0)
+  })
+  return `${prefix}${String(seq).padStart(4, '0')}`
+}
+
+/** Next goods received note number, e.g. GRN-TPR-2627-0012: per factory per Indian financial year, given when a GRN is posted. */
+export async function allocateGrnNumber({ orgId, orgCode, now = new Date() }) {
+  const fy = fiscalYearCode(now)
+  const prefix = `GRN-${orgCode}-${fy}-`
+  const seq = await nextSeq(`grn:${orgId}:${fy}`, async () => {
+    const nums = await Grn.find({ number: new RegExp(`^${escapeRe(prefix)}\\d+$`) }, { number: 1 }).lean()
+    return nums.reduce((max, g) => Math.max(max, trailingNumber(g.number)), 0)
+  })
+  return `${prefix}${String(seq).padStart(4, '0')}`
+}
+
+/** Next stock issue slip number, e.g. ISS-TPR-2627-0004, numbered the same way. */
+export async function allocateIssueNumber({ orgId, orgCode, now = new Date() }) {
+  const fy = fiscalYearCode(now)
+  const prefix = `ISS-${orgCode}-${fy}-`
+  const seq = await nextSeq(`iss:${orgId}:${fy}`, async () => {
+    const nums = await StockIssue.find({ number: new RegExp(`^${escapeRe(prefix)}\\d+$`) }, { number: 1 }).lean()
+    return nums.reduce((max, g) => Math.max(max, trailingNumber(g.number)), 0)
   })
   return `${prefix}${String(seq).padStart(4, '0')}`
 }

@@ -37,6 +37,14 @@ import { taxModeFor } from '../lib/gst.js'
 import { syncOnSend, syncOnReceive } from '../lib/poSync.js'
 import { renderPurchaseOrderPdf } from '../lib/pdf/po.js'
 import { fiscalYearCode } from '../lib/fiscalYear.js'
+import { InventoryItem } from '../models/InventoryItem.js'
+import { StockLedger } from '../models/StockLedger.js'
+import { Grn } from '../models/Grn.js'
+import { StockIssue } from '../models/StockIssue.js'
+import { Attachment } from '../models/Attachment.js'
+import { SpecSheet } from '../models/SpecSheet.js'
+import { itemKey } from '../lib/inventory/stock.js'
+import { renderGrnPdf } from '../lib/pdf/grn.js'
 
 // This script deletes every User/Order/Document/Notification/AuditLog in
 // whatever database MONGO_DB_URI resolves to, then inserts fake data. Local
@@ -109,6 +117,9 @@ async function seed() {
     Partnership.deleteMany({}),
     Counter.deleteMany({}),
     MasterOrder.deleteMany({}),
+    // The standalone modules' data hangs off those companies, so it goes too.
+    Supplier.deleteMany({}), SupplierItem.deleteMany({}), PurchaseOrder.deleteMany({}), Bom.deleteMany({}), SpecSheet.deleteMany({}), CostSheet.deleteMany({}),
+    InventoryItem.deleteMany({}), StockLedger.deleteMany({}), Grn.deleteMany({}), StockIssue.deleteMany({}), Attachment.deleteMany({}),
   ])
   console.log(`Collections cleared in sandbox db "${dbName}".`)
 
@@ -339,6 +350,7 @@ async function seed() {
     console.log('Standalone extras seeded: a teammate (anita@tiruppur.com), Surat Mills (Tradio view access OFF), a master order and 2 orders created by the parties themselves')
     await seedProcurement({ tiruppur, tprOrg: orgOf.TPR })
     await seedCosting({ tiruppur, tprOrg: orgOf.TPR, zaraBuyer, zaraOrg: orgOf.ZAR })
+    await seedInventory({ tiruppur, tprOrg: orgOf.TPR })
   }
 
   console.log('\n✓ Sandbox seed complete.')
@@ -418,6 +430,67 @@ async function seedProcurement({ tiruppur, tprOrg }) {
   }
   await Counter.updateOne({ _id: `po:${tprOrg._id}:${fy}` }, { $set: { seq: 3 } }, { upsert: true })
   console.log('Procurement seeded: 6 suppliers, 5 catalog items, 3 purchase orders (1 draft, 1 sent, 1 part received) for Tiruppur Textiles')
+}
+
+// Tiruppur's store: five items, two posted goods received notes (one against the part-received rib PO, one from a local
+// shop with no PO), a draft note ready for the fleece lorry, and 20 kg of rib issued to the sweatshirt order. The zips
+// are at nothing, below the level the factory keeps, so the "to buy" flag can be seen.
+async function seedInventory({ tiruppur, tprOrg }) {
+  const org = await Organization.findById(tprOrg._id).lean()
+  const fy = fiscalYearCode()
+  const mk = (name, unit, category, o = {}) => ({ ownerOrgId: tprOrg._id, name, unit, category, key: itemKey(name, unit), createdBy: tiruppur._id, ...o })
+  const [fleece, rib, zip, label, polybag] = await InventoryItem.insertMany([
+    mk('Brushed fleece 280 GSM', 'kg', 'fabric', { reorderLevel: 300, hsnCode: '600610' }),
+    mk('Rib 2x2 collar and cuff', 'kg', 'fabric', { reorderLevel: 40, hsnCode: '600632' }),
+    mk('5 inch metal zip, antique brass', 'pcs', 'trims', { reorderLevel: 1000, hsnCode: '960719' }),
+    mk('Woven main label', 'pcs', 'packaging', { reorderLevel: 1500, hsnCode: '580710' }),
+    mk('Polybag', 'pcs', 'packaging', { reorderLevel: 2000 }),
+  ])
+  const ribPo = await PurchaseOrder.findOne({ ownerOrgId: tprOrg._id, 'lines.description': /Rib 2x2/ }).lean()
+  const fleecePo = await PurchaseOrder.findOne({ ownerOrgId: tprOrg._id, 'lines.description': /Brushed fleece/ }).lean()
+  const erode = await Supplier.findOne({ ownerOrgId: tprOrg._id, name: 'Erode Rib and Collar' }).lean()
+  const mill = await Supplier.findOne({ ownerOrgId: tprOrg._id, name: 'Coimbatore Knit Fabrics' }).lean()
+  const lid = n => `5d0000000000000000000${String(n).padStart(3, '0')}`
+
+  const post = async (n, at, g, lines) => {
+    const number = `GRN-TPR-${fy}-${String(n).padStart(4, '0')}`
+    const doc = { ownerOrgId: tprOrg._id, number, status: 'posted', source: 'web', createdBy: tiruppur._id, postedBy: tiruppur._id, postedAt: at, createdAt: at, receivedOn: at.toISOString().slice(0, 10), ...g, lines }
+    const grn = await Grn.create(doc)
+    const pdf = await renderGrnPdf(grn.toObject(), org, { receivedBy: tiruppur.name, poNumber: g.poId })
+    const d = await Document.create({ type: 'goods_receipt', name: `Goods received note ${number}`, mfrId: tiruppur._id, orderId: null, issueDate: at, uploadedBy: tiruppur._id, issuer: g.supplierName, grnId: String(grn._id), dataUrl: `data:application/pdf;base64,${pdf.toString('base64')}`, fileName: `${number}.pdf`, fileSize: pdf.length, mimeType: 'application/pdf' })
+    await Grn.updateOne({ _id: grn._id }, { $set: { documentId: d._id } })
+    await StockLedger.insertMany(lines.filter(l => l.qty - (l.rejectedQty || 0) > 0).map(l => ({
+      ownerOrgId: tprOrg._id, itemId: l.itemId, location: 'store', type: 'receipt', qty: l.qty - (l.rejectedQty || 0), unit: l.unit, unitCost: l.rate || 0,
+      refType: 'grn', refId: String(grn._id), refLineId: l.lineId, note: number, at, by: tiruppur._id, key: `grn:${grn._id}:${l.lineId}`,
+    })))
+    return grn
+  }
+
+  const at1 = new Date('2026-10-09T12:00:00+05:30'), at2 = new Date('2026-10-10T15:30:00+05:30')
+  const ribLine = ribPo.lines[0]
+  const g1 = await post(1, at1, { poId: ribPo._id, supplierId: erode._id, supplierName: erode.name, supplierGstin: erode.gstin, challanNo: 'ERB-2231', challanDate: '2026-10-09', vehicleNo: 'TN33 BC 4821', note: 'Lorry 1 of 2' },
+    [{ lineId: lid(1), poLineId: ribLine.lineId, description: ribLine.description, itemId: rib._id, unit: 'kg', orderedQty: ribLine.qty, qty: 60, rejectedQty: 0, rate: 520, lot: 'R-77' }])
+  await PurchaseOrder.updateOne({ _id: ribPo._id, 'receipts.0': { $exists: true } }, { $set: { 'receipts.0.grnId': String(g1._id) } })
+  await post(2, at2, { supplierName: 'Sri Murugan Trims', challanNo: 'SM-1840' },
+    [{ lineId: lid(2), description: 'Woven main label', itemId: label._id, unit: 'pcs', qty: 3000, rejectedQty: 0, rate: 1.6 },
+     { lineId: lid(3), description: 'Polybag', itemId: polybag._id, unit: 'pcs', qty: 5000, rejectedQty: 200, rejectReason: 'torn seals', rate: 2.5 }])
+
+  // Ready to receive: the fleece lorry is expected, the note is drafted from the PO.
+  const fl = fleecePo.lines[0]
+  await Grn.create({ ownerOrgId: tprOrg._id, status: 'draft', source: 'web', poId: fleecePo._id, supplierId: mill._id, supplierName: mill.name, supplierGstin: mill.gstin, createdBy: tiruppur._id, receivedOn: '2026-10-12',
+    lines: [{ lineId: lid(4), poLineId: fl.lineId, description: fl.description, unit: 'kg', orderedQty: fl.qty, qty: fl.qty, rate: 410 }] })
+
+  // Twenty kilos of rib went to the sweatshirt order's cutting.
+  const slipId = new mongoose.Types.ObjectId()
+  const issueAt = new Date('2026-10-11T09:30:00+05:30')
+  await StockIssue.create({ _id: slipId, ownerOrgId: tprOrg._id, number: `ISS-TPR-${fy}-0001`, type: 'issue', orderId: 'ZAR-SWTSHT-FW26-001', stageIndex: 1, issuedOn: '2026-10-11', note: 'Collar and cuff for the first cutting lot', createdBy: tiruppur._id, createdAt: issueAt,
+    lines: [{ lineId: lid(5), itemId: rib._id, name: rib.name, unit: 'kg', qty: 20 }] })
+  await StockLedger.create({ ownerOrgId: tprOrg._id, itemId: rib._id, location: 'store', type: 'issue', qty: -20, unit: 'kg', refType: 'issue', refId: String(slipId), refLineId: lid(5), orderId: 'ZAR-SWTSHT-FW26-001', note: 'Issued to ZAR-SWTSHT-FW26-001', at: issueAt, by: tiruppur._id, key: `issue:${slipId}:${lid(5)}` })
+
+  await Counter.updateOne({ _id: `grn:${tprOrg._id}:${fy}` }, { $set: { seq: 2 } }, { upsert: true })
+  await Counter.updateOne({ _id: `iss:${tprOrg._id}:${fy}` }, { $set: { seq: 1 } }, { upsert: true })
+  console.log('Inventory seeded: 5 items, 2 posted goods received notes, 1 draft note, 1 stock issue for Tiruppur Textiles')
+  void fleece; void zip
 }
 
 // A frozen bill of materials on Tiruppur's sweatshirt order, and three cost sheets for Zara India in different

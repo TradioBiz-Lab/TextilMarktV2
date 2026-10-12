@@ -27,6 +27,11 @@
 | `boms`         | A manufacturer's bill of materials for an order: sizes, colours and every fabric, trim and label line (private) | ObjectId |
 | `specsheets`   | The measurement spec of a style read from its tech pack (shared by the order's brand and factory) | ObjectId |
 | `costsheets`   | A factory's open cost sheet for a style, versioned, shared with a brand that comments and approves | ObjectId |
+| `inventoryitems` | What a factory keeps in stock (private); the balance is never stored, only the ledger | ObjectId |
+| `stockledger`  | Every stock movement, one row each, never edited: receipts, issues, returns, counts, job work | ObjectId |
+| `grns`         | Goods received notes: what came in from a supplier, checked against its PO, with evidence photos | ObjectId |
+| `stockissues`  | Slips for stock issued to (or returned from) a factory's order | ObjectId |
+| `attachments`  | Evidence photos kept against a record (a GRN's challan, goods or damage), apart from the documents | ObjectId |
 
 ---
 
@@ -701,6 +706,60 @@ version marks the older ones `superseded`.
 
 ---
 
+## 20. `inventoryitems`, `stockledger`, `grns`, `stockissues`, `attachments`
+
+A factory's store. **Everything here is private to the company** (`ownerOrgId`); brands and Tradio staff
+cannot reach any of it, and another company's id is always "not found".
+
+```
+inventoryitems {
+  ownerOrgId, name (as the factory writes it on a PO and a challan), unit, category: fabric|yarn|trims|packaging|other,
+  key (derived from name and unit; unique per company: how a received line finds its item),
+  supplierIds[], reorderLevel (0 = none), hsnCode, notes, isActive
+}
+
+stockledger {                       one row per movement; never edited or deleted, a mistake is put right by another row
+  ownerOrgId, itemId, location      'store' or 'jw:<supplierId>' (stock held by a job worker)
+  type: receipt | issue | return | adjustment | jobwork_out | jobwork_in
+  qty (signed: + adds to the location's balance), unit, unitCost (receipts), at, by, note
+  refType: grn | issue | adjustment | jobwork, refId, refLineId, orderId (issues and returns)
+  key                               unique per company: writing the same movement twice records it once
+}
+  balance = the sum of qty over an item's rows at a location (lib/inventory/stock.js); nothing stores a balance
+
+grns {
+  ownerOrgId, number (GRN-<code>-<financial year>-NNNN, given when posted), status: draft | posting | posted,
+  source: web | whatsapp | kriyaa | ai_review, poId | null, supplierId | null, supplierName, supplierGstin,
+  challanNo, challanDate, vehicleNo, receivedOn, note,
+  lines[] { lineId, poLineId | null, description, itemId (filled when posted), unit, orderedQty, qty (arrived),
+            rejectedQty, rejectReason, rate, lot, note }          stock gets qty less rejectedQty
+  documentId (the posted PDF, a goods_receipt document), inboundMessageId, extraction (what the AI read), postedAt, postedBy
+}
+
+stockissues {
+  ownerOrgId, number (ISS-<code>-<financial year>-NNNN), type: issue | return, orderId, stageIndex | null,
+  lines[] { lineId, itemId, name, unit, qty }, note, issuedOn
+}
+
+attachments {                        a photo kept as evidence; its bytes are read one at a time, never in a list
+  ownerOrgId, refType: grn | jobwork, refId, kind: challan | goods | damage | other, name, caption, mimeType, size, dataUrl
+}
+```
+
+**Posting a GRN** is the one thing that adds stock, in a fixed order so a crash can be finished by posting again:
+claim the note (draft to posting), write the ledger rows (keyed by GRN and line), give the purchase order its receipt
+(guarded by the GRN's id in `purchaseorders.receipts[].grnId`), bring the order's material lines in, store the PDF and
+mark it posted. Every PO receipt, including the older `POST /purchase-orders/:id/receive`, goes through it.
+
+**Taking stock out** (an issue, a send to a job worker) never lets a location go below zero: the rows are written, each
+balance is read again counting only the rows up to this move's own, and the one written later loses and is removed.
+
+**Indexes:** `inventoryitems { ownerOrgId, key }` (unique); `stockledger { ownerOrgId, key }` (unique), `{ ownerOrgId,
+itemId, location }`, `{ ownerOrgId, orderId }`; `grns { ownerOrgId, number }` (unique where set), `{ ownerOrgId, poId }`;
+`stockissues { ownerOrgId, number }` (unique)
+
+---
+
 ## 4. `documents`
 
 Uploaded files, certificates, and production-stage evidence. A document belongs to a
@@ -1006,6 +1065,7 @@ orders / masterorders → createdBy (users, the creating company's party id)
 suppliers → ownerOrgId (organizations);  supplieritems → supplierId (suppliers), ownerOrgId
 purchaseorders → ownerOrgId (organizations), supplierId (suppliers), documentId (documents),
                  lines[].materialRef → orders (orderId + stage + material line)
+grns → ownerOrgId, poId (purchaseorders), supplierId, documentId;  stockledger → itemId (inventoryitems), refId (grn / stock issue)
 ```
 
 ---

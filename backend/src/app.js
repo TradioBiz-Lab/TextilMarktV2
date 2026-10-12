@@ -33,6 +33,8 @@ import partnersRouter from './routes/partners.js'
 import suppliersRouter from './routes/suppliers.js'
 import purchaseOrdersRouter from './routes/purchaseOrders.js'
 import bomsRouter from './routes/boms.js'
+import inventoryRouter from './routes/inventory.js'
+import grnsRouter from './routes/grns.js'
 import costSheetsRouter from './routes/costSheets.js'
 import specSheetsRouter from './routes/specSheets.js'
 import viewAsRouter from './routes/viewAs.js'  // on in standalone mode; sandbox-only flag (ENABLE_VIEW_AS) otherwise
@@ -194,6 +196,8 @@ app.use('/api/partners',      partnersRouter)
 app.use('/api/suppliers',     suppliersRouter)           // standalone product only (404 otherwise)
 app.use('/api/purchase-orders', purchaseOrdersRouter)    // standalone product only (404 otherwise)
 app.use('/api/boms',          bomsRouter)               // standalone product only (404 otherwise)
+app.use('/api/inventory',     inventoryRouter)          // standalone product only (404 otherwise)
+app.use('/api/grns',          grnsRouter)               // standalone product only (404 otherwise)
 app.use('/api/cost-sheets',   costSheetsRouter)         // standalone product only (404 otherwise)
 app.use('/api/spec-sheets',   specSheetsRouter)         // standalone product only (404 otherwise)
 

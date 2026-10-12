@@ -393,6 +393,7 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
     if (!Document.schema.path('type').enumValues.includes(type)) return res.status(400).json({ error: `Unknown document type "${type}"` })
     // Written by the system when a purchase order is sent, never uploaded by hand.
     if (type === 'supplier_po') return res.status(400).json({ error: 'A purchase order PDF is created when the purchase order is sent' })
+    if (type === 'goods_receipt') return res.status(400).json({ error: 'A goods received note PDF is created when the note is posted' })
     // A file on a whole master order (the customer sees it). Tradio portal: admins only. Standalone:
     // Tradio staff where they may act, the master order's own brand, or the company that created it.
     if (masterOrderId != null && masterOrderId !== '') {
@@ -539,6 +540,7 @@ router.post('/:id', requireAuth, uploadLimiter, async (req, res) => {
     if (!doc || !doc.isActive) return res.status(404).json({ error: 'Document not found' })
     // The PDF of a sent purchase order is the record of what was agreed: it is never edited.
     if (doc.type === 'supplier_po') return res.status(409).json({ error: 'A sent purchase order cannot be edited' })
+    if (doc.type === 'goods_receipt') return res.status(409).json({ error: 'A posted goods received note cannot be edited' })
 
     const isOwner = doc.uploadedBy && doc.uploadedBy.toString() === req.user.id
     if (req.user.role !== 'admin' && !isOwner)
@@ -625,6 +627,7 @@ router.post('/:id/delete', requireAuth, async (req, res) => {
     const doc = await Document.findById(req.params.id)
     if (!doc || !doc.isActive) return res.status(404).json({ error: 'Document not found' })
     if (doc.type === 'supplier_po') return res.status(409).json({ error: 'A sent purchase order cannot be deleted. Cancel the purchase order instead' })
+    if (doc.type === 'goods_receipt') return res.status(409).json({ error: 'A posted goods received note cannot be deleted' })
 
     const isOwner = doc.uploadedBy && doc.uploadedBy.toString() === req.user.id
     if (req.user.role !== 'admin' && !isOwner)

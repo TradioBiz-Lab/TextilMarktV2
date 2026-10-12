@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { requireAuth } from '../middleware/auth.js'
-import { InboundMessage, Order, ActionItem, Supplier, SupplierItem, PurchaseOrder, Bom, CostSheet } from '../db/index.js'
+import { InboundMessage, Order, ActionItem, Supplier, SupplierItem, PurchaseOrder, Bom, CostSheet, InventoryItem, StockLedger, Grn, StockIssue } from '../db/index.js'
 import { adminOrderVisibility } from '../lib/authz.js'
 import { isStandalone } from '../lib/platform.js'
 
@@ -42,13 +42,13 @@ router.get('/feed', requireAuth, async (req, res) => {
 // A cheap version per feature store, so a screen open on one phone notices a change made on another
 // (the screen refetches when its number moves; see LiveRefresh). Computed from the caller's OWN
 // company's rows only, so the numbers can never reveal that another company's data changed. A factory
-// gets its suppliers, purchase orders, bills of materials and cost sheets; a brand gets the cost sheets
+// gets its suppliers, purchase orders, bills of materials, cost sheets, stock and goods received notes; a brand gets the cost sheets
 // shared with it (never a draft); Tradio staff get none.
 async function featureVersions(user) {
   if (!isStandalone() || !user.orgId) return undefined
-  const stamp = async (Model, filter) => {
-    const [n, newest] = await Promise.all([Model.countDocuments(filter), Model.findOne(filter, 'updatedAt').sort({ updatedAt: -1 }).lean()])
-    return { n, at: newest?.updatedAt ? new Date(newest.updatedAt).getTime() : 0 }
+  const stamp = async (Model, filter, field = 'updatedAt') => {
+    const [n, newest] = await Promise.all([Model.countDocuments(filter), Model.findOne(filter, field).sort({ [field]: -1 }).lean()])
+    return { n, at: newest?.[field] ? new Date(newest[field]).getTime() : 0 }
   }
   if (user.role === 'buyer') {
     const sheets = await stamp(CostSheet, { brandOrgId: user.orgId, sharedAt: { $ne: null } })
@@ -56,12 +56,17 @@ async function featureVersions(user) {
   }
   if (user.role !== 'manufacturer') return undefined
   const own = { ownerOrgId: user.orgId }
-  const [sup, item, po, bom, sheets] = await Promise.all([stamp(Supplier, own), stamp(SupplierItem, own), stamp(PurchaseOrder, own), stamp(Bom, own), stamp(CostSheet, own)])
+  const [sup, item, po, bom, sheets, stock, moves, grn, issue] = await Promise.all([
+    stamp(Supplier, own), stamp(SupplierItem, own), stamp(PurchaseOrder, own), stamp(Bom, own), stamp(CostSheet, own),
+    stamp(InventoryItem, own), stamp(StockLedger, own, 'createdAt'), stamp(Grn, own), stamp(StockIssue, own),
+  ])
   return {
     suppliers: `${sup.n}:${sup.at}:${item.n}:${item.at}`,
     'purchase-orders': `${po.n}:${po.at}`,
     boms: `${bom.n}:${bom.at}`,
     'cost-sheets': `${sheets.n}:${sheets.at}`,
+    inventory: `${stock.n}:${stock.at}:${moves.n}:${moves.at}:${issue.n}:${issue.at}`,
+    grns: `${grn.n}:${grn.at}`,
   }
 }
 

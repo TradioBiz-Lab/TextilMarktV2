@@ -16,11 +16,13 @@ const DOC_TYPES = [
   'floor_evidence',
   // The PDF of a purchase order a factory sent to a supplier. Never shown to brands (see PO_HIDDEN_FROM_BRANDS).
   'supplier_po',
+  // The PDF of a goods received note: also the factory's own, never shown to brands.
+  'goods_receipt',
 ]
 
 // What a factory buys is its own business: in the standalone product a brand never receives these,
 // whatever order they hang off.
-export const PO_HIDDEN_FROM_BRANDS = ['supplier_po', 'material_po']
+export const PO_HIDDEN_FROM_BRANDS = ['supplier_po', 'material_po', 'goods_receipt']
 
 const documentSchema = new mongoose.Schema({
   type:       { type: String, required: true, enum: DOC_TYPES },
@@ -58,6 +60,8 @@ const documentSchema = new mongoose.Schema({
 
   // The purchase order this document is the PDF of (type 'supplier_po').
   poId: { type: String, default: null },
+  // The goods received note this document is the PDF of (type 'goods_receipt').
+  grnId: { type: String, default: null },
 
   // File payload — stored as base64 data URL (inline) OR external link (e.g. Zoho/GDrive share URL)
   // For non-stage docs, exactly one of dataUrl or externalUrl is set.

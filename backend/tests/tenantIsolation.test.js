@@ -275,7 +275,7 @@ describe('procurement: a company\'s suppliers and purchase orders are its own (s
     const { A, B, X, admin } = await stock()
     const v = async u => (await as(u).get('/api/floor/feed')).body.versions
     const [a0, b0] = [await v(A), await v(B)]
-    assert.deepEqual(Object.keys(a0).sort(), ['boms', 'cost-sheets', 'purchase-orders', 'suppliers'])
+    assert.deepEqual(Object.keys(a0).sort(), ['boms', 'cost-sheets', 'grns', 'inventory', 'purchase-orders', 'suppliers'])
     // A changes something; B's numbers do not move, and A's do.
     await as(A).post('/api/suppliers', { name: 'Another A Mill' })
     const [a1, b1] = [await v(A), await v(B)]
@@ -475,3 +475,117 @@ describe('cost sheets: each brand sees only what its factories shared with it (s
     assert.notEqual(await v(X), x0)                   // X's did, once something was shared with it
   })
 })
+
+describe('stock and goods received notes: a company\'s inventory is its own (standalone product)', () => {
+  const PHOTO = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/2Q=='
+  beforeEach(() => { process.env.PLATFORM_MODE = 'standalone' })
+
+  /** Both factories hold 50 kg of their own fleece, with a posted note (and a photo on it) and a draft note, and have issued 10 kg to their order. */
+  async function stock() {
+    const w = await world()
+    const out = {}
+    for (const [key, u, orderId] of [['A', w.A, 'AX'], ['B', w.B, 'BY']]) {
+      const posted = (await as(u).post('/api/grns', { supplierName: `${key} Mills`, lines: [{ description: `${key} fleece`, unit: 'kg', qty: 50, rate: 100 }] })).body
+      await as(u).post(`/api/grns/${posted.id}/photos`, { dataUrl: PHOTO, kind: 'challan' })
+      assert.equal((await as(u).post(`/api/grns/${posted.id}/post`)).status, 200)
+      const draft = (await as(u).post('/api/grns', { supplierName: `${key} Mills`, lines: [{ description: `${key} zips`, unit: 'pcs', qty: 5 }] })).body
+      const item = (await as(u).get('/api/inventory/items')).body.find(i => i.name === `${key} fleece`)
+      const slip = (await as(u).post('/api/inventory/issues', { orderId, lines: [{ itemId: item.id, qty: 10 }] })).body
+      out[`data${key}`] = { posted, draft, item, slip, orderId }
+    }
+    return { ...w, ...out }
+  }
+
+  test('each factory lists only its own items, notes, slips and movements', async () => {
+    const { A, B, dataA, dataB } = await stock()
+    assert.deepEqual((await as(A).get('/api/inventory/items')).body.map(i => [i.name, i.onHand]), [['A fleece', 40]])
+    assert.deepEqual((await as(B).get('/api/inventory/items')).body.map(i => [i.name, i.onHand]), [['B fleece', 40]])
+    assert.deepEqual((await as(A).get('/api/grns')).body.map(g => g.id).sort(), [dataA.posted.id, dataA.draft.id].sort())
+    assert.deepEqual((await as(B).get('/api/grns')).body.map(g => g.id).sort(), [dataB.posted.id, dataB.draft.id].sort())
+    assert.deepEqual((await as(A).get('/api/inventory/issues')).body.map(s => s.id), [dataA.slip.id])
+    assert.deepEqual((await as(A).get('/api/inventory/ledger')).body.map(r => r.itemName), ['A fleece', 'A fleece'])
+    assert.deepEqual((await as(B).get('/api/inventory/ledger?orderId=AX')).body, [])               // another company's order id finds nothing of B's
+  })
+
+  test('a direct read of another factory\'s item, note, photo, slip or PDF is "not found"', async () => {
+    const { A, B, dataA } = await stock()
+    const photoId = (await as(A).get(`/api/grns/${dataA.posted.id}/photos`)).body[0].id
+    for (const url of [
+      `/api/inventory/items/${dataA.item.id}`, `/api/inventory/issues/${dataA.slip.id}`, `/api/grns/${dataA.posted.id}`, `/api/grns/${dataA.posted.id}/pdf`,
+      `/api/grns/${dataA.posted.id}/photos`, `/api/grns/${dataA.posted.id}/photos/${photoId}`, `/api/inventory/ledger?itemId=${dataA.item.id}`,
+    ]) {
+      const r = await as(B).get(url)
+      assert.ok(r.status === 404 || (Array.isArray(r.body) && r.body.length === 0), `${url} gave ${r.status}`)
+    }
+    assert.equal((await as(A).get(`/api/grns/${dataA.posted.id}/photos/${photoId}`)).status, 200)
+  })
+
+  test('another factory cannot change them, post them, add photos, or issue another factory\'s stock', async () => {
+    const { A, B, dataA } = await stock()
+    assert.equal((await as(B).post(`/api/grns/${dataA.draft.id}`, { note: 'hijack' })).status, 404)
+    assert.equal((await as(B).post(`/api/grns/${dataA.draft.id}/post`)).status, 404)
+    assert.equal((await as(B).post(`/api/grns/${dataA.draft.id}/delete`)).status, 404)
+    assert.equal((await as(B).post(`/api/grns/${dataA.draft.id}/photos`, { dataUrl: PHOTO })).status, 404)
+    assert.equal((await as(B).post(`/api/inventory/items/${dataA.item.id}`, { name: 'hijack' })).status, 404)
+    assert.equal((await as(B).post(`/api/inventory/items/${dataA.item.id}/archive`)).status, 404)
+    assert.equal((await as(B).post('/api/inventory/issues', { orderId: 'BY', lines: [{ itemId: dataA.item.id, qty: 1 }] })).status, 400)
+    assert.equal((await as(B).post('/api/inventory/adjustments', { itemId: dataA.item.id, delta: 5, reason: 'x' })).status, 400)
+    assert.equal((await as(B).post('/api/grns', { lines: [{ description: 'x', qty: 1, itemId: dataA.item.id }] })).status, 400)
+    assert.equal((await as(B).post('/api/inventory/issues', { orderId: 'AX', lines: [{ itemId: (await as(B).get('/api/inventory/items')).body[0].id, qty: 1 }] })).status, 400)   // not B's order
+    assert.deepEqual((await as(A).get('/api/inventory/items')).body.map(i => [i.name, i.onHand]), [['A fleece', 40]])      // nothing of A's moved
+  })
+
+  test('brands, Tradio staff and visitors cannot use any of it', async () => {
+    const { X, Y, admin, master, dataA } = await stock()
+    for (const u of [X, Y, admin, master]) {
+      for (const url of ['/api/inventory/items', '/api/inventory/ledger', '/api/inventory/issues', '/api/grns', `/api/grns/${dataA.posted.id}`, `/api/grns/${dataA.posted.id}/photos`]) assert.equal((await as(u).get(url)).status, 403, `${u.role} ${url}`)
+      assert.equal((await as(u).post('/api/grns', {})).status, 403, u.role)
+    }
+    assert.equal((await req('GET', '/api/grns')).status, 401)
+  })
+
+  test('a brand never receives the posted note\'s PDF, even on the order it was for', async () => {
+    const { A, X, dataA } = await stock()
+    const doc = await Document.findOne({ grnId: dataA.posted.id })
+    await Document.updateOne({ _id: doc._id }, { $set: { orderId: 'AX' } })
+    assert.equal((await as(X).get('/api/documents')).body.some(d => d.type === 'goods_receipt'), false)
+    assert.equal((await as(X).get(`/api/documents/${doc._id}/data`)).status, 404)
+    assert.equal((await as(A).get(`/api/documents/${doc._id}/data`)).status, 200)
+  })
+
+  test('the live feed\'s stock versions move only for the company whose stock changed', async () => {
+    const { A, B } = await stock()
+    const v = async u => (await as(u).get('/api/floor/feed')).body.versions
+    const [a0, b0] = [await v(A), await v(B)]
+    const item = (await as(A).get('/api/inventory/items')).body[0]
+    await as(A).post('/api/inventory/adjustments', { itemId: item.id, delta: 1, reason: 'found' })
+    const [a1, b1] = [await v(A), await v(B)]
+    assert.notEqual(a1.inventory, a0.inventory)
+    assert.deepEqual([b1.inventory, b1.grns], [b0.inventory, b0.grns])
+  })
+
+  test('Tradio\'s master admin viewing a factory reads its stock read-only; a company that switched Tradio off is closed to them', async () => {
+    const { A, master, dataA } = await stock()
+    const open = await as(master).post('/api/auth/view-as', { userId: String(A._id) })
+    assert.equal(open.status, 200, JSON.stringify(open.body))
+    const token = open.body.token
+    assert.deepEqual((await req('GET', '/api/inventory/items', { token })).body.map(i => i.name), ['A fleece'])
+    assert.equal((await req('GET', `/api/grns/${dataA.posted.id}`, { token })).status, 200)
+    for (const [path, body] of [['/api/grns', {}], ['/api/inventory/issues', { orderId: 'AX', lines: [] }], ['/api/inventory/adjustments', {}], [`/api/grns/${dataA.draft.id}/post`, {}]]) {
+      const w = await req('POST', path, { token, body })
+      assert.equal(w.status, 403, path)
+      assert.equal(w.body.code, 'VIEW_ONLY')
+    }
+    await setOrg(A, { tradioCanView: false })
+    const closed = await req('GET', '/api/inventory/items', { token })
+    assert.equal(closed.status, 403)
+    assert.equal(closed.body.code, 'VIEW_BLOCKED')
+  })
+
+  test('the Tradio portal has none of it', async () => {
+    const { A } = await stock()
+    delete process.env.PLATFORM_MODE
+    for (const url of ['/api/inventory/items', '/api/grns', '/api/inventory/issues']) assert.equal((await as(A).get(url)).status, 404, url)
+  })
+})
+

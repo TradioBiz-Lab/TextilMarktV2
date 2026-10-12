@@ -328,6 +328,22 @@ admin enables them in User Setup.
     (`toDraft` makes the rest whole by the ratio).
   - *Live refresh.* `/api/floor/feed` carries per-company versions: a factory gets `suppliers`,
     `purchase-orders`, `boms` and `cost-sheets`; a brand gets `cost-sheets` (shared ones only).
+- **Stock and goods received** (standalone only; `/api/inventory`, `/api/grns`; `requireInventory`, a manufacturer's own
+  session). Private to the company like POs, brands get 403 and a posted note's PDF (`goods_receipt`) is hidden from them.
+  - *The ledger is the truth.* `StockLedger` rows are never edited or deleted; a balance is their sum
+    (`lib/inventory/stock.js`), per item and location (`store` or `jw:<supplierId>` for stock held by a job worker).
+    Each row has a unique `key`, so writing a movement twice records it once. `takeStock` never lets a location go
+    below zero, even when two issues race: the row written later loses and is removed.
+  - *A goods received note (`Grn`)* is drafted (from a PO's outstanding lines, by hand, by Kriyaa or from a challan
+    photo), checked, and posted by `lib/inventory/grn.js`: claim, ledger rows, the PO's receipt (guarded by the GRN id),
+    material lines, PDF, posted. Posting again after a crash finishes the job without receiving twice. The number is
+    given at posting. `POST /purchase-orders/:id/receive` is now a thin wrapper that makes and posts a GRN, so every
+    receipt has a number, a PDF and a stock movement. Stock gets `qty - rejectedQty`; over 10% over the PO is refused.
+  - *Items* are named as the factory writes them (`name` + `unit` make the `key`); a received line with no item finds
+    or makes one (`itemFor`, `guessCategory`). Evidence photos are `Attachment`s (one request each, magic-byte checked,
+    at most 12 a note, kept after posting), never `Document`s.
+  - *Issues to orders* (`StockIssue`) are how what an order really used is known; a return only takes back what was
+    issued to that order. A count (`/adjustments`) puts the book right and needs a reason.
 - **Run it locally.** `npm run dev:local` (backend) starts an ephemeral in-memory mongod, seeds a
   standalone environment and blanks the email key, so nothing touches Atlas and no email is sent. It
   uses the same seed logins as `npm run seed:sandbox` (never run that against the shared sandbox DB

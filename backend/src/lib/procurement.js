@@ -22,6 +22,17 @@ export function requireProcurement(req, res, next) {
 }
 
 /**
+ * Put on every stock and goods received route. Same rule as procurement: the standalone product only, and a
+ * manufacturer's own session (a master admin looking at a factory is that factory's session, read-only).
+ */
+export function requireInventory(req, res, next) {
+  if (!isStandalone()) return res.status(404).json({ error: 'Not found' })
+  if (req.user?.role !== 'manufacturer' || !req.user.orgId)
+    return res.status(403).json({ error: 'Stock and goods received notes are for manufacturers' })
+  next()
+}
+
+/**
  * Put on every cost sheet route. The module exists only in the standalone product, and for the two sides of
  * a sheet: the factory that prepares it and the brand it is shared with. Each route then scopes to what
  * that side may reach. A master admin looking at a company is that company's own session, read-only.

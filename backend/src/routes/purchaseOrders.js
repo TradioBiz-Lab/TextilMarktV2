@@ -10,14 +10,15 @@
 // Tradio staff cannot use these routes (requireProcurement). A PO that is not yours is a 404.
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
-import { PurchaseOrder, SupplierItem, Document, AuditLog } from '../db/index.js'
+import { PurchaseOrder, SupplierItem, Document, Grn, AuditLog } from '../db/index.js'
 import { requireAuth } from '../middleware/auth.js'
 import { userKey } from '../lib/limiterKey.js'
 import { requireProcurement, isId } from '../lib/procurement.js'
 import { prepare, createDraft, stamp } from '../lib/poDraft.js'
 import { moqWarnings } from '../lib/poMath.js'
 import { stateName } from '../lib/gst.js'
-import { syncOnSend, syncOnReceive, syncOnCancel } from '../lib/poSync.js'
+import { syncOnSend, syncOnCancel } from '../lib/poSync.js'
+import { createGrn, postGrn } from '../lib/inventory/grn.js'
 import { renderPurchaseOrderPdf } from '../lib/pdf/po.js'
 import { sendEmailDetailed, emailPurchaseOrder } from '../lib/email.js'
 
@@ -322,24 +323,16 @@ router.post('/:id/receive', writeLimiter, async (req, res) => {
     }
     const note = typeof req.body?.note === 'string' ? req.body.note.trim().slice(0, 500) : ''
 
-    const filters = received.map((r, i) => ({ [`l${i}.lineId`]: r.line.lineId }))
-    const $inc = Object.fromEntries(received.map((r, i) => [`lines.$[l${i}].receivedQty`, r.qty]))
-    const updated = await PurchaseOrder.findOneAndUpdate(
-      { _id: id, ...mine(req), status: { $in: ['sent', 'acknowledged', 'partially_received'] } },
-      { $inc, $push: { receipts: { at: new Date(), by: req.user.actorId, note, lines: received.map(r => ({ lineId: r.line.lineId, qty: r.qty })) }, timeline: stamp(req, 'Goods received', `${received.length} line${received.length === 1 ? '' : 's'}${note ? `: ${note}` : ''}`) } },
-      { new: true, arrayFilters: filters },
-    ).lean()
-    if (!updated) return fail(res, 409, 'This purchase order changed. Reload it and try again')
-
-    const complete = updated.lines.every(l => (l.receivedQty || 0) >= l.qty)
-    const next = complete ? 'closed' : 'partially_received'
-    const final = await PurchaseOrder.findOneAndUpdate(
-      { _id: id, ...mine(req), status: { $in: ['sent', 'acknowledged', 'partially_received'] } },
-      { $set: { status: next }, ...(complete ? { $push: { timeline: stamp(req, 'Fully received') } } : {}) }, { new: true },
-    ).lean() || updated
-    const unlinked = await syncOnReceive({ partyId: req.user.id, po: updated, received })
-    await AuditLog.create({ byUser: req.user.id, action: 'Purchase Order Received', detail: `${id}: ${received.length} line(s) received by ${req.user.name}${complete ? ' (complete)' : ''}` })
-    res.json(poView(final, { notice: { unlinkedLines: unlinked.map(u => u.description) } }))
+    // Receiving is a goods received note: the same path a note made in the stock screens takes, so every receipt
+    // has a number, a PDF and a stock movement behind it.
+    const made = await createGrn(req, { poId: id, note, lines: received.map(r => ({ poLineId: r.line.lineId, qty: r.qty })) }, { source: 'web' })
+    if (!made.ok) return fail(res, made.status, made.error)
+    const posted = await postGrn(req, made.grn._id)
+    if (!posted.ok) {
+      await Grn.deleteOne({ _id: made.grn._id, ownerOrgId: req.user.orgId, status: 'draft' })
+      return fail(res, posted.status, posted.error)
+    }
+    res.json(poView(posted.po, { notice: posted.notice, grn: { id: String(posted.grn._id), number: posted.grn.number } }))
   } catch (err) { console.error('[po]', err); fail(res, 500, 'Server error') }
 })
 

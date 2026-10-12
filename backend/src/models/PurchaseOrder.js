@@ -68,6 +68,8 @@ const receiptSchema = new mongoose.Schema({
   by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   note: { type: String, default: '', maxlength: 500 },
   lines: [{ _id: false, lineId: String, qty: Number }],
+  // The goods received note this came from, so posting the same GRN twice cannot receive twice.
+  grnId: { type: String, default: null },
 }, { _id: false })
 
 const timelineSchema = new mongoose.Schema({
