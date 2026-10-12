@@ -212,18 +212,9 @@ export function AppProvider({ children }) {
       const uid = String(currentUser.id)
       const myOrders = orders.filter(o => String(o.buyerId) === uid)
 
-      const late = myOrders.filter(o =>
-        (o.assignments || []).length > 0 &&
-        isPastDelivery(o.delivery) &&
-        !(o.assignments || []).every(a => a.status === 'Delivered')
-      )
-      if (late.length > 0) {
-        r.push({
-          id: 'late-orders', type: 'warning',
-          msg: `${late.length} order${late.length > 1 ? 's are' : ' is'} past the delivery date and not yet delivered.`,
-        })
-      }
-
+      // No delivery-status ribbon for customers: order status lives on their own pages, and a yellow
+      // "past the delivery date" bar on every screen reads as an alarm. Admin-published ribbons and
+      // certificate alerts below still reach them.
       const myOrderIds = new Set(myOrders.map(o => o.id))
       const myMfrIds = new Set(myOrders.flatMap(o => (o.assignments || []).map(a => String(a.mid))))
       const myDocs = docs.filter(d => d.isActive !== false && (

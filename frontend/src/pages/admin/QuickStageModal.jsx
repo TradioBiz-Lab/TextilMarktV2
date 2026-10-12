@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { ArrowRight, X, AlertTriangle, Paperclip, Plus } from '../../icons.jsx'
-import { T, evidenceTypesFor, stageKindOf, stageStatusOf, stageVariance, stageActualVariance, STAGE_STATUS_LABELS, fmtStageDate, getToday } from '../../constants.js'
+import { T, evidenceTypesFor, kindForCustomerOwner, stageKindOf, stageStatusOf, stageVariance, stageActualVariance, STAGE_STATUS_LABELS, fmtStageDate, getToday } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, FlexRow, Input, FileUpload, DocCard, useToast, fileUploadPayload, SectionLabel } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { capsFor, canWriteStage } from '../../caps.js'
@@ -57,6 +57,32 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
   const [matDraft, setMatDraft] = useState({ name: '', requiredQty: '' })
   const [saving, setSaving] = useState(false)
   const [savingEta, setSavingEta] = useState(false)
+  const [savingOwner, setSavingOwner] = useState(false)
+
+  // Who can own this step: the order's customer first (approvals like Lab Dip and PP Sample sit with
+  // them), then Tradio admins and factories. The customer cannot own Delivery, which only Tradio or
+  // the factory may close.
+  const customer = (users || []).find(u => u.role === 'buyer' && u.isActive && String(u.id) === String(order?.buyerId))
+  const ownerOptions = [
+    ...(customer && !stage?.isDelivery ? [{ value: customer.id, label: `Customer: ${customer.company || customer.name}` }] : []),
+    ...(users || []).filter(u => u.isActive && u.role === 'admin').map(u => ({ value: u.id, label: `Tradio: ${u.name}` })),
+    ...(users || []).filter(u => u.isActive && u.role === 'manufacturer').map(u => ({ value: u.id, label: `Factory: ${u.company}` })),
+  ]
+  const saveOwner = async value => {
+    if (savingOwner) return
+    setSavingOwner(true)
+    try {
+      const toCustomer = !!customer && String(value) === String(customer.id)
+      const extra = toCustomer ? kindForCustomerOwner(stage) : {}
+      await ordersApi.updateStageDates(orderId, mfrId, stageIndex, { responsibleId: value || null, ...extra })
+      await refreshOrders()
+      toast(value
+        ? `Assigned to ${ownerOptions.find(o => o.value === value)?.label || 'the new owner'}${extra.kind ? '. It is now a single approval step so they can close it.' : ''}`
+        : 'Owner cleared', 'success')
+    } catch (err) {
+      toast(err?.message || 'Failed to change the owner', 'error')
+    } finally { setSavingOwner(false) }
+  }
   // Partial-completion entry is collapsed by default — Mark Stage Done is
   // the action almost everyone wants; the units form is there for the
   // minority of stages where partial progress matters, one click away.
@@ -341,6 +367,21 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
             )
           )}
         </div>
+
+        {caps.editPlan && (
+          <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
+            <SectionLabel>Owner</SectionLabel>
+            <div style={{ fontSize: 11, color: T.textMuted, margin: '2px 0 8px' }}>
+              {stage.responsibleRole === 'buyer'
+                ? 'With the customer: they can mark this step done or blocked, and are told when it is assigned.'
+                : 'Hand an approval step (Lab Dip, PP Sample) to the customer and they will see it in their action items. A quantity step becomes a single approval step.'}
+            </div>
+            <Select label="" value={stage.responsibleId || ''} disabled={savingOwner} onChange={e => saveOwner(e.target.value)}>
+              <option value="">Unassigned</option>
+              {ownerOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </Select>
+          </div>
+        )}
 
         <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
           <SectionLabel>Dates</SectionLabel>

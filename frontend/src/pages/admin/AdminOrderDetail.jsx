@@ -3,7 +3,7 @@ import Papa from 'papaparse'
 import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight, Trash2 } from '../../icons.jsx'
 import {
   T, ORDER_STATUSES, evidenceTypesFor, DOC_ICONS,
-  stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
+  stageKindOf, kindForCustomerOwner, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
   stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber, getToday, planProgress,
   PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor,
 } from '../../constants.js'
@@ -306,7 +306,11 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
           const row = { index: i }
           if (startChanged) row.startDate = startValues[i] === 'NA' ? 'NA' : startValues[i] || null
           if (etaChanged) row.eta = etaValues[i] === 'NA' ? 'NA' : etaValues[i] || null
-          if (responsibleChanged) row.responsibleId = responsibleValues[i] || null
+          if (responsibleChanged) {
+            row.responsibleId = responsibleValues[i] || null
+            // A step given to the customer must be one they can close (see kindForCustomerOwner).
+            if (row.responsibleId && String(row.responsibleId) === String(order.buyerId)) Object.assign(row, kindForCustomerOwner(stage))
+          }
           if (totalUnitsChanged) row.totalUnits = parseInt(totalUnitsValues[i], 10)
           if (descriptionChanged) row.description = descriptionValues[i] || ''
           rows.push(row)
@@ -1154,7 +1158,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                     >
                       <option value="">Unassigned</option>
                       {responsibleUsers.map(u => (
-                        <option key={u.id} value={u.id}>{u.role === 'admin' ? 'Admin' : 'Mfr'}: {u.role === 'admin' ? u.name : u.company}</option>
+                        <option key={u.id} value={u.id}>{u.role === 'admin' ? `Admin: ${u.name}` : u.role === 'buyer' ? `Customer: ${u.company || u.name}` : `Mfr: ${u.company}`}</option>
                       ))}
                     </select>
                     <input

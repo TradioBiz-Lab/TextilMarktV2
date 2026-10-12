@@ -258,6 +258,14 @@ export const planProgress = stages => {
 }
 
 /**
+ * What to send along when a step is handed to the customer. A customer may close a step they own, but
+ * the server never lets them close a quantity-tracked step (that is production progress, which is the
+ * factory's). Approvals such as Lab Dip and PP Sample are single-decision steps, so a quantity step given
+ * to the customer becomes a milestone. Steps that are already milestones or checklists stay as they are.
+ */
+export const kindForCustomerOwner = stage => (stageKindOf(stage) === 'quantity' ? { kind: 'milestone' } : {})
+
+/**
  * Whether a split has been delivered, and the date to show for it. A split is delivered once its
  * Delivery step is done (the server then marks it Delivered), even if an unrelated step was left
  * open. Plans from before the Delivery step count as delivered when every step is done. The date is
