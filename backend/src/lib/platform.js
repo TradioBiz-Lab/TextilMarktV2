@@ -8,5 +8,7 @@
 //
 // Read at call time, never at import, so a test suite can switch it and so an unset variable
 // can never change behaviour on a deployment that predates it.
-export const platformMode = () => (process.env.PLATFORM_MODE === 'standalone' ? 'standalone' : 'tradio')
+// Case, stray spaces and a pair of quotes around the value are forgiven: only the word itself turns standalone on.
+const setting = () => String(process.env.PLATFORM_MODE ?? '').trim().replace(/^(["'])(.*)\1$/, '$2').trim().toLowerCase()
+export const platformMode = () => (setting() === 'standalone' ? 'standalone' : 'tradio')
 export const isStandalone = () => platformMode() === 'standalone'

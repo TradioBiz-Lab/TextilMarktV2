@@ -211,6 +211,7 @@ app.get('/api/health', (_req, res) => {
   res.status(status).json({
     ok:     dbOk,
     db:     dbOk ? 'connected' : 'unavailable',
+    mode:   platformMode(),
     uptime: Math.floor(process.uptime()),
   })
 })

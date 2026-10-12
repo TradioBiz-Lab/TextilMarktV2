@@ -193,8 +193,9 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
 
 The same codebase also serves a standalone product: brands and manufacturers transact directly and
 Tradio's master admin is a viewer. The only fork is the `PLATFORM_MODE` env var (`tradio`, the default,
-or `standalone`; read at call time by `lib/platform.js`). Unset, every behaviour below is the Tradio
-portal exactly as before. On Catalyst AppSail it is set in the console (app-config.json holds no env),
+or `standalone`; read at call time by `lib/platform.js`, which forgives case, stray spaces and quotes around the word).
+`GET /api/health` reports the mode a running deployment is in (`mode`), the way to check it from outside. Unset, every
+behaviour below is the Tradio portal exactly as before. On Catalyst AppSail it is set in the console (app-config.json holds no env),
 and switching a database to standalone leaves every manufacturer not Tradio-enabled until the master
 admin enables them in User Setup.
 
