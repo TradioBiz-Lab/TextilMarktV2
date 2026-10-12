@@ -1,7 +1,8 @@
 import { Router } from 'express'
 import { requireAuth } from '../middleware/auth.js'
-import { InboundMessage, Order, ActionItem } from '../db/index.js'
+import { InboundMessage, Order, ActionItem, Supplier, SupplierItem, PurchaseOrder } from '../db/index.js'
 import { adminOrderVisibility } from '../lib/authz.js'
+import { isStandalone } from '../lib/platform.js'
 
 const router = Router()
 
@@ -35,7 +36,24 @@ router.get('/feed', requireAuth, async (req, res) => {
     const newestItem = await ActionItem.findOne({}, 'updatedAt').sort({ updatedAt: -1 }).lean()
     itemsVersion = `${newestItem ? new Date(newestItem.updatedAt).getTime() : 0}:${await ActionItem.estimatedDocumentCount()}`
   }
-  res.json({ version: `${messageVersion}|orders:${orders.length}:${newestOrder}`, itemsVersion, items })
+  res.json({ version: `${messageVersion}|orders:${orders.length}:${newestOrder}`, itemsVersion, items, versions: await featureVersions(req.user) })
 })
+
+// A cheap version per feature store, so a screen open on one phone notices a change made on another
+// (the screen refetches when its number moves; see LiveRefresh). Computed from the caller's OWN
+// company's rows only, so the numbers can never reveal that another company's data changed.
+async function featureVersions(user) {
+  if (!isStandalone() || user.role !== 'manufacturer' || !user.orgId) return undefined
+  const own = { ownerOrgId: user.orgId }
+  const stamp = async (Model, extra = {}) => {
+    const [n, newest] = await Promise.all([Model.countDocuments({ ...own, ...extra }), Model.findOne({ ...own, ...extra }, 'updatedAt').sort({ updatedAt: -1 }).lean()])
+    return { n, at: newest?.updatedAt ? new Date(newest.updatedAt).getTime() : 0 }
+  }
+  const [sup, item, po] = await Promise.all([stamp(Supplier), stamp(SupplierItem), stamp(PurchaseOrder)])
+  return {
+    suppliers: `${sup.n}:${sup.at}:${item.n}:${item.at}`,
+    'purchase-orders': `${po.n}:${po.at}`,
+  }
+}
 
 export default router

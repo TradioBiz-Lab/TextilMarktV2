@@ -27,8 +27,11 @@ const stageMaterialSchema = new mongoose.Schema({
   name:         { type: String, required: true, maxlength: 200 },
   requiredQty:  { type: Number, required: true, min: 0 },
   unit:         { type: String, default: '' },   // 'm', 'pcs', 'kg' — free text
-  supplier:     { type: String, default: '' },   // free text — no separate Supplier collection
+  supplier:     { type: String, default: '' },   // the supplier's name, as text: kept in step with supplierId when a PO is sent
   poNumber:     { type: String, default: '' },
+  // Set when the line is bought on a purchase order (lib/poSync.js): the supplier and PO it is on.
+  supplierId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Supplier', default: null },
+  poId:         { type: String, default: null },
   expectedDate: { type: String, default: null }, // ISO date string or 'NA'
   status:       { type: String, enum: ['pending', 'ordered', 'received'], default: 'pending' },
   orderedQty:   { type: Number, default: 0, min: 0 },

@@ -20,6 +20,20 @@ const organizationSchema = new mongoose.Schema({
   // owner changes it (the "we never see your data" promise for factories Tradio does not buy from).
   tradioCanView: { type: Boolean, default: true },
   isActive: { type: Boolean, default: true },
+  // Business details that appear on the documents the company issues (a purchase order's header:
+  // who is buying, where to deliver, which GSTIN). All optional; a company fills them in once.
+  profile: {
+    legalName: { type: String, default: '', trim: true, maxlength: 200 },
+    gstin:     { type: String, default: '', uppercase: true, trim: true, maxlength: 15 },
+    pan:       { type: String, default: '', uppercase: true, trim: true, maxlength: 10 },
+    address:   { type: String, default: '', trim: true, maxlength: 300 },
+    city:      { type: String, default: '', trim: true, maxlength: 80 },
+    pincode:   { type: String, default: '', trim: true, maxlength: 6 },
+    // GST state code ('27'), taken from the GSTIN when there is one. Decides CGST and SGST versus IGST.
+    stateCode: { type: String, default: '', trim: true, maxlength: 2 },
+    phone:     { type: String, default: '', trim: true, maxlength: 40 },
+    email:     { type: String, default: '', trim: true, lowercase: true, maxlength: 254 },
+  },
 }, { timestamps: true })
 
 organizationSchema.index({ code: 1 }, { unique: true })

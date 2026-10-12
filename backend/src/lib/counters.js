@@ -1,4 +1,4 @@
-// Server-side numbering for IDs people read (order IDs, master order IDs, and later PO and GRN
+// Server-side numbering for IDs people read (order IDs, master order IDs, PO numbers, and later GRN
 // numbers).
 //
 // The browser used to work out "highest number I can see, plus one". That only works while one
@@ -6,7 +6,8 @@
 // all of the numbers in a series, and two people creating at once collide. Numbering lives here
 // instead, advanced with one atomic update per number, so it is correct for concurrent requests and
 // would stay correct if the server ever ran more than one process.
-import { Counter, Order, MasterOrder } from '../db/index.js'
+import { Counter, Order, MasterOrder, PurchaseOrder } from '../db/index.js'
+import { fiscalYearCode } from './fiscalYear.js'
 
 const escapeRe = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -52,4 +53,18 @@ export async function allocateMasterOrderId({ buyerCode, season }) {
     return ids.reduce((max, m) => Math.max(max, trailingNumber(m._id)), 0)
   })
   return `MO-${buyerCode}-${season || 'XX'}-${padded(seq)}`
+}
+
+/**
+ * Next purchase order number, e.g. PO-TPR-2627-0007: numbered per factory per Indian financial year,
+ * so each factory's series starts again at 0001 every April.
+ */
+export async function allocatePoId({ orgId, orgCode, now = new Date() }) {
+  const fy = fiscalYearCode(now)
+  const prefix = `PO-${orgCode}-${fy}-`
+  const seq = await nextSeq(`po:${orgId}:${fy}`, async () => {
+    const ids = await PurchaseOrder.find({ _id: new RegExp(`^${escapeRe(prefix)}\\d+$`) }, { _id: 1 }).lean()
+    return ids.reduce((max, p) => Math.max(max, trailingNumber(p._id)), 0)
+  })
+  return `${prefix}${String(seq).padStart(4, '0')}`
 }

@@ -14,7 +14,13 @@ const DOC_TYPES = [
   'cutting_qc', 'stitching_qc', 'final_qc', 'packing_qc', 'dispatch_docs',
   // Evidence captured from a factory message (photo, voice note, challan) by Zero Entry Capture
   'floor_evidence',
+  // The PDF of a purchase order a factory sent to a supplier. Never shown to brands (see PO_HIDDEN_FROM_BRANDS).
+  'supplier_po',
 ]
+
+// What a factory buys is its own business: in the standalone product a brand never receives these,
+// whatever order they hang off.
+export const PO_HIDDEN_FROM_BRANDS = ['supplier_po', 'material_po']
 
 const documentSchema = new mongoose.Schema({
   type:       { type: String, required: true, enum: DOC_TYPES },
@@ -49,6 +55,9 @@ const documentSchema = new mongoose.Schema({
 
   // Set when this evidence was created from an inbound factory message
   sourceMessageId: { type: mongoose.Schema.Types.ObjectId, ref: 'InboundMessage', default: null },
+
+  // The purchase order this document is the PDF of (type 'supplier_po').
+  poId: { type: String, default: null },
 
   // File payload — stored as base64 data URL (inline) OR external link (e.g. Zoho/GDrive share URL)
   // For non-stage docs, exactly one of dataUrl or externalUrl is set.

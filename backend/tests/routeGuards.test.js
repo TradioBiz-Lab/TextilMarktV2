@@ -51,10 +51,38 @@ describe('master orders router', () => {
 
 describe('the organization routes', async () => {
   const { default: orgsRouter } = await import('../src/routes/orgs.js')
-  test('everything that changes a company is master-admin only, except the owner\'s own privacy switch', () => {
+  test('everything that changes a company is master-admin only, except the owner\'s own privacy switch and business details', () => {
     const routes = postRoutes(orgsRouter)
-    const ownerOnly = new Set(['/me/privacy'])
+    const ownerOnly = new Set(['/me/privacy', '/me/profile'])
     const unguarded = routes.filter(r => !ownerOnly.has(r.path) && !r.chain.includes(requireMaster)).map(r => r.path)
     assert.deepEqual(unguarded, [])
+  })
+})
+
+describe('the procurement routers (suppliers and purchase orders)', async () => {
+  const { default: suppliersRouter } = await import('../src/routes/suppliers.js')
+  const { default: purchaseOrdersRouter } = await import('../src/routes/purchaseOrders.js')
+  const { requireAuth } = await import('../src/middleware/auth.js')
+  const { requireProcurement } = await import('../src/lib/procurement.js')
+
+  for (const [name, router] of [['suppliers', suppliersRouter], ['purchase orders', purchaseOrdersRouter]]) {
+    test(`every ${name} route sits behind sign-in and the manufacturer-only gate`, () => {
+      // router.use(requireAuth, requireProcurement) is registered before any route, so a route added
+      // later cannot be reached without passing both. If someone reorders the file this fails.
+      const layers = router.stack
+      assert.equal(layers[0].handle, requireAuth)
+      assert.equal(layers[1].handle, requireProcurement)
+      const routes = layers.filter(l => l.route)
+      assert.ok(routes.length >= 5, `expected the ${name} router to hold its routes, found ${routes.length}`)
+      for (const l of routes) assert.ok(layers.indexOf(l) > 1, `${l.route.path} is registered before the gate`)
+    })
+  }
+
+  test('write routes are rate limited', () => {
+    for (const router of [suppliersRouter, purchaseOrdersRouter]) {
+      const writes = router.stack.filter(l => l.route?.methods?.post)
+      const limited = writes.filter(l => l.route.stack.length >= 2)
+      assert.equal(limited.length, writes.length, 'a write route has no limiter')
+    }
   })
 })

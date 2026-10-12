@@ -177,6 +177,7 @@ const WRITE_TOOLS = new Set([
   'post_stage_update', 'update_stage_status', 'update_stage_dates',
   'add_action_item_update', 'update_action_item',
   'create_master_order', 'create_order',
+  'create_draft_po', 'send_purchase_order',
 ])
 
 // What an order or master order may be created with. The ID is never the model's to choose: the
@@ -184,6 +185,12 @@ const WRITE_TOOLS = new Set([
 const MASTER_ORDER_KEYS = ['orderName', 'season', 'buyerId']
 const ORDER_KEYS = ['product', 'styleNumber', 'category', 'season', 'totalQty', 'delivery', 'masterOrderId', 'buyerId', 'callout']
 const SEASONS = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
+
+// Purchase orders (standalone manufacturers). A PO number names one, and only this shape is let into a
+// loopback URL. A line is rebuilt from an allowlist like every other body.
+const PO_ID_RE = /^PO-[A-Z0-9]{1,5}-\d{4}-\d{4,}$/
+const PO_LINE_KEYS = ['description', 'qty', 'unit', 'rate', 'taxPct', 'hsnCode', 'discountPct', 'note']
+const PO_STATUSES = ['draft', 'sent', 'acknowledged', 'partially_received', 'closed', 'cancelled']
 
 const confirmationRequired = (what, detail) => ({ ok: false, status: 409, data: {
   error: `CONFIRMATION REQUIRED: this creates ${what}. Nothing was created. Tell the user exactly what you are about to create (${detail}) and ask them to reply confirming it (for example "yes, confirm"). Only after their reply, call this tool again. Do not retry before they answer.`,
@@ -307,6 +314,53 @@ export const TOOL_HANDLERS = {
     if (input.colourways) body.colourways = input.colourways.slice(0, 40)
     if (input.manufacturerId) body.assignments = [{ mid: input.manufacturerId, qty: input.totalQty }]
     return loopbackOrderFetch(ctx.cookie, 'POST', '/api/orders', body)
+  },
+
+  // The factory's supplier book (standalone manufacturers).
+  list_suppliers: async (input, ctx) => {
+    const result = await loopbackFetch(ctx.cookie, 'GET', '/api/suppliers')
+    if (!result.ok) return result
+    return { ...result, data: result.data.map(x => ({ supplierId: x.id, name: x.name, type: x.type, city: x.city, email: x.email, paymentTerms: x.paymentTerms, itemCount: x.itemCount })) }
+  },
+
+  list_purchase_orders: async (input, ctx) => {
+    if (input?.status !== undefined && !PO_STATUSES.includes(input.status)) return badInput('status')
+    const result = await loopbackFetch(ctx.cookie, 'GET', `/api/purchase-orders${input?.status ? `?status=${input.status}` : ''}`)
+    if (!result.ok) return result
+    return { ...result, data: result.data.slice(0, 40).map(p => ({ poNumber: p.id, status: p.status, supplier: p.supplierName, total: p.grandTotal, deliveryBy: p.expectedDate, lines: p.lineCount, receivedPercent: p.receivedPct, sentAt: p.sentAt })) }
+  },
+
+  get_purchase_order: async (input, ctx) => {
+    if (typeof input?.poNumber !== 'string' || !PO_ID_RE.test(input.poNumber)) return badInput('poNumber')
+    const result = await loopbackFetch(ctx.cookie, 'GET', `/api/purchase-orders/${input.poNumber}`)
+    if (!result.ok) return result
+    const p = result.data
+    return { ...result, data: {
+      poNumber: p.id, status: p.status, supplier: { name: p.supplier.name, email: p.supplier.email }, deliveryBy: p.expectedDate, paymentTerms: p.paymentTerms,
+      lines: p.lines.map(l => ({ description: l.description, qty: l.qty, unit: l.unit, rate: l.rate, taxPercent: l.taxPct, amount: l.amount, receivedQty: l.receivedQty })),
+      totals: { taxable: p.totals.taxable, tax: p.totals.taxTotal, grandTotal: p.totals.grandTotal },
+      receivedPercent: p.receivedPct, sentAt: p.sentAt, warnings: (p.warnings || []).map(w => w.message),
+    } }
+  },
+
+  // A draft emails nobody and can be thrown away, so it needs no confirmation; sending does.
+  create_draft_po: async (input, ctx) => {
+    if (typeof input?.supplierId !== 'string' || !OBJECT_ID_RE.test(input.supplierId)) return badInput('supplierId')
+    if (input.expectedDate !== undefined && !(typeof input.expectedDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.expectedDate))) return badInput('expectedDate')
+    if (!Array.isArray(input.lines) || input.lines.length === 0 || input.lines.length > 50 || !input.lines.every(l => l && typeof l === 'object')) return badInput('lines')
+    const body = { supplierId: input.supplierId, lines: input.lines.map(l => pick(l, PO_LINE_KEYS)) }
+    if (input.expectedDate) body.expectedDate = input.expectedDate
+    if (typeof input.terms === 'string') body.terms = input.terms.slice(0, 2000)
+    return loopbackFetch(ctx.cookie, 'POST', '/api/purchase-orders', body)
+  },
+
+  send_purchase_order: async (input, ctx) => {
+    if (typeof input?.poNumber !== 'string' || !PO_ID_RE.test(input.poNumber)) return badInput('poNumber')
+    if (input.to !== undefined && !(Array.isArray(input.to) && input.to.length <= 5 && input.to.every(e => typeof e === 'string' && e.length <= 254))) return badInput('to')
+    if (!userConfirmed(ctx.conversation)) return confirmationRequired('an email to the supplier with the purchase order attached (it cannot be unsent)', 'the supplier, the PO number, the items and total, and who it will be emailed to')
+    const body = pick(input, ['to'])
+    if (typeof input.message === 'string') body.message = input.message.slice(0, 1000)
+    return loopbackFetch(ctx.cookie, 'POST', `/api/purchase-orders/${input.poNumber}/send`, body)
   },
 
   post_stage_update: (input, ctx) => {
@@ -558,6 +612,67 @@ const TOOLS = [
     },
   },
   {
+    name: 'list_suppliers',
+    description: "List this factory's suppliers (fabric mills, dyers, trims shops): supplierId, name, type, city, email, payment terms and how many items each sells. Call this to turn a supplier name the user says into the supplierId create_draft_po needs.",
+    input_schema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'list_purchase_orders',
+    description: "List this factory's purchase orders, newest first: poNumber, status, supplier, total, delivery date, number of lines and how much has been received. Optionally filter by status. Use it for questions like 'what is still open with the dyer' or 'which POs are waiting for goods'.",
+    input_schema: { type: 'object', properties: { status: { type: 'string', enum: PO_STATUSES } }, additionalProperties: false },
+  },
+  {
+    name: 'get_purchase_order',
+    description: "One purchase order in full: supplier, status, each line (item, quantity, rate, amount, received so far), totals and any minimum order warnings. poNumber comes from list_purchase_orders.",
+    input_schema: { type: 'object', properties: { poNumber: { type: 'string' } }, required: ['poNumber'], additionalProperties: false },
+  },
+  {
+    name: 'create_draft_po',
+    description: "Draft a purchase order to one of this factory's suppliers. It is only a draft: nothing is emailed, and the user can review and edit it on the Purchase Orders page. Resolve the supplier with list_suppliers; never ask the user for an id. Give each line a description, a quantity and a unit; rate and GST rate (taxPct, e.g. 5, 12 or 18) if the user said them. The server works out all the amounts and tax. After drafting, tell the user the PO number and total and that it is waiting for them to review and send; do not send it unless they ask.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        supplierId: { type: 'string', description: "From list_suppliers." },
+        expectedDate: { type: 'string', description: "Delivery date, ISO 'YYYY-MM-DD'." },
+        terms: { type: 'string', maxLength: 2000 },
+        lines: {
+          type: 'array', minItems: 1, maxItems: 50,
+          items: {
+            type: 'object',
+            properties: {
+              description: { type: 'string', maxLength: 300, description: "e.g. 'Single jersey 100% cotton 180 GSM, Peacot'." },
+              qty: { type: 'number', exclusiveMinimum: 0 },
+              unit: { type: 'string', maxLength: 20, description: "kg, m, pcs, ..." },
+              rate: { type: 'number', minimum: 0, description: "Rupees per unit." },
+              taxPct: { type: 'number', minimum: 0, maximum: 40, description: "GST rate in percent." },
+              hsnCode: { type: 'string' },
+              discountPct: { type: 'number', minimum: 0, maximum: 100 },
+              note: { type: 'string', maxLength: 300 },
+            },
+            required: ['description', 'qty'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['supplierId', 'lines'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'send_purchase_order',
+    description: "Send a draft purchase order to its supplier: the PDF is emailed to them and the PO becomes 'sent'. THIS EMAILS A THIRD PARTY AND CANNOT BE UNSENT: first tell the user exactly what will go out (supplier, items, total, delivery date, the email address) and ask them to confirm; the server refuses until their own reply confirms it. By default it goes to the supplier's email on record; pass `to` only if the user names another address.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        poNumber: { type: 'string' },
+        to: { type: 'array', items: { type: 'string' }, maxItems: 5 },
+        message: { type: 'string', maxLength: 1000, description: "A short note to put in the email, if the user asked for one." },
+      },
+      required: ['poNumber'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'check_delivery_risk',
     description: "Deterministic date-math helper — NOT you doing arithmetic. Returns, for the given order: every stage's plan-vs-baseline variance in days (etaVarianceDays, positive = the plan slipped later than its original baseline) and, once a stage is actually done, its actual-vs-baseline variance (actualVarianceDays, positive = it actually finished later than its ORIGINAL planned date — always measured against the frozen baseline, never against a since-revised eta); and two DISTINCT order-level numbers — do not conflate them: deliveryOverrunDays is whether the CURRENT plan (the latest stage eta) is consistent with the CURRENT delivery date right now (null if the plan finishes on or before delivery); deliveryVarianceDays is how far the delivery date ITSELF has moved from what was originally promised (baselineDelivery), positive = pushed later, negative = pulled earlier, null if delivery has never been revised. A corrected/realigned delivery date can read deliveryOverrunDays: null while deliveryVarianceDays shows a large number — that means the plan and the promise agree right now, but the promise itself has slipped (or improved) from day one. Call this whenever the admin asks 'what happens if I push this date', 'are we going to miss delivery', or 'how much has this order slipped', or right after moving a stage's eta, so you can state exact numbers instead of estimating.",
     input_schema: {
@@ -580,12 +695,15 @@ const COMPANY_ONLY_TOOLS = new Set(['list_partners'])
 // Creating orders: Tradio staff always (the server then applies its own rules); brands and
 // manufacturers only in the standalone product, where they create their own.
 const CREATE_TOOLS = new Set(['create_master_order', 'create_order'])
+// Suppliers and purchase orders belong to a factory in the standalone product, and to nobody else.
+const PROCUREMENT_TOOLS = new Set(['list_suppliers', 'list_purchase_orders', 'get_purchase_order', 'create_draft_po', 'send_purchase_order'])
 // In the standalone product a factory runs its own schedule, so it may also move its own dates.
 const factoryMayUse = (user, name) => name === 'update_stage_dates' && isStandalone() && user?.role === 'manufacturer'
 export const toolsFor = user => TOOLS.filter(t =>
   (user?.role === 'admin' || !ADMIN_ONLY_TOOLS.has(t.name) || factoryMayUse(user, t.name)) &&
   (user?.role !== 'admin' || !COMPANY_ONLY_TOOLS.has(t.name)) &&
-  (!CREATE_TOOLS.has(t.name) || user?.role === 'admin' || isStandalone()))
+  (!CREATE_TOOLS.has(t.name) || user?.role === 'admin' || isStandalone()) &&
+  (!PROCUREMENT_TOOLS.has(t.name) || (isStandalone() && user?.role === 'manufacturer')))
 
 const ROLE_SCOPE = {
   buyer: `ROLE SCOPE: you are talking with a CUSTOMER (a buyer), not a Tradio admin. You can only see this customer's own orders, and only read them, plus comment on or update a production stage that is assigned to them (usually an approval step such as Lab Dip or PP Sample). You have no access to the action-item task list, to other customers, or to moving stage dates. If asked to do something outside that, say plainly that it is outside what their account can do and suggest contacting their Tradio coordinator. Where the instructions below mention action items or admin-only tools you do not have, ignore those parts.`,
@@ -636,7 +754,9 @@ REFERRING TO ORDERS: in every reply, name an order by buyer company and product 
 
 CREATING ORDERS: if you have the create_order and create_master_order tools, you can set up new work by voice or text ("create three styles under the Zara FW26 range"). Resolve every name yourself with list_partners and list_master_orders, never ask for an ID, and make sure you have what an order needs (product, quantity, delivery date; the customer or manufacturer when it is not obvious). These tools create records, so first say exactly what you are about to create and ask ${user.name} to confirm; the server will refuse until their own reply confirms it. Create one order per call, and after each one say what was created in natural words (customer, product, quantity). The production schedule is built afterwards by the factory; do not try to create one.
 
-Keep replies short and concrete — this is a fast working chat with one admin, not a written report.
+${toolsFor(user).some(t => t.name === 'send_purchase_order') ? `PURCHASE ORDERS: you can look up this factory's suppliers and purchase orders, draft a PO (create_draft_po) and send one (send_purchase_order). Resolve a supplier by name with list_suppliers, never ask for an id. Drafting emails nobody: after you draft one, say the PO number, supplier and total, and that it is waiting for review. Sending emails the supplier and cannot be undone: say exactly what will go out and to which address and ask ${user.name} to confirm; the server will refuse until their own reply confirms it. Never send a PO the user has not asked you to send. Rates and GST are the factory's own business: only ever tell ${user.name}, never anyone else.
+
+` : ''}Keep replies short and concrete — this is a fast working chat with one admin, not a written report.
 
 Reply in PLAIN TEXT only — no markdown (no **bold**, no #headings, no markdown bullet/numbered list syntax). The chat UI renders your text verbatim, so markdown punctuation would show up literally instead of being formatted. Use line breaks and plain "1. 2. 3." or "-" prefixes for lists if needed, without any other markdown styling.`
 }

@@ -12,9 +12,14 @@ import test, { before, after, beforeEach, describe } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { startTestDb, stopTestDb, clearDb } from './helpers/db.js'
-import { startServer, stopServer, as } from './helpers/client.js'
+import { startServer, stopServer, as, req } from './helpers/client.js'
 import { makeAdmin, makeMaster, makeBuyer, makeMfr, makeMember, makeOrder, makeMasterOrder, link } from './helpers/factories.js'
 import { Notification } from '../src/models/Notification.js'
+import { Supplier } from '../src/models/Supplier.js'
+import { Document } from '../src/models/Document.js'
+import { Order } from '../src/models/Order.js'
+import { setMailerForTests } from '../src/lib/email.js'
+import { setOrg } from './helpers/factories.js'
 
 before(async () => { await startTestDb(); await startServer() })
 after(async () => { delete process.env.PLATFORM_MODE; await stopServer(); await stopTestDb() })
@@ -194,5 +199,105 @@ describe('writes: nobody changes what is not theirs', () => {
   test('escalating another brand\'s order', async () => {
     const { Y } = await world()
     assert.equal((await as(Y).post('/api/orders/AX/escalate', { reason: 'not mine' })).status, 403)
+  })
+})
+
+describe('procurement: a company\'s suppliers and purchase orders are its own (standalone product)', () => {
+  beforeEach(() => {
+    process.env.PLATFORM_MODE = 'standalone'
+    setMailerForTests({ emails: { send: async () => ({ data: { id: 'x' }, error: null }) } })
+  })
+  after(() => setMailerForTests(null))
+
+  /** Both factories have a supplier, a draft PO and a sent PO; brand X works with A and has a material line on its order. */
+  async function stock() {
+    const w = await world()
+    await Supplier.init()
+    const out = {}
+    for (const [key, u] of [['A', w.A], ['B', w.B]]) {
+      const s = (await as(u).post('/api/suppliers', { name: `${key} Mills`, email: `${key.toLowerCase()}@mill.test` })).body
+      const line = { description: 'Jersey', qty: 10, unit: 'kg', rate: 100, taxPct: 5 }
+      const draft = (await as(u).post('/api/purchase-orders', { supplierId: s.id, lines: [line] })).body
+      const sent = (await as(u).post('/api/purchase-orders', { supplierId: s.id, lines: [line] })).body
+      assert.equal((await as(u).post(`/api/purchase-orders/${sent.id}/send`, {})).status, 200)
+      out[`data${key}`] = { supplier: s, draft, sent }
+    }
+    return { ...w, ...out }
+  }
+
+  test('each factory lists only its own', async () => {
+    const { A, B, ...rest } = await stock()
+    assert.deepEqual((await as(A).get('/api/suppliers')).body.map(s => s.name), ['A Mills'])
+    assert.deepEqual((await as(B).get('/api/suppliers')).body.map(s => s.name), ['B Mills'])
+    assert.deepEqual((await as(A).get('/api/purchase-orders')).body.map(p => p.id).sort(), [rest.dataA.draft.id, rest.dataA.sent.id].sort())
+    assert.deepEqual((await as(B).get('/api/purchase-orders')).body.map(p => p.id).sort(), [rest.dataB.draft.id, rest.dataB.sent.id].sort())
+  })
+
+  test('a direct read of another factory\'s supplier or purchase order is "not found"', async () => {
+    const { A, B, ...s } = await stock()
+    void A
+    assert.equal((await as(B).get(`/api/suppliers/${s.dataA.supplier.id}`)).status, 404)
+    assert.equal((await as(B).get(`/api/purchase-orders/${s.dataA.sent.id}`)).status, 404)
+    assert.equal((await as(B).get(`/api/purchase-orders/${s.dataA.sent.id}/pdf`)).status, 404)
+    assert.equal((await as(A).get(`/api/purchase-orders/${s.dataB.sent.id}`)).status, 404)
+  })
+
+  test('another factory cannot change them, or raise a PO with another factory\'s supplier', async () => {
+    const { B, ...s } = await stock()
+    assert.equal((await as(B).post(`/api/suppliers/${s.dataA.supplier.id}`, { name: 'hijack' })).status, 404)
+    assert.equal((await as(B).post(`/api/purchase-orders/${s.dataA.draft.id}`, { terms: 'hijack' })).status, 404)
+    assert.equal((await as(B).post(`/api/purchase-orders/${s.dataA.sent.id}/cancel`, { reason: 'hijack' })).status, 404)
+    assert.equal((await as(B).post('/api/purchase-orders', { supplierId: s.dataA.supplier.id, lines: [] })).status, 400)
+    assert.equal((await Supplier.findById(s.dataA.supplier.id).lean()).name, 'A Mills')
+  })
+
+  test('brands, Tradio staff and visitors cannot use them at all', async () => {
+    const { X, Y, admin, master } = await stock()
+    for (const u of [X, Y, admin, master]) {
+      assert.equal((await as(u).get('/api/suppliers')).status, 403, u.role)
+      assert.equal((await as(u).get('/api/purchase-orders')).status, 403, u.role)
+    }
+    assert.equal((await req('GET', '/api/purchase-orders')).status, 401)
+  })
+
+  test('a brand sees no supplier, no PO number and no PO document on an order it commissioned', async () => {
+    const { A, X, ...s } = await stock()
+    await Order.updateOne({ _id: 'AX' }, { $set: { 'assignments.0.stages.0.materials': [{ name: 'Jersey', requiredQty: 10, status: 'ordered', supplier: 'A Mills', poNumber: s.dataA.sent.id, poId: s.dataA.sent.id }] } })
+    const m = (await as(X).get('/api/orders/AX')).body.assignments[0].stages[0].materials[0]
+    assert.deepEqual([m.supplier, m.poNumber, m.poId, m.supplierId], ['', '', null, null])
+    assert.equal((await as(X).get('/api/documents')).body.some(d => d.type === 'supplier_po'), false)
+    const po = await Document.findOne({ poId: s.dataA.sent.id })
+    assert.equal((await as(X).get(`/api/documents/${po._id}/data`)).status, 404)
+    assert.equal((await as(A).get(`/api/documents/${po._id}/data`)).status, 200)
+  })
+
+  test('the live feed\'s procurement versions move only for the company whose data changed', async () => {
+    const { A, B, X, admin } = await stock()
+    const v = async u => (await as(u).get('/api/floor/feed')).body.versions
+    const [a0, b0] = [await v(A), await v(B)]
+    assert.deepEqual(Object.keys(a0).sort(), ['purchase-orders', 'suppliers'])
+    // A changes something; B's numbers do not move, and A's do.
+    await as(A).post('/api/suppliers', { name: 'Another A Mill' })
+    const [a1, b1] = [await v(A), await v(B)]
+    assert.notEqual(a1.suppliers, a0.suppliers)
+    assert.deepEqual(b1, b0)
+    // Brands and Tradio staff get no procurement versions at all.
+    assert.equal((await as(X).get('/api/floor/feed')).body.versions, undefined)
+    assert.equal((await as(admin).get('/api/floor/feed')).body.versions, undefined)
+  })
+
+  test('Tradio\'s master admin viewing a factory reads it read-only; a company that switched Tradio off is closed to them', async () => {
+    const { A, master, ...s } = await stock()
+    const open = await as(master).post('/api/auth/view-as', { userId: String(A._id) })
+    assert.equal(open.status, 200, JSON.stringify(open.body))
+    const token = open.body.token
+    assert.deepEqual((await req('GET', '/api/purchase-orders', { token })).body.map(p => p.id).sort(), [s.dataA.draft.id, s.dataA.sent.id].sort())
+    const write = await req('POST', '/api/suppliers', { token, body: { name: 'Nope' } })
+    assert.equal(write.status, 403)
+    assert.equal(write.body.code, 'VIEW_ONLY')
+    await setOrg(A, { tradioCanView: false })
+    const closed = await req('GET', '/api/purchase-orders', { token })
+    assert.equal(closed.status, 403)
+    assert.equal(closed.body.code, 'VIEW_BLOCKED')
   })
 })

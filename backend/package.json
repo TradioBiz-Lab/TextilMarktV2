@@ -23,6 +23,7 @@
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.23.0",
+    "pdfkit": "^0.20.2",
     "resend": "^6.9.4",
     "zod": "^4.6.5"
   },

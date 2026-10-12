@@ -14,6 +14,7 @@ import { sendEmail, emailUserCreated } from '../lib/email.js'
 import { ensureOrgForUser, ensureOrgsByPartyIds, roleForOrgType, isPartyRole } from '../lib/orgs.js'
 import { generateTempPassword } from './users.js'
 import { userKey } from '../lib/limiterKey.js'
+import { cleanProfile, profileSet, profileView } from '../lib/orgProfile.js'
 
 const router = Router()
 
@@ -27,6 +28,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const orgView = (o, owner, members = [], partnerIds = []) => ({
   id: String(o._id), name: o.name, type: o.type, code: o.code, isActive: o.isActive !== false,
   tradioEnabled: !!o.tradioEnabled, tradioCanView: o.tradioCanView !== false,
+  profile: profileView(o.profile),
   ownerUserId: String(o.ownerUserId), ownerName: owner?.name ?? '', ownerEmail: owner?.email ?? '',
   members: members.map(m => ({ id: String(m._id), name: m.name, email: m.email, isActive: m.isActive, orgRole: m.orgRole || 'owner' })),
   partnerIds: partnerIds.map(String),
@@ -110,8 +112,14 @@ router.post('/:id', requireAuth, requireMaster, async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ error: 'Organization not found' })
     const org = await Organization.findById(req.params.id)
     if (!org) return res.status(404).json({ error: 'Organization not found' })
-    const { name, tradioEnabled, isActive } = req.body || {}
+    const { name, tradioEnabled, isActive, profile } = req.body || {}
     const changes = []
+    let profileChange = null
+    if (profile !== undefined) {
+      const cleaned = cleanProfile(profile)
+      if (!cleaned.ok) return res.status(400).json({ error: cleaned.error })
+      profileChange = cleaned.profile; changes.push('business details')
+    }
     if (name !== undefined) {
       if (typeof name !== 'string' || !name.trim() || name.length > 200) return res.status(400).json({ error: 'Company name is required (max 200 characters)' })
       org.name = name.trim(); changes.push(`name -> ${org.name}`)
@@ -127,6 +135,7 @@ router.post('/:id', requireAuth, requireMaster, async (req, res) => {
     }
     if (changes.length === 0) return res.status(400).json({ error: 'Nothing to change' })
     await org.save()
+    if (profileChange) await Organization.updateOne({ _id: org._id }, { $set: profileSet(profileChange) })
     await AuditLog.create({ byUser: req.user.id, action: 'Organization Updated', detail: `${org.name} (${org.code}): ${changes.join(', ')} by ${req.user.name}` })
     const [view] = await loadOrgViews({ _id: org._id })
     res.json(view)
@@ -203,6 +212,22 @@ router.get('/me', requireAuth, async (req, res) => {
     if (!isPartyRole(req.user.role)) return res.status(403).json({ error: 'Companies only' })
     const org = (await ensureOrgsByPartyIds([req.user.id])).get(String(req.user.id))
     if (!org) return res.status(404).json({ error: 'Organization not found' })
+    const [view] = await loadOrgViews({ _id: org._id })
+    res.json(view)
+  } catch (err) { console.error('[orgs]', err); res.status(500).json({ error: 'Server error' }) }
+})
+
+// POST /api/orgs/me/profile - the company's business details (GSTIN, address, state), the header of
+// its purchase orders. The owner keeps them; Tradio can also set them up (POST /api/orgs/:id).
+router.post('/me/profile', requireAuth, limiter, async (req, res) => {
+  try {
+    if (!isPartyRole(req.user.role) || req.user.viewAsBy) return res.status(403).json({ error: 'Only the company owner can change this' })
+    if (req.user.orgRole !== 'owner') return res.status(403).json({ error: 'Only the company owner can change this' })
+    const cleaned = cleanProfile(req.body)
+    if (!cleaned.ok) return res.status(400).json({ error: cleaned.error })
+    const org = await Organization.findByIdAndUpdate(req.user.orgId, { $set: profileSet(cleaned.profile) }, { new: true }).lean()
+    if (!org) return res.status(404).json({ error: 'Organization not found' })
+    await AuditLog.create({ byUser: req.user.id, action: 'Business Details Updated', detail: `${org.name} (${org.code}): ${Object.keys(cleaned.profile).join(', ')} updated by ${req.user.name}` })
     const [view] = await loadOrgViews({ _id: org._id })
     res.json(view)
   } catch (err) { console.error('[orgs]', err); res.status(500).json({ error: 'Server error' }) }

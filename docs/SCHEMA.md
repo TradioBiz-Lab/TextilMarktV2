@@ -20,7 +20,10 @@
 | `droppedrecords` | Permanent record of every dropped style and deleted master order, with a full copy | ObjectId |
 | `organizations` | The company behind a buyer or manufacturer account (owner, team, Tradio switches) | ObjectId |
 | `partnerships`  | Which brand works with which manufacturer (gates who may create or assign orders for whom) | ObjectId |
-| `counters`      | Atomic numbering series (order and master order IDs, later PO and GRN numbers) | String |
+| `counters`      | Atomic numbering series (order, master order and purchase order numbers, later GRN) | String |
+| `suppliers`     | A manufacturer's private supplier book (mills, dyers, trims shops) | ObjectId |
+| `supplieritems` | What each supplier sells, as structured records (marketplace-ready) | ObjectId |
+| `purchaseorders` | Purchase orders a manufacturer raises with its suppliers, emailed as PDF | String (custom) |
 
 ---
 
@@ -306,8 +309,12 @@ Stage Override alike. Stages with an empty `materials[]` are unaffected.
   name:         String   required, max 200 chars — e.g. "Main fabric — Cotton Spandex"
   requiredQty:  Number   required, min: 0
   unit:         String   default: "" — e.g. "m", "pcs", "kg"
-  supplier:     String   default: "" — free text, no separate Supplier collection
+  supplier:     String   default: "" — the supplier's name as text. Older lines only ever had this; a
+                         line that names a supplier from the supplier book keeps the name here too
   poNumber:     String   default: ""
+  supplierId:   ObjectId → suppliers | null   the factory's own supplier (set from the supplier book, and
+                         by a PO being sent). Hidden from brands in the standalone product
+  poId:         String | null   the purchase order this line is on (lib/poSync.js). Hidden from brands
   expectedDate: String | null   ISO date string or "NA"
   status:       String   enum: ["pending","ordered","received"], default: "pending"
   orderedQty:   Number   default: 0, min: 0
@@ -417,6 +424,11 @@ The company behind a buyer or manufacturer account. Tradio staff (admins) belong
                                   ONLY by the company's owner (POST /api/orgs/me/privacy); Tradio
                                   cannot change it. Privacy wins over tradioEnabled
   isActive      Boolean           default: true — false signs out the whole team
+  profile {                       business details printed on the documents the company issues
+    legalName, gstin, pan, address, city, pincode, stateCode, phone, email      all String, default ""
+  }                               stateCode is the GST state code ('33'); a valid GSTIN decides it.
+                                  Changed by the owner (POST /api/orgs/me/profile) or by the master
+                                  admin (POST /api/orgs/:id with `profile`)
   createdAt / updatedAt
 }
 ```
@@ -462,8 +474,117 @@ concurrent creators can never get the same number. The first use of a series sta
 highest number already in use.
 
 ```
-{ _id String   e.g. "order:ZAR-TSHRT-SS26-" or "mo:ZAR"     seq Number }
+{ _id String   e.g. "order:ZAR-TSHRT-SS26-", "mo:ZAR" or "po:<orgId>:2627"     seq Number }
 ```
+
+---
+
+## 14. `suppliers`
+
+A manufacturer's private supplier book. **Private to the company**: every query is scoped by
+`ownerOrgId` taken from the session, another company's id is a plain 404, and brands and Tradio staff
+cannot use the routes at all (`requireProcurement`). The module exists only in the standalone product.
+
+```
+{
+  _id            ObjectId
+  ownerOrgId     ObjectId → organizations   required
+  name           String   required, max 200 — unique per company, case-insensitively
+  type           String   enum: ["fabric_supplier","dyer","trims_supplier","other"]
+  email, phone   String
+  contacts[]     { name, role, phone, email }   at most 10
+  gstin          String   validated (format and check character); stateCode comes from it
+  stateCode      String   GST state code ('33'); decides CGST + SGST versus IGST on a PO
+  address, city, pincode, paymentTerms, deliveryTerms, notes   String
+  isActive       Boolean  default: true — archived suppliers are hidden, never deleted
+  visibility     String   enum: ["private"] — reserved for a future marketplace
+  createdBy, updatedBy   ObjectId → users (the person, not the company)
+}
+```
+
+**Indexes:** `{ ownerOrgId: 1, name: 1 }` unique (collation en, strength 2), `{ ownerOrgId: 1, isActive: 1, type: 1 }`
+
+---
+
+## 15. `supplieritems`
+
+One thing a supplier sells, as a structured record rather than free text, so it can be searched,
+compared across suppliers and later listed in a marketplace. It carries the defaults a PO line starts
+from and the supplier's minimum order quantity.
+
+```
+{
+  _id          ObjectId
+  ownerOrgId   ObjectId → organizations   required
+  supplierId   ObjectId → suppliers       required
+  category     String   enum: ["fabric","trim","other"]
+  name         String   required, max 200
+  specs        { composition, construction, colour: String; gsm: Number | null; widthInches: Number | null }
+  unit         String   default "m"
+  defaultRate  Number   default 0 (rupees per unit)
+  moq          Number   default 0 — minimum order quantity, in `unit`
+  leadTimeDays Number | null
+  hsnCode      String   4 to 8 digits or ""
+  taxPct       Number   default 5 (GST rate)
+  isActive     Boolean  default true
+  visibility   String   enum: ["private"]
+}
+```
+
+**Index:** `{ ownerOrgId: 1, supplierId: 1, isActive: 1 }`
+
+---
+
+## 16. `purchaseorders`
+
+A purchase order a manufacturer raises with a supplier. **Private to the company**, never visible to a
+brand. `_id` is a number from `lib/counters.js`: `PO-<company code>-<financial year>-NNNN`, for example
+`PO-TPR-2627-0001`, restarting each April per company.
+
+```
+{
+  _id               String   PO-TPR-2627-0001
+  ownerOrgId        ObjectId → organizations   required
+  supplierId        ObjectId → suppliers       required
+  supplierSnapshot  { name, email, phone, gstin, stateCode, address, city, pincode, contactName }
+  buyerSnapshot     { name, email, phone, gstin, pan, stateCode, address, city, pincode }
+                    both refreshed from the live records until sent, then FROZEN: the document the
+                    supplier holds can never change underneath them
+  status            String   enum: ["draft","sending","sent","acknowledged","partially_received","closed","cancelled"]
+                    'sending' is the few seconds while the email goes out: the atomic claim that stops a
+                    double click emailing twice. A claim older than 2 minutes is treated as a crashed send
+  lines[]           { lineId, description, itemId → supplieritems | null, hsnCode, unit, qty, rate,
+                      discountPct, taxPct, amount, taxAmount, lineTotal, expectedDate,
+                      materialRef { orderId, stageIndex, materialIndex, name } | null,
+                      receivedQty, note }
+                    amount, taxAmount and lineTotal are COMPUTED on the server (lib/poMath.js), in whole
+                    paise; a total sent by the browser is never trusted
+  taxMode           String   enum: ["intra","inter","unknown"] — same state: CGST + SGST; another state:
+                    IGST; a missing state: one combined GST figure (never guessed)
+  totals            { subtotal, discount, taxable, cgst, sgst, igst, gst, taxTotal, roundOff, grandTotal,
+                      byRate[]: { rate, taxable, cgst, sgst, igst, gst } }   rupees; rounded to the rupee
+  expectedDate      String | null   ISO date
+  shipTo, paymentTerms, terms   String
+  internalNote      String   the factory's own; never printed or emailed
+  sentAt, sentBy, sentTo[], sendingAt
+  documentId        ObjectId → documents   the PDF as sent (type 'supplier_po'); never edited or deleted
+  receipts[]        { at, by, note, lines[]: { lineId, qty } }
+  timeline[]        { at, by, byName, action, note }
+  cancelReason, closedReason, createdBy
+}
+```
+
+**Indexes:** `{ ownerOrgId: 1, createdAt: -1 }`, `{ ownerOrgId: 1, status: 1 }`,
+`{ ownerOrgId: 1, supplierId: 1 }`, `{ ownerOrgId: 1, 'lines.materialRef.orderId': 1 }`
+
+**Lifecycle:** `draft → sending → sent → acknowledged → partially_received → closed`, or `cancelled`
+(a draft, or a sent PO before anything arrives). Only a draft is edited or deleted.
+**Sending** renders the PDF (pdfkit, Noto Sans for the rupee sign), emails it with the PDF attached
+(Reply-To is the person who sent it), stores it as a document, and puts each linked material line "on
+order". **Receiving** adds to the lines' received quantity (a line may arrive up to 10% over) and to the
+material lines', which become `received` once they have the quantity they need, opening the stage's
+materials gate. See `lib/poSync.js`: a PO line finds its material by where it was picked plus the
+material's name, and a link that can no longer be found is reported, never guessed.
 
 ---
 
@@ -497,6 +618,7 @@ manufacturer, an order, or both — or is stage-evidence tied to a specific stag
                                   set only for PO document attachments on a specific
                                   materials/PO checklist line; requires stageIndex
   notes       String | null       free-text context, esp. for text-only stage evidence
+  poId         String | null     the purchase order this is the PDF of (type supplier_po)
   sourceMessageId ObjectId → inboundmessages  nullable, default null - set when this evidence was created from an inbound factory message (type floor_evidence). Rejecting that message soft-deletes (isActive=false) every document carrying its id
 
   dataUrl     String | null       base64 data URL (inline file)
@@ -522,6 +644,7 @@ manufacturer, an order, or both — or is stage-evidence tied to a specific stag
   `processing_grn`, `processing_qc`, `cutting_qc`, `stitching_qc`, `final_qc`, `packing_qc`,
   `dispatch_docs`
 - Auto-captured: `floor_evidence` (photo, voice note or challan from a factory message; attaches to any stage)
+- System-written: `supplier_po` (the PDF of a purchase order, created when it is sent; never uploaded, edited or deleted by hand). In the standalone product a brand never receives `supplier_po` or `material_po` documents, whatever order they hang off
 
 The frontend offers evidence types per stage from `STAGE_DOC_TYPES` in `frontend/src/constants.js`, keyed by position in the 12-step default plan. Stored documents are matched to a stage by `orderId` + `stageIndex` only, never by type.
 
@@ -767,6 +890,9 @@ ribbons       → createdBy (users), targetUserIds[] (users)
 organizations → ownerUserId (users);  users → orgId (organizations)
 partnerships  → brandOrgId, mfrOrgId (organizations)
 orders / masterorders → createdBy (users, the creating company's party id)
+suppliers → ownerOrgId (organizations);  supplieritems → supplierId (suppliers), ownerOrgId
+purchaseorders → ownerOrgId (organizations), supplierId (suppliers), documentId (documents),
+                 lines[].materialRef → orders (orderId + stage + material line)
 ```
 
 ---

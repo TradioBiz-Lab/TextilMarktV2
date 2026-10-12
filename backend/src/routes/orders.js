@@ -1,7 +1,7 @@
 import mongoose from 'mongoose'
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
-import { Order } from '../db/index.js'
+import { Order, Supplier } from '../db/index.js'
 import { User }         from '../models/User.js'
 import { Notification } from '../models/Notification.js'
 import { AuditLog }     from '../models/AuditLog.js'
@@ -23,7 +23,7 @@ import {
 } from '../lib/authz.js'
 import { allocateOrderId } from '../lib/counters.js'
 import { applyCreationRules, afterCreate, partiesOf } from '../lib/orderCreate.js'
-import { unpartneredMfrs, ensurePartnership, partyIdByCode } from '../lib/orgs.js'
+import { unpartneredMfrs, ensurePartnership, partyIdByCode, ensureOrgsByPartyIds } from '../lib/orgs.js'
 
 // Categories are now free-text — no validation needed
 const VALID_SEASONS    = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
@@ -129,7 +129,9 @@ async function notifyNewOwners(orderId, actor, entries) {
 // reshape or reschedule the plan. The UI hides these controls, this is the real gate.
 const PLAN_ONLY_STAGE_KEYS = ['kind', 'totalUnits', 'responsibleId', 'description', 'eta', 'startDate']
 
-const enrichOrder = (o, viewerMfrId = null) => {
+// `hideSupply`: who a factory buys from, and on which purchase order, is the factory's own business, so
+// a brand in the standalone product gets material lines without it (see supplyHiddenFrom).
+const enrichOrder = (o, viewerMfrId = null, { hideSupply = false } = {}) => {
   const buyer = o.buyerId && typeof o.buyerId === 'object' && o.buyerId.company ? o.buyerId : null
   // Manufacturers only see their own assignment — not competitors' qty/status/notes
   const allAssignments = o.assignments || []
@@ -203,8 +205,10 @@ const enrichOrder = (o, viewerMfrId = null) => {
             at: u.at,
           })),
           materials: (s.materials || []).map(m => ({
-            name: m.name, requiredQty: m.requiredQty, unit: m.unit, supplier: m.supplier,
-            poNumber: m.poNumber, expectedDate: m.expectedDate, status: m.status,
+            name: m.name, requiredQty: m.requiredQty, unit: m.unit,
+            supplier: hideSupply ? '' : m.supplier, poNumber: hideSupply ? '' : m.poNumber,
+            supplierId: hideSupply || !m.supplierId ? null : String(m.supplierId), poId: hideSupply ? null : (m.poId || null),
+            expectedDate: m.expectedDate, status: m.status,
             orderedQty: m.orderedQty, receivedQty: m.receivedQty, note: m.note,
           })),
         }
@@ -216,8 +220,9 @@ const enrichOrder = (o, viewerMfrId = null) => {
 
 // Every response that carries an order must be scoped to the caller: a manufacturer
 // only ever sees its own assignment (same boundary as the read routes above).
+const supplyHiddenFrom = req => isStandalone() && req.user.role === 'buyer'
 const enrichFor = (order, req) =>
-  enrichOrder(order, req.user.role === 'manufacturer' ? String(req.user.id) : null)
+  enrichOrder(order, req.user.role === 'manufacturer' ? String(req.user.id) : null, { hideSupply: supplyHiddenFrom(req) })
 
 // A follow-up write that must happen once the main one has (re-pointing document links after
 // a stage moves) is retried briefly, and failure is logged loudly rather than swallowed.
@@ -254,7 +259,8 @@ router.get('/', requireAuth, async (req, res) => {
 
     const orders = await query.populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').sort({ createdAt: -1 }).lean()
     const viewerMfrId = req.user.role === 'manufacturer' ? req.user.id : null
-    res.json(orders.map(o => enrichOrder(o, viewerMfrId)))
+    const hideSupply = supplyHiddenFrom(req)
+    res.json(orders.map(o => enrichOrder(o, viewerMfrId, { hideSupply })))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -283,7 +289,7 @@ router.get('/:id', requireAuth, async (req, res) => {
     }
 
     const viewerMfrId = req.user.role === 'manufacturer' ? req.user.id : null
-    res.json(enrichOrder(order, viewerMfrId))
+    res.json(enrichOrder(order, viewerMfrId, { hideSupply: supplyHiddenFrom(req) }))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -2134,6 +2140,17 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items/:lineIndex/de
   }
 })
 
+// A material line may name one of the factory's own suppliers (its supplier book). The name is kept
+// next to it as text, so older screens and lines that only ever had a name keep working. Only the
+// factory's own suppliers qualify: another company's supplier id is refused like an unknown one.
+async function resolveSupplier(supplierId, mfrId) {
+  if (supplierId === null || supplierId === '') return { ok: true, supplier: null }
+  if (!mongoose.Types.ObjectId.isValid(supplierId)) return { ok: false, error: 'Invalid supplier' }
+  const org = (await ensureOrgsByPartyIds([mfrId])).get(String(mfrId))
+  const supplier = org ? await Supplier.findOne({ _id: supplierId, ownerOrgId: org._id }).lean() : null
+  return supplier ? { ok: true, supplier } : { ok: false, error: "That supplier is not in this factory's supplier book" }
+}
+
 // POST /api/orders/:orderId/assignments/:mfrId/stages/:stageIndex/materials — add a
 // materials/PO checklist line. Managed by any admin, or the stage's own responsible person.
 router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials', requireAuth, orderWriteGuard, updateLimiter, async (req, res) => {
@@ -2143,7 +2160,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials', require
       return res.status(400).json({ error: 'Invalid manufacturer ID' })
     const mfrObjectId = new mongoose.Types.ObjectId(mfrId)
     const stageIndex = parseInt(req.params.stageIndex, 10)
-    const { name, requiredQty, unit, supplier, poNumber, expectedDate } = req.body
+    const { name, requiredQty, unit, supplier, supplierId, poNumber, expectedDate } = req.body
 
     if (!name?.trim()) return res.status(400).json({ error: 'Material name is required' })
     const reqQty = parseFloat(requiredQty)
@@ -2167,9 +2184,16 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials', require
     if (req.user.role !== 'admin' && !isResponsible)
       return res.status(403).json({ error: "Only an admin or this stage's responsible person can manage materials" })
 
+    let chosen = null
+    if (supplierId !== undefined) {
+      const r = await resolveSupplier(supplierId, mfrId)
+      if (!r.ok) return res.status(400).json({ error: r.error })
+      chosen = r.supplier
+    }
     const line = {
       name: name.trim().slice(0, 200), requiredQty: reqQty,
-      unit: unit || '', supplier: supplier || '', poNumber: poNumber || '',
+      unit: unit || '', supplier: chosen ? chosen.name : (supplier || ''), poNumber: poNumber || '',
+      ...(chosen ? { supplierId: chosen._id } : {}),
       expectedDate: expectedDate || null, status: 'pending', orderedQty: 0, receivedQty: 0, note: '',
     }
 
@@ -2204,7 +2228,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineInde
     const mfrObjectId = new mongoose.Types.ObjectId(mfrId)
     const stageIndex = parseInt(req.params.stageIndex, 10)
     const lineIndex = parseInt(req.params.lineIndex, 10)
-    const { name, requiredQty, unit, supplier, poNumber, expectedDate, status, orderedQty, receivedQty, note } = req.body
+    const { name, requiredQty, unit, supplier, supplierId, poNumber, expectedDate, status, orderedQty, receivedQty, note } = req.body
 
     const existingOrder = await Order.findById(orderId).lean()
     if (!existingOrder) return res.status(404).json({ error: 'Order not found' })
@@ -2243,6 +2267,12 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineInde
       setFields[`${prefix}.requiredQty`] = q
     }
     if (unit !== undefined) setFields[`${prefix}.unit`] = unit
+    if (supplierId !== undefined) {
+      const r = await resolveSupplier(supplierId, mfrId)
+      if (!r.ok) return res.status(400).json({ error: r.error })
+      setFields[`${prefix}.supplierId`] = r.supplier ? r.supplier._id : null
+      if (supplier === undefined) setFields[`${prefix}.supplier`] = r.supplier ? r.supplier.name : ''
+    }
     if (supplier !== undefined) setFields[`${prefix}.supplier`] = supplier
     if (poNumber !== undefined) setFields[`${prefix}.poNumber`] = poNumber
     if (expectedDate !== undefined) setFields[`${prefix}.expectedDate`] = expectedDate

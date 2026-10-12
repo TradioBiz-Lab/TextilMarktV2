@@ -1,8 +1,11 @@
 import { Resend } from 'resend'
 
-const resend = process.env.RESEND_API_KEY
+let resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
   : null
+
+// Tests swap in a fake mailer to see exactly what would have been sent.
+export function setMailerForTests(client) { resend = client }
 
 const FROM = process.env.EMAIL_FROM || 'TextilMarkt <noreply@textilmarkt.com>'
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
@@ -107,6 +110,53 @@ export async function sendEmail({ to, subject, html }) {
     }
   }
   return recipients.length === 1 ? results[0] : results
+}
+
+/**
+ * Send one message to each recipient and say what happened, which sendEmail does not: it returns
+ * whatever the provider gave. Used where the caller must know whether the mail really went (a
+ * purchase order is only "sent" if the supplier was emailed).
+ *
+ *   attachments  [{ filename, content: Buffer }]
+ *   replyTo      where the recipient's reply goes (the person who sent it, not noreply@)
+ *   fromName     shown as "<name> via TextilMarkt"; the sending address stays ours
+ *
+ * @returns {Promise<{ok: boolean, skipped: boolean, sent: string[], failed: {to: string, error: string}[]}>}
+ *   skipped is true when no email provider is configured (local runs): nothing was sent, nothing failed.
+ */
+export async function sendEmailDetailed({ to, subject, html, attachments, replyTo, fromName }) {
+  const recipients = (Array.isArray(to) ? to : [to]).filter(Boolean)
+  if (!resend) {
+    if (process.env.NODE_ENV !== 'test') console.log(`[Email skipped - no RESEND_API_KEY] To: ${recipients.join(', ')}, Subject: ${subject}`)
+    return { ok: false, skipped: true, sent: [], failed: [] }
+  }
+  const sent = [], failed = []
+  const from = displayFrom(fromName)
+  for (const recipient of recipients) {
+    try {
+      const r = await resend.emails.send({
+        from, to: [recipient], subject, html,
+        ...(replyTo ? { replyTo } : {}),
+        ...(attachments?.length ? { attachments: attachments.map(a => ({ filename: a.filename, content: a.content })) } : {}),
+      })
+      if (r?.error) { failed.push({ to: recipient, error: r.error.message || 'The email provider refused it' }); console.error(`[Email failed] To: ${recipient}, Subject: ${subject}`, r.error.message) }
+      else sent.push(recipient)
+    } catch (err) {
+      failed.push({ to: recipient, error: err.message || 'Could not reach the email provider' })
+      console.error(`[Email failed] To: ${recipient}, Subject: ${subject}`, err.message)
+    }
+  }
+  return { ok: failed.length === 0 && sent.length > 0, skipped: false, sent, failed }
+}
+
+// "Tiruppur Textiles via TextilMarkt <noreply@textilmarkt.com>": the name of the company writing, on
+// our sending address. Angle brackets, quotes and line breaks are stripped so a company name can never
+// reshape the header.
+function displayFrom(name) {
+  const safe = String(name || '').replace(/[<>"\r\n]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80)
+  if (!safe) return FROM
+  const m = /<([^>]+)>/.exec(FROM)
+  return `${safe} via TextilMarkt <${m ? m[1] : FROM}>`
 }
 
 // ── Email templates ─────────────────────────────────────────────────────────
@@ -307,4 +357,29 @@ export function emailDocumentUploaded({ to, docName, docType, orderId, uploadedB
     footer()
   )
   return { to, subject: `New Document: ${docName} — Order ${orderId}`, html }
+}
+
+/**
+ * The mail a supplier receives with a purchase order attached. Suppliers have no account here, so it
+ * carries no login link: they read the PDF and reply to the sender (replyTo is set when it is sent).
+ */
+export function emailPurchaseOrder({ to, supplierName, poNumber, buyerName, message, expectedDate, total, lineCount, senderName }) {
+  const amount = Number(total) || 0
+  const html = wrap(
+    header(`Purchase order ${poNumber}`) +
+    `<p style="font-size:14px;color:#334155;line-height:1.6;margin:0 0 16px">Dear ${esc(supplierName)},</p>` +
+    `<p style="font-size:14px;color:#334155;line-height:1.6;margin:0 0 16px">${esc(buyerName)} has raised the attached purchase order with you. Please review it and reply to this email to confirm.</p>` +
+    (message ? `<div style="margin:0 0 16px;padding:12px 16px;background:#f8fafc;border-left:3px solid #C4622D;font-size:13px;color:#334155;white-space:pre-wrap;line-height:1.55">${esc(message)}</div>` : '') +
+    table(
+      row('PO number', `<code style="background:#f1f5f9;padding:2px 8px;border-radius:4px">${esc(poNumber)}</code>`) +
+      row('Items', esc(lineCount)) +
+      row('Total', `Rs ${esc(amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}`) +
+      (expectedDate ? row('Delivery by', esc(expectedDate)) : '')
+    ) +
+    `<p style="font-size:13px;color:#64748b;line-height:1.6;margin:16px 0 0">Please quote the PO number on your delivery challan and invoice.${senderName ? ` ${esc(senderName)} will see your reply.` : ''}</p>` +
+    `</div><div style="padding:16px 32px;background:#f8fafc;border-radius:0 0 12px 12px;border-top:1px solid #e2e8f0">
+      <p style="margin:0;font-size:11px;color:#94a3b8;font-family:system-ui">Sent by ${esc(buyerName)} through TextilMarkt. Reply to this email to reach them.</p>
+    </div>`
+  )
+  return { to, subject: `Purchase order ${poNumber} from ${buyerName}`, html }
 }

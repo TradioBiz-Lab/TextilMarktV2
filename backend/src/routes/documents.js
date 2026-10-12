@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
 import { Document, Order, User, Notification, AuditLog, MasterOrder } from '../db/index.js'
+import { PO_HIDDEN_FROM_BRANDS } from '../models/Document.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { sendEmail, emailCertExpiry, emailBuyerDocumentReceived } from '../lib/email.js'
 import { notify, adminIds } from '../lib/notify.js'
@@ -178,6 +179,8 @@ router.get('/', requireAuth, async (req, res) => {
       // not docs that belong to a different buyer's order
       docs = await populateUploader(Document.find({
         isActive: true,
+        // What a factory buys is its own business: a brand never receives purchase orders (standalone).
+        ...(isStandalone() ? { type: { $nin: PO_HIDDEN_FROM_BRANDS } } : {}),
         $or: [
           { orderId: { $in: orderIds } },
           { masterOrderId: { $in: masterIds } },
@@ -339,6 +342,7 @@ router.get('/:id/data', requireAuth, async (req, res) => {
     if (req.user.role === 'admin' && !(await adminMayViewDoc(doc))) return res.status(404).json({ error: 'Document not found' })
 
     if (req.user.role === 'buyer') {
+      if (isStandalone() && PO_HIDDEN_FROM_BRANDS.includes(doc.type)) return res.status(404).json({ error: 'Document not found' })
       // Allow access to docs they uploaded themselves (e.g. via Submit Requirement)
       if (doc.uploadedBy && doc.uploadedBy.toString() === req.user.id) {
         // permitted
@@ -387,6 +391,8 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
     if (typeof type !== 'string' || typeof name !== 'string') return res.status(400).json({ error: 'Invalid input types' })
     if (name.length > 300 || type.length > 50) return res.status(400).json({ error: 'Input too long' })
     if (!Document.schema.path('type').enumValues.includes(type)) return res.status(400).json({ error: `Unknown document type "${type}"` })
+    // Written by the system when a purchase order is sent, never uploaded by hand.
+    if (type === 'supplier_po') return res.status(400).json({ error: 'A purchase order PDF is created when the purchase order is sent' })
     // A file on a whole master order (the customer sees it). Tradio portal: admins only. Standalone:
     // Tradio staff where they may act, the master order's own brand, or the company that created it.
     if (masterOrderId != null && masterOrderId !== '') {
@@ -531,6 +537,8 @@ router.post('/:id', requireAuth, uploadLimiter, async (req, res) => {
   try {
     const doc = await Document.findById(req.params.id)
     if (!doc || !doc.isActive) return res.status(404).json({ error: 'Document not found' })
+    // The PDF of a sent purchase order is the record of what was agreed: it is never edited.
+    if (doc.type === 'supplier_po') return res.status(409).json({ error: 'A sent purchase order cannot be edited' })
 
     const isOwner = doc.uploadedBy && doc.uploadedBy.toString() === req.user.id
     if (req.user.role !== 'admin' && !isOwner)
@@ -616,6 +624,7 @@ router.post('/:id/delete', requireAuth, async (req, res) => {
   try {
     const doc = await Document.findById(req.params.id)
     if (!doc || !doc.isActive) return res.status(404).json({ error: 'Document not found' })
+    if (doc.type === 'supplier_po') return res.status(409).json({ error: 'A sent purchase order cannot be deleted. Cancel the purchase order instead' })
 
     const isOwner = doc.uploadedBy && doc.uploadedBy.toString() === req.user.id
     if (req.user.role !== 'admin' && !isOwner)

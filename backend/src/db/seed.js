@@ -24,6 +24,15 @@ import { Counter }      from '../models/Counter.js'
 import { ensureOrgForUser } from '../lib/orgs.js'
 import { backfillPartnerships } from '../lib/migrate.js'
 import { makeDeliveryStage } from '../lib/stageMath.js'
+import { Supplier } from '../models/Supplier.js'
+import { SupplierItem } from '../models/SupplierItem.js'
+import { PurchaseOrder } from '../models/PurchaseOrder.js'
+import { gstinCheckChar } from '../lib/gst.js'
+import { computeTotals } from '../lib/poMath.js'
+import { taxModeFor } from '../lib/gst.js'
+import { syncOnSend, syncOnReceive } from '../lib/poSync.js'
+import { renderPurchaseOrderPdf } from '../lib/pdf/po.js'
+import { fiscalYearCode } from '../lib/fiscalYear.js'
 
 // This script deletes every User/Order/Document/Notification/AuditLog in
 // whatever database MONGO_DB_URI resolves to, then inserts fake data. Local
@@ -324,10 +333,86 @@ async function seed() {
       },
     ])
     console.log('Standalone extras seeded: a teammate (anita@tiruppur.com), Surat Mills (Tradio view access OFF), a master order and 2 orders created by the parties themselves')
+    await seedProcurement({ tiruppur, tprOrg: orgOf.TPR })
   }
 
   console.log('\n✓ Sandbox seed complete.')
   await mongoose.disconnect()
+}
+
+// Tiruppur Textiles' supplier book and purchase orders: a draft, a sent one and one part received, with
+// material lines on its sweatshirt order linked to them, so the whole procurement flow can be walked.
+async function seedProcurement({ tiruppur, tprOrg }) {
+  const gstin = (state, pan) => { const f = `${state}${pan}1Z`; return f + gstinCheckChar(f) }
+  await Organization.updateOne({ _id: tprOrg._id }, { $set: { profile: {
+    legalName: 'Tiruppur Textiles Pvt Ltd', gstin: gstin('33', 'AAPFU0939F'), pan: 'AAPFU0939F', address: 'Plot 22, SIDCO Industrial Estate',
+    city: 'Tiruppur', pincode: '641604', stateCode: '33', phone: '+91 98765 43003', email: 'mfr@tiruppur.com',
+  } } })
+  const org = await Organization.findById(tprOrg._id).lean()
+
+  const mk = (name, type, o = {}) => ({ ownerOrgId: tprOrg._id, name, type, createdBy: tiruppur._id, updatedBy: tiruppur._id, ...o })
+  const [mill, dyer, rib, zips, labels, print] = await Supplier.insertMany([
+    mk('Coimbatore Knit Fabrics', 'fabric_supplier', { email: 'sales@cknit.example', phone: '+91 98430 11223', gstin: gstin('33', 'AABCC1234D'), stateCode: '33', address: '14 Avinashi Road', city: 'Coimbatore', pincode: '641018', paymentTerms: '45 days from invoice', contacts: [{ name: 'Mr. Selvam', role: 'Sales', phone: '+91 98430 11223', email: 'selvam@cknit.example' }] }),
+    mk('Salem Dyeing Works', 'dyer', { email: 'orders@salemdye.example', gstin: gstin('33', 'AAHCS5678E'), stateCode: '33', city: 'Salem', paymentTerms: '30 days' }),
+    mk('Erode Rib and Collar', 'fabric_supplier', { email: 'erode.rib@example.com', gstin: gstin('33', 'AAFFE4321K'), stateCode: '33', city: 'Erode', paymentTerms: 'Advance 30%, balance on delivery' }),
+    mk('YKK India (Mumbai depot)', 'trims_supplier', { email: 'trims@ykk.example', gstin: gstin('27', 'AAACY1111A'), stateCode: '27', city: 'Mumbai', paymentTerms: '60 days' }),
+    mk('Tiruppur Label Works', 'trims_supplier', { email: 'labels@tlw.example', stateCode: '33', city: 'Tiruppur' }),
+    mk('Surat Print House', 'other', { email: 'hello@suratprint.example', gstin: gstin('24', 'AAKCS9876M'), stateCode: '24', city: 'Surat', notes: 'Screen and digital printing' }),
+  ])
+  const item = (supplier, o) => ({ ownerOrgId: tprOrg._id, supplierId: supplier._id, ...o })
+  const [fleece] = await SupplierItem.insertMany([
+    item(mill, { name: 'Brushed fleece 280 GSM', category: 'fabric', unit: 'kg', defaultRate: 410, moq: 300, hsnCode: '600610', taxPct: 5, leadTimeDays: 12, specs: { composition: '80% cotton 20% polyester', gsm: 280, widthInches: 72, construction: 'brushed fleece' } }),
+    item(mill, { name: 'Single jersey 180 GSM', category: 'fabric', unit: 'kg', defaultRate: 342.5, moq: 300, hsnCode: '600631', taxPct: 5, leadTimeDays: 10, specs: { composition: '100% cotton', gsm: 180, widthInches: 72, construction: 'single jersey' } }),
+    item(rib, { name: 'Rib 2x2 collar and cuff', category: 'fabric', unit: 'kg', defaultRate: 520, moq: 50, hsnCode: '600632', taxPct: 5, specs: { composition: '95% cotton 5% elastane', construction: 'rib 2x2' } }),
+    item(zips, { name: '5 inch metal zip, antique brass', category: 'trim', unit: 'pcs', defaultRate: 18.75, moq: 1000, hsnCode: '960719', taxPct: 18 }),
+    item(labels, { name: 'Woven main label', category: 'trim', unit: 'pcs', defaultRate: 1.6, moq: 2000, hsnCode: '580710', taxPct: 12 }),
+  ])
+
+  // Material lines on the sweatshirt order's first step.
+  await Order.updateOne({ _id: 'ZAR-SWTSHT-FW26-001' }, { $set: { 'assignments.0.stages.0.materials': [
+    { name: 'Brushed fleece 280 GSM', requiredQty: 1200, unit: 'kg', status: 'pending', orderedQty: 0, receivedQty: 0, supplier: '', poNumber: '' },
+    { name: 'Rib 2x2 collar and cuff', requiredQty: 150, unit: 'kg', status: 'pending', orderedQty: 0, receivedQty: 0, supplier: '', poNumber: '' },
+  ] } })
+
+  const fy = fiscalYearCode()
+  const id = n => `PO-TPR-${fy}-${String(n).padStart(4, '0')}`
+  const buyer = { name: 'Tiruppur Textiles Pvt Ltd', email: 'mfr@tiruppur.com', phone: '+91 98765 43003', gstin: org.profile.gstin, pan: 'AAPFU0939F', stateCode: '33', address: org.profile.address, city: 'Tiruppur', pincode: '641604' }
+  const snap = s => ({ name: s.name, email: s.email || '', phone: s.phone || '', gstin: s.gstin || '', stateCode: s.stateCode || '', address: s.address || '', city: s.city || '', pincode: s.pincode || '', contactName: s.contacts?.[0]?.name || '' })
+  const line = (n, desc, qty, unit, rate, taxPct, extra = {}) => ({ lineId: `5f0000000000000000000${String(n).padStart(3, '0')}`, description: desc, hsnCode: '', unit, qty, rate, discountPct: 0, taxPct, receivedQty: 0, note: '', ...extra })
+  const build = (supplier, lines) => {
+    const mode = taxModeFor(supplier.stateCode, '33')
+    const calc = computeTotals(lines, mode)
+    return { taxMode: calc.taxMode, totals: calc.totals, lines: lines.map((l, i) => ({ ...l, ...calc.lines[i] })) }
+  }
+  const draftAt = new Date('2026-10-10T10:00:00+05:30'), sentAt = new Date('2026-10-08T11:30:00+05:30')
+  const stamp = (action, at, note = '') => ({ at, by: tiruppur._id, byName: tiruppur.name, action, note })
+
+  const fleeceRef = { orderId: 'ZAR-SWTSHT-FW26-001', stageIndex: 0, materialIndex: 0, name: 'Brushed fleece 280 GSM' }
+  const ribRef = { orderId: 'ZAR-SWTSHT-FW26-001', stageIndex: 0, materialIndex: 1, name: 'Rib 2x2 collar and cuff' }
+  const defs = [
+    { n: 1, supplier: mill, status: 'sent', at: sentAt, expectedDate: '2026-10-22', lines: [line(1, 'Brushed fleece 280 GSM, 72 in, 80/20 CVC', 1200, 'kg', 410, 5, { itemId: fleece._id, hsnCode: '600610', materialRef: fleeceRef })] },
+    { n: 2, supplier: rib, status: 'partially_received', at: new Date('2026-10-05T16:00:00+05:30'), expectedDate: '2026-10-15', lines: [line(2, 'Rib 2x2 collar and cuff, matching', 150, 'kg', 520, 5, { hsnCode: '600632', materialRef: ribRef, receivedQty: 60 })] },
+    { n: 3, supplier: zips, status: 'draft', at: draftAt, expectedDate: '2026-11-05', lines: [line(3, '5 inch metal zip, antique brass', 3000, 'pcs', 18.75, 18, { hsnCode: '960719' })] },
+  ]
+  for (const d of defs) {
+    const priced = build(d.supplier, d.lines)
+    const base = {
+      _id: id(d.n), ownerOrgId: tprOrg._id, supplierId: d.supplier._id, supplierSnapshot: snap(d.supplier), buyerSnapshot: buyer, status: d.status,
+      ...priced, expectedDate: d.expectedDate, paymentTerms: d.supplier.paymentTerms || '', terms: 'Goods must match the approved sample. Quote the PO number on the challan and invoice.',
+      createdBy: tiruppur._id, createdAt: d.at, timeline: [stamp('Draft created', d.at)],
+    }
+    if (d.status === 'draft') { await PurchaseOrder.create(base); continue }
+    const po = await PurchaseOrder.create({ ...base, sentAt: d.at, sentBy: tiruppur._id, sentTo: [d.supplier.email], timeline: [...base.timeline, stamp('Sent to supplier', d.at, `Emailed to ${d.supplier.email}`)] })
+    const pdf = await renderPurchaseOrderPdf({ ...po.toObject(), status: 'sent' })
+    const doc = await Document.create({ type: 'supplier_po', name: `Purchase order ${po._id}`, mfrId: tiruppur._id, orderId: null, issueDate: d.at, uploadedBy: tiruppur._id, issuer: buyer.name, poId: po._id, dataUrl: `data:application/pdf;base64,${pdf.toString('base64')}`, fileName: `${po._id}.pdf`, fileSize: pdf.length, mimeType: 'application/pdf' })
+    const received = po.lines.filter(l => l.receivedQty > 0)
+    await PurchaseOrder.updateOne({ _id: po._id }, { $set: { documentId: doc._id }, ...(received.length ? { $push: { receipts: { at: new Date('2026-10-09T12:00:00+05:30'), by: tiruppur._id, note: 'Lorry 1', lines: received.map(l => ({ lineId: l.lineId, qty: l.receivedQty })) }, timeline: stamp('Goods received', new Date('2026-10-09T12:00:00+05:30'), '1 line: Lorry 1') } } : {}) })
+    const fresh = await PurchaseOrder.findById(po._id).lean()
+    await syncOnSend({ partyId: tiruppur._id, po: fresh, supplier: d.supplier })
+    if (received.length) await syncOnReceive({ partyId: tiruppur._id, po: fresh, received: received.map(l => ({ line: fresh.lines.find(x => x.lineId === l.lineId), qty: l.receivedQty })) })
+  }
+  await Counter.updateOne({ _id: `po:${tprOrg._id}:${fy}` }, { $set: { seq: 3 } }, { upsert: true })
+  console.log('Procurement seeded: 6 suppliers, 5 catalog items, 3 purchase orders (1 draft, 1 sent, 1 part received) for Tiruppur Textiles')
 }
 
 seed().catch(err => { console.error('Seed failed:', err); process.exit(1) })
