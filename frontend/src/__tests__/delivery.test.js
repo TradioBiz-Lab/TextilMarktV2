@@ -10,7 +10,7 @@ describe('deliveryStatus', () => {
   // The A-Line Smocked Pocket Dress: delivered on 6 Oct with one unrelated step never started.
   test('a done Delivery step means delivered, even with a step left open', () => {
     const asgn = { status: 'Delivered', stages: [open('Fit Sample'), done('Inspection'), done('Delivery', { isDelivery: true, actualEnd: '2026-10-06' })] }
-    expect(deliveryStatus(order, asgn)).toEqual({ delivered: true, date: '2026-10-06', isActual: true })
+    expect(deliveryStatus(order, asgn)).toMatchObject({ delivered: true, date: '2026-10-06', isActual: true })
   })
 
   // The Smocked Waist Top: promised 21 Aug, delivered 28 Aug. Show the real day, not the promise.
@@ -21,13 +21,39 @@ describe('deliveryStatus', () => {
 
   test('an open split shows the promised date', () => {
     const asgn = { status: 'Processing', stages: [done('Inspection'), { ...open('Delivery'), isDelivery: true }] }
-    expect(deliveryStatus(order, asgn)).toEqual({ delivered: false, date: order.delivery, isActual: false })
+    expect(deliveryStatus(order, asgn)).toMatchObject({ delivered: false, date: order.delivery, isActual: false })
   })
 
   test('plans without a Delivery step are delivered when every step is done', () => {
     expect(deliveryStatus(order, { stages: [done('A'), done('B')] }).delivered).toBe(true)
     expect(deliveryStatus(order, { stages: [done('A'), open('B')] }).delivered).toBe(false)
     expect(deliveryStatus(order, { stages: [] }).delivered).toBe(false)
+  })
+})
+
+describe('delivered quantity', () => {
+  const stages = [done('Delivery', { isDelivery: true, actualEnd: '2026-10-06' })]
+  const rowFor = asgn => {
+    const delivery = deliveryStatus(order, asgn)
+    return { order, stages, live: [], blocked: [], late: [], working: [], upcoming: null, health: 'done', doneCount: 1, daysToDelivery: null, delivery }
+  }
+
+  test('reports the difference against the ordered quantity, negative when short', () => {
+    expect(deliveryStatus(order, { qty: 453, deliveredQty: 430, stages })).toMatchObject({ ordered: 453, deliveredQty: 430, diff: -23 })
+    expect(deliveryStatus(order, { qty: 453, deliveredQty: 460, stages }).diff).toBe(7)
+    expect(deliveryStatus(order, { qty: 453, deliveredQty: 453, stages }).diff).toBe(0)
+  })
+
+  test('not recorded is null, and zero is a real value', () => {
+    expect(deliveryStatus(order, { qty: 453, stages })).toMatchObject({ deliveredQty: null, diff: null })
+    expect(deliveryStatus(order, { qty: 453, deliveredQty: 0, stages })).toMatchObject({ deliveredQty: 0, diff: -453 })
+  })
+
+  test('the summary says how short or over the delivery was', () => {
+    expect(rowCallout(rowFor({ qty: 453, deliveredQty: 430, stages }))).toBe('Delivered on 6 Oct, due 21 Aug. 430 of 453 pcs delivered (23 short).')
+    expect(rowCallout(rowFor({ qty: 453, deliveredQty: 460, stages }))).toBe('Delivered on 6 Oct, due 21 Aug. 460 of 453 pcs delivered (7 over).')
+    expect(rowCallout(rowFor({ qty: 453, deliveredQty: 453, stages }))).toBe('Delivered on 6 Oct, due 21 Aug. Full quantity delivered (453 pcs).')
+    expect(rowCallout(rowFor({ qty: 453, stages }))).toBe('Delivered on 6 Oct, due 21 Aug.')
   })
 })
 

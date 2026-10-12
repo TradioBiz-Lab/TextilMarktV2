@@ -1420,7 +1420,13 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                           <span style={{ color: T.textLight, fontSize: 12 }}> ({a.sub})</span>
                         </div>
                         <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>
-                          {a.qty?.toLocaleString()} pcs · Updated {fmtDate(a.updatedAt)}
+                          {a.qty?.toLocaleString()} pcs
+                          {a.deliveredQty != null && (
+                            <span style={{ fontWeight: 700, color: a.deliveredQty === a.qty ? T.textMuted : '#b45309' }}>
+                              {` · ${a.deliveredQty.toLocaleString()} delivered${a.deliveredQty === a.qty ? '' : ` (${a.deliveredQty > a.qty ? '+' : ''}${(a.deliveredQty - a.qty).toLocaleString()})`}`}
+                            </span>
+                          )}
+                          {` · Updated ${fmtDate(a.updatedAt)}`}
                         </div>
                       </div>
                       <FlexRow gap={8}>

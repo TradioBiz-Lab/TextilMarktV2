@@ -209,6 +209,9 @@ const assignmentSchema = new mongoose.Schema({
   status: { type: String, enum: ORDER_STATUS_VALUES, default: 'Processing' },
   sub:    { type: String, required: true },   // M1, M2 … split label
   note:   { type: String, default: '' },       // latest free-text note
+  // What was actually delivered for this split, in pieces. Often differs from `qty` (short or over
+  // shipments), so it is recorded separately and never used to rewrite the order quantity. null = not recorded.
+  deliveredQty: { type: Number, default: null, min: 0 },
   stages: [stageSchema],                       // dynamic count per order
   updatedAt: { type: Date, default: Date.now },
 }, { _id: true })

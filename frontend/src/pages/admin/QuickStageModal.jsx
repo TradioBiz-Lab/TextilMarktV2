@@ -33,7 +33,7 @@ function fmtDateTime(d) {
 // other again. showOpenOrderLink hides the "Open full order" shortcut when
 // already on the full order page.
 export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrder, showOpenOrderLink = true }) {
-  const { currentUser, orders, docs, users, updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial, refreshOrders, uploadDoc, getDocData } = useApp()
+  const { currentUser, orders, docs, users, updateStage, setDeliveredQty, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial, refreshOrders, uploadDoc, getDocData } = useApp()
   const toast = useToast()
   const order = (orders || []).find(o => o.id === orderId)
   const asgn = order?.assignments.find(a => String(a.mid) === String(mfrId))
@@ -58,6 +58,10 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
   const [saving, setSaving] = useState(false)
   const [savingEta, setSavingEta] = useState(false)
   const [savingOwner, setSavingOwner] = useState(false)
+  const [savingType, setSavingType] = useState(false)
+  // Delivery step only: how many pieces actually went out, against what was ordered.
+  const [delQty, setDelQty] = useState(asgn?.deliveredQty == null ? '' : String(asgn.deliveredQty))
+  const [savingQty, setSavingQty] = useState(false)
 
   // Who can own this step: the order's customer first (approvals like Lab Dip and PP Sample sit with
   // them), then Tradio admins and factories. The customer cannot own Delivery, which only Tradio or
@@ -191,7 +195,39 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
     } finally { setSaving(false) }
   }
 
+  // Tradio or the split's own factory records what was delivered. A blank box clears it.
+  const canRecordQty = currentUser?.role === 'admin' || (currentUser?.role === 'manufacturer' && String(asgn?.mid) === String(currentUser.id))
+  const savedQty = asgn?.deliveredQty == null ? '' : String(asgn.deliveredQty)
+  const qtyValid = delQty === '' || (/^\d+$/.test(delQty.trim()) && Number(delQty) <= 1e9)
+  const qtyDirty = delQty.trim() !== savedQty
+  const saveQty = async () => {
+    if (!qtyValid || savingQty) return false
+    setSavingQty(true)
+    try {
+      await setDeliveredQty(orderId, mfrId, delQty.trim() === '' ? null : Number(delQty))
+      toast(delQty.trim() === '' ? 'Delivered quantity cleared' : 'Delivered quantity saved', 'success')
+      return true
+    } catch (err) {
+      toast(err?.message || 'Failed to save the delivered quantity', 'error')
+      return false
+    } finally { setSavingQty(false) }
+  }
+
+  const saveStepType = async value => {
+    if (savingType) return
+    setSavingType(true)
+    try {
+      await ordersApi.updateStageDates(orderId, mfrId, stageIndex, { kind: value })
+      await refreshOrders()
+      toast(value === 'milestone' ? 'Now an approval step: one decision, done or not' : 'Now tracked by quantity', 'success')
+    } catch (err) {
+      toast(err?.message || 'Failed to change the step type', 'error')
+    } finally { setSavingType(false) }
+  }
+
   const saveProgress = async () => {
+    // Closing Delivery with a quantity typed in saves the quantity too, so the two cannot get out of step.
+    if (stage.isDelivery && status === 'done' && canRecordQty && qtyDirty && qtyValid && !(await saveQty())) return
     setSaving(true)
     try {
       const body = kind === 'quantity' ? { unitsDone: parseInt(units, 10) || 0 } : { status }
@@ -320,6 +356,37 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
               This is the mandatory Delivery step. Marking it done marks this order as delivered; reopening it puts the order back to Processing.
             </div>
           )}
+          {stage.isDelivery && (
+            <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, background: '#f8fafc', border: `1px solid ${T.border}` }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Delivered quantity</div>
+              {canRecordQty ? (
+                <>
+                  <FlexRow gap={8} style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                    <input
+                      type="number" min={0} inputMode="numeric" value={delQty} placeholder="Pieces delivered"
+                      aria-label="Delivered quantity"
+                      onChange={e => setDelQty(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') saveQty() }}
+                      style={{ width: 150, border: `1px solid ${qtyValid ? T.border : T.danger}`, borderRadius: 6, padding: '6px 8px', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }}
+                    />
+                    <span style={{ fontSize: 12, color: T.textMuted }}>of {(asgn.qty ?? 0).toLocaleString('en-IN')} ordered</span>
+                    {delQty.trim() !== String(asgn.qty) && <button type="button" onClick={() => setDelQty(String(asgn.qty))} style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, color: T.primary, padding: 0 }}>Same as ordered</button>}
+                    <Btn size="sm" variant="secondary" disabled={!qtyDirty || !qtyValid || savingQty} onClick={saveQty}>{savingQty ? 'Saving…' : 'Save quantity'}</Btn>
+                  </FlexRow>
+                  {qtyValid && delQty.trim() !== '' && Number(delQty) !== asgn.qty && (
+                    <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: '#b45309' }}>
+                      {Math.abs(Number(delQty) - asgn.qty).toLocaleString('en-IN')} pcs {Number(delQty) < asgn.qty ? 'short of' : 'over'} the order
+                    </div>
+                  )}
+                  {!qtyValid && <div style={{ marginTop: 6, fontSize: 11, color: T.danger }}>Enter a whole number of pieces, 0 or more.</div>}
+                </>
+              ) : (
+                <div style={{ fontSize: 13, color: asgn.deliveredQty == null ? T.textLight : T.text, fontWeight: 600 }}>
+                  {asgn.deliveredQty == null ? 'Not recorded yet' : `${asgn.deliveredQty.toLocaleString('en-IN')} of ${(asgn.qty ?? 0).toLocaleString('en-IN')} pcs`}
+                </div>
+              )}
+            </div>
+          )}
           {kind === 'quantity' ? (
             <>
               <div style={{ background: '#f8fafc', borderRadius: 10, border: `1px solid ${T.border}`, padding: '10px 14px' }}>
@@ -370,16 +437,24 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
 
         {caps.editPlan && (
           <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
-            <SectionLabel>Owner</SectionLabel>
+            <SectionLabel>Assignment</SectionLabel>
             <div style={{ fontSize: 11, color: T.textMuted, margin: '2px 0 8px' }}>
               {stage.responsibleRole === 'buyer'
                 ? 'With the customer: they can mark this step done or blocked, and are told when it is assigned.'
                 : 'Hand an approval step (Lab Dip, PP Sample) to the customer and they will see it in their action items. A quantity step becomes a single approval step.'}
             </div>
-            <Select label="" value={stage.responsibleId || ''} disabled={savingOwner} onChange={e => saveOwner(e.target.value)}>
-              <option value="">Unassigned</option>
-              {ownerOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </Select>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+              <Select label="Owner" value={stage.responsibleId || ''} disabled={savingOwner} onChange={e => saveOwner(e.target.value)}>
+                <option value="">Unassigned</option>
+                {ownerOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </Select>
+              {!stage.isDelivery && kind !== 'checklist' && (
+                <Select label="Step type" value={kind} disabled={savingType} onChange={e => saveStepType(e.target.value)}>
+                  <option value="quantity">Tracked by quantity</option>
+                  <option value="milestone">Approval (one decision)</option>
+                </Select>
+              )}
+            </div>
           </div>
         )}
 

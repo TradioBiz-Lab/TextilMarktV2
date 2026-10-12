@@ -212,7 +212,12 @@ export function rowCallout(r) {
     const when = r.delivery?.isActual ? ` on ${shortDate(r.delivery.date)}` : ''
     const due = order.delivery ? `, due ${shortDate(order.delivery)}` : ''
     const open = total - doneCount
-    return `Delivered${when}${due}.${open > 0 ? ` ${plural(open, 'step')} left open in the plan.` : ''}`
+    const d = r.delivery
+    const qty = d?.deliveredQty == null ? ''
+      : d.diff === 0 ? ` Full quantity delivered (${d.deliveredQty.toLocaleString('en-IN')} pcs).`
+      : d.diff == null ? ` ${d.deliveredQty.toLocaleString('en-IN')} pcs delivered.`
+      : ` ${d.deliveredQty.toLocaleString('en-IN')} of ${d.ordered.toLocaleString('en-IN')} pcs delivered (${Math.abs(d.diff).toLocaleString('en-IN')} ${d.diff < 0 ? 'short' : 'over'}).`
+    return `Delivered${when}${due}.${qty}${open > 0 ? ` ${plural(open, 'step')} left open in the plan.` : ''}`
   }
 
   if (health === 'blocked') {
