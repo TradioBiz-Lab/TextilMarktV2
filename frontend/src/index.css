@@ -519,7 +519,7 @@ table { border-collapse: collapse; width: 100%; }
   .po-totals-actions { flex-wrap: nowrap; gap: 6px; }
   .po-totals-actions button { min-height: 44px; padding-left: 8px; }
   body.has-action-bar { --kriyaa-bottom: 124px; }
-  body.has-action-bar:has(input:focus, textarea:focus, select:focus) .kriyaa-fab { opacity: 0; pointer-events: none; }
+  body.has-action-bar:has(input:focus, textarea:focus, select:focus) .kriyaa-fab, body.has-action-bar:has(input:focus, textarea:focus, select:focus) .capture-fab { opacity: 0; pointer-events: none; }
 }
 
 /* ── Editable material lines (bill of materials, cost sheet) ─────────────────────────────────────────

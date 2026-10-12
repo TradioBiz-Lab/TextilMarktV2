@@ -123,7 +123,9 @@ router.post('/upload', requireAuth, limiter, async (req, res) => {
     buffer = Buffer.from(m[2], 'base64')
     if (!buffer.length || buffer.length > MAX_MEDIA_BYTES) return res.status(400).json({ error: 'File empty or over 8MB' })
   }
-  const msg = await ingestMessage({ factoryId, channel: 'web', type, buffer, mimeType, text: type === 'text' ? text : '' })
+  // The order the person said it is for (the capture sheet's choice): only a hint, believed only if it is one of the factory's live orders.
+  const orderHint = typeof req.body.orderId === 'string' && req.body.orderId.length <= 100 ? req.body.orderId : null
+  const msg = await ingestMessage({ factoryId, channel: 'web', type, buffer, mimeType, text: type === 'text' ? text : '', orderHint })
   res.json({ message: publicMessage(msg) })
 })
 

@@ -581,3 +581,64 @@ describe('combining two items that are the same thing', () => {
   })
 })
 
+describe('what an order used against its plan', () => {
+  /** An order of 900 pieces in three colours with a frozen bill of materials (1 kg of fleece a piece, per colour), and stock to issue from. */
+  async function planned() {
+    const mfr = await factory(), brand = await makeBuyer()
+    await link(brand, mfr)
+    await makeOrder({ id: 'FIT-5117', buyer: brand, mfrs: [mfr], totalQty: 900 })
+    await Order.updateOne({ _id: 'FIT-5117' }, { $set: { colourways: [{ name: 'BLACK' }, { name: 'NAVY' }, { name: 'CHARCOAL' }] } })
+    const b = (await as(mfr).post('/api/boms', { orderId: 'FIT-5117' })).body
+    const saved = await as(mfr).post(`/api/boms/${b.id}`, { lines: [{ section: 'fabric', item: 'Polar fleece 300 GSM', unit: 'kg', consumption: 1, perColour: true }] })
+    assert.equal(saved.status, 200, JSON.stringify(saved.body))
+    assert.equal((await as(mfr).post(`/api/boms/${b.id}/freeze`)).status, 200)
+    for (const [d, qty, unit] of [['Polar fleece 300 GSM - BLACK', 400, 'kg'], ['Polar fleece 300 GSM - NAVY', 400, 'kg'], ['Drawcord 140 cm', 100, 'pcs']]) await post(mfr, (await startGrn(mfr, { lines: [{ description: d, unit, qty }] })).body.id)
+    const items = (await as(mfr).get('/api/inventory/items')).body
+    const id = name => items.find(i => i.name.includes(name)).id
+    const issue = (lines, type = 'issue') => as(mfr).post('/api/inventory/issues', { orderId: 'FIT-5117', type, lines })
+    return { mfr, id, issue }
+  }
+  const usage = (u, orderId = 'FIT-5117') => as(u).get(`/api/inventory/usage?orderId=${orderId}`)
+
+  test('each line of the plan beside what was issued, per colour, with what the pieces made so far really took', async () => {
+    const { mfr, id, issue } = await planned()
+    await issue([{ itemId: id('BLACK'), qty: 150 }, { itemId: id('NAVY'), qty: 160 }, { itemId: id('Drawcord'), qty: 20 }])
+    await Order.updateOne({ _id: 'FIT-5117' }, { $set: { 'assignments.0.stages': [{ name: 'Fabric Inhouse', kind: 'milestone' }, { name: 'Cutting', kind: 'quantity', unitsDone: 500, totalUnits: 900 }] } })
+    const r = await usage(mfr)
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.deepEqual([r.body.order.id, r.body.hasBom, r.body.bomVersion, r.body.produced], ['FIT-5117', true, 1, { stage: 'Cutting', pieces: 500, of: 900 }])
+    const fleece = r.body.lines[0]
+    assert.deepEqual([fleece.item, fleece.unit, fleece.planned, fleece.issued, fleece.difference], ['Polar fleece 300 GSM', 'kg', 900, 310, -590])
+    assert.deepEqual(fleece.colours.map(c => [c.colour, c.planned, c.issued]), [['BLACK', 300, 150], ['NAVY', 300, 160], ['CHARCOAL', 300, 0]])
+    assert.deepEqual([fleece.bomPerPiece, fleece.actualPerPiece, fleece.perPieceVariancePct], [1, 0.62, -38])
+    assert.deepEqual(r.body.extra.map(e => [e.name, e.issued]), [['Drawcord 140 cm', 20]])           // issued, but not on the bill of materials
+  })
+
+  test('what is returned comes off what was used, and no pieces made yet means no per-piece figure', async () => {
+    const { mfr, id, issue } = await planned()
+    await issue([{ itemId: id('BLACK'), qty: 200 }])
+    await issue([{ itemId: id('BLACK'), qty: 50 }], 'return')
+    const r = (await usage(mfr)).body
+    assert.equal(r.lines[0].colours.find(c => c.colour === 'BLACK').issued, 150)
+    assert.deepEqual([r.produced, r.lines[0].actualPerPiece, r.lines[0].perPieceVariancePct], [null, null, null])
+  })
+
+  test('with no frozen bill of materials everything issued is listed on its own', async () => {
+    const mfr = await factory(), brand = await makeBuyer()
+    await link(brand, mfr)
+    await makeOrder({ id: 'FIT-9', buyer: brand, mfrs: [mfr] })
+    await post(mfr, (await startGrn(mfr, { lines: [{ description: 'Zip', unit: 'pcs', qty: 50 }] })).body.id)
+    await as(mfr).post('/api/inventory/issues', { orderId: 'FIT-9', lines: [{ itemId: (await as(mfr).get('/api/inventory/items')).body[0].id, qty: 12 }] })
+    const r = (await usage(mfr, 'FIT-9')).body
+    assert.deepEqual([r.hasBom, r.lines, r.extra.map(e => [e.name, e.issued])], [false, [], [['Zip', 12]]])
+  })
+
+  test('only the company\'s own order: another factory\'s, an unknown one and a brand are refused', async () => {
+    const { mfr } = await planned()
+    const other = await factory({ code: 'ZZZ' })
+    assert.equal((await usage(other)).status, 404)
+    assert.equal((await usage(mfr, 'NOPE')).status, 404)
+    assert.equal((await as(await makeBuyer()).get('/api/inventory/usage?orderId=FIT-5117')).status, 403)
+  })
+})
+

@@ -360,6 +360,16 @@ admin enables them in User Setup.
     (`/api/jobwork/outstanding`). **Every attempt writes ledger rows under its own keys**: a request that loses a race (two returns at once)
     removes exactly what it wrote and never a winner's rows. `takeStock` accepts a mixed batch (the negative rows are checked, the positive ones
     written with them). Photos use the shared `lib/photoRoutes.js`.
+  - *Planned against used.* `GET /api/inventory/usage?orderId=` (`lib/inventory/usage.js`, `OrderUsage`) sets the frozen bill of materials (quantities
+    worked by `bomMath.js`, wastage included) beside the net of the stock issued to the order, line and colour by colour, and once pieces are cut
+    (the cutting step's units done) what each piece really took against the plan: the consumption actuals a costing can be checked against. It is on the
+    frozen BOM tab and behind each issue slip. Items issued but not on the bill are listed apart.
+  - *Kriyaa* has stock tools for a standalone factory: `stock_balance`, `list_goods_received`, `job_work_status`, `order_usage` (reads), and
+    `create_goods_received_draft` (a draft adds nothing to stock, so no confirmation), `post_goods_received` and `issue_stock` (both change stock and need
+    the person's own confirmation the server can see; the quantity is always theirs to state).
+  - *Quick capture* (`components/CaptureSheet.jsx`, a camera button beside Kriyaa's on every factory screen): a delivery paper (read into a draft note), a
+    progress photo or a short note (the inbound pipeline a WhatsApp message takes; the order the person picks is passed as `orderHint`, believed only
+    if it is one of the factory's live orders).
   - *Shopping list and the store.* Each shopping list row says how much of it is already in the store (`inStock`, found by the PO line description
     and unit, the same rule as goods received, aliases included); stock is counted once across rows that are the same item. `generate-pos` takes
     `netOfStock` to buy only what is left; it is the person's choice and never the default, because stock is not reserved for an order.

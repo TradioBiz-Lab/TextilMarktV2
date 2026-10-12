@@ -16,6 +16,7 @@ import { INVENTORY_CATEGORIES } from '../models/InventoryItem.js'
 import { allocateIssueNumber } from '../lib/counters.js'
 import { itemKey, balances, balanceOf, takeStock, writeLedger, round3, STORE } from '../lib/inventory/stock.js'
 import { istToday } from '../lib/inventory/grn.js'
+import { usageForOrder } from '../lib/inventory/usage.js'
 
 const router = Router()
 router.use(requireAuth, requireInventory)
@@ -252,6 +253,15 @@ router.post('/adjustments', writeLimiter, async (req, res) => {
     await AuditLog.create({ byUser: req.user.id, action: 'Stock Adjusted', detail: `${item.name}: ${delta > 0 ? '+' : ''}${delta} ${item.unit} (${reason}) by ${req.user.name}` }).catch(() => {})
     const bal = await balances(req.user.orgId, { itemIds: [item._id] })
     res.status(201).json({ item: itemView(item, bal.get(String(item._id))), delta })
+  } catch (err) { console.error('[inventory]', err); fail(res, 500, 'Server error') }
+})
+
+// GET /api/inventory/usage?orderId= - what the order was planned to use (its frozen bill of materials) against what was issued to it
+router.get('/usage', async (req, res) => {
+  try {
+    const u = await usageForOrder(req, req.query.orderId)
+    if (!u) return fail(res, 404, 'Order not found')
+    res.json(u)
   } catch (err) { console.error('[inventory]', err); fail(res, 500, 'Server error') }
 })
 

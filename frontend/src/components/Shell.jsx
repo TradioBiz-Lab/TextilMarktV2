@@ -7,6 +7,8 @@ import { Btn, RibbonBanner } from './ui.jsx'
 import { Logo } from './Brand.jsx'
 import { NotifPanel } from './NotifPanel.jsx'
 import { KriyaaWidget } from './KriyaaWidget.jsx'
+import { CaptureSheet } from './CaptureSheet.jsx'
+import { capsFor } from '../caps.js'
 import { useApp } from '../context.jsx'
 import { navSections, navIdForView } from '../nav.js'
 
@@ -204,6 +206,8 @@ export function Shell({ view, setView, children, onOpenOrder, onOpenLink }) {
           navigating between pages within the session. */}
       {/* Hidden on the Kriyaa page itself: the page IS the chat, and the floating button would sit on top of its Send button. The conversation lives in KriyaaChatProvider, so it carries over. */}
       {user && view !== 'kriyaa' && <KriyaaWidget />}
+      {/* A factory's one-tap capture (a delivery paper, a progress photo, a note), beside Kriyaa's button. The receiving screen has its own camera. */}
+      {user && capsFor(user).manageInventory && view !== 'grn' && <CaptureSheet onNavigate={setView} />}
     </div>
   )
 }

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Plus, Search, Warehouse, ReceiveGoods, IssueGoods, Truck } from '../../icons.jsx'
 import { T } from '../../constants.js'
-import { Btn, PageHeader, FlexRow, EmptyState, Alert, Tabs, useToast } from '../../components/ui.jsx'
+import { Btn, PageHeader, FlexRow, EmptyState, Alert, Tabs, Modal, useToast } from '../../components/ui.jsx'
 import { DataTable } from '../../components/DataTable.jsx'
 import { useApp } from '../../context.jsx'
 import { capsFor } from '../../caps.js'
@@ -13,6 +13,7 @@ import { Pill } from '../procurement/common.jsx'
 import { ItemFormModal, ItemModal, AdjustModal, CombineModal } from './ItemModals.jsx'
 import { IssueModal } from './IssueModal.jsx'
 import { JobWorkSendModal, JobWorkModal } from './JobWorkModals.jsx'
+import { OrderUsage } from './OrderUsage.jsx'
 
 const chip = (on) => ({ fontSize: 12, fontWeight: 700, padding: '8px 13px', minHeight: 36, borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', border: `1px solid ${on ? T.primary : T.border}`, background: on ? T.primaryLight : T.surface, color: on ? T.primaryDark : T.textMuted })
 
@@ -172,7 +173,7 @@ export function StockPage({ initialTab = 'stock', onNavigate }) {
         data.issues.length === 0 ? (
           <EmptyState icon={<IssueGoods size={26} color={T.textLight} />} title="Nothing issued yet"
             desc={caps.manageInventory ? 'Issue stock to an order when it goes to cutting, so what each order really used is on record.' : 'Nothing has been issued yet.'} />
-        ) : <DataTable columns={issueColumns} rows={data.issues} rowKey="id" />
+        ) : <DataTable columns={issueColumns} rows={data.issues} rowKey="id" onRowClick={s => setDialog({ kind: 'usage', orderId: s.orderId })} />
       )}
 
       {tab === 'jobwork' && (
@@ -198,6 +199,7 @@ export function StockPage({ initialTab = 'stock', onNavigate }) {
         </>
       )}
 
+      {dialog?.kind === 'usage' && <Modal title="What this order used" subtitle={dialog.orderId} onClose={() => setDialog(null)} size="lg"><OrderUsage orderId={dialog.orderId} /></Modal>}
       {dialog?.kind === 'send' && <JobWorkSendModal items={items} suppliers={suppliers} orders={orders} initialItem={dialog.item} onClose={() => setDialog(null)} onSent={() => { refresh(); refreshJobwork() }} />}
       {dialog?.kind === 'job' && <JobWorkModal jobId={dialog.id} canWrite={caps.manageInventory} items={items} onClose={() => setDialog(null)} onChanged={() => { refresh(); refreshJobwork() }} />}
       {dialog?.kind === 'item' && (

@@ -179,6 +179,7 @@ const WRITE_TOOLS = new Set([
   'create_master_order', 'create_order',
   'create_draft_po', 'send_purchase_order',
   'generate_draft_pos', 'share_cost_sheet',
+  'create_goods_received_draft', 'post_goods_received', 'issue_stock',
 ])
 
 // What an order or master order may be created with. The ID is never the model's to choose: the
@@ -435,6 +436,70 @@ export const TOOL_HANDLERS = {
     const body = {}
     if (typeof input.message === 'string') body.message = input.message.slice(0, 1000)
     return loopbackFetch(ctx.cookie, 'POST', `/api/cost-sheets/${input.costSheetId}/share`, body)
+  },
+
+  // Stock and goods received (standalone manufacturers). A note made here is only a DRAFT: nothing is added to stock until it is
+  // posted, and posting (like issuing stock to an order) needs the person's own confirmation.
+  stock_balance: async (input, ctx) => {
+    const q = new URLSearchParams()
+    if (typeof input?.search === 'string' && input.search.trim()) q.set('q', input.search.trim().slice(0, 60))
+    if (input?.lowOnly === true) q.set('low', '1')
+    const result = await loopbackFetch(ctx.cookie, 'GET', `/api/inventory/items${q.toString() ? `?${q}` : ''}`)
+    if (!result.ok) return result
+    return { ...result, data: {
+      items: result.data.slice(0, 40).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, kind: i.category, inTheStore: i.onHand, withJobWorkers: i.atJobWork || undefined, keepAtLeast: i.reorderLevel || undefined, belowTheLevelToKeep: i.low || undefined })),
+      truncated: result.data.length > 40,
+    } }
+  },
+
+  list_goods_received: async (input, ctx) => {
+    if (input?.status !== undefined && !['draft', 'posted'].includes(input.status)) return badInput('status')
+    const result = await loopbackFetch(ctx.cookie, 'GET', `/api/grns${input?.status ? `?status=${input.status}` : ''}`)
+    if (!result.ok) return result
+    return { ...result, data: result.data.slice(0, 30).map(g => ({ grnId: g.id, number: g.number || undefined, status: g.status, from: g.supplierName || undefined, againstPo: g.poId || undefined, challanNo: g.challanNo || undefined, received: g.receivedOn, items: g.preview, photos: g.photoCount })) }
+  },
+
+  job_work_status: async (input, ctx) => {
+    const [out, jobs] = await Promise.all([loopbackFetch(ctx.cookie, 'GET', '/api/jobwork/outstanding'), loopbackFetch(ctx.cookie, 'GET', '/api/jobwork?open=1')])
+    if (!out.ok) return out
+    return { ok: true, status: 200, data: {
+      withJobWorkers: out.data.map(o => ({ jobWorker: o.supplierName, openChallans: o.jobs, overdue: o.overdue || undefined, goods: o.items.map(i => `${i.qty} ${i.unit} ${i.name}`) })),
+      challans: (jobs.ok ? jobs.data : []).slice(0, 30).map(j => ({ number: j.number, jobWorker: j.supplierName, work: j.process, sent: j.sentOn, dueBack: j.expectedBack || undefined, overdue: j.overdue || undefined })),
+    } }
+  },
+
+  order_usage: async (input, ctx) => {
+    if (typeof input?.orderId !== 'string' || !ORDER_ID_RE.test(input.orderId)) return badInput('orderId')
+    const result = await loopbackFetch(ctx.cookie, 'GET', `/api/inventory/usage?orderId=${encodeURIComponent(input.orderId)}`)
+    if (!result.ok) return result
+    const u = result.data
+    return { ...result, data: {
+      piecesDone: u.produced ? `${u.produced.pieces}${u.produced.of ? ` of ${u.produced.of}` : ''} at ${u.produced.stage}` : undefined, hasFrozenBillOfMaterials: u.hasBom,
+      lines: u.lines.map(l => ({ item: l.item, unit: l.unit, planned: l.planned, issued: l.issued, difference: l.difference, perPieceSoFar: l.actualPerPiece ?? undefined, perPiecePlanned: l.bomPerPiece, perPieceVariancePercent: l.perPieceVariancePct ?? undefined })),
+      issuedButNotOnTheBill: u.extra.map(e => `${e.issued} ${e.unit} ${e.name}`),
+    } }
+  },
+
+  // A draft note adds nothing to stock and can be thrown away, so it needs no confirmation.
+  create_goods_received_draft: async (input, ctx) => {
+    if (input?.poNumber !== undefined && !(typeof input.poNumber === 'string' && PO_ID_RE.test(input.poNumber))) return badInput('poNumber')
+    if (input?.lines !== undefined && !(Array.isArray(input.lines) && input.lines.length <= 50 && input.lines.every(l => l && typeof l === 'object'))) return badInput('lines')
+    const body = { ...(input?.poNumber ? { poId: input.poNumber } : {}), ...pick(input || {}, ['supplierName', 'challanNo', 'vehicleNo', 'note']) }
+    if (input?.lines) body.lines = input.lines.map(l => pick(l, ['description', 'qty', 'unit', 'rejectedQty', 'rejectReason', 'lot']))
+    return loopbackFetch(ctx.cookie, 'POST', '/api/grns', body)
+  },
+
+  post_goods_received: async (input, ctx) => {
+    if (typeof input?.grnId !== 'string' || !OBJECT_ID_RE.test(input.grnId)) return badInput('grnId')
+    if (!userConfirmed(ctx.conversation)) return confirmationRequired('stock: the goods are added to the store, the purchase order moves on and a goods received note PDF is made (it cannot be edited afterwards)', 'the supplier, the purchase order, and each item with the quantity that arrived and any quantity turned away')
+    return loopbackFetch(ctx.cookie, 'POST', `/api/grns/${input.grnId}/post`, {})
+  },
+
+  issue_stock: async (input, ctx) => {
+    if (typeof input?.orderId !== 'string' || !ORDER_ID_RE.test(input.orderId)) return badInput('orderId')
+    if (!Array.isArray(input.lines) || input.lines.length === 0 || input.lines.length > 20 || !input.lines.every(l => l && typeof l.itemId === 'string' && OBJECT_ID_RE.test(l.itemId))) return badInput('lines')
+    if (!userConfirmed(ctx.conversation)) return confirmationRequired('a stock issue: the quantities come out of the store and are recorded against the order', 'the order and each item with the quantity and how much is in the store now (from stock_balance)')
+    return loopbackFetch(ctx.cookie, 'POST', '/api/inventory/issues', { orderId: input.orderId, lines: input.lines.map(l => pick(l, ['itemId', 'qty'])), ...(typeof input.note === 'string' ? { note: input.note.slice(0, 500) } : {}) })
   },
 
   post_stage_update: (input, ctx) => {
@@ -777,6 +842,56 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { costSheetId: { type: 'string' }, message: { type: 'string', maxLength: 1000, description: "A short note to send with it, if the user asked for one." } }, required: ['costSheetId'], additionalProperties: false },
   },
   {
+    name: 'stock_balance',
+    description: "What this factory has in its store: each item with how much is in the store, how much is with job workers (dyers, printers), and whether it is below the level the factory keeps. Optionally search by name or list only what is low. Gives each item's itemId for issue_stock. Use it for 'how much black fleece do we have' or 'what is running low'.",
+    input_schema: { type: 'object', properties: { search: { type: 'string', maxLength: 60 }, lowOnly: { type: 'boolean' } }, additionalProperties: false },
+  },
+  {
+    name: 'list_goods_received',
+    description: "The goods received notes (what suppliers delivered), newest first: drafts waiting to be checked and posted, and posted ones with their number, supplier, purchase order and items. Optionally only 'draft' or 'posted'. Use it for 'what came in this week' or 'is the Coimbatore delivery posted yet'.",
+    input_schema: { type: 'object', properties: { status: { type: 'string', enum: ['draft', 'posted'] } }, additionalProperties: false },
+  },
+  {
+    name: 'job_work_status',
+    description: "What is out with job workers (dyers, printers, embroiderers): for each, the goods still with them, how many challans are open and how many are overdue, and the open challans with their due dates. Use it for 'what is with the dyer' or 'which job work is late'.",
+    input_schema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'order_usage',
+    description: "What an order was planned to use (its frozen bill of materials, wastage included) against what the store has issued to it, per line and colour, plus what each piece has really taken so far against the plan once pieces are cut. Use it for 'are we over on fabric for the hoodie'. orderId from find_orders.",
+    input_schema: { type: 'object', properties: { orderId: { type: 'string' } }, required: ['orderId'], additionalProperties: false },
+  },
+  {
+    name: 'create_goods_received_draft',
+    description: "Start a goods received note for a delivery: against a purchase order (poNumber from list_purchase_orders; with no lines it is filled with what the PO is still waiting for) or without one (supplierName and lines with description, qty and unit). It is only a DRAFT: nothing is added to stock until it is posted, so tell the user to check it on the Stock page (Goods received) or ask them to confirm posting. Say the draft's grnId.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        poNumber: { type: 'string' }, supplierName: { type: 'string', maxLength: 200 }, challanNo: { type: 'string', maxLength: 60 }, vehicleNo: { type: 'string', maxLength: 20 }, note: { type: 'string', maxLength: 1000 },
+        lines: { type: 'array', maxItems: 50, items: { type: 'object', properties: { description: { type: 'string' }, qty: { type: 'number' }, unit: { type: 'string' }, rejectedQty: { type: 'number' }, rejectReason: { type: 'string' }, lot: { type: 'string' } }, required: ['description', 'qty'], additionalProperties: false } },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'post_goods_received',
+    description: "Post a draft goods received note: the goods are added to the store, the purchase order is brought forward and the PDF is made. THIS CHANGES STOCK AND CANNOT BE EDITED AFTER: first tell the user the supplier, the purchase order and each item with the quantity that arrived (and any turned away) and ask them to confirm; the server refuses until their own reply confirms it. grnId from create_goods_received_draft or list_goods_received.",
+    input_schema: { type: 'object', properties: { grnId: { type: 'string' } }, required: ['grnId'], additionalProperties: false },
+  },
+  {
+    name: 'issue_stock',
+    description: "Issue stock from the store to one of the factory's orders (for example fabric to cutting): the quantities come out of the store and are recorded against the order, which is how what each order really used is known. THIS CHANGES STOCK: first call stock_balance, tell the user the order and each item with the quantity and what is in the store, and ask them to confirm; the server refuses until their own reply confirms it, and refuses more than the store holds.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        orderId: { type: 'string' }, note: { type: 'string', maxLength: 500 },
+        lines: { type: 'array', minItems: 1, maxItems: 20, items: { type: 'object', properties: { itemId: { type: 'string' }, qty: { type: 'number' } }, required: ['itemId', 'qty'], additionalProperties: false } },
+      },
+      required: ['orderId', 'lines'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'check_delivery_risk',
     description: "Deterministic date-math helper — NOT you doing arithmetic. Returns, for the given order: every stage's plan-vs-baseline variance in days (etaVarianceDays, positive = the plan slipped later than its original baseline) and, once a stage is actually done, its actual-vs-baseline variance (actualVarianceDays, positive = it actually finished later than its ORIGINAL planned date — always measured against the frozen baseline, never against a since-revised eta); and two DISTINCT order-level numbers — do not conflate them: deliveryOverrunDays is whether the CURRENT plan (the latest stage eta) is consistent with the CURRENT delivery date right now (null if the plan finishes on or before delivery); deliveryVarianceDays is how far the delivery date ITSELF has moved from what was originally promised (baselineDelivery), positive = pushed later, negative = pulled earlier, null if delivery has never been revised. A corrected/realigned delivery date can read deliveryOverrunDays: null while deliveryVarianceDays shows a large number — that means the plan and the promise agree right now, but the promise itself has slipped (or improved) from day one. Call this whenever the admin asks 'what happens if I push this date', 'are we going to miss delivery', or 'how much has this order slipped', or right after moving a stage's eta, so you can state exact numbers instead of estimating.",
     input_schema: {
@@ -801,6 +916,8 @@ const COMPANY_ONLY_TOOLS = new Set(['list_partners'])
 const CREATE_TOOLS = new Set(['create_master_order', 'create_order'])
 // Suppliers and purchase orders belong to a factory in the standalone product, and to nobody else.
 const PROCUREMENT_TOOLS = new Set(['list_suppliers', 'list_purchase_orders', 'get_purchase_order', 'create_draft_po', 'send_purchase_order', 'get_bom', 'shopping_list', 'generate_draft_pos', 'share_cost_sheet'])
+// A factory's store, goods received and job work: its own, in the standalone product only.
+const INVENTORY_TOOLS = new Set(['stock_balance', 'list_goods_received', 'job_work_status', 'order_usage', 'create_goods_received_draft', 'post_goods_received', 'issue_stock'])
 // Cost sheets have two sides: both a factory and a brand may look at them (each only at its own); only the factory writes.
 const COSTING_READ_TOOLS = new Set(['list_cost_sheets', 'get_cost_sheet'])
 // In the standalone product a factory runs its own schedule, so it may also move its own dates.
@@ -810,6 +927,7 @@ export const toolsFor = user => TOOLS.filter(t =>
   (user?.role !== 'admin' || !COMPANY_ONLY_TOOLS.has(t.name)) &&
   (!CREATE_TOOLS.has(t.name) || user?.role === 'admin' || isStandalone()) &&
   (!PROCUREMENT_TOOLS.has(t.name) || (isStandalone() && user?.role === 'manufacturer')) &&
+  (!INVENTORY_TOOLS.has(t.name) || (isStandalone() && user?.role === 'manufacturer')) &&
   (!COSTING_READ_TOOLS.has(t.name) || (isStandalone() && (user?.role === 'manufacturer' || user?.role === 'buyer'))))
 
 const ROLE_SCOPE = {
@@ -864,6 +982,8 @@ CREATING ORDERS: if you have the create_order and create_master_order tools, you
 ${toolsFor(user).some(t => t.name === 'send_purchase_order') ? `PURCHASE ORDERS: you can look up this factory's suppliers and purchase orders, draft a PO (create_draft_po) and send one (send_purchase_order). Resolve a supplier by name with list_suppliers, never ask for an id. Drafting emails nobody: after you draft one, say the PO number, supplier and total, and that it is waiting for review. Sending emails the supplier and cannot be undone: say exactly what will go out and to which address and ask ${user.name} to confirm; the server will refuse until their own reply confirms it. Never send a PO the user has not asked you to send. Rates and GST are the factory's own business: only ever tell ${user.name}, never anyone else.
 
 ` : ''}${toolsFor(user).some(t => t.name === 'share_cost_sheet') ? `BILLS OF MATERIALS AND COSTING: you can read this factory's bill of materials for an order (get_bom), what it still has to buy across orders (shopping_list), raise draft purchase orders from that (generate_draft_pos), and read its cost sheets (list_cost_sheets, get_cost_sheet) and share a draft with the customer (share_cost_sheet). Resolve an order by name with find_orders and a master order with list_master_orders, never ask for an id. Raising draft POs creates several records and sharing tells the customer: for both, say exactly what you are about to do and ask ${user.name} to confirm; the server will refuse until their own reply confirms it. Rates, margins and suppliers are the factory's own business: tell only ${user.name}. Approving a cost sheet is the customer's own decision and you cannot do it.
+
+` : ''}${toolsFor(user).some(t => t.name === 'stock_balance') ? `STOCK AND GOODS RECEIVED: you can look at this factory's store (stock_balance), the goods received notes (list_goods_received), what is out with job workers (job_work_status) and what an order used against its plan (order_usage), start a goods received note for a delivery (create_goods_received_draft), post one (post_goods_received) and issue stock to an order (issue_stock). Find items with stock_balance and orders with find_orders, never ask for an id. A draft note adds nothing to stock: after you make one, say its supplier, the items and quantities, and that it waits for ${user.name} to check it on the Stock page. Posting a note and issuing stock change what is in the store: say exactly what will happen and ask ${user.name} to confirm; the server will refuse until their own reply confirms it. Quantities are theirs to state: never guess a quantity that arrived or was issued. What is in the store, what suppliers delivered and what things cost is the factory's own business: tell only ${user.name}.
 
 ` : ''}${toolsFor(user).some(t => t.name === 'get_cost_sheet') && !toolsFor(user).some(t => t.name === 'share_cost_sheet') ? `COST SHEETS: you can list the cost sheets this customer's factories have shared (list_cost_sheets) and read one in full (get_cost_sheet): the price build-up, comments and approval. You cannot comment on or approve one: that is ${user.name}'s own decision in the app, so tell them where it is waiting (the Cost Sheets page) rather than doing it.
 

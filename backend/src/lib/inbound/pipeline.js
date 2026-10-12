@@ -78,7 +78,7 @@ export async function loadActiveOrders(factoryId) {
  * Creates the message row (raw input stored first, always) and runs it through
  * the pipeline. `deps` lets tests swap the AI and speech calls.
  *
- * input: {factoryId?, senderNumber?, channel, type, buffer?, mimeType?, text?, receivedAt?}
+ * input: {factoryId?, senderNumber?, channel, type, buffer?, mimeType?, text?, receivedAt?, orderHint?}
  */
 // Test seam: lets route-level tests stub the AI/speech calls without HTTP plumbing.
 let defaultDeps = {}
@@ -178,7 +178,8 @@ export async function ingestMessage(input, deps = {}) {
     let reason = null
     for (const u of updates) {
       const hints = (u.hints?.length ? u.hints : [u.hint]).filter(Boolean)
-      const m = matchOrder(hints, orders)
+      // A person who said which order they mean (the capture sheet's order choice) is believed, if it is one of this factory's live orders.
+      const m = input.orderHint && orders.some(o => o.id === input.orderHint) ? { orderId: input.orderHint, candidates: [] } : matchOrder(hints, orders)
       if (!m.orderId) { reason = 'Could not tell which order this is about'; break }
       const order = orders.find(o => o.id === m.orderId)
       const stageIndex = mapStageIndex(u.canonical, order.stages)

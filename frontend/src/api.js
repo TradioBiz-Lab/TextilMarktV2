@@ -278,6 +278,8 @@ export const inventoryApi = {
   ledger: params => api.get(`/inventory/ledger${query(params)}`),
   // { itemId, counted | delta, reason }
   adjust: data => api.post('/inventory/adjustments', data),
+  // what an order was planned to use (its frozen bill of materials) against what was issued to it
+  usage: orderId => api.get(`/inventory/usage${query({ orderId })}`),
   issues: params => api.get(`/inventory/issues${query(params)}`),
   issue: id => api.get(`/inventory/issues/${id}`),
   // { orderId, lines: [{ itemId, qty }], type?: 'issue' | 'return', stageIndex?, note?, issuedOn? }

@@ -66,6 +66,18 @@ describe('ingestMessage', () => {
     assert.equal(await Document.countDocuments({ sourceMessageId: msg._id }), 0)   // no evidence until a human approves
   })
 
+  test('an order the person named is believed when the photo alone would not say which, but only one of the factory\'s live orders', async () => {
+    const { mfr, ids } = await arrange({ orders: 2 })
+    const named = await ingestMessage({ ...img, factoryId: mfr._id, orderHint: ids[1] }, photo())
+    assert.equal(named.state, 'auto_applied')
+    assert.equal(named.orderId, ids[1])
+    assert.equal((await stageOf(ids[1], 'Cutting')).status, 'done')
+    assert.notEqual((await stageOf(ids[0], 'Cutting')).status, 'done')
+    const foreign = await ingestMessage({ ...img, factoryId: mfr._id, orderHint: 'SOMEONE-ELSES-1' }, photo())
+    assert.equal(foreign.state, 'needs_review')                                    // not a live order of this factory: the usual matching applies
+    assert.notEqual(foreign.orderId, 'SOMEONE-ELSES-1')
+  })
+
   test('unmatched with two active orders goes to review, nothing written', async () => {
     const { mfr, ids } = await arrange({ orders: 2 })
     const msg = await ingestMessage({ ...img, factoryId: mfr._id }, photo())

@@ -172,6 +172,7 @@ function BomTabInner({ order, asgn, onNavigate }) {
           <Btn variant="danger" size="sm" icon={<Trash2 size={12} />} onClick={remove} disabled={busy}>Delete this draft</Btn>
         </div>
       )}
+      {frozen && newest && caps.seeInventory && <div style={{ marginTop: 14 }}><Card><OrderUsage orderId={order.id} /></Card></div>}
       {frozen && <div style={{ marginTop: 14 }}><Card pad={false}><div style={{ padding: '12px 16px', fontSize: 12, color: T.textMuted, lineHeight: 1.6 }}>A frozen bill of materials is the record and cannot be edited. To change something, start a new version: the lines and their ids carry over, so purchase orders already raised stay linked. Use the Shopping List to buy what is needed.</div></Card></div>}
 
       {reading && <TechPackModal orderId={order.id} packs={packs} onClose={() => setReading(false)} onRead={read} />}
