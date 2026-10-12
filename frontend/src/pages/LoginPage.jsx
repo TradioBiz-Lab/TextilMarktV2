@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Eye, EyeOff, AlertTriangle } from '../icons.jsx'
 import { T } from '../constants.js'
 import { Input } from '../components/ui.jsx'
+import { Logo } from '../components/Brand.jsx'
 import { useApp } from '../context.jsx'
 import { SignUpPage } from './SignUpPage.jsx'
 
@@ -57,17 +58,8 @@ export function LoginPage() {
         <div style={{ background: T.surface, borderRadius: 20, border: `1px solid ${T.border}`, padding: '40px 36px', boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
 
           {/* Logo */}
-          <div style={{ textAlign: 'center', marginBottom: 32 }}>
-            <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', lineHeight: 1 }}>
-                <span style={{ fontSize: 30, fontWeight: 800, color: '#003B73', letterSpacing: '-0.02em', fontFamily: 'inherit' }}>Textil</span>
-                <span style={{ fontSize: 30, fontWeight: 800, color: '#C2410C', letterSpacing: '-0.02em', fontFamily: 'inherit' }}>Markt</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
-                <div style={{ width: 16, height: 1.5, background: '#C2410C', borderRadius: 1 }} />
-                <span style={{ fontSize: 8, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase' }}>by Tradio</span>
-              </div>
-            </div>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 32 }}>
+            <Logo size={44} />
           </div>
 
           {/* Title */}

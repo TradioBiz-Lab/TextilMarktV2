@@ -1,8 +1,9 @@
 import { ViewAsPicker } from './ViewAsPicker.jsx'  // sandbox-only, remove with the feature
 import { useState, useEffect } from 'react'
-import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot, Hexagon, Inbox } from '../icons.jsx'
+import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot, Inbox } from '../icons.jsx'
 import { T } from '../constants.js'
 import { Btn, RibbonBanner } from './ui.jsx'
+import { Logo } from './Brand.jsx'
 import { NotifPanel } from './NotifPanel.jsx'
 import { KriyaaWidget } from './KriyaaWidget.jsx'
 import { useApp } from '../context.jsx'
@@ -47,21 +48,9 @@ function NetworkBanner() {
   )
 }
 
-
-function Logo() {
-  return (
-    <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 1 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', lineHeight: 1 }}>
-        <span style={{ fontSize: 17, fontWeight: 800, color: '#003B73', letterSpacing: '-0.02em', fontFamily: 'inherit' }}>Textil</span>
-        <span style={{ fontSize: 17, fontWeight: 800, color: '#C2410C', letterSpacing: '-0.02em', fontFamily: 'inherit' }}>Markt</span>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
-        <div style={{ width: 14, height: 1.5, background: '#C2410C', borderRadius: 1 }} />
-        <span style={{ fontSize: 7, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase' }}>by Tradio</span>
-      </div>
-    </div>
-  )
-}
+// Role dot colours for the navy sidebar. T.master (violet) and the dark orange the manufacturer role
+// used on the old bright-blue sidebar are too dark to read on navy, so each role gets a lighter step.
+const ROLE_DOT = { master: '#A78BFA', admin: T.primary, buyer: '#7DD3FC', manufacturer: '#FDBA74' }
 
 export function Shell({ view, setView, children, onOpenOrder }) {
   const { currentUser: user, logout, unread, ribbons } = useApp()
@@ -87,9 +76,9 @@ export function Shell({ view, setView, children, onOpenOrder }) {
     ? (user?.adminType === 'master' ? 'Master Admin' : 'Admin Portal')
     : user?.role === 'buyer' ? 'Buyer Portal' : 'Manufacturer Portal'
 
-  const roleColor = user?.role === 'admin'
-    ? (user?.adminType === 'master' ? T.master : T.primary)
-    : user?.role === 'buyer' ? '#7dd3fc' : '#c2410c'
+  const roleDot = user?.role === 'admin'
+    ? (user?.adminType === 'master' ? ROLE_DOT.master : ROLE_DOT.admin)
+    : user?.role === 'buyer' ? ROLE_DOT.buyer : ROLE_DOT.manufacturer
 
   const handleNav = id => {
     setView(id)
@@ -107,11 +96,16 @@ export function Shell({ view, setView, children, onOpenOrder }) {
 
       {/* ── Sidebar ── */}
       <aside className={`shell-sidebar${sidebarOpen ? ' open' : ''}${sidebarCollapsed ? ' collapsed' : ''}`} style={{ background: T.sidebarGradient, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: sidebarCollapsed ? '20px 8px 16px' : '20px 16px 16px', borderBottom: `1px solid ${T.sidebarBorder}` }}>
+        {/* Brand first, portal second: the logo lockup (just the mark when collapsed), then which portal this is. */}
+        <div style={{ padding: sidebarCollapsed ? '16px 8px 14px' : '18px 16px 16px', borderBottom: `1px solid ${T.sidebarBorder}` }}>
           {sidebarCollapsed
-            ? <div style={{ display: 'flex', justifyContent: 'center', color: roleColor }}><Hexagon size={18} strokeWidth={2.5} /></div>
+            ? <div title={roleLabel} style={{ display: 'flex', justifyContent: 'center' }}><Logo variant="compact" onDark size={32} /></div>
             : <>
-                <div style={{ fontSize: roleLabel.length > 14 ? 13 : 20, fontWeight: 800, color: roleColor, textTransform: 'uppercase', letterSpacing: roleLabel.length > 14 ? '0.03em' : '0.06em', textAlign: 'center', lineHeight: 1.2, whiteSpace: 'nowrap' }}>{roleLabel}</div>
+                <div style={{ display: 'flex' }}><Logo onDark size={36} /></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}>
+                  <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: roleDot, flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.78)', textTransform: 'uppercase', letterSpacing: '0.09em', whiteSpace: 'nowrap' }}>{roleLabel}</span>
+                </div>
                 <ViewAsPicker />
               </>
           }
@@ -123,7 +117,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
             const Icon = n.icon
             return (
               <button key={n.id} onClick={() => handleNav(n.id)} title={sidebarCollapsed ? n.label : undefined}
-                className="sidebar-nav-item"
+                className="sidebar-nav-item" aria-current={active ? 'page' : undefined}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', gap: 10, padding: sidebarCollapsed ? '9px 0' : '9px 12px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: active ? 700 : 500, textAlign: 'left', background: active ? 'rgba(255,255,255,0.12)' : 'transparent', color: active ? '#fff' : 'rgba(255,255,255,0.55)', transition: 'all 0.12s', fontFamily: 'inherit' }}>
                 <Icon size={18} weight={active ? 'fill' : 'regular'} style={{ flexShrink: 0 }} />{!sidebarCollapsed && n.label}
               </button>
@@ -141,7 +135,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
         {!sidebarCollapsed && (
           <div style={{ padding: '12px 14px', borderTop: `1px solid ${T.sidebarBorder}` }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#002B5B', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: '#e2e8f0', flexShrink: 0, border: '1px solid rgba(255,255,255,0.15)' }}>{user?.name?.[0]}</div>
+              <div style={{ width: 30, height: 30, borderRadius: '50%', background: T.brandNavyLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: '#e2e8f0', flexShrink: 0, border: '1px solid rgba(255,255,255,0.15)' }}>{user?.name?.[0]}</div>
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.name}</div>
                 <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.company}</div>
@@ -151,7 +145,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
         )}
         {sidebarCollapsed && (
           <div style={{ padding: '12px 0', borderTop: `1px solid ${T.sidebarBorder}`, display: 'flex', justifyContent: 'center' }}>
-            <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#002B5B', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: '#e2e8f0', border: '1px solid rgba(255,255,255,0.15)' }}>{user?.name?.[0]}</div>
+            <div style={{ width: 30, height: 30, borderRadius: '50%', background: T.brandNavyLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: '#e2e8f0', border: '1px solid rgba(255,255,255,0.15)' }}>{user?.name?.[0]}</div>
           </div>
         )}
       </aside>
@@ -163,14 +157,15 @@ export function Shell({ view, setView, children, onOpenOrder }) {
         <header className="shell-header" style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, height: 54, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, position: 'relative', zIndex: 300 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {/* Hamburger for mobile */}
-            <button className="hamburger-btn" onClick={() => setSidebarOpen(true)}>
+            <button className="hamburger-btn" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
               <Menu size={20} />
             </button>
-            <Logo />
+            {/* Desktop shows the logo in the sidebar; this copy appears only when the sidebar is a hidden drawer (see .header-logo). */}
+            <div className="header-logo"><Logo size={28} /></div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ position: 'relative' }}>
-              <button data-notif-toggle onClick={() => setNotifOpen(p => !p)}
+              <button data-notif-toggle className="header-icon-btn" onClick={() => setNotifOpen(p => !p)} aria-label="Notifications"
                 style={{ background: '#f8fafc', border: `1px solid ${T.border}`, borderRadius: 9, width: 36, height: 36, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Bell size={18} color={T.textMuted} /></button>
               {unread > 0 && (
                 <span style={{ position: 'absolute', top: -4, right: -4, background: '#ef4444', color: '#fff', borderRadius: 10, fontSize: 9, fontWeight: 800, minWidth: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px', border: '2px solid #fff' }}>{unread}</span>
@@ -183,7 +178,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
                 <div style={{ fontSize: 10, color: T.textLight }}>{user?.role === 'admin' ? (user?.adminType === 'master' ? 'Master Admin' : 'Admin User') : user?.role} · {user?.code}</div>
               </div>
             </div>
-            <Btn variant="secondary" size="sm" onClick={logout}>Sign out</Btn>
+            <div className="header-signout"><Btn variant="secondary" size="sm" onClick={logout}>Sign out</Btn></div>
           </div>
         </header>
 

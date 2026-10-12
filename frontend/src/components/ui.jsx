@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback, createContext, useContext, isValidElement, cloneElement } from 'react'
-import { Folder, Link2, Package, Factory, Eye, Download, FileText, StickyNote, AlertTriangle, CheckCircle2, Info, X, Image as ImageIcon, Paperclip, Upload, ChevronLeft, ChevronRight, Crown, Check, Pencil, Trash2 } from '../icons.jsx'
+import { Folder, Link2, Package, Factory, Eye, Download, FileText, StickyNote, AlertTriangle, CheckCircle2, Info, X, Image as ImageIcon, Paperclip, Upload, ChevronLeft, ChevronRight, Crown, Check, Pencil, Trash2, Camera } from '../icons.jsx'
 import { T, ST, DOC_TYPES, STAGE_DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired } from '../constants.js'
 import { useApp } from '../context.jsx'
+import { compressImage } from '../lib/imageCompress.js'
 import * as pdfjsLib from 'pdfjs-dist'
 import { CsvTable, XlsxTable, DxfPreview, AudioPlayer, Msg } from './fileViewers.jsx'
 // Imported as a Vite worker (not `?url`) so the build emits a plain .js chunk —
@@ -482,29 +483,64 @@ export function fileUploadPayload(fileData) {
 // Measurements wants Excel/CSV, which browsers DO type reliably). The
 // backend's own allowlist (documents.js) is the real gate — this is just
 // matching UI copy/validation to what it will actually accept.
-export function FileUpload({ file, onFile, error, onError, mimeTypes, extensions, accept, label }) {
+//
+// `capture` ('environment' = rear camera, 'user' = front camera, false = off, the default) adds a
+// prominent Take photo button that opens the phone's camera directly; desktop browsers ignore the
+// hint and show the ordinary file chooser. It only appears when the accepted types include images.
+// `compress` (default true) shrinks photos (longest edge 1600px, JPEG) before they are read, so a
+// 6 MB camera shot fits the 10MB limit with room to spare. The size check runs on the result, and
+// if shrinking fails for any reason the original file is used unchanged.
+export function FileUpload({ file, onFile, error, onError, mimeTypes, extensions, accept, label, capture = false, compress = true }) {
   const inputRef = useRef(null)
+  const captureRef = useRef(null)
   const [drag, setDrag] = useState(false)
   const [mode, setMode] = useState('file') // 'file' | 'link'
   const [urlInput, setUrlInput] = useState('')
+  const [busy, setBusy] = useState(false) // a photo is being shrunk before it is read
+  // Each pick takes a number; a newer pick, or unmounting, makes an older in-flight one stale so its
+  // result is dropped instead of overwriting the newer file.
+  const pickId = useRef(0)
+  useEffect(() => () => { pickId.current++ }, [])
   const ALLOWED = mimeTypes || ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg']
   const ALLOWED_EXT = extensions || ['.pdf', '.jpg', '.jpeg', '.png']
   const ACCEPT = accept || '.pdf,.jpg,.jpeg,.png'
   const LABEL = label || 'PDF, JPG, PNG'
   const MAX_MB = 10
+  const captureMode = capture === true ? 'environment' : (capture || null)
+  const showCapture = !!captureMode && ALLOWED.some(m => m.startsWith('image/'))
 
-  const process = f => {
-    if (!f) return
+  const isAllowed = f => {
     const nameLower = (f.name || '').toLowerCase()
     const extOk = ALLOWED_EXT.some(ext => nameLower.endsWith(ext))
     const mimeOk = !!f.type && ALLOWED.includes(f.type)
-    if (!extOk && !mimeOk) { onError && onError(`Only ${LABEL} files are allowed.`); return }
-    if (f.size > MAX_MB * 1024 * 1024) { onError && onError(`File exceeds ${MAX_MB}MB limit. Paste a drive link instead.`); return }
+    return extOk || mimeOk
+  }
+
+  const process = async f => {
+    if (!f) return
+    const mine = ++pickId.current
+    setBusy(false)
+    if (!isAllowed(f)) { onError && onError(`Only ${LABEL} files are allowed.`); return }
+    let out = f
+    if (compress && (f.type || '').startsWith('image/')) {
+      setBusy(true)
+      try {
+        const small = await compressImage(f)
+        // Only take the shrunk copy if it is still a type this slot accepts (a PNG-only slot must not get a JPEG).
+        if (small && isAllowed(small)) out = small
+      } catch { /* keep the original */ }
+      if (mine !== pickId.current) return
+      setBusy(false)
+    }
+    if (out.size > MAX_MB * 1024 * 1024) { onError && onError(`File exceeds ${MAX_MB}MB limit. Paste a drive link instead.`); return }
     onError && onError('')
     const reader = new FileReader()
-    reader.onload = e => onFile({ name: f.name, size: f.size, mimeType: f.type, dataUrl: e.target.result })
-    reader.readAsDataURL(f)
+    reader.onload = e => { if (mine === pickId.current) onFile({ name: out.name || f.name, size: out.size, mimeType: out.type || f.type, dataUrl: e.target.result }) }
+    reader.readAsDataURL(out)
   }
+
+  // Read the picked file, then clear the input so choosing the same file again still fires onChange.
+  const onPick = e => { const f = e.target.files[0]; e.target.value = ''; process(f) }
 
   const submitLink = () => {
     const trimmed = urlInput.trim()
@@ -533,7 +569,7 @@ export function FileUpload({ file, onFile, error, onError, mimeTypes, extensions
         <div style={{ fontSize: 13, fontWeight: 700, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Drive link attached</div>
         <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.externalUrl}</div>
       </div>
-      <button onClick={() => { onFile(null); onError && onError('') }} style={{ background: '#fff', border: `1px solid ${T.border}`, borderRadius: 8, cursor: 'pointer', padding: '4px 10px', fontSize: 12, color: T.danger, fontWeight: 600, fontFamily: 'inherit' }}>Remove</button>
+      <button className="upload-tap" onClick={() => { onFile(null); onError && onError('') }} style={{ background: '#fff', border: `1px solid ${T.border}`, borderRadius: 8, cursor: 'pointer', padding: '4px 10px', fontSize: 12, color: T.danger, fontWeight: 600, fontFamily: 'inherit' }}>Remove</button>
     </div>
   )
 
@@ -546,20 +582,43 @@ export function FileUpload({ file, onFile, error, onError, mimeTypes, extensions
           <div style={{ fontSize: 13, fontWeight: 700, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</div>
           <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{fmtSize(file.size)} · {file.mimeType?.split('/')[1]?.toUpperCase() || 'FILE'}</div>
         </div>
-        <button onClick={() => { onFile(null); onError && onError('') }} style={{ background: '#fff', border: `1px solid ${T.border}`, borderRadius: 8, cursor: 'pointer', padding: '4px 10px', fontSize: 12, color: T.danger, fontWeight: 600, fontFamily: 'inherit' }}>Remove</button>
+        <button className="upload-tap" onClick={() => { onFile(null); onError && onError('') }} style={{ background: '#fff', border: `1px solid ${T.border}`, borderRadius: 8, cursor: 'pointer', padding: '4px 10px', fontSize: 12, color: T.danger, fontWeight: 600, fontFamily: 'inherit' }}>Remove</button>
       </div>
     )
   }
+
+  // The drop zone (also what a tap opens on a phone), and the Take photo button that sits beside it when `capture` is on.
+  const zone = (
+    <div className="upload-zone" onClick={() => inputRef.current?.click()} role="button" tabIndex={0} onKeyDown={activateOnKey(() => inputRef.current?.click())}
+      onDragOver={e => { e.preventDefault(); setDrag(true) }}
+      onDragLeave={() => setDrag(false)}
+      onDrop={e => { e.preventDefault(); setDrag(false); process(e.dataTransfer.files[0]) }}
+      aria-busy={busy || undefined}
+      style={{ border: `2px dashed ${drag ? T.primary : error ? T.danger : T.border}`, borderRadius: 10, padding: '28px', textAlign: 'center', cursor: 'pointer', background: drag ? T.primaryLight : '#fafbff', transition: 'all 0.15s' }}>
+      {busy ? (
+        <div role="status" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, minHeight: 74, fontWeight: 600, color: T.textMuted }}>
+          <span className="tm-spinner" aria-hidden="true" /> Preparing photo...
+        </div>
+      ) : (
+        <>
+          <Upload size={26} color={drag ? T.primary : T.textLight} style={{ marginBottom: 8 }} />
+          <div style={{ fontWeight: 600, color: drag ? T.primary : T.textMuted, marginBottom: 4 }}>Click to upload or drag & drop</div>
+          <div style={{ fontSize: 12, color: T.textLight }}>{LABEL} · Max {MAX_MB}MB</div>
+          <div style={{ fontSize: 11, color: T.textLight, marginTop: 6 }}>Larger file? Use <strong>Paste link</strong> above.</div>
+        </>
+      )}
+    </div>
+  )
 
   return (
     <div>
       {/* Mode toggle */}
       <div role="tablist" style={{ display: 'flex', gap: 2, background: '#f1f5f9', padding: 3, borderRadius: 9, marginBottom: 10, width: 'fit-content' }}>
-        <button type="button" role="tab" aria-selected={mode === 'file'} onClick={() => { setMode('file'); onError && onError('') }}
+        <button type="button" role="tab" className="upload-tap" aria-selected={mode === 'file'} onClick={() => { setMode('file'); onError && onError('') }}
           style={{ background: mode === 'file' ? '#fff' : 'transparent', border: 'none', cursor: 'pointer', padding: '5px 12px', borderRadius: 7, fontSize: 11, fontWeight: 700, color: mode === 'file' ? T.text : T.textMuted, fontFamily: 'inherit', boxShadow: mode === 'file' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
           <Paperclip size={12} /> Upload file
         </button>
-        <button type="button" role="tab" aria-selected={mode === 'link'} onClick={() => { setMode('link'); onError && onError('') }}
+        <button type="button" role="tab" className="upload-tap" aria-selected={mode === 'link'} onClick={() => { setMode('link'); onError && onError('') }}
           style={{ background: mode === 'link' ? '#fff' : 'transparent', border: 'none', cursor: 'pointer', padding: '5px 12px', borderRadius: 7, fontSize: 11, fontWeight: 700, color: mode === 'link' ? T.text : T.textMuted, fontFamily: 'inherit', boxShadow: mode === 'link' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
           <Link2 size={12} /> Paste link
         </button>
@@ -567,17 +626,17 @@ export function FileUpload({ file, onFile, error, onError, mimeTypes, extensions
 
       {mode === 'file' ? (
         <>
-          <div onClick={() => inputRef.current?.click()} role="button" tabIndex={0} onKeyDown={activateOnKey(() => inputRef.current?.click())}
-            onDragOver={e => { e.preventDefault(); setDrag(true) }}
-            onDragLeave={() => setDrag(false)}
-            onDrop={e => { e.preventDefault(); setDrag(false); process(e.dataTransfer.files[0]) }}
-            style={{ border: `2px dashed ${drag ? T.primary : error ? T.danger : T.border}`, borderRadius: 10, padding: '28px', textAlign: 'center', cursor: 'pointer', background: drag ? T.primaryLight : '#fafbff', transition: 'all 0.15s' }}>
-            <Upload size={26} color={drag ? T.primary : T.textLight} style={{ marginBottom: 8 }} />
-            <div style={{ fontWeight: 600, color: drag ? T.primary : T.textMuted, marginBottom: 4 }}>Click to upload or drag & drop</div>
-            <div style={{ fontSize: 12, color: T.textLight }}>{LABEL} · Max {MAX_MB}MB</div>
-            <div style={{ fontSize: 11, color: T.textLight, marginTop: 6 }}>Larger file? Use <strong>Paste link</strong> above.</div>
-          </div>
-          <input ref={inputRef} type="file" accept={ACCEPT} style={{ display: 'none' }} onChange={e => process(e.target.files[0])} />
+          {showCapture ? (
+            <div className="upload-actions">
+              <button type="button" className="upload-capture-btn" onClick={() => captureRef.current?.click()} disabled={busy}
+                style={{ background: T.primaryDeep, color: '#fff', border: 'none', borderRadius: 10, fontFamily: 'inherit', fontSize: 14, fontWeight: 700, cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.6 : 1 }}>
+                <Camera size={22} /> Take photo
+              </button>
+              {zone}
+            </div>
+          ) : zone}
+          <input ref={inputRef} type="file" accept={ACCEPT} style={{ display: 'none' }} onChange={onPick} />
+          {showCapture && <input ref={captureRef} type="file" accept="image/*" capture={captureMode} style={{ display: 'none' }} onChange={onPick} />}
         </>
       ) : (
         <div style={{ border: `1px dashed ${error ? T.danger : T.border}`, borderRadius: 10, padding: '16px', background: '#fafbff' }}>
@@ -592,7 +651,7 @@ export function FileUpload({ file, onFile, error, onError, mimeTypes, extensions
           />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 10 }}>
             <div style={{ fontSize: 11, color: T.textLight }}>For files larger than 10MB, paste a share link (Zoho Drive, Google Drive, etc.)</div>
-            <button type="button" onClick={submitLink} disabled={!urlInput.trim()}
+            <button type="button" className="upload-tap" onClick={submitLink} disabled={!urlInput.trim()}
               style={{ background: urlInput.trim() ? T.primary : '#cbd5e1', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: urlInput.trim() ? 'pointer' : 'not-allowed', fontFamily: 'inherit', flexShrink: 0 }}>
               Attach link
             </button>

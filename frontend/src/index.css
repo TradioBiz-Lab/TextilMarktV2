@@ -1,11 +1,13 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body, #root { height: 100%; overflow: hidden; }
-body { font-family: 'Inter', system-ui, sans-serif; background: #F8FAFC; color: #0f172a; -webkit-font-smoothing: antialiased; }
+body { font-family: 'Inter Variable', 'Inter', system-ui, sans-serif; background: #F8FAFC; color: #0f172a; -webkit-font-smoothing: antialiased; }
+/* Numerals that line up in columns: quantities, prices, dates, ids. Inter's tabular figures. */
+.num { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-input, select, textarea, button { font-family: 'Inter', system-ui, sans-serif; }
+input, select, textarea, button { font-family: 'Inter Variable', 'Inter', system-ui, sans-serif; }
 input:focus, select:focus, textarea:focus { outline: none; box-shadow: 0 0 0 3px rgba(249,115,22,0.15); border-color: #f97316 !important; }
 /* Buttons/links/custom controls get NO focus indicator without this — the
    button:focus reset below had nothing put back in its place, so every
@@ -56,8 +58,25 @@ table { border-collapse: collapse; width: 100%; }
 .shell-sidebar.collapsed { width: 56px; }
 .sidebar-collapse-btn:hover { color: rgba(255,255,255,0.7) !important; }
 
+/* Sidebar nav: a hover tint for mouse users (the rows set their colours inline, so only !important
+   gets through; the current page is left alone), and a short orange bar on the current page's row.
+   The bar is the brand orange, T.brandOrange. */
+.sidebar-nav-item { position: relative; }
+.sidebar-nav-item:not([aria-current="page"]):hover { background: rgba(255,255,255,0.07) !important; color: rgba(255,255,255,0.9) !important; }
+.sidebar-nav-item[aria-current="page"]::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 9px; bottom: 9px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: #C4622D;
+}
+
 /* Hamburger hidden on desktop */
 .hamburger-btn { display: none; }
+
+/* The sidebar carries the logo on desktop; the header shows it only once the sidebar is a hidden drawer. */
+.header-logo { display: none; }
 
 /* Header user details - visible on desktop */
 .header-user-info { display: flex; }
@@ -195,7 +214,7 @@ table { border-collapse: collapse; width: 100%; }
      any specificity. Desktop density is untouched — mobile only. */
   .sidebar-nav-item { padding-top: 13px !important; padding-bottom: 13px !important; }
 
-  /* Show hamburger */
+  /* Show hamburger (44px square: the header is 54px tall, so it still fits) */
   .hamburger-btn {
     display: flex;
     align-items: center;
@@ -203,12 +222,17 @@ table { border-collapse: collapse; width: 100%; }
     background: #f8fafc;
     border: 1px solid #e2e8f0;
     border-radius: 9px;
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
     cursor: pointer;
     font-size: 20px;
     flex-shrink: 0;
   }
+
+  /* Header logo comes back with the hamburger; the sign-out button grows to a 44px target.
+     .header-signout wraps Btn, whose padding and size are inline, hence !important. */
+  .header-logo { display: flex; align-items: center; }
+  .header-signout button { min-height: 44px; padding: 0 14px !important; font-size: 13px !important; }
 
   /* Hide user details on mobile header */
   .header-user-info { display: none; }
@@ -280,4 +304,152 @@ table { border-collapse: collapse; width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) {
   .kriyaa-eye { animation: none; }
+}
+
+/* ── Narrow headers ── */
+/* Header buttons that set their size inline (the bell) reach 44px on touch screens. */
+@media (max-width: 768px), (pointer: coarse) {
+  .header-icon-btn { width: 44px !important; height: 44px !important; }
+}
+/* On very narrow phones (under 360px) the header logo drops its name and keeps the mark, so the
+   bell and Sign out still fit. .brand-text sets its display inline, hence !important. */
+@media (max-width: 359.98px) {
+  .header-logo .brand-text { display: none !important; }
+}
+
+/* ── Spinner (small, inline) ── */
+.tm-spinner {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(100,116,139,0.25);
+  border-top-color: #f97316;
+  animation: tm-spin 0.7s linear infinite;
+}
+@keyframes tm-spin { to { transform: rotate(360deg); } }
+
+/* ── FileUpload ── */
+/* The Take photo button sits beside the drop zone, and stacks above it on phones. The button
+   colours are inline (T.primaryDeep); the hover colour below is T.primaryDeeper. */
+.upload-actions { display: flex; gap: 10px; align-items: stretch; }
+.upload-actions .upload-zone { flex: 1 1 auto; min-width: 0; }
+.upload-capture-btn {
+  flex: 0 0 auto;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px;
+  min-width: 132px; min-height: 56px;
+  padding: 12px 16px;
+  line-height: 1.2;
+}
+.upload-capture-btn:hover:not(:disabled) { background: #9A3412 !important; }
+@media (max-width: 520px) {
+  .upload-actions { flex-direction: column; }
+  .upload-capture-btn { flex-direction: row; width: 100%; font-size: 16px !important; }
+}
+/* Small buttons inside FileUpload (mode tabs, Remove, Attach link) reach 44px on touch screens;
+   their padding is inline, so only !important wins. Desktop density is untouched. */
+@media (max-width: 768px), (pointer: coarse) {
+  .upload-tap { min-height: 44px !important; }
+}
+
+/* ── DataTable (components/DataTable.jsx) ── */
+/* Colours arrive as custom properties set from the T tokens on .data-table-wrap, so this file only
+   holds layout and states. Below 720px each row becomes a stacked card: the primary column is the
+   title, the other columns become label/value lines, hideOnMobile columns drop out. */
+.data-table-wrap {
+  width: 100%;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--dt-surface, #fff);
+  border: 1px solid var(--dt-border, #e2e8f0);
+  border-radius: 12px;
+}
+.data-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  color: var(--dt-text, #0f172a);
+}
+.data-table th {
+  padding: 11px 14px;
+  text-align: left;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--dt-muted, #475569);
+  background: var(--dt-head, #f8fafc);
+  border-bottom: 1px solid var(--dt-border, #e2e8f0);
+}
+/* The header must be opaque, or rows show through it as they scroll underneath. */
+.data-table--sticky th { position: sticky; top: 0; z-index: 2; }
+.data-table td {
+  padding: 13px 14px;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--dt-line, #f1f5f9);
+}
+.data-table tbody tr:last-child td { border-bottom: 0; }
+.data-table--dense td { padding: 8px 12px; }
+.data-table th[data-align="right"], .data-table td[data-align="right"] { text-align: right; }
+.data-table th[data-align="center"], .data-table td[data-align="center"] { text-align: center; }
+.data-table .dt-num { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
+.data-table tbody tr:hover td { background: var(--dt-hover, #f8fafc); }
+.data-table tr[role="button"] { cursor: pointer; }
+.data-table tr[role="button"]:focus-visible { outline: 2px solid var(--dt-accent, #f97316); outline-offset: -2px; border-radius: 0; }
+.data-table-wrap[aria-busy="true"] .data-table tbody { opacity: 0.55; }
+.data-table-empty { padding: 40px 20px; text-align: center; color: var(--dt-muted, #475569); }
+/* Loading placeholder: a few grey bars per row, drawn outside the table so it looks the same on
+   desktop and phones. */
+.dt-skel-row { display: flex; gap: 14px; padding: 16px 14px; border-bottom: 1px solid var(--dt-line, #f1f5f9); }
+.dt-skel-row:last-child { border-bottom: 0; }
+.dt-skel {
+  flex: 1; height: 12px; border-radius: 6px;
+  background: linear-gradient(90deg, #eef2f6 25%, #f8fafc 37%, #eef2f6 63%);
+  background-size: 400% 100%;
+  animation: dt-shimmer 1.3s ease infinite;
+}
+.dt-skel:first-child { flex: 2; }
+@keyframes dt-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+/* Dense rows are a mouse-and-desktop choice; on touch screens every row stays a 44px target. */
+@media (pointer: coarse) {
+  .data-table--dense td { padding: 13px 14px; }
+}
+@media (max-width: 719.98px) {
+  .data-table-wrap--cards { overflow: visible; max-height: none !important; border: 0; border-radius: 0; background: transparent; }
+  .data-table.data-table--cards, .data-table--cards tbody, .data-table--cards tr, .data-table--cards td { display: block; }
+  /* The header row is hidden, not removed: each cell carries its own label (data-label). */
+  .data-table--cards thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .data-table.data-table--cards tr {
+    margin-bottom: 10px;
+    padding: 4px 14px 8px;
+    background: var(--dt-surface, #fff);
+    border: 1px solid var(--dt-border, #e2e8f0);
+    border-radius: 12px;
+  }
+  .data-table.data-table--cards tr[role="button"]:focus-visible { outline-offset: 2px; border-radius: 12px; }
+  .data-table.data-table--cards tr[role="button"]:active { background: var(--dt-hover, #f8fafc); }
+  .data-table.data-table--cards tbody tr:hover td { background: transparent; }
+  .data-table.data-table--cards td {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 14px;
+    padding: 9px 0;
+    border-bottom: 0;
+    background: transparent;
+  }
+  .data-table--cards td::before {
+    content: attr(data-label);
+    flex: 0 1 auto; max-width: 46%;
+    text-align: left;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--dt-muted, #475569);
+  }
+  .data-table--cards .dt-val { min-width: 0; text-align: right; overflow-wrap: anywhere; }
+  .data-table.data-table--cards td.dt-primary {
+    display: block;
+    margin-bottom: 4px; padding: 10px 0 9px;
+    font-size: 15px; font-weight: 700;
+    border-bottom: 1px solid var(--dt-line, #f1f5f9);
+  }
+  .data-table--cards td.dt-primary::before { display: none; }
+  .data-table--cards td.dt-primary .dt-val { text-align: left; }
+  .data-table.data-table--cards td.dt-hide-mobile { display: none; }
 }

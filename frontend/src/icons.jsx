@@ -1,12 +1,16 @@
 import { forwardRef, useState } from 'react'
 import {
+  AddressBook as P_AddressBook,
   ArrowClockwise as P_ArrowClockwise,
   ArrowLeft as P_ArrowLeft,
   ArrowRight as P_ArrowRight,
   ArrowsClockwise as P_ArrowsClockwise,
   ArrowsLeftRight as P_ArrowsLeftRight,
+  Barcode as P_Barcode,
   Bell as P_Bell,
+  Binoculars as P_Binoculars,
   Buildings as P_Buildings,
+  Calculator as P_Calculator,
   CalendarBlank as P_CalendarBlank,
   CalendarDots as P_CalendarDots,
   Camera as P_Camera,
@@ -17,6 +21,7 @@ import {
   CaretRight as P_CaretRight,
   CaretUp as P_CaretUp,
   ChartBar as P_ChartBar,
+  ChartLineUp as P_ChartLineUp,
   ChatCircle as P_ChatCircle,
   ChatText as P_ChatText,
   Check as P_Check,
@@ -26,15 +31,18 @@ import {
   ClockCounterClockwise as P_ClockCounterClockwise,
   CloudArrowUp as P_CloudArrowUp,
   Crown as P_Crown,
+  Cube as P_Cube,
   DownloadSimple as P_DownloadSimple,
   Envelope as P_Envelope,
   Eye as P_Eye,
   EyeSlash as P_EyeSlash,
   Factory as P_Factory,
+  FileArrowUp as P_FileArrowUp,
   FileText as P_FileText,
   FileXls as P_FileXls,
   Flask as P_Flask,
   FolderSimple as P_FolderSimple,
+  Handshake as P_Handshake,
   Hexagon as P_Hexagon,
   House as P_House,
   Image as P_Image,
@@ -46,6 +54,7 @@ import {
   List as P_List,
   ListBullets as P_ListBullets,
   ListChecks as P_ListChecks,
+  LockKey as P_LockKey,
   MagnifyingGlass as P_MagnifyingGlass,
   Megaphone as P_Megaphone,
   Microphone as P_Microphone,
@@ -61,8 +70,11 @@ import {
   Plus as P_Plus,
   Prohibit as P_Prohibit,
   RadioButton as P_RadioButton,
+  Receipt as P_Receipt,
   Ruler as P_Ruler,
+  Scales as P_Scales,
   Scissors as P_Scissors,
+  SealCheck as P_SealCheck,
   Shield as P_Shield,
   ShieldCheck as P_ShieldCheck,
   ShieldPlus as P_ShieldPlus,
@@ -77,15 +89,18 @@ import {
   Square as P_Square,
   SquaresFour as P_SquaresFour,
   Stack as P_Stack,
+  Storefront as P_Storefront,
   TShirt as P_TShirt,
   Target as P_Target,
   Trash as P_Trash,
   Tray as P_Tray,
+  TreeStructure as P_TreeStructure,
   Trophy as P_Trophy,
   Truck as P_Truck,
   UploadSimple as P_UploadSimple,
   User as P_User,
   Users as P_Users,
+  UsersThree as P_UsersThree,
   Wallet as P_Wallet,
   Warning as P_Warning,
   Waveform as P_Waveform,
@@ -120,6 +135,7 @@ const make = (Icon, name) => {
   return Wrapped
 }
 
+export const AddressBook = make(P_AddressBook, 'AddressBook')
 export const AlertTriangle = make(P_Warning, 'AlertTriangle')
 export const ArrowLeft = make(P_ArrowLeft, 'ArrowLeft')
 export const ArrowLeftRight = make(P_ArrowsLeftRight, 'ArrowLeftRight')
@@ -127,7 +143,9 @@ export const ArrowRight = make(P_ArrowRight, 'ArrowRight')
 export const AudioLines = make(P_Waveform, 'AudioLines')
 export const Ban = make(P_Prohibit, 'Ban')
 export const BarChart3 = make(P_ChartBar, 'BarChart3')
+export const Barcode = make(P_Barcode, 'Barcode')
 export const Bell = make(P_Bell, 'Bell')
+export const Binoculars = make(P_Binoculars, 'Binoculars')
 // Kriyaa's mark: a robot head with two round eyes, ears and an antenna, deliberately with NO mouth.
 // Phosphor's own robot has a wide grin that reads as creepy at size, so this one is drawn here and
 // follows the same weight rules as the rest of the set (bold when tiny, duotone/fill add a tint).
@@ -157,9 +175,11 @@ export const Bot = forwardRef(function Bot({ size = 16, strokeWidth, fill, color
 })
 Bot.displayName = 'Bot'
 export const Building2 = make(P_Buildings, 'Building2')
+export const Calculator = make(P_Calculator, 'Calculator')
 export const Calendar = make(P_CalendarBlank, 'Calendar')
 export const CalendarClock = make(P_CalendarDots, 'CalendarClock')
 export const Camera = make(P_Camera, 'Camera')
+export const ChartLineUp = make(P_ChartLineUp, 'ChartLineUp')
 export const Check = make(P_Check, 'Check')
 export const CheckCircle2 = make(P_CheckCircle, 'CheckCircle2')
 export const ChevronDown = make(P_CaretDown, 'ChevronDown')
@@ -173,14 +193,17 @@ export const CircleDot = make(P_RadioButton, 'CircleDot')
 export const ClipboardEdit = make(P_NotePencil, 'ClipboardEdit')
 export const ClipboardList = make(P_ClipboardText, 'ClipboardList')
 export const Crown = make(P_Crown, 'Crown')
+export const Cube = make(P_Cube, 'Cube')
 export const Download = make(P_DownloadSimple, 'Download')
 export const Eye = make(P_Eye, 'Eye')
 export const EyeOff = make(P_EyeSlash, 'EyeOff')
 export const Factory = make(P_Factory, 'Factory')
+export const FileArrowUp = make(P_FileArrowUp, 'FileArrowUp')
 export const FileSpreadsheet = make(P_FileXls, 'FileSpreadsheet')
 export const FileText = make(P_FileText, 'FileText')
 export const FlaskConical = make(P_Flask, 'FlaskConical')
 export const Folder = make(P_FolderSimple, 'Folder')
+export const Handshake = make(P_Handshake, 'Handshake')
 export const Hexagon = make(P_Hexagon, 'Hexagon')
 export const History = make(P_ClockCounterClockwise, 'History')
 export const Home = make(P_House, 'Home')
@@ -195,6 +218,7 @@ export const Link2 = make(P_LinkSimple, 'Link2')
 export const List = make(P_ListBullets, 'List')
 export const ListChecks = make(P_ListChecks, 'ListChecks')
 export const ListTodo = make(P_ListBullets, 'ListTodo')
+export const LockKey = make(P_LockKey, 'LockKey')
 export const LogOut = make(P_SignOut, 'LogOut')
 export const Mail = make(P_Envelope, 'Mail')
 export const Megaphone = make(P_Megaphone, 'Megaphone')
@@ -202,6 +226,7 @@ export const Menu = make(P_List, 'Menu')
 export const MessageCircle = make(P_ChatCircle, 'MessageCircle')
 export const MessageSquare = make(P_ChatText, 'MessageSquare')
 export const Mic = make(P_Microphone, 'Mic')
+export const Microphone = make(P_Microphone, 'Microphone')
 export const Package = make(P_Package, 'Package')
 export const Palette = make(P_Palette, 'Palette')
 export const Paperclip = make(P_Paperclip, 'Paperclip')
@@ -209,10 +234,13 @@ export const PenLine = make(P_PencilLine, 'PenLine')
 export const Pencil = make(P_PencilSimple, 'Pencil')
 export const Play = make(P_Play, 'Play')
 export const Plus = make(P_Plus, 'Plus')
+export const Receipt = make(P_Receipt, 'Receipt')
 export const RefreshCw = make(P_ArrowsClockwise, 'RefreshCw')
 export const RotateCw = make(P_ArrowClockwise, 'RotateCw')
 export const Ruler = make(P_Ruler, 'Ruler')
+export const Scales = make(P_Scales, 'Scales')
 export const Scissors = make(P_Scissors, 'Scissors')
+export const SealCheck = make(P_SealCheck, 'SealCheck')
 export const Search = make(P_MagnifyingGlass, 'Search')
 export const Send = make(P_PaperPlaneTilt, 'Send')
 export const Settings2 = make(P_SlidersHorizontal, 'Settings2')
@@ -226,17 +254,22 @@ export const ShoppingCart = make(P_ShoppingCart, 'ShoppingCart')
 export const Siren = make(P_Siren, 'Siren')
 export const Sparkles = make(P_Sparkle, 'Sparkles')
 export const Square = make(P_Square, 'Square')
+export const Stack = make(P_Stack, 'Stack')
 export const StickyNote = make(P_Note, 'StickyNote')
+export const Storefront = make(P_Storefront, 'Storefront')
 export const Target = make(P_Target, 'Target')
 export const Trash2 = make(P_Trash, 'Trash2')
+export const TreeStructure = make(P_TreeStructure, 'TreeStructure')
 export const Trophy = make(P_Trophy, 'Trophy')
 export const Truck = make(P_Truck, 'Truck')
 export const Upload = make(P_UploadSimple, 'Upload')
 export const UploadCloud = make(P_CloudArrowUp, 'UploadCloud')
 export const User = make(P_User, 'User')
 export const Users = make(P_Users, 'Users')
+export const UsersThree = make(P_UsersThree, 'UsersThree')
 export const Volume2 = make(P_SpeakerHigh, 'Volume2')
 export const Wallet = make(P_Wallet, 'Wallet')
+export const Warning = make(P_Warning, 'Warning')
 export const WifiOff = make(P_WifiSlash, 'WifiOff')
 export const X = make(P_X, 'X')
 export const XCircle = make(P_XCircle, 'XCircle')

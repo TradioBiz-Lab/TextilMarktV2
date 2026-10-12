@@ -3,6 +3,7 @@ import { userKey } from '../lib/limiterKey.js'
 import rateLimit from 'express-rate-limit'
 import Anthropic from '@anthropic-ai/sdk'
 import { requireAuth } from '../middleware/auth.js'
+import { isStandalone } from '../lib/platform.js'
 import { Order } from '../db/index.js'
 import { stageEtaVarianceDays, deliveryVarianceDays } from '../models/Order.js'
 import { getToday, stageActualVariance, deliveryOverrunDays } from '../lib/stageMath.js'
@@ -146,13 +147,14 @@ const STAGE_DATES_KEYS = ['eta', 'startDate', 'description', 'responsibleId', 't
 const ACTION_ITEM_KEYS = ['title', 'detail', 'assigneeId', 'buyerId', 'priority', 'eta', 'status']
 
 // Some writes are too consequential to take on the model's word alone: closing or reopening a
-// Delivery step (it marks the split Delivered) and any master `override`. Order data is written by
-// buyers and factories, and a model reading it can be steered, so for these the SERVER requires a
-// human confirmation it can see: Kriyaa's last turn must have asked the admin to confirm, and the
-// admin's own latest message must agree. Text inside a stage update cannot forge the admin's message.
+// Delivery step (it marks the split Delivered), any master `override`, and creating an order or master
+// order. Order data is written by buyers and factories, and a model reading it can be steered, so for
+// these the SERVER requires a human confirmation it can see: Kriyaa's last turn must have asked the
+// person to confirm, and their own latest message must agree. Text inside a stage update cannot
+// forge the person's message.
 const AFFIRMATIVE = /\b(yes|yeah|yep|confirm(?:ed)?|go ahead|proceed|do it|sure|ok(?:ay)?|haan|han|ha|kar\s?do|theek hai)\b/i
 const NEGATIVE = /\b(no|don'?t|do not|cancel|stop|wait|nahi|nahin|mat)\b/i
-function adminConfirmed(conversation) {
+function userConfirmed(conversation) {
   const turns = (conversation || []).filter(m => typeof m?.content === 'string')
   let i = turns.length - 1
   while (i >= 0 && turns[i].role !== 'user') i--
@@ -174,7 +176,18 @@ async function confirmationNeeded(input) {
 const WRITE_TOOLS = new Set([
   'post_stage_update', 'update_stage_status', 'update_stage_dates',
   'add_action_item_update', 'update_action_item',
+  'create_master_order', 'create_order',
 ])
+
+// What an order or master order may be created with. The ID is never the model's to choose: the
+// server numbers it ('auto').
+const MASTER_ORDER_KEYS = ['orderName', 'season', 'buyerId']
+const ORDER_KEYS = ['product', 'styleNumber', 'category', 'season', 'totalQty', 'delivery', 'masterOrderId', 'buyerId', 'callout']
+const SEASONS = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
+
+const confirmationRequired = (what, detail) => ({ ok: false, status: 409, data: {
+  error: `CONFIRMATION REQUIRED: this creates ${what}. Nothing was created. Tell the user exactly what you are about to create (${detail}) and ask them to reply confirming it (for example "yes, confirm"). Only after their reply, call this tool again. Do not retry before they answer.`,
+} })
 
 // Each handler either forwards to the app's own REST API (carrying the
 // chatting admin's own session cookie, so it can never do anything that
@@ -259,6 +272,43 @@ export const TOOL_HANDLERS = {
     return loopbackOrderFetch(ctx.cookie, 'GET', `/api/orders/${input.orderId}`)
   },
 
+  // The master orders this caller can see, with the ids create_order needs.
+  list_master_orders: async (input, ctx) => {
+    const result = await loopbackFetch(ctx.cookie, 'GET', '/api/master-orders')
+    if (!result.ok) return result
+    return { ...result, data: result.data.map(m => ({ masterOrderId: m.id, orderName: m.orderName, season: m.season, customerId: m.buyerId, customerCompany: m.buyerCompany })) }
+  },
+
+  // The companies this caller is connected with: the only ones it may name when creating an order.
+  list_partners: async (input, ctx) => {
+    const result = await loopbackFetch(ctx.cookie, 'GET', '/api/partners')
+    if (!result.ok) return result
+    return { ...result, data: result.data.map(p => ({ id: p.id, company: p.company, code: p.code, role: p.role })) }
+  },
+
+  create_master_order: async (input, ctx) => {
+    if (typeof input?.orderName !== 'string' || !input.orderName.trim() || input.orderName.length > 200) return badInput('orderName')
+    if (input.season !== undefined && !SEASONS.includes(input.season)) return badInput('season')
+    if (input.buyerId !== undefined && !OBJECT_ID_RE.test(String(input.buyerId))) return badInput('buyerId')
+    if (!userConfirmed(ctx.conversation)) return confirmationRequired('a new master order', 'its name, season and customer')
+    return loopbackFetch(ctx.cookie, 'POST', '/api/master-orders', { ...pick(input, MASTER_ORDER_KEYS), id: 'auto' })
+  },
+
+  create_order: async (input, ctx) => {
+    if (typeof input?.product !== 'string' || !input.product.trim() || input.product.length > 300) return badInput('product')
+    if (!Number.isInteger(input.totalQty) || input.totalQty < 1) return badInput('totalQty')
+    if (typeof input.delivery !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(input.delivery)) return badInput('delivery')
+    if (input.season !== undefined && !SEASONS.includes(input.season)) return badInput('season')
+    for (const k of ['buyerId', 'manufacturerId']) if (input[k] !== undefined && !OBJECT_ID_RE.test(String(input[k]))) return badInput(k)
+    if (input.masterOrderId !== undefined && !ORDER_ID_RE.test(String(input.masterOrderId))) return badInput('masterOrderId')
+    if (input.colourways !== undefined && !(Array.isArray(input.colourways) && input.colourways.every(c => typeof c === 'string' && c.length <= 60))) return badInput('colourways')
+    if (!userConfirmed(ctx.conversation)) return confirmationRequired('a new order (style)', 'the customer, product, quantity, delivery date, manufacturer and master order')
+    const body = { ...pick(input, ORDER_KEYS), id: 'auto' }
+    if (input.colourways) body.colourways = input.colourways.slice(0, 40)
+    if (input.manufacturerId) body.assignments = [{ mid: input.manufacturerId, qty: input.totalQty }]
+    return loopbackOrderFetch(ctx.cookie, 'POST', '/api/orders', body)
+  },
+
   post_stage_update: (input, ctx) => {
     const t = stageTarget(input)
     if (t.error) return t.error
@@ -269,7 +319,7 @@ export const TOOL_HANDLERS = {
     const t = stageTarget(input)
     if (t.error) return t.error
     const risky = await confirmationNeeded(input)
-    if (risky && !adminConfirmed(ctx.conversation)) {
+    if (risky && !userConfirmed(ctx.conversation)) {
       return { ok: false, status: 409, data: {
         error: `CONFIRMATION REQUIRED: this is ${risky}. Nothing was changed. Tell the admin exactly what you are about to do and ask them to reply confirming it (for example "yes, confirm"). Only after their reply, call this tool again. Do not retry before they answer.`,
       } }
@@ -462,6 +512,52 @@ const TOOLS = [
     },
   },
   {
+    name: 'list_master_orders',
+    description: "List the master orders you can see (a master order is a named batch, usually a season's range, that styles are created under): masterOrderId, orderName, season, customer. Call this to find the masterOrderId when the user says things like 'add it to the Zara FW26 range'. If there is no matching master order, offer to create one with create_master_order.",
+    input_schema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'list_partners',
+    description: "List the companies you are connected with: for a customer (brand) its manufacturers, for a manufacturer its customers. Each has an id, company and code. These are the only companies you may name when creating an order. Call this to turn a company name the user says into the id create_order or create_master_order needs.",
+    input_schema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'create_master_order',
+    description: "Create a new master order (a named batch, usually a season's range, that styles are then created under). A customer creates it for itself; a manufacturer or Tradio names the customer with buyerId (an id from list_partners). The server numbers it. THIS CREATES A RECORD: tell the user exactly what you will create and ask them to confirm first; the server refuses until their own reply confirms it.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        orderName: { type: 'string', maxLength: 200, description: "e.g. 'Zara FW26 core range'." },
+        season: { type: 'string', enum: SEASONS },
+        buyerId: { type: 'string', description: "The customer's id (from list_partners). Omit when you are the customer." },
+      },
+      required: ['orderName'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'create_order',
+    description: "Create a new order (a style) under a master order. A customer creates it for itself and may assign one of its manufacturers with manufacturerId (an id from list_partners); a manufacturer creates it for a customer named by buyerId (from list_partners) and is assigned to it automatically; do not pass manufacturerId in that case. The server numbers it, and the production schedule is built afterwards (the factory runs its own plan). THIS CREATES A RECORD: tell the user exactly what you will create (customer, product, quantity, delivery date, manufacturer, master order) and ask them to confirm first; the server refuses until their own reply confirms it. Resolve names to ids with list_partners and list_master_orders; never ask the user for an id.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        product: { type: 'string', maxLength: 300, description: "e.g. 'Heavy sweatshirt'." },
+        totalQty: { type: 'integer', minimum: 1 },
+        delivery: { type: 'string', description: "ISO date 'YYYY-MM-DD'." },
+        category: { type: 'string', maxLength: 50, description: "Free text, e.g. 'SWTSHT' or 'Sweatshirt'. It becomes part of the order number." },
+        season: { type: 'string', enum: SEASONS },
+        styleNumber: { type: 'string', maxLength: 60 },
+        masterOrderId: { type: 'string', description: "From list_master_orders." },
+        buyerId: { type: 'string', description: "The customer's id (from list_partners). Omit when you are the customer." },
+        manufacturerId: { type: 'string', description: "A customer assigning one of its manufacturers: the manufacturer's id (from list_partners). Omit otherwise." },
+        colourways: { type: 'array', items: { type: 'string', maxLength: 60 }, maxItems: 40 },
+        callout: { type: 'string', maxLength: 500 },
+      },
+      required: ['product', 'totalQty', 'delivery'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'check_delivery_risk',
     description: "Deterministic date-math helper — NOT you doing arithmetic. Returns, for the given order: every stage's plan-vs-baseline variance in days (etaVarianceDays, positive = the plan slipped later than its original baseline) and, once a stage is actually done, its actual-vs-baseline variance (actualVarianceDays, positive = it actually finished later than its ORIGINAL planned date — always measured against the frozen baseline, never against a since-revised eta); and two DISTINCT order-level numbers — do not conflate them: deliveryOverrunDays is whether the CURRENT plan (the latest stage eta) is consistent with the CURRENT delivery date right now (null if the plan finishes on or before delivery); deliveryVarianceDays is how far the delivery date ITSELF has moved from what was originally promised (baselineDelivery), positive = pushed later, negative = pulled earlier, null if delivery has never been revised. A corrected/realigned delivery date can read deliveryOverrunDays: null while deliveryVarianceDays shows a large number — that means the plan and the promise agree right now, but the promise itself has slipped (or improved) from day one. Call this whenever the admin asks 'what happens if I push this date', 'are we going to miss delivery', or 'how much has this order slipped', or right after moving a stage's eta, so you can state exact numbers instead of estimating.",
     input_schema: {
@@ -479,20 +575,37 @@ const TOOLS = [
 // attempting, things that role can never do. Action items are the admin task
 // list; moving stage dates is admin-only on the server.
 const ADMIN_ONLY_TOOLS = new Set(['list_action_items', 'add_action_item_update', 'update_action_item', 'update_stage_dates'])
-export const toolsFor = user => (user?.role === 'admin' ? TOOLS : TOOLS.filter(t => !ADMIN_ONLY_TOOLS.has(t.name)))
+// Only companies have partners; Tradio staff name customers and manufacturers through the portal.
+const COMPANY_ONLY_TOOLS = new Set(['list_partners'])
+// Creating orders: Tradio staff always (the server then applies its own rules); brands and
+// manufacturers only in the standalone product, where they create their own.
+const CREATE_TOOLS = new Set(['create_master_order', 'create_order'])
+// In the standalone product a factory runs its own schedule, so it may also move its own dates.
+const factoryMayUse = (user, name) => name === 'update_stage_dates' && isStandalone() && user?.role === 'manufacturer'
+export const toolsFor = user => TOOLS.filter(t =>
+  (user?.role === 'admin' || !ADMIN_ONLY_TOOLS.has(t.name) || factoryMayUse(user, t.name)) &&
+  (user?.role !== 'admin' || !COMPANY_ONLY_TOOLS.has(t.name)) &&
+  (!CREATE_TOOLS.has(t.name) || user?.role === 'admin' || isStandalone()))
 
 const ROLE_SCOPE = {
   buyer: `ROLE SCOPE: you are talking with a CUSTOMER (a buyer), not a Tradio admin. You can only see this customer's own orders, and only read them, plus comment on or update a production stage that is assigned to them (usually an approval step such as Lab Dip or PP Sample). You have no access to the action-item task list, to other customers, or to moving stage dates. If asked to do something outside that, say plainly that it is outside what their account can do and suggest contacting their Tradio coordinator. Where the instructions below mention action items or admin-only tools you do not have, ignore those parts.`,
   manufacturer: `ROLE SCOPE: you are talking with a MANUFACTURER, not a Tradio admin. You can only see the orders assigned to this factory, and only this factory's own assignment on each. You may log progress notes and update stage status on this factory's own stages. You have no access to the action-item task list, to other factories or customers' commercial details, or to moving stage dates (the Tradio coordinator does that). If asked to do something outside that, say plainly that it is outside what their account can do and suggest contacting their Tradio coordinator. Where the instructions below mention action items or admin-only tools you do not have, ignore those parts.`,
 }
 
+// The standalone product: brands and manufacturers work with each other directly, no Tradio coordinator.
+const STANDALONE_ROLE_SCOPE = {
+  buyer: `ROLE SCOPE: you are talking with a CUSTOMER (a brand), not a Tradio admin. You can see this company's own orders and master orders, create master orders and orders for it (assigning only manufacturers it is connected with), and comment on or update a production stage that is assigned to them (usually an approval step such as Lab Dip or PP Sample). The factory runs its own production schedule, so you cannot move its dates or progress. You have no access to the action-item task list or to other customers. If asked to do something outside that, say plainly that it is outside what their account can do. Where the instructions below mention action items or admin-only tools you do not have, ignore those parts.`,
+  manufacturer: `ROLE SCOPE: you are talking with a MANUFACTURER, not a Tradio admin. You can see the orders assigned to this factory, and only this factory's own assignment on each. You run this factory's own production: log progress notes, update stage status, and move the dates of its own steps. You can also create master orders and orders for customers it is connected with. You have no access to the action-item task list, to other factories, or to customers' commercial details beyond the orders you work on. If asked to do something outside that, say plainly that it is outside what their account can do. Where the instructions below mention action items or admin-only tools you do not have, ignore those parts.`,
+}
+
 function buildSystemPrompt(user) {
   const today = getToday()
+  const roleScope = (isStandalone() ? STANDALONE_ROLE_SCOPE : ROLE_SCOPE)[user.role]
   const who = user.role === 'buyer' ? `a customer (${user.company})`
     : user.role === 'manufacturer' ? `a manufacturer (${user.company})`
     : user.adminType === 'master' ? 'the master admin of the platform' : 'an admin of the platform'
   return `You are Kriyaa, TextilMarkt's production-tracking assistant, talking with ${user.name}, ${who}. Introduce yourself as Kriyaa if asked who you are.
-${ROLE_SCOPE[user.role] ? `\n${ROLE_SCOPE[user.role]}\n` : ''}
+${roleScope ? `\n${roleScope}\n` : ''}
 CAPABILITY BOUNDARY: your tools only cover order/stage production tracking and the action-item task list — that is the entire scope of what this system tracks. There is no performance, KPI, staffing, HR, or team-comparison data anywhere here, and no tool that could surface it. If a question is not about a specific order, stage, or action item — career advice, "how do I become the best X", team rankings, anything outside production tracking — say so directly in your very first reply and stop there. Do not call a tool hoping it might contain something relevant to a question like that; list_orders/list_action_items/get_order have no such data, so calling them just burns time and produces no answer.
 
 Today's date is ${today} (India Standard Time). Use it to resolve any relative date the admin mentions ("next Friday", "yesterday", "in 3 days").
@@ -520,6 +633,8 @@ An order's own \`delivery\` date can itself be corrected to stay honest with the
 IDENTIFYING ORDERS: ${user.name} thinks in customers and products, not order IDs. They will say things like "the Zara jeans", "H&M denim", or "Fitleasure's bedsheets". Resolve these yourself with find_orders (buyer company, product, style number, colourway, manufacturer) and then get_order - NEVER ask ${user.name} for an order ID. If find_orders returns several plausible matches, ask which one using names only ("Zara India's slim jeans or their cotton shirts?"), and if partialMatch is true confirm the name you matched before writing anything. Only ask a clarifying question when the words genuinely fit more than one order; never for an ID.
 
 REFERRING TO ORDERS: in every reply, name an order by buyer company and product (and style number or colourway if that disambiguates), for example "Zara India's Slim Fit Jeans". Never read out, spell out, or write the order ID (the long code like ZAR-TPR-TSHRT-SS26-001) unless ${user.name} explicitly asks for it. This matters most for spoken replies, where an ID is unpleasant to listen to. Likewise write dates in a natural spoken form ("20 November") rather than ISO format, and keep numbers easy to say aloud.
+
+CREATING ORDERS: if you have the create_order and create_master_order tools, you can set up new work by voice or text ("create three styles under the Zara FW26 range"). Resolve every name yourself with list_partners and list_master_orders, never ask for an ID, and make sure you have what an order needs (product, quantity, delivery date; the customer or manufacturer when it is not obvious). These tools create records, so first say exactly what you are about to create and ask ${user.name} to confirm; the server will refuse until their own reply confirms it. Create one order per call, and after each one say what was created in natural words (customer, product, quantity). The production schedule is built afterwards by the factory; do not try to create one.
 
 Keep replies short and concrete — this is a fast working chat with one admin, not a written report.
 

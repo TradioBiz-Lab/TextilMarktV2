@@ -18,6 +18,9 @@
 | `ribbons`       | Admin-published banner alerts                           | ObjectId         |
 | `inboundmessages` | Raw factory messages (photo, voice, text) and what the AI did with them | ObjectId |
 | `droppedrecords` | Permanent record of every dropped style and deleted master order, with a full copy | ObjectId |
+| `organizations` | The company behind a buyer or manufacturer account (owner, team, Tradio switches) | ObjectId |
+| `partnerships`  | Which brand works with which manufacturer (gates who may create or assign orders for whom) | ObjectId |
+| `counters`      | Atomic numbering series (order and master order IDs, later PO and GRN numbers) | String |
 
 ---
 
@@ -37,10 +40,15 @@ Stores every portal account across all three roles.
   phone        String | null
   whatsappNumber String | null    Zero Entry Capture: identifies a manufacturer on inbound WhatsApp messages (matched on the last 10 digits). Legacy users have no such field; treat undefined as null
   language     String            default: "hi" - preferred language for replies. Legacy users have no such field; treat undefined as "hi"
-  code         String            max 5 chars, uppercase — company code (e.g. "ZAR", "TPR")
+  code         String            max 5 chars, uppercase — company code (e.g. "ZAR", "TPR"). A copy of
+                                 the organization's code: every teammate of a company carries it
   isActive     Boolean           default: true
   mustChangePw       Boolean     default: false — force password change on next login
   passwordChangedAt  Date | null — JWTs issued before this are invalidated
+  orgId        ObjectId → organizations | null   buyers and manufacturers only; created on first sight
+                                 for accounts that predate organizations
+  orgRole      String | null     enum: ["owner", "member"] — the owner is the company's primary account
+                                 (the id orders and assignments reference); a member is a teammate
   createdAt    Date              auto (timestamps)
   updatedAt    Date              auto (timestamps)
 }
@@ -49,14 +57,18 @@ Stores every portal account across all three roles.
 **Indexes:**
 - `{ email: 1 }` — unique
 - `{ role: 1, isActive: 1 }` — role-based list queries
-- `{ code: 1 }` — unique, **partial** (only for `role` in `["buyer", "manufacturer"]`) —
-  admins all share `code: "TRD"` and are excluded from the uniqueness constraint
+- `{ code: 1 }` — **not unique**: teammates share their company's code. (This used to be a unique
+  partial index; `lib/migrate.js` drops it at startup. Uniqueness now lives on
+  `organizations.code`.)
+- `{ orgId: 1 }`
 
 **Rules:**
 - `adminType` must be `null` for `buyer` and `manufacturer` roles
 - Master admin (`adminType: "master"`) cannot be deactivated
-- `code` is always `"TRD"` for admin users; for buyers/manufacturers it must be unique
-  (used to build order IDs)
+- `code` is always `"TRD"` for admin users; for buyers/manufacturers it is their organization's
+  code (used to build order IDs)
+- A company's primary account (`orgRole: "owner"`) cannot be deactivated while it still has
+  active teammates; deactivate the organization instead
 
 ---
 
@@ -68,8 +80,15 @@ Uses a human-readable custom string `_id` for traceability.
 
 ```
 {
-  _id           String            custom — format: {BUYER}-{MFR}-{CAT}-{SEASON}-{SEQ}
-                                  e.g. "ZAR-TPR-TSHRT-SS26-001"
+  _id           String            custom — e.g. "ZAR-TSHRT-SS26-001" ({BUYER}-{CAT}-{SEASON}-{SEQ}),
+                                  numbered by the server (counters) for orders created with
+                                  id "auto"; older and bulk-uploaded orders may also carry the
+                                  manufacturer code, e.g. "ZAR-TPR-TSHRT-SS26-001"
+  createdBy     ObjectId → users | null   the creating company's party id (not the person; the
+                                  audit log names them). Null on orders that predate it, which
+                                  count as Tradio's
+  createdByRole String | null     enum: ["admin","buyer","manufacturer"] — in the standalone
+                                  product the creator decides who may edit or delete the order
   masterOrderId String | null     → masterorders._id, optional grouping
   buyerId       ObjectId → users  required
   product       String            required (e.g. "Classic T-Shirt"), max 300 chars
@@ -90,8 +109,10 @@ Uses a human-readable custom string `_id` for traceability.
   ecommerceLink String            default: "", max 2000 chars — optional public product-page URL
   callout       String            default: "", max 500 chars — order-level risk/escalation
                                   note, e.g. "delayed a week — lab dip submission slipped"
-  assignments   [Assignment]      embedded array, one entry per manufacturer split — MAY be
-                                  empty: the creation wizard leaves a new style "unassigned"
+  assignments   [Assignment]      embedded array, one entry per manufacturer split. An order
+                                  created by a brand or manufacturer without a schedule starts
+                                  with just the mandatory Delivery step (the factory builds its
+                                  own plan). MAY be empty: the creation wizard leaves a new style "unassigned"
                                   (no manufacturer, no stages) until an admin adds a
                                   manufacturer from the Style Detail page (POST
                                   /:orderId/assignments), which starts that assignment with
@@ -358,7 +379,8 @@ Optional grouping of related orders for the same buyer (e.g. one season's full p
   buyerId   ObjectId → users  required
   orderName String            required, trim, max 200 chars
   season    String            enum: ["SS26","FW26","SS27","FW27","SS28"]
-  createdBy ObjectId → users  required — admin who created it
+  createdBy ObjectId → users  required — the creating company's party id
+  createdByRole String | null enum: ["admin","buyer","manufacturer"] — null on older rows (Tradio's)
   createdAt Date              auto
   updatedAt Date              auto
 }
@@ -370,7 +392,78 @@ Optional grouping of related orders for the same buyer (e.g. one season's full p
 **Notes:**
 - An `order.masterOrderId` referencing a master order must belong to the **same buyer**
   (enforced at order-creation time).
-- Manufacturers cannot list master orders (admin/buyer only, per `routes/masterOrders.js`).
+- A manufacturer lists only the master orders its own orders belong to, plus any it created
+  itself. In the standalone product a brand or manufacturer may create, edit and delete its own
+  master orders; the creating company owns them.
+
+---
+
+## 11. `organizations`
+
+The company behind a buyer or manufacturer account. Tradio staff (admins) belong to none.
+
+```
+{
+  _id           ObjectId
+  name          String            required, max 200
+  type          String            enum: ["manufacturer", "brand"]
+  code          String            2-5 chars, uppercase — the company code used in order IDs; UNIQUE
+  ownerUserId   ObjectId → users  required, UNIQUE — the primary account. Orders, assignments and
+                                  stage owners reference this user id, so it is the company's
+                                  "party" id
+  tradioEnabled Boolean           default: false — Tradio staff may take actions for this manufacturer.
+                                  Set by the master admin. Never switched on as a side effect
+  tradioCanView Boolean           default: true — Tradio staff may look at this company at all. Set
+                                  ONLY by the company's owner (POST /api/orgs/me/privacy); Tradio
+                                  cannot change it. Privacy wins over tradioEnabled
+  isActive      Boolean           default: true — false signs out the whole team
+  createdAt / updatedAt
+}
+```
+
+**Indexes:** `{ code: 1 }` unique, `{ ownerUserId: 1 }` unique, `{ type: 1, isActive: 1 }`
+
+**Identity:** a teammate signs in as themself (`req.user.actorId`, the JWT's `id`), and requireAuth
+resolves the request to the organization's owner (`req.user.id`, the party). Every existing check
+that compares a user id with a party id therefore works for the whole team unchanged. Never
+re-sign a token or look up "who is this person" from `req.user.id`; use `actorId`.
+
+---
+
+## 12. `partnerships`
+
+A working relationship between one brand and one manufacturer. Either side may create or assign
+orders for the other only while an active partnership exists, and the partner list each side can
+read (`GET /api/partners`) contains only its own connections.
+
+```
+{
+  _id         ObjectId
+  brandOrgId  ObjectId → organizations   required
+  mfrOrgId    ObjectId → organizations   required
+  status      String            enum: ["active","revoked"], default "active"
+  source      String            enum: ["admin","order"] — Tradio linked them, or it formed when Tradio
+                                assigned an order between them
+  createdBy   ObjectId → users | null
+}
+```
+
+**Indexes:** `{ brandOrgId: 1, mfrOrgId: 1 }` unique, `{ mfrOrgId: 1, status: 1 }`
+
+Existing orders are turned into partnerships at startup (`lib/migrate.js`); a revoked one is never
+revived by the migration.
+
+---
+
+## 13. `counters`
+
+One row per numbering series, advanced with a single atomic update (`lib/counters.js`), so
+concurrent creators can never get the same number. The first use of a series starts from the
+highest number already in use.
+
+```
+{ _id String   e.g. "order:ZAR-TSHRT-SS26-" or "mo:ZAR"     seq Number }
+```
 
 ---
 
@@ -670,6 +763,10 @@ documents ◄──────────────────────�
 notifications → toUser (users), orderId (orders)
 auditlogs     → byUser (users)
 ribbons       → createdBy (users), targetUserIds[] (users)
+
+organizations → ownerUserId (users);  users → orgId (organizations)
+partnerships  → brandOrgId, mfrOrgId (organizations)
+orders / masterorders → createdBy (users, the creating company's party id)
 ```
 
 ---

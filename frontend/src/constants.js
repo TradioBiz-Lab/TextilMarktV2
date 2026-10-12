@@ -2,6 +2,7 @@ import {
   ClipboardList, ShoppingCart, Ruler, Wallet, Mail, FileText, ShieldCheck, Search,
   FlaskConical, Leaf, ShieldPlus, Package, Layers, CheckCircle2, Palette, Settings2,
   Scissors, Shirt, Trophy, Truck, Factory, Camera } from './icons.jsx'
+import { BRAND_NAVY, BRAND_ORANGE } from './brandMark.js'
 
 // Legacy status flow (kept for admin/mfr pages not yet migrated)
 export const STATUS_FLOW = [
@@ -139,9 +140,17 @@ export const T = {
   warning: '#C2410C', warningBg: '#FFF7ED', warningBorder: '#FDBA74',
   info: '#002B5B', infoBg: '#E6F0FF', infoBorder: '#93c5fd',
   master: '#7c3aed', masterBg: '#ede9fe',
-  sidebar: '#003B73', sidebarBorder: 'rgba(255,255,255,0.1)',
-  sidebarGradient: 'linear-gradient(180deg, #0a4f8a 0%, #003B73 50%, #001c38 100%)',
-  heroGradient: 'linear-gradient(135deg, #0a4f8a 0%, #003B73 55%, #002347 100%)',
+  // Brand colours, as on tradiobiz.com: navy plus burnt orange. Brand SURFACES (the sidebar, hero
+  // panels, the logo tile) take the navy steps below; interactive UI keeps T.primary orange. Do not
+  // use brandOrange for buttons or small text: it is 3.3:1 on navy and 4.1:1 on white, fine for the
+  // logo, rules and large accents. brandNavyDeep/Dark/Light are darker/lighter steps of the same hue.
+  brandNavy: BRAND_NAVY, brandNavyDark: '#131D34', brandNavyDeep: '#0E1525', brandNavyLight: '#273D6D',
+  brandOrange: BRAND_ORANGE,
+  // The sidebar and hero tokens used to be a brighter royal blue (#003B73 family) that matched
+  // nothing else in the brand. Same names, now the brand navy family, so call sites did not change.
+  sidebar: '#1D2D50', sidebarBorder: 'rgba(255,255,255,0.1)',
+  sidebarGradient: 'linear-gradient(180deg, #22355E 0%, #1D2D50 40%, #131D34 100%)',
+  heroGradient: 'linear-gradient(135deg, #273D6D 0%, #1D2D50 55%, #0E1525 100%)',
   // Type scale. 916 inline fontSize declarations across 24 distinct values (some
   // under 11px) existed with no shared scale before this — new/touched call sites
   // should pull from here; this does not retroactively migrate existing ones.

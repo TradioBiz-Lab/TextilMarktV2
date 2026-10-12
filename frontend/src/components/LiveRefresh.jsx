@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { floorApi } from '../api.js'
 import { useApp } from '../context.jsx'
+import * as refreshRegistry from '../stores/refreshRegistry.js'
 
 const POLL_MS = 3000
 
@@ -13,11 +14,17 @@ const POLL_MS = 3000
  * people's edits. Polling (not SSE) on purpose: Catalyst AppSail's edge may
  * buffer long-lived responses. The poll skips while the tab is hidden and the
  * first tick after it is shown again catches up on anything missed.
+ *
+ * The feed may also carry `versions`, a map of resource key to version (string
+ * or number). Each key whose version moved since the previous poll is bumped in
+ * the refresh registry, which refetches the feature store registered under that
+ * key. The first poll only sets the baseline. Without `versions` none of this runs.
  */
 export function LiveRefresh() {
   const { refreshOrders, refreshDocs, refreshActionItems } = useApp()
   const version = useRef(null)
   const itemsVersion = useRef(null)
+  const versions = useRef(null) // the last `versions` map seen on the feed (feature stores)
   // True once a tick was skipped because the tab was hidden. If that happens
   // before the first baseline version is taken (a tab opened in the background),
   // the data on screen is already as old as the page load, so the first visible
@@ -38,6 +45,10 @@ export function LiveRefresh() {
         if (f.itemsVersion != null) {
           if ((itemsVersion.current !== null && f.itemsVersion !== itemsVersion.current) || (itemsVersion.current === null && missedWhileHidden)) refreshActionItems()
           itemsVersion.current = f.itemsVersion
+        }
+        if (f.versions && typeof f.versions === 'object' && !Array.isArray(f.versions)) {
+          for (const key of refreshRegistry.changedVersionKeys(versions.current, f.versions)) refreshRegistry.bump(key)
+          versions.current = { ...f.versions }
         }
       } catch { /* transient, next tick retries */ }
     }
