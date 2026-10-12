@@ -101,6 +101,20 @@ const RESPONSIBLE_ROLES = ['admin', 'manufacturer', 'buyer']
 const buyerMayWriteStage = (user, stage) =>
   user.role === 'buyer' && !!stage?.responsibleId && String(stage.responsibleId) === String(user.id)
 
+// Tell people a step has just been handed to them (a customer given Lab Dip Approval would
+// otherwise only find out by logging in and looking). One message per person, however many
+// steps they were given in the same save. Never the person who made the change.
+async function notifyNewOwners(orderId, actor, entries) {
+  const byUser = new Map()
+  for (const e of entries) byUser.set(String(e.userId), [...(byUser.get(String(e.userId)) || []), e.stageName || 'A step'])
+  for (const [userId, names] of byUser) {
+    const msg = names.length === 1
+      ? `${names[0]} on ${orderId} is now assigned to you`
+      : `${names.length} steps on ${orderId} are now assigned to you (${names.slice(0, 3).join(', ')}${names.length > 3 ? ', ...' : ''})`
+    await notify([userId], { type: 'order', msg, orderId }, { exceptUserId: actor?.id })
+  }
+}
+
 // Planning fields (dates, targets, ownership, description) are the coordinator's
 // (caps.js editPlan: admin only). A manufacturer reports progress; it does not
 // reshape or reschedule the plan. The UI hides these controls, this is the real gate.
@@ -889,6 +903,7 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimit
     const seen = new Set()
     const setFields = { 'assignments.$[asgn].updatedAt': new Date() }
     const touched = []
+    const newOwners = [] // steps handed to someone new in this save, for notifications
 
     // Validate EVERY row before writing ANY. All-or-nothing is the point: the
     // old serial loop could fail on stage 14 and leave 13 saved.
@@ -949,8 +964,12 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimit
           if (!u || !RESPONSIBLE_ROLES.includes(u.role))
             return res.status(400).json({ error: `Responsible person on stage ${i + 1} must be an admin, manufacturer, or buyer` })
           if (!u.isActive) return res.status(400).json({ error: `Responsible person on stage ${i + 1} is inactive` })
+          if (u.role === 'buyer' && stage.isDelivery)
+            return res.status(400).json({ error: 'The customer cannot own the Delivery step; only Tradio or the manufacturer confirms delivery' })
         }
         setFields[p('responsibleId')] = row.responsibleId || null
+        if (row.responsibleId && String(row.responsibleId) !== String(stage.responsibleId || ''))
+          newOwners.push({ userId: row.responsibleId, stageName: stage.name })
       }
 
       if (has('description')) {
@@ -1074,6 +1093,7 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimit
       detail: `${orderId}: ${touched.length} stage(s) updated by ${req.user.name} [${touched.map(i => i + 1).join(', ')}]`,
     })
     await notifyOrderChange(order, req.user, { msg: `Production update on ${orderId}: ${touched.length} stage${touched.length !== 1 ? 's' : ''} updated`, orderId })
+    await notifyNewOwners(orderId, req.user, newOwners)
 
     res.json({ ...enrichFor(order, req), updated: touched.length })
   } catch (err) {
@@ -1461,6 +1481,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
     if (hasKind && !STAGE_KINDS.includes(kind))
       return res.status(400).json({ error: `Invalid kind — must be one of: ${STAGE_KINDS.join(', ')}` })
 
+    let assigneeRole = null
     if (hasResponsibleId && responsibleId) {
       if (!mongoose.Types.ObjectId.isValid(responsibleId))
         return res.status(400).json({ error: 'Invalid responsible person ID' })
@@ -1469,6 +1490,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
         return res.status(400).json({ error: 'Responsible person must be an admin, manufacturer, or buyer' })
       if (!responsibleUser.isActive)
         return res.status(400).json({ error: 'Responsible person is inactive' })
+      assigneeRole = responsibleUser.role
     }
 
     // Validate stageIndex against actual stage count
@@ -1485,6 +1507,8 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
     // The Delivery step is a plain milestone with a target of one. Reshaping it
     // would let it stop meaning "delivered".
     if (currentStage.isDelivery) {
+      if (assigneeRole === 'buyer')
+        return res.status(400).json({ error: 'The customer cannot own the Delivery step; only Tradio or the manufacturer confirms delivery' })
       if (hasKind && kind !== 'milestone')
         return res.status(400).json({ error: 'The Delivery step must stay a milestone' })
       if (hasTotalUnits)
@@ -1655,6 +1679,8 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
       action: 'Stage Dates Adjusted',
       detail: `${orderId}: Stage ${stageIndex + 1} (${stageName}) ${changes.join(', ')}`,
     })
+    if (hasResponsibleId && responsibleId && String(responsibleId) !== String(currentStage.responsibleId || ''))
+      await notifyNewOwners(orderId, req.user, [{ userId: responsibleId, stageName }])
 
     res.json(enrichFor(order, req))
   } catch (err) {
