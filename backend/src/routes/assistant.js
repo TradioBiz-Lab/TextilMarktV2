@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { userKey } from '../lib/limiterKey.js'
 import rateLimit from 'express-rate-limit'
 import Anthropic from '@anthropic-ai/sdk'
 import { requireAuth } from '../middleware/auth.js'
@@ -26,7 +27,7 @@ const MAX_TOOL_RESULT_CHARS = 300_000 // ~75-100k tokens — comfortably fits th
 // Anthropic spend to a predictable ceiling per admin per hour.
 const assistantLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, max: 30,
-  keyGenerator: req => req.user?.id || req.ip,
+  keyGenerator: userKey,
   message: { error: 'Too many assistant requests. Please wait.' },
   standardHeaders: true, legacyHeaders: false, validate: false, skip: skipInTest,
 })

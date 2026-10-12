@@ -106,9 +106,14 @@ describe('view as', () => {
     const master = await makeMaster(), buyer = await makeBuyer()
     const a = await as(master).post('/api/auth/view-as', { userId: String(buyer._id) })
     master.adminType = 'user'; await master.save()
-    assert.equal((await req('POST', '/api/auth/view-as', { token: tokenFrom(a), body: { userId: String(buyer._id) } })).status, 403)
-    assert.equal((await req('POST', '/api/auth/view-as/exit', { token: tokenFrom(a) })).status, 403)
-    assert.equal((await req('GET', '/api/auth/me', { token: tokenFrom(a) })).body.user.canViewAs, undefined)
+    // The session is dead everywhere, not only on the view-as routes: a demoted admin must not
+    // keep acting as the customer until the token happens to expire.
+    assert.equal((await req('POST', '/api/auth/view-as', { token: tokenFrom(a), body: { userId: String(buyer._id) } })).status, 401)
+    assert.equal((await req('POST', '/api/auth/view-as/exit', { token: tokenFrom(a) })).status, 401)
+    assert.equal((await req('GET', '/api/auth/me', { token: tokenFrom(a) })).status, 401)
+    assert.equal((await req('GET', '/api/orders', { token: tokenFrom(a) })).status, 401)
+    // They can still sign in as the ordinary admin they now are.
+    assert.equal((await as(master).get('/api/auth/me')).body.user.canViewAs, undefined)
   })
 })
 

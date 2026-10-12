@@ -2,9 +2,10 @@ import { Router } from 'express'
 import crypto from 'node:crypto'
 import bcrypt from 'bcryptjs'
 import rateLimit from 'express-rate-limit'
-import { User, AuditLog } from '../db/index.js'
+import { User, AuditLog, Organization } from '../db/index.js'
 import { requireAuth, requireAdmin, requireMaster } from '../middleware/auth.js'
 import { sendEmail, emailUserCreated, emailPasswordReset } from '../lib/email.js'
+import { ensureOrgForUser } from '../lib/orgs.js'
 
 // User creation is admin-only and low-volume; still cap to prevent bulk-create abuse
 const createUserLimiter = rateLimit({
@@ -25,6 +26,7 @@ const mapUser = u => ({
   id: u._id.toString(), email: u.email, role: u.role, adminType: u.adminType,
   company: u.company, name: u.name, phone: u.phone, code: u.code,
   isActive: u.isActive, createdAt: u.createdAt, mustChangePw: u.mustChangePw,
+  orgId: u.orgId ? String(u.orgId) : null, orgRole: u.orgRole || null,
 })
 
 // GET /api/users
@@ -73,7 +75,9 @@ router.post('/', requireAuth, requireMaster, createUserLimiter, async (req, res)
       if (normalizedCode.length < 3 || normalizedCode.length > 5) {
         return res.status(400).json({ error: 'Company code must be 3–5 characters' })
       }
-      const codeExists = await User.findOne({ code: normalizedCode })
+      // A company code belongs to one organization (its whole team shares it). Accounts that
+      // predate organizations are checked too, since they get theirs on first use.
+      const codeExists = await Organization.exists({ code: normalizedCode }) || await User.exists({ code: normalizedCode, role: { $in: ['buyer', 'manufacturer'] } })
       if (codeExists) return res.status(409).json({ error: `Company code "${normalizedCode}" is already in use` })
     }
 
@@ -89,6 +93,20 @@ router.post('/', requireAuth, requireMaster, createUserLimiter, async (req, res)
       isActive: true,
       mustChangePw: true,
     })
+    // A buyer or manufacturer is the first account of a new organization (Tradio access starts off;
+    // pass tradioEnabled: true for a manufacturer Tradio manages).
+    if (role !== 'admin') {
+      let org
+      try { org = await ensureOrgForUser(user) } catch (err) {
+        // Two creations of the same code at once: the organization's unique index decides, the loser is rolled back.
+        await User.deleteOne({ _id: user._id })
+        if (err?.code === 11000) return res.status(409).json({ error: `Company code "${normalizedCode}" is already in use` })
+        throw err
+      }
+      if (role === 'manufacturer' && req.body.tradioEnabled === true) await Organization.updateOne({ _id: org._id }, { $set: { tradioEnabled: true } })
+      // ensureOrgForUser wrote the link to the database; reflect it in the document we answer with.
+      user.orgId = org._id; user.orgRole = 'owner'
+    }
 
     // BRD US-USR-01: "Login credentials sent to user via email on creation"
     sendEmail(emailUserCreated({ name, email, password, role, company }))
@@ -154,6 +172,11 @@ router.post('/:id/toggle', requireAuth, requireMaster, async (req, res) => {
     const user = await User.findById(req.params.id)
     if (!user) return res.status(404).json({ error: 'User not found' })
     if (user.adminType === 'master') return res.status(403).json({ error: 'Cannot deactivate master admin' })
+    // A company's primary account is what its orders point at; it stays active while the team does.
+    // Deactivate the whole organization (POST /api/orgs/:id) instead.
+    if (user.isActive && user.orgRole === 'owner' && user.orgId
+        && await User.exists({ orgId: user.orgId, orgRole: 'member', isActive: true }))
+      return res.status(400).json({ error: "This is the company's primary account and it still has team members. Deactivate the whole company instead." })
 
     user.isActive = !user.isActive
     await user.save()

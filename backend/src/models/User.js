@@ -15,11 +15,19 @@ const userSchema = new mongoose.Schema({
   isActive:     { type: Boolean, default: true },
   mustChangePw:      { type: Boolean, default: false },
   passwordChangedAt: { type: Date, default: null },
+  // Buyers and manufacturers belong to an organization (see Organization). An 'owner' is the
+  // organization's primary account; a 'member' is a teammate who acts as that organization.
+  // Admins belong to none. Filled in on first sight for accounts that predate organizations.
+  orgId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', default: null },
+  orgRole:      { type: String, enum: ['owner', 'member'], default: null },
 }, { timestamps: true })
 
 // Ensure admin users cannot have buyer/manufacturer roles and vice versa
 userSchema.index({ role: 1, isActive: 1 })
-// Code must be unique across buyers and manufacturers (used in order IDs); admins all share 'TRD'
-userSchema.index({ code: 1 }, { unique: true, partialFilterExpression: { role: { $in: ['buyer', 'manufacturer'] } } })
+// A company code is shared by every member of an organization, so it is no longer unique per user:
+// Organization.code is where uniqueness is enforced. (The old unique index is dropped at startup,
+// see lib/migrate.js.)
+userSchema.index({ code: 1 })
+userSchema.index({ orgId: 1 })
 
 export const User = mongoose.model('User', userSchema)

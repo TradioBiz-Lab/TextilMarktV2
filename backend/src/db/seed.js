@@ -17,6 +17,13 @@ import { Document }     from '../models/Document.js'
 import { Notification } from '../models/Notification.js'
 import { AuditLog }     from '../models/AuditLog.js'
 import { InboundMessage } from '../models/InboundMessage.js'
+import { MasterOrder }  from '../models/MasterOrder.js'
+import { Organization } from '../models/Organization.js'
+import { Partnership }  from '../models/Partnership.js'
+import { Counter }      from '../models/Counter.js'
+import { ensureOrgForUser } from '../lib/orgs.js'
+import { backfillPartnerships } from '../lib/migrate.js'
+import { makeDeliveryStage } from '../lib/stageMath.js'
 
 // This script deletes every User/Order/Document/Notification/AuditLog in
 // whatever database MONGO_DB_URI resolves to, then inserts fake data. Local
@@ -83,6 +90,12 @@ async function seed() {
     Notification.deleteMany({}),
     AuditLog.deleteMany({}),
     InboundMessage.deleteMany({}),
+    // The standalone product's data: companies, who works with whom, and the ID counters. Master
+    // orders reference the users that were just deleted, so they go too.
+    Organization.deleteMany({}),
+    Partnership.deleteMany({}),
+    Counter.deleteMany({}),
+    MasterOrder.deleteMany({}),
   ])
   console.log(`Collections cleared in sandbox db "${dbName}".`)
 
@@ -270,6 +283,48 @@ async function seed() {
     { byUser: tiruppur._id, action: 'Document Uploaded', detail: 'SA8000 Social Audit uploaded',                                       createdAt: new Date('2025-11-05T10:00:00') },
   ])
   console.log('Audit logs seeded: 6')
+
+  // ── Organizations ──────────────────────────────────────────────────────────
+  // Every buyer and manufacturer is a company. Tradio manages Tiruppur Textiles (it may act for it);
+  // Bangalore Fabrics is a standalone customer that Tradio can only view. Partnerships come from
+  // the orders above: whoever works on an order together is connected.
+  const orgOf = {}
+  for (const u of [zaraBuyer, hmBuyer, tiruppur, blr]) orgOf[u.code] = await ensureOrgForUser(u)
+  await Organization.updateOne({ _id: orgOf.TPR._id }, { $set: { tradioEnabled: true } })
+  await backfillPartnerships()
+  console.log('Organizations seeded: 4 (Tiruppur Textiles is Tradio-enabled)')
+
+  // ── Standalone product extras (SEED_STANDALONE=1) ─────────────────────────
+  // A teammate, a manufacturer that switched Tradio's view access off, and orders created by the
+  // brand and by the manufacturer themselves, so every rule can be tried by hand. Run the backend
+  // with PLATFORM_MODE=standalone to see the standalone behaviour.
+  if (process.env.SEED_STANDALONE === '1') {
+    const [anita, surat] = await User.insertMany([
+      { email: 'anita@tiruppur.com', passwordHash: h('Mfr@12345'), role: 'manufacturer', adminType: null, company: 'Tiruppur Textiles', name: 'Anita Rao (store)', phone: '+91-9876543033', code: 'TPR', isActive: true, mustChangePw: false, orgId: orgOf.TPR._id, orgRole: 'member' },
+      { email: 'mfr@surat.com',      passwordHash: h('Mfr@12345'), role: 'manufacturer', adminType: null, company: 'Surat Mills',       name: 'Vikram Shah',       phone: '+91-9876545005', code: 'SRT', isActive: true, mustChangePw: false },
+    ])
+    const suratOrg = await ensureOrgForUser(surat)
+    await Organization.updateOne({ _id: suratOrg._id }, { $set: { tradioCanView: false } })
+    await Partnership.create({ brandOrgId: orgOf.ZAR._id, mfrOrgId: suratOrg._id, source: 'admin' })
+
+    await MasterOrder.create({ _id: 'MO-ZAR-FW26-001', buyerId: zaraBuyer._id, orderName: 'Zara FW26 core range', season: 'FW26', createdBy: zaraBuyer._id, createdByRole: 'buyer' })
+    const base = { season: 'FW26', delivery: new Date('2026-12-15'), baselineDelivery: new Date('2026-12-15'), createdAt: new Date('2026-10-01') }
+    await Order.insertMany([
+      { // Created by the brand, assigned to Tiruppur, with a plan the factory can now run.
+        ...base, _id: 'ZAR-SWTSHT-FW26-001', masterOrderId: 'MO-ZAR-FW26-001', buyerId: zaraBuyer._id, product: 'Heavy sweatshirt', category: 'SWTSHT', totalQty: 3000,
+        createdBy: zaraBuyer._id, createdByRole: 'buyer',
+        assignments: [{ mfrId: tiruppur._id, qty: 3000, status: 'Processing', sub: 'M1', note: '', stages: mkStages(['Fabric Inhouse', 'Cutting', 'Delivery'], 3000, {
+          0: { startDate: '2026-10-05', eta: null, baselineEta: '2026-10-20' }, 1: { startDate: '2026-10-21', baselineEta: '2026-11-05' }, 2: { kind: 'milestone', startDate: '2026-12-15', baselineEta: '2026-12-15' },
+        }) }],
+      },
+      { // Created by Surat Mills for Zara itself, plan not built yet (just the Delivery step).
+        ...base, _id: 'ZAR-JACKET-FW26-001', buyerId: zaraBuyer._id, product: 'Quilted jacket', category: 'JACKET', totalQty: 1200,
+        createdBy: surat._id, createdByRole: 'manufacturer',
+        assignments: [{ mfrId: surat._id, qty: 1200, status: 'Processing', sub: 'M1', note: '', stages: [makeDeliveryStage('2026-12-15')] }],
+      },
+    ])
+    console.log('Standalone extras seeded: a teammate (anita@tiruppur.com), Surat Mills (Tradio view access OFF), a master order and 2 orders created by the parties themselves')
+  }
 
   console.log('\n✓ Sandbox seed complete.')
   await mongoose.disconnect()

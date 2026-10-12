@@ -1,5 +1,7 @@
 import { Order, deriveStageStatus } from '../../models/Order.js'
 import { User } from '../../models/User.js'
+import { Organization } from '../../models/Organization.js'
+import { partyIdOfUser } from '../orgs.js'
 import { InboundMessage } from '../../models/InboundMessage.js'
 import { AuditLog } from '../../models/AuditLog.js'
 import { extractPhoto, extractDocument, extractText } from '../ai/extract.js'
@@ -20,8 +22,15 @@ export async function findFactoryByNumber(number) {
   const d = digits(number)
   if (d.length < 8) return null
   const tail = d.slice(-10)
-  const mfrs = await User.find({ role: 'manufacturer', isActive: true, whatsappNumber: { $ne: null } }, 'name company whatsappNumber language').lean()
-  return mfrs.find(m => digits(m.whatsappNumber).slice(-10) === tail) || null
+  const mfrs = await User.find({ role: 'manufacturer', isActive: true, whatsappNumber: { $ne: null } }, 'name company whatsappNumber language orgId orgRole').lean()
+  const hit = mfrs.find(m => digits(m.whatsappNumber).slice(-10) === tail)
+  if (!hit) return null
+  // A deactivated company hears nothing, whoever on its team writes.
+  if (hit.orgId && (await Organization.findById(hit.orgId, 'isActive').lean())?.isActive === false) return null
+  // Orders and assignments reference the company's primary account, so a teammate's number identifies
+  // the company; the language and number stay the sender's own, for the reply.
+  const partyId = await partyIdOfUser(hit)
+  return partyId === String(hit._id) ? hit : { ...hit, _id: partyId }
 }
 
 /** The factory's live orders, in the shape matching/AI prompts need. */

@@ -15,6 +15,15 @@ import {
 } from '../models/Order.js'
 import { dayNumber, getToday, effectiveEta, DELIVERY_STEP_NAME, isDeliveryName, deliveryStageIndex, makeDeliveryStage, statusAfterDeliveryStep } from '../lib/stageMath.js'
 import { notify, notifyOrderChange } from '../lib/notify.js'
+import { userKey } from '../lib/limiterKey.js'
+import { isStandalone } from '../lib/platform.js'
+import {
+  canCreateOrders, orderWriteGuard, requireOrderOwner, requirePlanEditor, requireAssigner, mayEditPlanFor,
+  adminOrderVisibility, adminMayViewOrder, staffMayActForMfrs, NOT_ENABLED,
+} from '../lib/authz.js'
+import { allocateOrderId } from '../lib/counters.js'
+import { applyCreationRules, afterCreate, partiesOf } from '../lib/orderCreate.js'
+import { unpartneredMfrs, ensurePartnership, partyIdByCode } from '../lib/orgs.js'
 
 // Categories are now free-text — no validation needed
 const VALID_SEASONS    = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
@@ -30,7 +39,7 @@ const skipInTest = () => process.env.NODE_ENV === 'test'
 // 60 order creations per admin per hour — prevents runaway scripting
 const createOrderLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, max: 60,
-  keyGenerator: req => req.user?.id || req.ip,
+  keyGenerator: userKey,
   message: { error: 'Too many order creation requests. Please wait.' },
   standardHeaders: true, legacyHeaders: false, validate: false, skip: skipInTest,
 })
@@ -39,7 +48,7 @@ const createOrderLimiter = rateLimit({
 // per-order limiter above since one bulk request creates many orders at once
 const bulkOrderLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, max: 10,
-  keyGenerator: req => req.user?.id || req.ip,
+  keyGenerator: userKey,
   message: { error: 'Too many bulk upload requests. Please wait.' },
   standardHeaders: true, legacyHeaders: false, validate: false, skip: skipInTest,
 })
@@ -47,7 +56,7 @@ const bulkOrderLimiter = rateLimit({
 // 30 materials-bulk-upload requests per admin per hour
 const materialsBulkLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, max: 30,
-  keyGenerator: req => req.user?.id || req.ip,
+  keyGenerator: userKey,
   message: { error: 'Too many bulk materials upload requests. Please wait.' },
   standardHeaders: true, legacyHeaders: false, validate: false, skip: skipInTest,
 })
@@ -62,7 +71,7 @@ const materialsBulkLimiter = rateLimit({
 const updateLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, max: 120,
   keyGenerator: req => {
-    const base = req.user?.id || req.ip
+    const base = userKey(req)
     return req.headers['x-kriyaa-loopback'] ? `${base}:kriyaa` : base
   },
   message: { error: 'Too many update requests. Please wait.' },
@@ -140,6 +149,9 @@ const enrichOrder = (o, viewerMfrId = null) => {
   fabricDetails: (o.fabricDetails || []).map(f => ({ name: f.name, composition: f.composition || '', gsm: f.gsm || '', supplier: f.supplier || '' })),
   ecommerceLink: o.ecommerceLink || '',
   callout: o.callout || '',
+  // Orders that predate these carry neither; they read as Tradio's.
+  createdBy: o.createdBy ? String(o.createdBy?._id ?? o.createdBy) : null,
+  createdByRole: o.createdByRole || null,
   assignments: visibleAssignments.map(a => {
     const mfr = a.mfrId && typeof a.mfrId === 'object' && a.mfrId.company ? a.mfrId : null
     return {
@@ -235,7 +247,8 @@ const STAGES_CHANGED = { error: 'The stages changed while you were editing. Relo
 router.get('/', requireAuth, async (req, res) => {
   try {
     let query
-    if (req.user.role === 'admin')        query = Order.find()
+    // Standalone: Tradio staff do not see companies that switched Tradio's view access off.
+    if (req.user.role === 'admin')        query = Order.find(await adminOrderVisibility())
     else if (req.user.role === 'buyer')   query = Order.find({ buyerId: req.user.id })
     else                                  query = Order.find({ 'assignments.mfrId': req.user.id })
 
@@ -253,6 +266,9 @@ router.get('/:id', requireAuth, async (req, res) => {
   try {
     const order = await Order.findById(req.params.id).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
     if (!order) return res.status(404).json({ error: 'Order not found' })
+    // A company that switched Tradio's access off does not exist as far as Tradio staff can tell.
+    if (req.user.role === 'admin' && !(await adminMayViewOrder(order)))
+      return res.status(404).json({ error: 'Order not found' })
 
     const buyerIdStr = order.buyerId?._id?.toString() ?? order.buyerId?.toString()
     if (req.user.role === 'buyer' && buyerIdStr !== req.user.id)
@@ -278,12 +294,15 @@ router.get('/:id', requireAuth, async (req, res) => {
 // and creates it if valid. Centralizes rules (including the B1 required-end-date
 // check) so both call sites can't drift out of sync. Returns the raw created
 // Mongoose doc on success (not populated/enriched — that's caller-specific).
-async function validateAndCreateOrder({ id, buyerId, product, styleNumber, category, season, totalQty, delivery, createdAt, masterOrderId, assignments: asgns, stageEtas, stageStartDates, stageNames: customStages, stageResponsibleIds, stageDescriptions, stageTotalUnits, stageKinds, colourways, fabricDetails, callout, imageDataUrl, imageUrl, ecommerceLink }) {
-  if (!id || !buyerId || !product || !totalQty || !delivery)
+async function validateAndCreateOrder({ id, buyerId, product, styleNumber, category, season, totalQty, delivery, createdAt, masterOrderId, assignments: asgns, stageEtas, stageStartDates, stageNames: customStages, stageResponsibleIds, stageDescriptions, stageTotalUnits, stageKinds, colourways, fabricDetails, callout, imageDataUrl, imageUrl, ecommerceLink, createdBy, createdByRole, allowedResponsibleIds, deferPlan }) {
+  // id 'auto' asks the server to number the order (a brand or manufacturer never picks its own;
+  // see lib/counters.js). Anything else is the ID the caller chose, validated below.
+  const autoId = id === 'auto'
+  if ((!autoId && !id) || !buyerId || !product || !totalQty || !delivery)
     return { ok: false, error: 'Missing required fields' }
-  if (typeof id !== 'string' || typeof product !== 'string')
+  if ((!autoId && typeof id !== 'string') || typeof product !== 'string')
     return { ok: false, error: 'Invalid input types' }
-  if (id.length > 100 || product.length > 300)
+  if ((!autoId && id.length > 100) || product.length > 300)
     return { ok: false, error: 'Input too long' }
   // Mongoose would throw a cast or validation error for these, which surfaced as a bare 500.
   if (!Number.isInteger(Number(totalQty)) || Number(totalQty) < 1)
@@ -294,7 +313,7 @@ async function validateAndCreateOrder({ id, buyerId, product, styleNumber, categ
     ['stageResponsibleIds', stageResponsibleIds], ['stageDescriptions', stageDescriptions], ['stageTotalUnits', stageTotalUnits], ['stageKinds', stageKinds]]) {
     if (v != null && !Array.isArray(v)) return { ok: false, error: `${label} must be a list` }
   }
-  if (!/^[A-Z0-9\-]+$/i.test(id))
+  if (!autoId && !/^[A-Z0-9\-]+$/i.test(id))
     return { ok: false, error: 'Order ID may only contain letters, numbers, and hyphens' }
   if (styleNumber && typeof styleNumber === 'string' && styleNumber.length > 60)
     return { ok: false, error: 'Style number too long' }
@@ -317,7 +336,7 @@ async function validateAndCreateOrder({ id, buyerId, product, styleNumber, categ
     if (normalizeLink(ecommerceLink) && !isHttpUrl(normalizeLink(ecommerceLink))) return { ok: false, error: LINK_SCHEME_ERROR }
   }
   if (!mongoose.Types.ObjectId.isValid(buyerId)) return { ok: false, error: 'Invalid buyer ID' }
-  const buyerCheck = await User.findById(buyerId, 'role isActive').lean()
+  const buyerCheck = await User.findById(buyerId, 'role isActive code').lean()
   if (!buyerCheck || buyerCheck.role !== 'buyer') return { ok: false, error: 'Buyer not found' }
   if (!buyerCheck.isActive) return { ok: false, error: 'Buyer account is inactive' }
 
@@ -359,114 +378,122 @@ async function validateAndCreateOrder({ id, buyerId, product, styleNumber, categ
       return { ok: false, error: `Assignment quantities (${assignedTotal}) must sum to total quantity (${totalQty})` }
     }
 
-    // Dynamic stages: admin can define custom stage names, or fall back to defaults
-    stages = (Array.isArray(customStages) && customStages.length > 0)
-      ? customStages.filter(s => typeof s === 'string' && s.trim()).map(s => s.trim().slice(0, 100))
-      : DEFAULT_STAGE_NAMES
-    if (stages.length === 0)
-      return { ok: false, error: 'At least one production stage is required' }
-    if (stages.length > 50)
-      return { ok: false, error: 'Too many stages (max 50)' }
+    // A plan is optional for a brand or manufacturer creating an order: the order is created with
+    // just the mandatory Delivery step and the plan is built afterwards (deferPlan).
+    if (!deferPlan) {
+      // Dynamic stages: admin can define custom stage names, or fall back to defaults
+      stages = (Array.isArray(customStages) && customStages.length > 0)
+        ? customStages.filter(s => typeof s === 'string' && s.trim()).map(s => s.trim().slice(0, 100))
+        : DEFAULT_STAGE_NAMES
+      if (stages.length === 0)
+        return { ok: false, error: 'At least one production stage is required' }
+      if (stages.length > 50)
+        return { ok: false, error: 'Too many stages (max 50)' }
 
-    etas = stageEtas || stages.map(() => null)
-    startDates = stageStartDates || stages.map(() => null)
+      etas = stageEtas || stages.map(() => null)
+      startDates = stageStartDates || stages.map(() => null)
 
-    // The Delivery step is mandatory: it is how an order becomes Delivered. A
-    // plan that already ends in one keeps it, a plan with none gets one appended,
-    // and a Delivery step anywhere but last is rejected. Its dates default to the
-    // order's promised delivery date, so callers never have to supply them.
-    const deliveryISO = deliveryDate.toISOString().slice(0, 10)
-    const namedDelivery = stages.findIndex(isDeliveryName)
-    if (namedDelivery !== -1 && namedDelivery !== stages.length - 1)
-      return { ok: false, error: 'The Delivery step must be the last step' }
-    stages = [...stages]; etas = [...etas]; startDates = [...startDates]
-    if (namedDelivery === -1) {
-      if (stages.length >= 50) return { ok: false, error: 'Too many stages (max 50, including the mandatory Delivery step)' }
-      stages.push(DELIVERY_STEP_NAME)
-    }
-    deliveryIdx = stages.length - 1
-    if (!startDates[deliveryIdx]) startDates[deliveryIdx] = deliveryISO
-    if (!etas[deliveryIdx]) etas[deliveryIdx] = deliveryISO
+      // The Delivery step is mandatory: it is how an order becomes Delivered. A
+      // plan that already ends in one keeps it, a plan with none gets one appended,
+      // and a Delivery step anywhere but last is rejected. Its dates default to the
+      // order's promised delivery date, so callers never have to supply them.
+      const deliveryISO = deliveryDate.toISOString().slice(0, 10)
+      const namedDelivery = stages.findIndex(isDeliveryName)
+      if (namedDelivery !== -1 && namedDelivery !== stages.length - 1)
+        return { ok: false, error: 'The Delivery step must be the last step' }
+      stages = [...stages]; etas = [...etas]; startDates = [...startDates]
+      if (namedDelivery === -1) {
+        if (stages.length >= 50) return { ok: false, error: 'Too many stages (max 50, including the mandatory Delivery step)' }
+        stages.push(DELIVERY_STEP_NAME)
+      }
+      deliveryIdx = stages.length - 1
+      if (!startDates[deliveryIdx]) startDates[deliveryIdx] = deliveryISO
+      if (!etas[deliveryIdx]) etas[deliveryIdx] = deliveryISO
 
-    // Every stage requires an explicit start date AND end date — a valid date string or
-    // literal 'NA'. No more blank/null — a stage with no enforced date is exactly the gap
-    // that caused a real missed-deadline incident (see docs/MIGRATION_PLAN.md context).
-    // When both sides are real (non-'NA') dates, start must be on or before end.
-    for (let i = 0; i < stages.length; i++) {
-      const startVal = startDates[i]
-      const endVal = etas[i]
-      if (!startVal) return { ok: false, error: `Stage "${stages[i]}" is missing a start date` }
-      if (startVal !== 'NA' && isNaN(new Date(startVal).getTime()))
-        return { ok: false, error: `Stage "${stages[i]}" has an invalid start date` }
-      if (!endVal) return { ok: false, error: `Stage "${stages[i]}" is missing an end date` }
-      if (endVal !== 'NA' && isNaN(new Date(endVal).getTime()))
-        return { ok: false, error: `Stage "${stages[i]}" has an invalid end date` }
-      if (startVal !== 'NA' && endVal !== 'NA' && new Date(startVal) > new Date(endVal))
-        return { ok: false, error: `Stage "${stages[i]}" start date must be on or before its end date` }
-    }
+      // Every stage requires an explicit start date AND end date — a valid date string or
+      // literal 'NA'. No more blank/null — a stage with no enforced date is exactly the gap
+      // that caused a real missed-deadline incident (see docs/MIGRATION_PLAN.md context).
+      // When both sides are real (non-'NA') dates, start must be on or before end.
+      for (let i = 0; i < stages.length; i++) {
+        const startVal = startDates[i]
+        const endVal = etas[i]
+        if (!startVal) return { ok: false, error: `Stage "${stages[i]}" is missing a start date` }
+        if (startVal !== 'NA' && isNaN(new Date(startVal).getTime()))
+          return { ok: false, error: `Stage "${stages[i]}" has an invalid start date` }
+        if (!endVal) return { ok: false, error: `Stage "${stages[i]}" is missing an end date` }
+        if (endVal !== 'NA' && isNaN(new Date(endVal).getTime()))
+          return { ok: false, error: `Stage "${stages[i]}" has an invalid end date` }
+        if (startVal !== 'NA' && endVal !== 'NA' && new Date(startVal) > new Date(endVal))
+          return { ok: false, error: `Stage "${stages[i]}" start date must be on or before its end date` }
+      }
 
-    // Optional per-stage responsible person (admin or manufacturer), index-aligned with
-    // stages. Applied identically across every manufacturer split — one accountable
-    // person per stage, not per split.
-    stageResponsibleIdsResolved = stages.map(() => null)
-    if (Array.isArray(stageResponsibleIds)) {
-      const ids = stageResponsibleIds.filter(Boolean)
-      if (ids.length > 0) {
-        if (!ids.every(rid => mongoose.Types.ObjectId.isValid(rid)))
-          return { ok: false, error: 'Invalid responsible person ID' }
-        const respUsers = await User.find({ _id: { $in: ids } }, 'role isActive').lean()
-        const respMap = Object.fromEntries(respUsers.map(u => [u._id.toString(), u]))
+      // Optional per-stage responsible person (admin or manufacturer), index-aligned with
+      // stages. Applied identically across every manufacturer split — one accountable
+      // person per stage, not per split.
+      stageResponsibleIdsResolved = stages.map(() => null)
+      if (Array.isArray(stageResponsibleIds)) {
+        const ids = stageResponsibleIds.filter(Boolean)
+        if (ids.length > 0) {
+          if (!ids.every(rid => mongoose.Types.ObjectId.isValid(rid)))
+            return { ok: false, error: 'Invalid responsible person ID' }
+          const respUsers = await User.find({ _id: { $in: ids } }, 'role isActive').lean()
+          const respMap = Object.fromEntries(respUsers.map(u => [u._id.toString(), u]))
+          for (let i = 0; i < stages.length; i++) {
+            const rid = stageResponsibleIds[i]
+            if (!rid) continue
+            const u = respMap[rid]
+            if (!u || !RESPONSIBLE_ROLES.includes(u.role))
+              return { ok: false, error: `Responsible person for stage "${stages[i]}" must be an admin, manufacturer, or buyer` }
+            if (!u.isActive)
+              return { ok: false, error: `Responsible person for stage "${stages[i]}" is inactive` }
+            // A brand or manufacturer may hand a step only to a company on this order, never to
+            // some other company on the platform (it would be told about the order).
+            if (allowedResponsibleIds && !allowedResponsibleIds.has(String(rid)))
+              return { ok: false, error: `Responsible person for stage "${stages[i]}" must be a company on this order` }
+            stageResponsibleIdsResolved[i] = rid
+          }
+        }
+      }
+
+      // Optional per-stage description, index-aligned with stages.
+      stageDescriptionsResolved = stages.map(() => '')
+      if (Array.isArray(stageDescriptions)) {
         for (let i = 0; i < stages.length; i++) {
-          const rid = stageResponsibleIds[i]
-          if (!rid) continue
-          const u = respMap[rid]
-          if (!u || !RESPONSIBLE_ROLES.includes(u.role))
-            return { ok: false, error: `Responsible person for stage "${stages[i]}" must be an admin, manufacturer, or buyer` }
-          if (!u.isActive)
-            return { ok: false, error: `Responsible person for stage "${stages[i]}" is inactive` }
-          stageResponsibleIdsResolved[i] = rid
+          const d = stageDescriptions[i]
+          if (typeof d === 'string' && d.trim()) {
+            if (d.trim().length > 1000) return { ok: false, error: `Description for stage "${stages[i]}" is too long (max 1000 characters)` }
+            stageDescriptionsResolved[i] = d.trim()
+          }
         }
       }
-    }
 
-    // Optional per-stage description, index-aligned with stages.
-    stageDescriptionsResolved = stages.map(() => '')
-    if (Array.isArray(stageDescriptions)) {
-      for (let i = 0; i < stages.length; i++) {
-        const d = stageDescriptions[i]
-        if (typeof d === 'string' && d.trim()) {
-          if (d.trim().length > 1000) return { ok: false, error: `Description for stage "${stages[i]}" is too long (max 1000 characters)` }
-          stageDescriptionsResolved[i] = d.trim()
+      // Optional per-stage target quantity — not every stage tracks the full order qty
+      // (e.g. "Lab Dip Approval" might target 3 dips, not 600 pieces). Defaults to the
+      // assignment's qty when not provided.
+      stageTotalUnitsResolved = stages.map(() => null)
+      if (Array.isArray(stageTotalUnits)) {
+        for (let i = 0; i < stages.length; i++) {
+          const t = stageTotalUnits[i]
+          if (t === undefined || t === null || t === '') continue
+          const parsed = parseInt(t, 10)
+          if (isNaN(parsed) || parsed < 1) return { ok: false, error: `Target quantity for stage "${stages[i]}" must be a positive number` }
+          stageTotalUnitsResolved[i] = parsed
         }
       }
-    }
 
-    // Optional per-stage target quantity — not every stage tracks the full order qty
-    // (e.g. "Lab Dip Approval" might target 3 dips, not 600 pieces). Defaults to the
-    // assignment's qty when not provided.
-    stageTotalUnitsResolved = stages.map(() => null)
-    if (Array.isArray(stageTotalUnits)) {
-      for (let i = 0; i < stages.length; i++) {
-        const t = stageTotalUnits[i]
-        if (t === undefined || t === null || t === '') continue
-        const parsed = parseInt(t, 10)
-        if (isNaN(parsed) || parsed < 1) return { ok: false, error: `Target quantity for stage "${stages[i]}" must be a positive number` }
-        stageTotalUnitsResolved[i] = parsed
-      }
-    }
-
-    // Optional per-stage kind. Absent means 'quantity' — identical to how every
-    // order behaved before this field existed. Deliberately NOT inferred from
-    // whether stageTotalUnits was supplied: the single-order form sends no target
-    // quantities at all, so inference would silently make every form-created order
-    // all-milestone. One rule, no inference.
-    stageKindsResolved = stages.map(() => 'quantity')
-    if (Array.isArray(stageKinds)) {
-      for (let i = 0; i < stages.length; i++) {
-        const k = stageKinds[i]
-        if (k === undefined || k === null || k === '') continue
-        if (!STAGE_KINDS.includes(k)) return { ok: false, error: `Invalid kind "${k}" for stage "${stages[i]}" — must be one of: ${STAGE_KINDS.join(', ')}` }
-        stageKindsResolved[i] = k
+      // Optional per-stage kind. Absent means 'quantity' — identical to how every
+      // order behaved before this field existed. Deliberately NOT inferred from
+      // whether stageTotalUnits was supplied: the single-order form sends no target
+      // quantities at all, so inference would silently make every form-created order
+      // all-milestone. One rule, no inference.
+      stageKindsResolved = stages.map(() => 'quantity')
+      if (Array.isArray(stageKinds)) {
+        for (let i = 0; i < stages.length; i++) {
+          const k = stageKinds[i]
+          if (k === undefined || k === null || k === '') continue
+          if (!STAGE_KINDS.includes(k)) return { ok: false, error: `Invalid kind "${k}" for stage "${stages[i]}" — must be one of: ${STAGE_KINDS.join(', ')}` }
+          stageKindsResolved[i] = k
+        }
       }
     }
   }
@@ -527,9 +554,11 @@ async function validateAndCreateOrder({ id, buyerId, product, styleNumber, categ
     catch { return { ok: false, error: 'Invalid image URL — must be a valid http(s) link' } }
   }
 
-  try {
+  let orderId = autoId ? await allocateOrderId({ buyerCode: buyerCheck.code, category, season }) : id
+  for (let attempt = 0; ; attempt++) try {
     const created = await Order.create({
-      _id: id, buyerId, product, styleNumber: styleNumber ? styleNumber.trim() : '', category, season, totalQty, masterOrderId: masterOrderId || null,
+      _id: orderId, createdBy: createdBy || null, createdByRole: createdByRole || null,
+      buyerId, product, styleNumber: styleNumber ? styleNumber.trim() : '', category, season, totalQty, masterOrderId: masterOrderId || null,
       imageDataUrl: imageDataUrl || null, imageUrl: imageUrl ? imageUrl.trim() : null,
       delivery: new Date(delivery),
       baselineDelivery: new Date(delivery),
@@ -541,7 +570,8 @@ async function validateAndCreateOrder({ id, buyerId, product, styleNumber, categ
       assignments: !hasAssignments ? [] : asgns.map((a, i) => ({
         mfrId: a.mid, qty: a.qty, status: 'Processing',
         sub: a.sub || `M${i + 1}`, note: '',
-        stages: stages.map((name, si) => {
+        // A deferred plan starts with just the mandatory Delivery step; the schedule is built afterwards.
+        stages: deferPlan ? [makeDeliveryStage(new Date(delivery).toISOString().slice(0, 10))] : stages.map((name, si) => {
           const kind = stageKindsResolved[si]
           // A milestone or checklist stage has no meaningful garment count, so it
           // defaults to a target of 1 rather than the assignment quantity — the
@@ -570,15 +600,23 @@ async function validateAndCreateOrder({ id, buyerId, product, styleNumber, categ
     })
     return { ok: true, order: created }
   } catch (err) {
-    if (err.code === 11000) return { ok: false, error: 'Order ID already exists' }
+    if (err.code === 11000) {
+      // Someone may have typed the next number in by hand: take the one after it.
+      if (autoId && attempt < 5) { orderId = await allocateOrderId({ buyerCode: buyerCheck.code, category, season }); continue }
+      return { ok: false, error: 'Order ID already exists' }
+    }
     throw err
   }
 }
 
 // POST /api/orders
-router.post('/', requireAuth, requireAdmin, createOrderLimiter, async (req, res) => {
+router.post('/', requireAuth, canCreateOrders, createOrderLimiter, async (req, res) => {
   try {
-    const result = await validateAndCreateOrder(req.body)
+    // Who is creating decides what is allowed (lib/orderCreate.js): Tradio staff in the Tradio
+    // portal; also brands and manufacturers in the standalone product.
+    const rules = await applyCreationRules(req.user, req.body)
+    if (!rules.ok) return res.status(rules.status).json({ error: rules.error, ...(rules.code ? { code: rules.code } : {}) })
+    const result = await validateAndCreateOrder(rules.input)
     if (!result.ok) {
       const status = result.error === 'Order ID already exists' ? 409 : 400
       return res.status(status).json({ error: result.error })
@@ -591,6 +629,7 @@ router.post('/', requireAuth, requireAdmin, createOrderLimiter, async (req, res)
       action: 'Order Created',
       detail: `${order._id} — ${order.product}`,
     })
+    await afterCreate(req.user, order, rules)
     await notify([order.buyerId], { type: 'order', msg: `New order created: ${order._id}`, orderId: order._id }, { exceptUserId: req.user.id })
     await notify((order.assignments || []).map(a => a.mfrId), { type: 'order', msg: `New order assigned to you: ${order._id}`, orderId: order._id }, { exceptUserId: req.user.id })
 
@@ -608,6 +647,13 @@ router.post('/bulk', requireAuth, requireAdmin, bulkOrderLimiter, async (req, re
     if (!masterOrderId) return res.status(400).json({ error: 'masterOrderId is required' })
     if (!Array.isArray(rows) || rows.length === 0) return res.status(400).json({ error: 'At least one row is required' })
     if (rows.length > 100) return res.status(400).json({ error: 'Too many rows (max 100 per bulk upload)' })
+
+    // Standalone: Tradio staff may only create for manufacturers they may act for.
+    if (isStandalone()) {
+      const mids = rows.flatMap(r => (r?.assignments || []).map(a => a?.mid)).filter(Boolean)
+      if (mids.some(m => !mongoose.Types.ObjectId.isValid(m))) return res.status(400).json({ error: 'Invalid manufacturer ID' })
+      if (!(await staffMayActForMfrs(mids))) return res.status(403).json(NOT_ENABLED)
+    }
 
     const mo = await MasterOrder.findById(masterOrderId).lean()
     if (!mo) return res.status(400).json({ error: `Master order "${masterOrderId}" not found` })
@@ -653,11 +699,13 @@ router.post('/bulk', requireAuth, requireAdmin, bulkOrderLimiter, async (req, re
           stageStartDates: row.stageStartDates, stageEtas: row.stageEtas,
           stageResponsibleIds: row.stageResponsibleIds, stageDescriptions: row.stageDescriptions,
           stageTotalUnits: row.stageTotalUnits,
+          createdBy: req.user.id, createdByRole: 'admin',
         })
 
         if (result.ok) {
           created++
           results.push({ row: i, success: true, orderId: result.order._id })
+          await afterCreate(req.user, result.order, { link: true })
         } else {
           failed++
           results.push({ row: i, success: false, error: result.error })
@@ -689,7 +737,7 @@ router.post('/bulk', requireAuth, requireAdmin, bulkOrderLimiter, async (req, re
 })
 
 // PATCH /api/orders/:orderId/assignments/:mfrId  — update order-level status + note
-router.post('/:orderId/assignments/:mfrId', requireAuth, updateLimiter, async (req, res) => {
+router.post('/:orderId/assignments/:mfrId', requireAuth, orderWriteGuard, updateLimiter, async (req, res) => {
   try {
     const { orderId, mfrId } = req.params
     const { status, note } = req.body
@@ -754,7 +802,7 @@ router.post('/:orderId/assignments/:mfrId', requireAuth, updateLimiter, async (r
 // first (or an additional) manufacturer split gets added afterwards, from the
 // Style Detail page, with an empty stage list — TNA is built separately via
 // /stages/insert or /stages/bulk once the assignment exists.
-router.post('/:orderId/assignments', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
+router.post('/:orderId/assignments', requireAuth, requireAssigner, updateLimiter, async (req, res) => {
   try {
     const { orderId } = req.params
     const { mfrId, qty, sub } = req.body
@@ -773,6 +821,17 @@ router.post('/:orderId/assignments', requireAuth, requireAdmin, updateLimiter, a
     if ((existing.assignments || []).some(a => a.mfrId?.toString() === mfrId))
       return res.status(400).json({ error: 'This manufacturer is already assigned to this style' })
 
+    // Standalone: Tradio staff may add only manufacturers they may act for (and only to an order
+    // whose manufacturers they already may); a brand may add only manufacturers it is connected with.
+    if (isStandalone()) {
+      if (req.user.role === 'admin') {
+        if (!(await staffMayActForMfrs([...(existing.assignments || []).map(a => a.mfrId), mfrId])))
+          return res.status(403).json(NOT_ENABLED)
+      } else if ((await unpartneredMfrs(existing.buyerId, [mfrId])).length) {
+        return res.status(403).json({ error: 'You can only assign manufacturers you are connected with', code: 'NOT_CONNECTED' })
+      }
+    }
+
     const nextSub = sub && typeof sub === 'string' && sub.trim() ? sub.trim().slice(0, 20) : `M${(existing.assignments || []).length + 1}`
 
     const order = await Order.findByIdAndUpdate(
@@ -787,6 +846,8 @@ router.post('/:orderId/assignments', requireAuth, requireAdmin, updateLimiter, a
       action: 'Manufacturer Assigned',
       detail: `${orderId}: added manufacturer ${mfrUser._id} (${nextSub}, qty ${aqty}) by ${req.user.name}`,
     })
+    // Tradio putting a brand and a manufacturer together makes them partners from now on.
+    await ensurePartnership(existing.buyerId, mfrUser._id, { source: 'order', createdBy: req.user.actorId || req.user.id }).catch(err => console.error('[orders] partnership', err))
     await notify([mfrUser._id], { type: 'order', msg: `New order assigned to you: ${orderId}`, orderId }, { exceptUserId: req.user.id })
 
     res.status(201).json(enrichFor(order, req))
@@ -801,7 +862,7 @@ router.post('/:orderId/assignments', requireAuth, requireAdmin, updateLimiter, a
 // are; only who owns the split changes. Stages the old manufacturer was responsible for move to the
 // new one, and the split's documents are re-pointed so they stay with it. The old manufacturer loses
 // access to the order, the new one gains it. Body: { newMfrId, qty? } (qty defaults to the current).
-router.post('/:orderId/assignments/:mfrId/reassign', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
+router.post('/:orderId/assignments/:mfrId/reassign', requireAuth, requireAdmin, orderWriteGuard, updateLimiter, async (req, res) => {
   try {
     const { orderId, mfrId } = req.params
     const { newMfrId, qty } = req.body || {}
@@ -820,6 +881,9 @@ router.post('/:orderId/assignments/:mfrId/reassign', requireAuth, requireAdmin, 
     const target = await User.findById(newId, 'role isActive company').lean()
     if (!target || target.role !== 'manufacturer') return res.status(400).json({ error: 'Manufacturer not found' })
     if (!target.isActive) return res.status(400).json({ error: 'Manufacturer account is inactive' })
+    // Standalone: the manufacturer being handed the split must be one Tradio may act for too
+    // (orderWriteGuard already checked the ones currently on the order).
+    if (isStandalone() && !(await staffMayActForMfrs([newId]))) return res.status(403).json(NOT_ENABLED)
 
     const existing = await Order.findById(orderId).lean()
     if (!existing) return res.status(404).json({ error: 'Order not found' })
@@ -857,6 +921,7 @@ router.post('/:orderId/assignments/:mfrId/reassign', requireAuth, requireAdmin, 
       action: 'Manufacturer Reassigned',
       detail: `${orderId}: ${asgn.sub} moved from ${former?.company || oldId} to ${target.company || newId}${newQty != null && newQty !== asgn.qty ? `, qty ${asgn.qty} to ${newQty}` : ''} by ${req.user.name}`,
     })
+    await ensurePartnership(existing.buyerId, newId, { source: 'order', createdBy: req.user.actorId || req.user.id }).catch(err => console.error('[orders] partnership', err))
     await notify([newId], { type: 'order', msg: `New order assigned to you: ${orderId}`, orderId }, { exceptUserId: req.user.id })
     await notify([oldId], { type: 'order', msg: `${orderId} has been reassigned to another manufacturer`, orderId }, { exceptUserId: req.user.id })
 
@@ -872,7 +937,7 @@ router.post('/:orderId/assignments/:mfrId/reassign', requireAuth, requireAdmin, 
 // shipments), so this is its own figure; it never changes `qty`. Admin, or the split's own
 // manufacturer (who ships it). The customer cannot set it. Body: { deliveredQty } (a whole number
 // >= 0, or null / '' to clear it). May be updated before the Delivery step closes, for part shipments.
-router.post('/:orderId/assignments/:mfrId/delivered-qty', requireAuth, updateLimiter, async (req, res) => {
+router.post('/:orderId/assignments/:mfrId/delivered-qty', requireAuth, orderWriteGuard, updateLimiter, async (req, res) => {
   try {
     const { orderId, mfrId } = req.params
     if (!mongoose.Types.ObjectId.isValid(mfrId)) return res.status(400).json({ error: 'Invalid manufacturer ID' })
@@ -929,7 +994,7 @@ router.post('/:orderId/assignments/:mfrId/delivered-qty', requireAuth, updateLim
 // apply-to-siblings run exhausts it. Progress on quantity stages deliberately
 // stays on the single-stage route, where the materials gate lives.
 const BULK_STAGE_MAX = 50
-router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimiter, async (req, res) => {
+router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, orderWriteGuard, updateLimiter, async (req, res) => {
   try {
     const { orderId, mfrId } = req.params
     if (!mongoose.Types.ObjectId.isValid(mfrId))
@@ -950,6 +1015,8 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimit
     const existingAsgn = (existingOrder.assignments || []).find(a => a.mfrId?.toString() === mfrId)
     if (!existingAsgn) return res.status(404).json({ error: 'Assignment not found' })
     const allStages = existingAsgn.stages || []
+    // A manufacturer editing its own plan (standalone) may hand a step only to a company on this order.
+    const orderPartyIds = new Set([String(existingOrder.buyerId), ...(existingOrder.assignments || []).map(a => String(a.mfrId))])
 
     const seen = new Set()
     const setFields = { 'assignments.$[asgn].updatedAt': new Date() }
@@ -971,7 +1038,9 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimit
       const has = k => Object.prototype.hasOwnProperty.call(row, k)
       const p = f => `assignments.$[asgn].stages.${i}.${f}`
 
-      if (req.user.role === 'manufacturer') {
+      // The plan is the coordinator's; in the standalone product the split's own manufacturer is
+      // the coordinator of its own schedule.
+      if (req.user.role === 'manufacturer' && !mayEditPlanFor(req.user, mfrId)) {
         const planKeys = PLAN_ONLY_STAGE_KEYS.filter(k => has(k))
         if (planKeys.length)
           return res.status(403).json({ error: `Only an admin can change the plan (not: ${planKeys.join(', ')})` })
@@ -1015,6 +1084,8 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimit
           if (!u || !RESPONSIBLE_ROLES.includes(u.role))
             return res.status(400).json({ error: `Responsible person on stage ${i + 1} must be an admin, manufacturer, or buyer` })
           if (!u.isActive) return res.status(400).json({ error: `Responsible person on stage ${i + 1} is inactive` })
+          if (req.user.role !== 'admin' && !orderPartyIds.has(String(row.responsibleId)))
+            return res.status(400).json({ error: `Responsible person on stage ${i + 1} must be a company on this order` })
           if (u.role === 'buyer' && stage.isDelivery)
             return res.status(400).json({ error: 'The customer cannot own the Delivery step; only Tradio or the manufacturer confirms delivery' })
         }
@@ -1159,7 +1230,7 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimit
 // revision adds "Fit Sample" that wasn't in the original plan). Registered above
 // the generic /stages/:stageIndex route, same reason /stages/bulk is: Express
 // would otherwise match "insert" as a stageIndex and 400 on the parseInt.
-router.post('/:orderId/assignments/:mfrId/stages/insert', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
+router.post('/:orderId/assignments/:mfrId/stages/insert', requireAuth, requirePlanEditor, updateLimiter, async (req, res) => {
   try {
     const { orderId, mfrId } = req.params
     if (!mongoose.Types.ObjectId.isValid(mfrId))
@@ -1202,6 +1273,11 @@ router.post('/:orderId/assignments/:mfrId/stages/insert', requireAuth, requireAd
     if (!existingOrder) return res.status(404).json({ error: 'Order not found' })
     const existingAsgn = (existingOrder.assignments || []).find(a => a.mfrId?.toString() === mfrId)
     if (!existingAsgn) return res.status(404).json({ error: 'Assignment not found' })
+    // A manufacturer editing its own plan (standalone) may hand a step only to a company on this order.
+    if (resolvedResponsibleId && req.user.role !== 'admin') {
+      const parties = new Set([String(existingOrder.buyerId), ...(existingOrder.assignments || []).map(a => String(a.mfrId))])
+      if (!parties.has(String(resolvedResponsibleId))) return res.status(400).json({ error: 'Responsible person must be a company on this order' })
+    }
     const stages = existingAsgn.stages || []
     if (stages.length >= 50)
       return res.status(400).json({ error: 'This order already has the maximum of 50 stages' })
@@ -1276,7 +1352,7 @@ router.post('/:orderId/assignments/:mfrId/stages/insert', requireAuth, requireAd
 })
 
 // PATCH /api/orders/:orderId/assignments/:mfrId/stages/:stageIndex — update one stage
-router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, updateLimiter, async (req, res) => {
+router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, orderWriteGuard, updateLimiter, async (req, res) => {
   try {
     const { orderId, mfrId } = req.params
     if (!mongoose.Types.ObjectId.isValid(mfrId))
@@ -1292,7 +1368,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
 
     if (req.user.role === 'manufacturer' && String(req.user.id) !== String(mfrId))
       return res.status(403).json({ error: 'Forbidden' })
-    if (req.user.role === 'manufacturer' && (hasEta || hasStartDate))
+    if (req.user.role === 'manufacturer' && (hasEta || hasStartDate) && !mayEditPlanFor(req.user, mfrId))
       return res.status(403).json({ error: 'Only an admin can change planned dates' })
     if (isMasterOverride && !(req.user.role === 'admin' && req.user.adminType === 'master'))
       return res.status(403).json({ error: 'Only master admin can override a stage' })
@@ -1491,7 +1567,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
 // of `eta`/`startDate` in the body — only the fields actually present get updated, so a
 // partial update never silently nulls out the other date (both are required, never blank,
 // once an order is created).
-router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
+router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, requirePlanEditor, updateLimiter, async (req, res) => {
   try {
     const { orderId, mfrId } = req.params
     if (!mongoose.Types.ObjectId.isValid(mfrId))
@@ -1552,6 +1628,11 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
     const stageCount = existingAsgn.stages?.length || 0
     if (isNaN(stageIndex) || stageIndex < 0 || stageIndex >= stageCount)
       return res.status(400).json({ error: `Invalid stage index (0–${stageCount - 1})` })
+    // A manufacturer editing its own plan (standalone) may hand a step only to a company on this order.
+    if (hasResponsibleId && responsibleId && req.user.role !== 'admin') {
+      const parties = new Set([String(existingOrder.buyerId), ...(existingOrder.assignments || []).map(a => String(a.mfrId))])
+      if (!parties.has(String(responsibleId))) return res.status(400).json({ error: 'Responsible person must be a company on this order' })
+    }
 
     const currentStage = existingAsgn.stages[stageIndex]
 
@@ -1745,7 +1826,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
 // down by one, and re-points any evidence/PO documents that referenced a later stage.
 // Refuses if the target stage itself has linked documents, to avoid silently orphaning
 // evidence — remove those first.
-router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/delete', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
+router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/delete', requireAuth, requirePlanEditor, updateLimiter, async (req, res) => {
   try {
     const { orderId, mfrId } = req.params
     if (!mongoose.Types.ObjectId.isValid(mfrId))
@@ -1815,7 +1896,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/delete', requireAut
 // POST /api/orders/:orderId/assignments/:mfrId/stages/:stageIndex/updates — post a
 // ticket-style progress note on a stage. Same permission boundary as the general
 // stage-update route: admin always, or the manufacturer of this exact assignment.
-router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/updates', requireAuth, updateLimiter, async (req, res) => {
+router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/updates', requireAuth, orderWriteGuard, updateLimiter, async (req, res) => {
   try {
     const { orderId, mfrId } = req.params
     if (!mongoose.Types.ObjectId.isValid(mfrId))
@@ -1910,7 +1991,7 @@ const ITEMS_POPULATE = q => q
 
 // Add one item, or — with fromColourways — one per colourway on the order, so
 // the same three colour names aren't retyped on every per-colour step.
-router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items', requireAuth, updateLimiter, async (req, res) => {
+router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items', requireAuth, orderWriteGuard, updateLimiter, async (req, res) => {
   try {
     const ctx = await loadStageForItems(req, res)
     if (!ctx) return
@@ -1957,7 +2038,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items', requireAuth
   }
 })
 
-router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items/:lineIndex', requireAuth, updateLimiter, async (req, res) => {
+router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items/:lineIndex', requireAuth, orderWriteGuard, updateLimiter, async (req, res) => {
   try {
     const ctx = await loadStageForItems(req, res)
     if (!ctx) return
@@ -2019,7 +2100,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items/:lineIndex', 
   }
 })
 
-router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items/:lineIndex/delete', requireAuth, updateLimiter, async (req, res) => {
+router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items/:lineIndex/delete', requireAuth, orderWriteGuard, updateLimiter, async (req, res) => {
   try {
     const ctx = await loadStageForItems(req, res)
     if (!ctx) return
@@ -2055,7 +2136,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items/:lineIndex/de
 
 // POST /api/orders/:orderId/assignments/:mfrId/stages/:stageIndex/materials — add a
 // materials/PO checklist line. Managed by any admin, or the stage's own responsible person.
-router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials', requireAuth, updateLimiter, async (req, res) => {
+router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials', requireAuth, orderWriteGuard, updateLimiter, async (req, res) => {
   try {
     const { orderId, mfrId } = req.params
     if (!mongoose.Types.ObjectId.isValid(mfrId))
@@ -2115,7 +2196,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials', require
 
 // POST /api/orders/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineIndex —
 // update one materials line (status transitions, ordered/received qty, corrections).
-router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineIndex', requireAuth, updateLimiter, async (req, res) => {
+router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineIndex', requireAuth, orderWriteGuard, updateLimiter, async (req, res) => {
   try {
     const { orderId, mfrId } = req.params
     if (!mongoose.Types.ObjectId.isValid(mfrId))
@@ -2202,7 +2283,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineInde
 })
 
 // POST /api/orders/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineIndex/delete
-router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineIndex/delete', requireAuth, updateLimiter, async (req, res) => {
+router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineIndex/delete', requireAuth, orderWriteGuard, updateLimiter, async (req, res) => {
   try {
     const { orderId, mfrId } = req.params
     if (!mongoose.Types.ObjectId.isValid(mfrId))
@@ -2303,11 +2384,16 @@ router.post('/materials/bulk', requireAuth, requireAdmin, materialsBulkLimiter, 
         const order = await Order.findById(orderId).lean()
         if (!order) { failed++; results.push({ row: i, success: false, error: `Order "${orderId}" not found` }); continue }
 
-        const mfrUser = await User.findOne({ code: mfrCode, role: 'manufacturer' }, '_id').lean()
-        if (!mfrUser) { failed++; results.push({ row: i, success: false, error: `Unknown manufacturer code "${mfrCode}"` }); continue }
+        // The company's primary account, which is what assignments reference (a teammate shares the code).
+        const mfrPartyId = await partyIdByCode(mfrCode, 'manufacturer')
+        if (!mfrPartyId) { failed++; results.push({ row: i, success: false, error: `Unknown manufacturer code "${mfrCode}"` }); continue }
+        const mfrUser = { _id: new mongoose.Types.ObjectId(mfrPartyId) }
 
         const asgn = (order.assignments || []).find(a => a.mfrId?.toString() === mfrUser._id.toString())
         if (!asgn) { failed++; results.push({ row: i, success: false, error: `Manufacturer "${mfrCode}" is not assigned to order "${orderId}"` }); continue }
+        if (isStandalone() && !(await staffMayActForMfrs((order.assignments || []).map(a => a.mfrId)))) {
+          failed++; results.push({ row: i, success: false, error: NOT_ENABLED.error }); continue
+        }
 
         const stageIndex = (asgn.stages || []).findIndex(s => s.name?.toLowerCase() === String(stageName).toLowerCase())
         if (stageIndex === -1) { failed++; results.push({ row: i, success: false, error: `Stage "${stageName}" not found on this order/manufacturer` }); continue }
@@ -2344,7 +2430,7 @@ router.post('/materials/bulk', requireAuth, requireAdmin, materialsBulkLimiter, 
 })
 
 // PATCH /api/orders/:id — edit order top-level fields (admin only)
-router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
+router.post('/:id', requireAuth, requireOrderOwner, updateLimiter, async (req, res) => {
   try {
     const { product, styleNumber, category, season, totalQty, delivery, imageDataUrl, imageUrl, colourways, fabricDetails, callout, ecommerceLink } = req.body
     const orderId = req.params.id
@@ -2525,7 +2611,7 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
 })
 
 // DELETE /api/orders/:id — delete order (admin only)
-router.post('/:id/delete', requireAuth, requireAdmin, async (req, res) => {
+router.post('/:id/delete', requireAuth, requireOrderOwner, async (req, res) => {
   try {
     const orderId = req.params.id
     const { reason, error: reasonErr } = parseDropReason(req.body?.reason)

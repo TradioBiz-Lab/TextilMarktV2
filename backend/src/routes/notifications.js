@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { userKey } from '../lib/limiterKey.js'
 import mongoose from 'mongoose'
 import rateLimit from 'express-rate-limit'
 import { Notification, User } from '../db/index.js'
@@ -7,7 +8,7 @@ import { requireAuth } from '../middleware/auth.js'
 // 60 notifications per user per hour — prevents in-app notification spam
 const createNotifLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, max: 60,
-  keyGenerator: req => req.user?.id || req.ip,
+  keyGenerator: userKey,
   message: { error: 'Too many notification requests. Please wait.' },
   standardHeaders: true, legacyHeaders: false, validate: false,
 })

@@ -1,5 +1,5 @@
 import mongoose from 'mongoose'
-import { viewAsActor } from '../lib/requestContext.js'
+import { viewAsActor, teamActor } from '../lib/requestContext.js'
 
 const auditLogSchema = new mongoose.Schema({
   byUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
@@ -14,6 +14,10 @@ const auditLogSchema = new mongoose.Schema({
 // user, so the log used to show their name with no trace of the admin. Stamp the real actor here,
 // once, rather than in each of the many routes that write entries.
 auditLogSchema.pre('validate', function stampViewAs(next) {
+  // A teammate acts as their organization, so routes log the organization's primary account.
+  // Record the person who actually did it.
+  const team = teamActor()
+  if (team && String(this.byUser) === team.partyId) this.byUser = team.actorId
   const actor = viewAsActor()
   if (actor && !this.viewAsBy && String(this.byUser) !== String(actor.id)) {
     this.viewAsBy = actor.id

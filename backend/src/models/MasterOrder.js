@@ -9,6 +9,9 @@ const masterOrderSchema = new mongoose.Schema({
   orderName: { type: String, required: true, trim: true, maxlength: 200 },
   season:    { type: String, enum: SEASONS },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  // Role of the creating company's session (see Order.createdByRole). Null on master orders that
+  // predate it, which count as Tradio's.
+  createdByRole: { type: String, enum: ['admin', 'buyer', 'manufacturer'], default: null },
 }, { timestamps: true })
 
 masterOrderSchema.index({ buyerId: 1, createdAt: -1 })

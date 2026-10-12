@@ -3,6 +3,7 @@
 // non-admin (so buyers never heard about manufacturer updates) and was rate limited for
 // admins. Notifying is best-effort: it never fails or delays the action that triggered it.
 import { Notification, User } from '../db/index.js'
+import { isStandalone } from './platform.js'
 
 const idOf = v => (v == null ? null : String(v._id ?? v))
 
@@ -32,12 +33,24 @@ export async function adminIds() {
 }
 
 /**
- * Tell an order's buyer about something, and (when a manufacturer is the one acting)
- * every admin too, so progress is visible without opening each order. The actor is never
- * notified about their own action.
+ * Tell the right people about a change to an order. The actor is never notified about their own action.
+ *
+ * Tradio portal: the buyer, and every admin too when a manufacturer is the one acting, so progress is
+ * visible without opening each order.
+ *
+ * Standalone: the brand and the manufacturers on the order tell each other (a brand's change goes to
+ * the order's manufacturers, a manufacturer's to the brand; never to another manufacturer on the same
+ * order, who may be a competitor). Tradio staff hear only about manufacturers they may act for.
  */
 export async function notifyOrderChange(order, actor, { type = 'status', msg, orderId }) {
-  const recipients = [order?.buyerId]
-  if (actor?.role === 'manufacturer') recipients.push(...await adminIds())
+  const recipients = []
+  if (!isStandalone()) {
+    recipients.push(order?.buyerId)
+    if (actor?.role === 'manufacturer') recipients.push(...await adminIds())
+  } else {
+    if (actor?.role !== 'buyer') recipients.push(order?.buyerId)
+    if (actor?.role === 'buyer' || actor?.role === 'admin') recipients.push(...(order?.assignments || []).map(a => a.mfrId))
+    if (actor?.role === 'manufacturer' && actor.tradioEnabled && actor.tradioCanView !== false) recipients.push(...await adminIds())
+  }
   await notify(recipients, { type, msg, orderId }, { exceptUserId: actor?.id })
 }

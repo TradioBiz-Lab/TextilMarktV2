@@ -4,7 +4,8 @@ import jwt from 'jsonwebtoken'
 import rateLimit from 'express-rate-limit'
 import { User, AuditLog } from '../db/index.js'
 import { requireAuth } from '../middleware/auth.js'
-import { viewAsFlags } from './viewAs.js'  // sandbox-only, see viewAs.js
+import { viewAsFlags } from './viewAs.js'
+import { identityFor, publicUser } from '../lib/session.js'
 
 const router = Router()
 
@@ -48,7 +49,7 @@ const MAX_SESSION_SECONDS = 12 * 60 * 60
 const changePasswordLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 5,
-  keyGenerator: (req) => req.user?.id || req.ip,
+  keyGenerator: (req) => req.user?.actorId || req.user?.id || req.ip,
   message: { error: 'Too many password change attempts. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -83,6 +84,15 @@ router.post('/login', loginLimiter, loginEmailCeiling, async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' })
     }
 
+    // A buyer or manufacturer signs in as a person but acts as their organization (see
+    // lib/session.js). A deactivated organization gets the same answer as a wrong password.
+    const ident = await identityFor(user)
+    if (ident.orgId && !ident.orgActive) {
+      AuditLog.create({ byUser: user._id, action: 'Login Failed', detail: `Inactive organization: ${user.email}` }).catch(err => console.error('[auth] Audit log failed:', err))
+      return res.status(401).json({ error: 'Invalid email or password' })
+    }
+
+    // The token names the person. requireAuth resolves it to the party on every request.
     const payload = {
       id: user._id.toString(), email: user.email, role: user.role,
       adminType: user.adminType, name: user.name, company: user.company,
@@ -107,7 +117,7 @@ router.post('/login', loginLimiter, loginEmailCeiling, async (req, res) => {
     // SameSite=None cookies, so the frontend also stores this token and sends it as
     // an Authorization header — requireAuth already accepts either. Always included
     // (not just in non-prod) since prod is exactly where the cookie can fail.
-    res.json({ user: { ...payload, ...(await viewAsFlags(payload)) }, token })
+    res.json({ user: { ...publicUser({ ...payload, ...ident }), ...(await viewAsFlags(payload)) }, token })
   } catch (err) {
     res.status(500).json({ error: 'Server error' })
   }
@@ -124,7 +134,8 @@ router.post('/change-password', requireAuth, changePasswordLimiter, async (req, 
       return res.status(400).json({ error: 'Password must include uppercase, lowercase, a number, and a special character' })
     }
 
-    const user = await User.findById(req.user.id)
+    // The person's own account, never the organization's primary account a teammate acts as.
+    const user = await User.findById(req.user.actorId || req.user.id)
     if (!user) return res.status(404).json({ error: 'User not found' })
 
     if (!(await bcrypt.compare(currentPassword, user.passwordHash))) {
@@ -152,11 +163,13 @@ router.get('/me', requireAuth, async (req, res) => {
     return res.status(401).json({ error: 'Session expired — please log in again' })
   }
   const payload = {
-    id: req.user.id, email: req.user.email, role: req.user.role,
+    // The person, not the party: re-signing the party's id would turn a teammate into the owner on
+    // their first refresh.
+    id: req.user.actorId || req.user.id, email: req.user.email, role: req.user.role,
     adminType: req.user.adminType, name: req.user.name, company: req.user.company,
     code: req.user.code, mustChangePw: req.user.mustChangePw,
     // Keep a view-as session a view-as session when the cookie is refreshed.
-    ...(req.user.viewAsBy ? { viewAsBy: req.user.viewAsBy, viewAsByName: req.user.viewAsByName } : {}),
+    ...(req.user.viewAsBy ? { viewAsBy: req.user.viewAsBy, viewAsByName: req.user.viewAsByName, actingFor: !!req.user.actingFor } : {}),
     ...(startedAt ? { oiat: startedAt } : {}),
   }
   const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '60m' })
@@ -169,7 +182,7 @@ router.get('/me', requireAuth, async (req, res) => {
     path: '/',
   })
   // Same Authorization-header fallback as /login — see comment there.
-  res.json({ user: { ...req.user, ...(await viewAsFlags(req.user)) }, token })
+  res.json({ user: { ...req.user, ...publicUser(req.user), ...(await viewAsFlags(req.user)) }, token })
 })
 
 // POST /api/auth/logout — clear the httpOnly cookie

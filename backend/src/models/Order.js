@@ -264,6 +264,11 @@ const orderSchema = new mongoose.Schema({
   callout:  { type: String, default: '', maxlength: 500 },
   imageDataUrl: { type: String, default: null }, // base64 data URL — uploaded photo, capped at 1MB (see MAX_PRODUCT_PHOTO_SIZE)
   imageUrl:     { type: String, default: null, trim: true }, // optional external link fallback, e.g. a pasted public URL
+  // Who created the order: the creating company's party id (not the person; the audit log names
+  // them) and its role. It decides who may later edit or delete the order in the standalone
+  // product. Orders created before this field existed carry neither and count as Tradio's.
+  createdBy:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  createdByRole: { type: String, enum: ['admin', 'buyer', 'manufacturer'], default: null },
   assignments: [assignmentSchema],
 }, { timestamps: true })
 

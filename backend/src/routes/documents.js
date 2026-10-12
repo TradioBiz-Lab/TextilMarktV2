@@ -4,11 +4,17 @@ import { Document, Order, User, Notification, AuditLog, MasterOrder } from '../d
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { sendEmail, emailCertExpiry, emailBuyerDocumentReceived } from '../lib/email.js'
 import { notify, adminIds } from '../lib/notify.js'
+import { userKey } from '../lib/limiterKey.js'
+import { isStandalone } from '../lib/platform.js'
+import {
+  staffMayActForMfrs, adminMayWriteDoc, adminMayViewDoc, adminDocVisibility,
+  adminMayManageMasterOrder, enabledMfrPartyIds, NOT_ENABLED,
+} from '../lib/authz.js'
 
 // Max 20 document uploads per user per hour — prevents storage abuse
 const uploadLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, max: 20,
-  keyGenerator: req => req.user?.id || req.ip,
+  keyGenerator: userKey,
   message: { error: 'Too many document uploads. Please wait before uploading again.' },
   standardHeaders: true, legacyHeaders: false, validate: false,
 })
@@ -88,7 +94,15 @@ function validateExternalUrl(externalUrl) {
   }
 }
 
-async function assertDocAccess(user, { orderId, mfrId, type }) {
+async function assertDocAccess(user, { orderId, mfrId, type, masterOrderId }) {
+  // Standalone: Tradio staff upload only for manufacturers they may act for (a master order's file
+  // is checked against that master order instead, by the route).
+  if (user.role === 'admin' && isStandalone() && !masterOrderId) {
+    const mfrs = []
+    if (mfrId) mfrs.push(mfrId)
+    if (orderId) mfrs.push(...((await Order.findById(orderId, 'assignments.mfrId').lean())?.assignments || []).map(a => a.mfrId))
+    if (!(await staffMayActForMfrs(mfrs))) throw Object.assign(new Error(NOT_ENABLED.error), { status: 403 })
+  }
   if (user.role === 'buyer') {
     // Buyers may not set mfrId — that would let them attach docs to a manufacturer they chose
     if (mfrId)
@@ -151,7 +165,8 @@ router.get('/', requireAuth, async (req, res) => {
     const populateUploader = q => q.select(LIST_FIELDS).populate('uploadedBy', 'name role adminType company')
 
     if (req.user.role === 'admin') {
-      docs = await populateUploader(Document.find({ isActive: true }).sort({ createdAt: -1 })).lean()
+      // Standalone: nothing tied to a company that switched Tradio's view access off.
+      docs = await populateUploader(Document.find({ isActive: true, ...(await adminDocVisibility()) }).sort({ createdAt: -1 })).lean()
 
     } else if (req.user.role === 'buyer') {
       const buyerOrders = await Order.find({ buyerId: req.user.id }, { _id: 1, 'assignments.mfrId': 1 }).lean()
@@ -200,11 +215,16 @@ router.post('/cert-expiry-check', requireAuth, requireAdmin, async (req, res) =>
     const in30Days = new Date(today)
     in30Days.setDate(in30Days.getDate() + 30)
 
-    const certs = await Document.find({
+    let certs = await Document.find({
       isActive: true,
       type: { $in: CERT_TYPES },
       expiryDate: { $ne: null },
     }).lean()
+    // Standalone: Tradio chases certificates only for the manufacturers it may act for.
+    if (isStandalone()) {
+      const ok = new Set(await enabledMfrPartyIds())
+      certs = certs.filter(c => c.mfrId && ok.has(String(c.mfrId)))
+    }
 
     const admins = await User.find({ role: 'admin', isActive: true }, { _id: 1, email: 1 }).lean()
     const adminIds = admins.map(a => a._id.toString())
@@ -300,6 +320,7 @@ router.get('/cert-summary', requireAuth, requireAdmin, async (req, res) => {
     const certs = await Document.find({
       isActive: true,
       type: { $in: CERT_TYPES },
+      ...(await adminDocVisibility()),
     }).sort({ expiryDate: 1 }).lean()
 
     res.json(certs.map(d => mapDoc(d, false)))
@@ -314,6 +335,8 @@ router.get('/:id/data', requireAuth, async (req, res) => {
   try {
     const doc = await Document.findById(req.params.id).lean()
     if (!doc || !doc.isActive) return res.status(404).json({ error: 'Document not found' })
+    // A company that switched Tradio's view access off does not exist as far as Tradio staff can tell.
+    if (req.user.role === 'admin' && !(await adminMayViewDoc(doc))) return res.status(404).json({ error: 'Document not found' })
 
     if (req.user.role === 'buyer') {
       // Allow access to docs they uploaded themselves (e.g. via Submit Requirement)
@@ -364,11 +387,17 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
     if (typeof type !== 'string' || typeof name !== 'string') return res.status(400).json({ error: 'Invalid input types' })
     if (name.length > 300 || type.length > 50) return res.status(400).json({ error: 'Input too long' })
     if (!Document.schema.path('type').enumValues.includes(type)) return res.status(400).json({ error: `Unknown document type "${type}"` })
-    // Only Tradio attaches files to a whole master order (the customer sees them).
+    // A file on a whole master order (the customer sees it). Tradio portal: admins only. Standalone:
+    // Tradio staff where they may act, the master order's own brand, or the company that created it.
     if (masterOrderId != null && masterOrderId !== '') {
-      if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only an admin can attach a file to a master order' })
-      if (typeof masterOrderId !== 'string' || !(await MasterOrder.exists({ _id: masterOrderId })))
-        return res.status(400).json({ error: 'Master order not found' })
+      if (typeof masterOrderId !== 'string') return res.status(400).json({ error: 'Master order not found' })
+      const mo = await MasterOrder.findById(masterOrderId, 'buyerId createdBy createdByRole').lean()
+      const mayAttach = !isStandalone() || !mo ? req.user.role === 'admin'
+        : req.user.role === 'admin' ? await adminMayManageMasterOrder(mo)
+        : (req.user.role === 'buyer' && String(mo.buyerId) === String(req.user.id))
+          || (String(mo.createdBy) === String(req.user.id) && mo.createdByRole === req.user.role)
+      if (!mayAttach) return res.status(403).json({ error: isStandalone() ? 'You cannot attach a file to this master order' : 'Only an admin can attach a file to a master order' })
+      if (!mo) return res.status(400).json({ error: 'Master order not found' })
     }
     if (issuer && typeof issuer === 'string' && issuer.length > 200)
       return res.status(400).json({ error: 'Issuer name too long (max 200 chars)' })
@@ -430,7 +459,7 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
     }
 
     try {
-      await assertDocAccess(req.user, { orderId, mfrId, type })
+      await assertDocAccess(req.user, { orderId, mfrId, type, masterOrderId })
     } catch (e) {
       return res.status(e.status || 403).json({ error: e.message })
     }
@@ -476,8 +505,18 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
 
     // Document uploaded to an order: tell its buyer and every admin (not the uploader).
     if (orderId) {
-      const target = await Order.findById(orderId, { buyerId: 1 }).lean()
-      await notify([target?.buyerId, ...await adminIds()], { type: 'order', msg: `New document uploaded to order ${orderId}: ${name}`, orderId }, { exceptUserId: req.user.id })
+      const target = await Order.findById(orderId, { buyerId: 1, 'assignments.mfrId': 1 }).lean()
+      let recipients
+      if (!isStandalone()) recipients = [target?.buyerId, ...await adminIds()]
+      else {
+        // The brand and the manufacturers tell each other, never one manufacturer about another's
+        // file; Tradio staff only hear about manufacturers they may act for.
+        const mfrs = (target?.assignments || []).map(a => a.mfrId)
+        recipients = [target?.buyerId]
+        if (req.user.role !== 'manufacturer') recipients.push(...(mfrId ? [mfrId] : mfrs))
+        if (await staffMayActForMfrs(mfrs)) recipients.push(...await adminIds())
+      }
+      await notify(recipients, { type: 'order', msg: `New document uploaded to order ${orderId}: ${name}`, orderId }, { exceptUserId: req.user.id })
     }
 
     res.status(201).json(mapDoc(doc.toObject(), false))
@@ -496,6 +535,7 @@ router.post('/:id', requireAuth, uploadLimiter, async (req, res) => {
     const isOwner = doc.uploadedBy && doc.uploadedBy.toString() === req.user.id
     if (req.user.role !== 'admin' && !isOwner)
       return res.status(403).json({ error: 'You can only edit your own documents' })
+    if (req.user.role === 'admin' && !(await adminMayWriteDoc(doc))) return res.status(403).json(NOT_ENABLED)
 
     const { name, notes, issuer, issueDate, expiryDate, dataUrl, externalUrl, fileName, fileSize, mimeType, removeFile } = req.body
 
@@ -580,6 +620,7 @@ router.post('/:id/delete', requireAuth, async (req, res) => {
     const isOwner = doc.uploadedBy && doc.uploadedBy.toString() === req.user.id
     if (req.user.role !== 'admin' && !isOwner)
       return res.status(403).json({ error: 'You can only delete your own documents' })
+    if (req.user.role === 'admin' && !(await adminMayWriteDoc(doc))) return res.status(403).json(NOT_ENABLED)
 
     doc.isActive = false
     await doc.save()

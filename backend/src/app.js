@@ -10,6 +10,8 @@ import './middleware/asyncErrors.js'
 import { connectDB } from './db/index.js'
 import { sanitizeBody } from './middleware/auth.js'
 import { redact } from './lib/redact.js'
+import { platformMode } from './lib/platform.js'
+import { runStartupMigrations } from './lib/migrate.js'
 import authRouter          from './routes/auth.js'
 import ordersRouter        from './routes/orders.js'
 import documentsRouter     from './routes/documents.js'
@@ -26,7 +28,9 @@ import inboundRouter from './routes/inbound.js'
 import reviewRouter from './routes/review.js'
 import floorRouter from './routes/floor.js'
 import droppedRouter from './routes/dropped.js'
-import viewAsRouter from './routes/viewAs.js'  // sandbox-only, flag-gated (ENABLE_VIEW_AS)
+import orgsRouter from './routes/orgs.js'
+import partnersRouter from './routes/partners.js'
+import viewAsRouter from './routes/viewAs.js'  // on in standalone mode; sandbox-only flag (ENABLE_VIEW_AS) otherwise
 
 // ── Validate required env vars at startup ──────────────────────────────────
 const isProd = process.env.NODE_ENV === 'production'
@@ -180,6 +184,8 @@ app.use('/api/inbound',       inboundRouter)
 app.use('/api/review',        reviewRouter)
 app.use('/api/floor',         floorRouter)
 app.use('/api/dropped',       droppedRouter)
+app.use('/api/orgs',          orgsRouter)
+app.use('/api/partners',      partnersRouter)
 
 // ── Health check ────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
@@ -240,9 +246,10 @@ const PORT = parseInt(process.env.X_ZOHO_CATALYST_LISTEN_PORT || process.env.POR
 // connect to live data.
 if (!isTest) {
   connectDB()
-    .then(() => {
+    .then(async () => {
+      await runStartupMigrations()
       const server = app.listen(PORT, () => {
-        console.log(JSON.stringify({ ts: new Date().toISOString(), event: 'server_start', port: PORT, env: isProd ? 'production' : 'development' }))
+        console.log(JSON.stringify({ ts: new Date().toISOString(), event: 'server_start', port: PORT, env: isProd ? 'production' : 'development', mode: platformMode() }))
       })
 
       const shutdown = (signal) => {

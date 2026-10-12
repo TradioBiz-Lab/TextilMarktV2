@@ -7,6 +7,8 @@ import { applyStageChange, revertStageChange } from '../lib/inbound/applyStage.j
 import { loadActiveOrders } from '../lib/inbound/pipeline.js'
 import { mapStageIndex } from '../lib/inbound/matching.js'
 import { createEvidence, retractEvidence } from '../lib/inbound/evidence.js'
+import { isStandalone } from '../lib/platform.js'
+import { staffMayActForMfrs, enabledMfrPartyIds, NOT_ENABLED } from '../lib/authz.js'
 
 const router = Router()
 const LIGHT = '-dataUrl'
@@ -25,7 +27,11 @@ router.get('/queue', requireAuth, requireAdmin, async (_req, res) => {
   // A review that died part-way (process killed, deploy mid-request) leaves its message 'reviewing',
   // which hides it from everyone. Anything held longer than a few minutes goes back to the queue.
   await InboundMessage.updateMany({ state: 'reviewing', updatedAt: { $lt: new Date(Date.now() - 5 * 60 * 1000) } }, { $set: { state: 'needs_review' } })
-  const msgs = await InboundMessage.find({ state: 'needs_review' }).select(LIGHT).sort({ createdAt: 1 }).limit(100).lean()
+  // Standalone: reviewing a message changes a factory's own records, so Tradio sees the queue only for
+  // manufacturers it may act for (a factory reviews its own messages), and never unidentified senders.
+  const filter = { state: 'needs_review' }
+  if (isStandalone()) filter.factoryId = { $in: await enabledMfrPartyIds() }
+  const msgs = await InboundMessage.find(filter).select(LIGHT).sort({ createdAt: 1 }).limit(100).lean()
   const ids = [...new Set(msgs.map(m => String(m.factoryId)).filter(i => i !== 'null'))]
   const users = await User.find({ _id: { $in: ids } }, 'name company').lean()
   const factories = Object.fromEntries(users.map(u => [String(u._id), { id: String(u._id), name: u.name, company: u.company }]))
@@ -37,8 +43,9 @@ router.get('/queue', requireAuth, requireAdmin, async (_req, res) => {
 // GET /api/review/:id/media - raw media for the preview (admin, or the brand that owns the order)
 router.get('/:id/media', requireAuth, async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).end()
-  const m = await InboundMessage.findById(req.params.id, 'dataUrl mimeType orderId').lean()
+  const m = await InboundMessage.findById(req.params.id, 'dataUrl mimeType orderId factoryId').lean()
   if (!m?.dataUrl) return res.status(404).end()
+  if (req.user.role === 'admin' && isStandalone() && !(await staffMayActForMfrs([m.factoryId].filter(Boolean)))) return res.status(404).end()
   if (req.user.role !== 'admin') {
     const ok = req.user.role === 'buyer' && m.orderId && await Order.exists({ _id: m.orderId, buyerId: req.user.id })
     if (!ok) return res.status(403).end()
@@ -70,6 +77,10 @@ const release = id => InboundMessage.updateOne({ _id: id, state: 'reviewing' }, 
 async function withClaim(req, res, fn) {
   const msg = await claim(req.params.id)
   if (!msg) return res.status(404).json({ error: 'Message not found or already reviewed' })
+  if (isStandalone() && !(await staffMayActForMfrs([msg.factoryId].filter(Boolean)))) {
+    await release(msg._id).catch(() => {})
+    return res.status(403).json(NOT_ENABLED)
+  }
   let finished = false
   let outcome = { status: 500, body: { error: 'Server error' } }
   try {

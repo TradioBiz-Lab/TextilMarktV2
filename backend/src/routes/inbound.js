@@ -6,6 +6,8 @@ import { requireAuth } from '../middleware/auth.js'
 import { InboundMessage, User } from '../db/index.js'
 import { getInboundAdapter } from '../lib/inbound/adapters.js'
 import { ingestMessage, IMAGE_MIME, DOC_MIME, AUDIO_MIME, MAX_MEDIA_BYTES } from '../lib/inbound/pipeline.js'
+import { isStandalone } from '../lib/platform.js'
+import { staffMayActForMfrs, NOT_ENABLED } from '../lib/authz.js'
 
 const router = Router()
 const skipInTest = () => process.env.NODE_ENV === 'test'
@@ -15,7 +17,7 @@ const skipInTest = () => process.env.NODE_ENV === 'test'
 // real messages from every factory at once.
 const limiter = rateLimit({
   windowMs: 60 * 60 * 1000, max: 300,
-  keyGenerator: req => req.user?.id ? `user|${req.user.id}` : req.ip,
+  keyGenerator: req => req.user?.id ? `user|${req.user.actorId || req.user.id}` : req.ip,
   message: { error: 'Too many messages. Please wait a bit.' },
   standardHeaders: true, legacyHeaders: false, validate: false, skip: skipInTest,
 })
@@ -75,6 +77,8 @@ router.post('/upload', requireAuth, limiter, async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(factoryId)) return res.status(400).json({ error: 'factoryId required' })
     const f = await User.findOne({ _id: factoryId, role: 'manufacturer' }, '_id').lean()
     if (!f) return res.status(404).json({ error: 'Factory not found' })
+    // Standalone: Tradio relays a photo only for a factory it may act for.
+    if (isStandalone() && !(await staffMayActForMfrs([factoryId]))) return res.status(403).json(NOT_ENABLED)
   } else return res.status(403).json({ error: 'Forbidden' })
 
   if (!['image', 'audio', 'document', 'text'].includes(type)) return res.status(400).json({ error: 'Invalid type' })
