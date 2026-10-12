@@ -49,16 +49,18 @@ export function tokenFor(user) {
  * @returns {{status: number, body: any}} — body is parsed JSON, or raw text
  * when the response isn't JSON (404 HTML, empty bodies).
  */
-export async function req(method, path, { token, body } = {}) {
+export async function req(method, path, { token, body, headers, form } = {}) {
   const res = await fetch(`${baseUrl}${path}`, {
     method,
     headers: {
       // Mirrors the frontend, which sends text/plain to dodge the CORS
-      // preflight; express.json() is configured to parse both.
-      'Content-Type': 'text/plain;charset=UTF-8',
+      // preflight; express.json() is configured to parse both. `form` posts
+      // a urlencoded body instead, the way a provider's webhook does.
+      'Content-Type': form ? 'application/x-www-form-urlencoded' : 'text/plain;charset=UTF-8',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(headers || {}),
     },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    ...(form ? { body: new URLSearchParams(form).toString() } : body !== undefined ? { body: JSON.stringify(body) } : {}),
   })
   const text = await res.text()
   let parsed

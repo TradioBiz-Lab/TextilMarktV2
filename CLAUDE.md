@@ -352,6 +352,21 @@ admin enables them in User Setup.
     (`saveNow`); a line is tied to the stock item it is (`stockMatch`: the exact name, or a one-tap suggestion; nothing is
     guessed, two colours of one cloth are two items). `lib/inventory.js` holds the form state and helpers (tested).
     Receiving from a PO opens this page (`onNavigate('grn', { po })`); the old receive dialog is gone.
+  - *Reading a challan or invoice.* `POST /api/grns/scan` (and a WhatsApp photo or PDF) sends the document to Claude
+    (`lib/ai/goodsdoc.js`: what is printed, never a guess), matches it to the company's own open POs and suppliers
+    (`lib/inventory/match.js`: the PO number it quotes, else the supplier, lines paired by their words and unit; an unsure match
+    is left out), and makes a DRAFT note (`lib/inventory/ingest.js`) with the photo kept as its challan evidence and warnings for
+    sums that do not add up. Nothing is ever posted from a document. `npm run dev:local` sets `GOODSDOC_SAMPLE=1`, so any file
+    reads as a sample challan and the whole flow can be walked without an API key (never honoured in production).
+  - *WhatsApp through Twilio* (`lib/inbound/twilio.js`, `routes/inbound.js`). Settings: `WHATSAPP_PROVIDER=twilio`,
+    `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM`, and `TWILIO_WEBHOOK_URL` if the public address differs
+    from what the server sees. Point the number's incoming-message webhook at `/api/inbound/webhook/twilio`. A call is genuine
+    only with a valid `X-Twilio-Signature` (Twilio cannot send our shared-secret header); it is answered at once and processed after
+    (Twilio waits 15 s); a retry of the same `MessageSid` is ignored; media is fetched only from `api.twilio.com` (then the one
+    redirect to Twilio or Amazon storage), capped at 8 MB. A document or a captioned photo goes to goods received first; an
+    uncaptioned photo is read as a production photo and only an unrecognised one is tried as a challan. The reply is free text, so
+    it works within 24 hours of the factory writing; messaging first needs an approved template (not built). Test seams:
+    `setGoodsDocReaderForTests`, `setTwilioFetchForTests`, `drainInbound`.
 - **Run it locally.** `npm run dev:local` (backend) starts an ephemeral in-memory mongod, seeds a
   standalone environment and blanks the email key, so nothing touches Atlas and no email is sent. It
   uses the same seed logins as `npm run seed:sandbox` (never run that against the shared sandbox DB

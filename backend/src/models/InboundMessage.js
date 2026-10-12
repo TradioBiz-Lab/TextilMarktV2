@@ -30,6 +30,9 @@ const inboundMessageSchema = new mongoose.Schema({
   parsed:      { type: mongoose.Schema.Types.Mixed, default: null },
   confidence:  { type: Number, default: null },
   orderId:     { type: String, default: null },
+  // The draft goods received note a challan or invoice photo became (standalone product), and the provider's own message id (a retry is not processed twice).
+  grnId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Grn', default: null },
+  externalId:  { type: String, default: null },
   stageApplied: { type: String, default: null },
   state:       { type: String, enum: MESSAGE_STATES, default: 'new' },
   reviewReason: { type: String, default: '' },
@@ -41,6 +44,7 @@ const inboundMessageSchema = new mongoose.Schema({
 }, { timestamps: true })
 
 inboundMessageSchema.index({ state: 1, createdAt: 1 })
+inboundMessageSchema.index({ externalId: 1 }, { unique: true, partialFilterExpression: { externalId: { $type: 'string' } } })
 inboundMessageSchema.index({ orderId: 1, createdAt: -1 })
 inboundMessageSchema.index({ factoryId: 1, createdAt: -1 })
 

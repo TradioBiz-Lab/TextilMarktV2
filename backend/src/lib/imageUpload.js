@@ -25,3 +25,25 @@ export function checkPhoto(dataUrl, declaredMime) {
   if (!SIGNATURES[mimeType](Buffer.from(b64.slice(0, 32), 'base64'))) return { ok: false, error: 'The photo contents do not match its declared type' }
   return { ok: true, mimeType, size }
 }
+
+export const MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
+
+/**
+ * A photo, or a PDF, of a document a person wants read (a challan or an invoice). Same checks as a photo, plus PDF,
+ * with a larger size limit.
+ * @returns {{ ok: true, mimeType: string, size: number, buffer: Buffer } | { ok: false, error: string }}
+ */
+export function checkDocumentFile(dataUrl) {
+  if (typeof dataUrl !== 'string') return { ok: false, error: 'Send the document as a data URL' }
+  const head = /^data:(image\/(?:jpeg|png|webp)|application\/pdf);base64,/i.exec(dataUrl.slice(0, 40))
+  if (!head) return { ok: false, error: 'Only a photo (JPG, PNG, WebP) or a PDF can be read' }
+  const mimeType = head[1].toLowerCase()
+  const b64 = dataUrl.slice(head[0].length)
+  const size = Math.floor((b64.length * 3) / 4) - (b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0)
+  if (size <= 0) return { ok: false, error: 'The file is empty' }
+  if (size > MAX_DOCUMENT_BYTES) return { ok: false, error: 'The file is too large (most 8 MB). Try a lower quality photo' }
+  const buffer = Buffer.from(b64, 'base64')
+  const sniff = mimeType === 'application/pdf' ? buffer.subarray(0, 4).toString('latin1') === '%PDF' : SIGNATURES[mimeType](buffer.subarray(0, 32))
+  if (!sniff) return { ok: false, error: 'The file contents do not match its type' }
+  return { ok: true, mimeType, size, buffer }
+}

@@ -28,6 +28,8 @@ const env = {
   SEED_STANDALONE: '1',
   // No outbound mail from a local run, whatever a developer's .env holds.
   RESEND_API_KEY: '',
+  // Scanning a challan works without an API key: any document reads as a sample challan (see lib/ai/goodsdoc.js).
+  GOODSDOC_SAMPLE: '1',
 }
 console.log(`[dev-local] ephemeral MongoDB at ${env.MONGO_DB_URI}`)
 

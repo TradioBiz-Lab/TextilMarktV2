@@ -983,6 +983,8 @@ between states, never deletes it.
   parsed       Mixed | null        the model's extracted JSON
   confidence   Number | null       0..1; below 0.8 goes to the review queue
   orderId      String | null       matched order
+  grnId        ObjectId → grns | null   the draft goods received note a challan or invoice photo became (standalone product)
+  externalId   String | null       the provider's own message id (Twilio MessageSid); unique, so a retry is not taken in twice
   stageApplied String | null
   state        String              enum: ["new", "auto_applied", "needs_review", "applied", "rejected"], default "new"
   reviewReason String
@@ -995,7 +997,10 @@ between states, never deletes it.
 }
 ```
 
-**Indexes:** `{ state: 1, createdAt: 1 }`, `{ orderId: 1, createdAt: -1 }`, `{ factoryId: 1, createdAt: -1 }`
+**Indexes:** `{ state: 1, createdAt: 1 }`, `{ orderId: 1, createdAt: -1 }`, `{ factoryId: 1, createdAt: -1 }`, `{ externalId: 1 }` (unique where set)
+
+A message that is a supplier's challan or invoice (standalone product) is stored `auto_applied` with `grnId` set: the draft note it
+made is the factory's to check and post, so it never enters the admin review queue.
 
 An update never moves a stage backwards. The collection is created empty on first connect;
 no migration is needed.

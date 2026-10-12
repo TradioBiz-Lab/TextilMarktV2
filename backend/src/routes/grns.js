@@ -11,7 +11,8 @@ import { userKey } from '../lib/limiterKey.js'
 import { requireInventory } from '../lib/procurement.js'
 import { createGrn, prepareGrn, postGrn, acceptedOf, outstandingOf } from '../lib/inventory/grn.js'
 import { renderGrnPdf } from '../lib/pdf/grn.js'
-import { checkPhoto } from '../lib/imageUpload.js'
+import { checkPhoto, checkDocumentFile } from '../lib/imageUpload.js'
+import { draftFromDocument } from '../lib/inventory/ingest.js'
 import { ATTACHMENT_KINDS } from '../models/Attachment.js'
 import { poView } from './purchaseOrders.js'
 
@@ -26,6 +27,7 @@ const limiter = (max, message) => rateLimit({
 const writeLimiter = limiter(400, 'Too many changes. Please wait.')
 const postLimiter = limiter(120, 'Too many goods received notes posted. Please wait.')
 const photoLimiter = limiter(240, 'Too many photos. Please wait.')
+const scanLimiter = limiter(40, 'Too many documents read. Please wait.')
 
 const OBJECT_ID = /^[a-f0-9]{24}$/
 const MAX_PHOTOS = 12
@@ -47,6 +49,7 @@ export const grnView = (g, extra = {}) => ({
   supplierId: g.supplierId ? String(g.supplierId) : null, supplierName: g.supplierName || '', supplierGstin: g.supplierGstin || '',
   challanNo: g.challanNo || '', challanDate: g.challanDate || null, vehicleNo: g.vehicleNo || '', receivedOn: g.receivedOn || null,
   note: g.note || '', lines: (g.lines || []).map(lineView), hasPdf: !!g.documentId,
+  read: g.extraction ? { confidence: g.extraction.confidence ?? null, docType: g.extraction.docType || null, matchReason: g.extraction.matchReason || null, warnings: g.extraction.warnings || [] } : null,
   postedAt: g.postedAt || null, createdAt: g.createdAt, updatedAt: g.updatedAt, ...extra,
 })
 
@@ -72,7 +75,7 @@ router.get('/', async (req, res) => {
     const filter = { ...mine(req) }
     if (['draft', 'posting', 'posted'].includes(req.query.status)) filter.status = req.query.status
     if (typeof req.query.poId === 'string' && req.query.poId) filter.poId = req.query.poId
-    const grns = await Grn.find(filter, '-extraction').sort({ createdAt: -1 }).limit(300).lean()
+    const grns = await Grn.find(filter, '-extraction.printed').sort({ createdAt: -1 }).limit(300).lean()
     const counts = grns.length ? await Attachment.aggregate([
       { $match: { ownerOrgId: grns[0].ownerOrgId, refType: 'grn', refId: { $in: grns.map(g => String(g._id)) } } },
       { $group: { _id: '$refId', n: { $sum: 1 } } },
@@ -80,6 +83,20 @@ router.get('/', async (req, res) => {
     const byId = new Map(counts.map(c => [c._id, c.n]))
     res.json(grns.map(g => summaryView(g, byId.get(String(g._id)) || 0)))
   } catch (err) { console.error('[grn]', err); fail(res, 500, 'Server error') }
+})
+
+// POST /api/grns/scan { dataUrl } - a photo or PDF of the supplier's challan or invoice: it is read and a DRAFT note is made
+// from it (matched to a purchase order when it can be). Nothing is posted: the factory checks the draft first.
+router.post('/scan', scanLimiter, async (req, res) => {
+  try {
+    const file = checkDocumentFile(req.body?.dataUrl)
+    if (!file.ok) return fail(res, 400, file.error)
+    const made = await draftFromDocument(req, { buffer: file.buffer, mimeType: file.mimeType, source: 'ai_review', photoDataUrl: file.mimeType.startsWith('image/') ? req.body.dataUrl : null })
+    if (!made.ok) return fail(res, made.status, made.error)
+    await AuditLog.create({ byUser: req.user.id, action: 'Goods Received Note Read From A Document', detail: `A draft goods received note was read from a document by ${req.user.name}` }).catch(() => {})
+    const photos = await Attachment.find({ ownerOrgId: req.user.orgId, refType: 'grn', refId: String(made.grn._id) }, '-dataUrl').lean()
+    res.status(201).json(grnView(made.grn, { po: await poContext(req, made.grn.poId), photos: photos.map(photoView), warnings: made.warnings }))
+  } catch (err) { console.error('[grn scan]', err); fail(res, 500, 'The document could not be read. Try again') }
 })
 
 // POST /api/grns - start a note ({ poId?, lines?, ... }); { post: true } posts it in the same step
@@ -101,7 +118,7 @@ router.post('/', writeLimiter, async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     if (!idOk(req, res)) return
-    const g = await Grn.findOne({ _id: req.params.id, ...mine(req) }, '-extraction').lean()
+    const g = await Grn.findOne({ _id: req.params.id, ...mine(req) }, '-extraction.printed').lean()
     if (!g) return fail(res, 404, 'Goods received note not found')
     const photos = await Attachment.find({ ownerOrgId: req.user.orgId, refType: 'grn', refId: String(g._id) }, '-dataUrl').sort({ createdAt: 1 }).lean()
     res.json(grnView(g, { po: await poContext(req, g.poId), photos: photos.map(photoView) }))
@@ -117,7 +134,7 @@ router.post('/:id', writeLimiter, async (req, res) => {
     if (existing.status !== 'draft') return fail(res, 409, existing.status === 'posted' ? 'A posted goods received note cannot be edited' : 'This note is being posted')
     const p = await prepareGrn(req, req.body, existing)
     if (!p.ok) return fail(res, p.status, p.error)
-    const g = await Grn.findOneAndUpdate({ _id: existing._id, ...mine(req), status: 'draft' }, { $set: p.data }, { new: true, projection: '-extraction' }).lean()
+    const g = await Grn.findOneAndUpdate({ _id: existing._id, ...mine(req), status: 'draft' }, { $set: p.data }, { new: true, projection: '-extraction.printed' }).lean()
     if (!g) return fail(res, 409, 'This note changed while you were editing. Reload it and try again')
     res.json(grnView(g, { po: await poContext(req, g.poId) }))
   } catch (err) { console.error('[grn]', err); fail(res, 500, 'Server error') }

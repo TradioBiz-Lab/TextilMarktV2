@@ -8,6 +8,7 @@ import { getInboundAdapter } from '../lib/inbound/adapters.js'
 import { ingestMessage, IMAGE_MIME, DOC_MIME, AUDIO_MIME, MAX_MEDIA_BYTES } from '../lib/inbound/pipeline.js'
 import { isStandalone } from '../lib/platform.js'
 import { staffMayActForMfrs, NOT_ENABLED } from '../lib/authz.js'
+import { twilioConfig, validTwilioSignature } from '../lib/inbound/twilio.js'
 
 const router = Router()
 const skipInTest = () => process.env.NODE_ENV === 'test'
@@ -35,14 +36,43 @@ const mimeAllowed = (type, mime) =>
 const publicMessage = m => ({
   id: String(m._id), type: m.type, state: m.state, orderId: m.orderId,
   stageApplied: m.stageApplied, confidence: m.confidence, hasDefect: m.hasDefect,
-  reviewReason: m.reviewReason, rawText: m.rawText,
+  reviewReason: m.reviewReason, rawText: m.rawText, grnId: m.grnId ? String(m.grnId) : null,
   description: m.parsed?.description || null,
 })
 
+// Messages being worked on after their webhook was answered. Twilio waits only 15 seconds for a reply and reading a
+// document can take longer, so it is answered first and processed after; tests wait for this to drain.
+const inFlight = new Set()
+export const drainInbound = () => Promise.allSettled([...inFlight])
+
+async function process_(adapter, body) {
+  // A retry of a message already taken in is not taken in again.
+  if (body?.MessageSid && await InboundMessage.exists({ externalId: String(body.MessageSid).slice(0, 64) })) return null
+  const n = await adapter.normalize(body)
+  if (n.type !== 'text' && !mimeAllowed(n.type, n.mime_type)) throw new Error('Unsupported media type')
+  if (n.media_bytes && n.media_bytes.length > MAX_MEDIA_BYTES) throw new Error('Media too large')
+  if (typeof n.text === 'string' && n.text.length > 2000) n.text = n.text.slice(0, 2000)
+  return ingestMessage({
+    senderNumber: n.sender_number, channel: 'whatsapp', type: n.type,
+    buffer: n.media_bytes, mimeType: n.mime_type, text: n.text, receivedAt: n.received_at, externalId: n.message_id || null,
+  })
+}
+
 // POST /api/inbound/webhook/:provider
-// Provider-agnostic entry point. The shared secret keeps strangers from
-// feeding the pipeline; each provider's payload is normalized by its adapter.
+// Provider-agnostic entry point; each provider's payload is normalized by its adapter. A call is proved genuine in the
+// provider's own way: the shared secret header for the mock, Twilio's request signature for Twilio (it cannot send a
+// header of ours).
 router.post('/webhook/:provider', webhookLimiter, async (req, res) => {
+  if (req.params.provider === 'twilio') {
+    const adapter = getInboundAdapter('twilio')
+    if (!adapter) return res.status(404).json({ error: 'Unknown provider' })
+    const url = process.env.TWILIO_WEBHOOK_URL || `${req.protocol}://${req.get('host')}${req.originalUrl}`
+    if (!validTwilioSignature(twilioConfig().token, req.get('X-Twilio-Signature'), url, req.body || {})) return res.status(403).json({ error: 'Forbidden' })
+    const job = process_(adapter, req.body).catch(err => console.error('[inbound] twilio message not taken in:', err.message))
+    inFlight.add(job); job.finally(() => inFlight.delete(job))
+    return res.status(200).type('text/xml').send('<Response/>')
+  }
+
   const secret = process.env.INBOUND_WEBHOOK_SECRET
   if (!secret) return res.status(503).json({ error: 'Inbound webhook is not configured' })
   const given = String(req.headers['x-webhook-secret'] || '')

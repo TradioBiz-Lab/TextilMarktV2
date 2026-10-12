@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Plus, Trash2, Check, Download, ReceiveGoods } from '../../icons.jsx'
+import { ArrowLeft, Plus, Trash2, Check, Download, ReceiveGoods, Camera, Sparkles } from '../../icons.jsx'
 import { T } from '../../constants.js'
-import { Btn, Card, Alert, Input, Textarea, SectionLabel, LoadingScreen, FlexRow, FileViewer, useToast } from '../../components/ui.jsx'
+import { Btn, Card, Alert, Input, Textarea, SectionLabel, LoadingScreen, FlexRow, FileViewer, blobToDataUrl, useToast } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { capsFor } from '../../caps.js'
 import { grnsApi } from '../../api.js'
@@ -13,6 +13,7 @@ import {
 } from '../../lib/inventory.js'
 import { Pill, Progress } from '../procurement/common.jsx'
 import { PhotoStrip } from './PhotoStrip.jsx'
+import { compressImage } from '../../lib/imageCompress.js'
 
 const UNITS = ['kg', 'm', 'pcs', 'yds', 'set', 'roll', 'cone', 'box', 'carton']
 const TONE = { good: { bg: T.successBg, c: T.successDeep || T.success }, warn: { bg: T.warningBg, c: T.warning }, bad: { bg: T.dangerBg, c: T.dangerDeep || T.danger }, info: { bg: T.infoBg, c: T.info } }
@@ -46,6 +47,9 @@ export function GrnPage({ grnId, poId, onBack, onNavigate }) {
   const [done, setDone] = useState(null)           // what posting returned
   const [pdf, setPdf] = useState(null)
   const [starting, setStarting] = useState(false)
+  const [scanning, setScanning] = useState(false)
+  const scanCam = useRef(null)
+  const scanFileInput = useRef(null)
 
   const savedKey = useRef('')
   const formRef = useRef(null)
@@ -80,6 +84,20 @@ export function GrnPage({ grnId, poId, onBack, onNavigate }) {
     setStarting(true); setError('')
     try { const g = await grnsApi.create(po ? { poId: po.id } : {}); adopt(g); grns.refresh() }
     catch (e) { setError(e?.message || 'Could not start a note') } finally { setStarting(false) }
+  }
+
+  // A photo or PDF of the supplier's challan: it is read, and a draft note is made for the person to check.
+  const scanFile = async file => {
+    if (!file) return
+    setScanning(true); setError('')
+    try {
+      const isPdf = file.type === 'application/pdf'
+      if (!isPdf && !file.type.startsWith('image/')) throw new Error('Choose a photo or a PDF')
+      if (isPdf && file.size > 6 * 1024 * 1024) throw new Error('That PDF is too large. Try a photo of the paper instead')
+      const dataUrl = await blobToDataUrl(isPdf ? file : await compressImage(file, { maxEdge: 2000, quality: 0.85, minBytes: 300 * 1024 }))
+      const g = await grnsApi.scan({ dataUrl })
+      adopt(g); grns.refresh()
+    } catch (e) { setError(e?.message || 'The document could not be read. Try again, or start the note by hand') } finally { setScanning(false) }
   }
 
   const isDraft = grn?.status === 'draft'
@@ -176,7 +194,24 @@ export function GrnPage({ grnId, poId, onBack, onNavigate }) {
         <h1 style={{ fontSize: 22, fontWeight: 800, color: T.text, margin: '14px 0 4px' }}>Receive goods</h1>
         <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 16 }}>Is it against a purchase order you raised?</div>
         {error && <div style={{ marginBottom: 12 }}><Alert type="danger">{error}</Alert></div>}
-        <button type="button" onClick={() => start(null)} disabled={starting}
+        <div style={{ border: `1px solid ${T.primary}`, background: T.primaryLight, borderRadius: 14, padding: '16px 18px', marginBottom: 16 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: T.text, display: 'flex', alignItems: 'center', gap: 8 }}><Sparkles size={16} color={T.primaryDark} /> Read the challan for me</div>
+          <div style={{ fontSize: 12, color: T.textMuted, margin: '4px 0 12px' }}>Photograph the supplier's challan or invoice. The goods, quantities and purchase order are filled in, and you check them before anything is added to stock.</div>
+          {scanning ? (
+            <div role="status" style={{ fontSize: 14, fontWeight: 700, color: T.primaryDark, padding: '14px 0' }}>Reading the document... this takes a few seconds.</div>
+          ) : (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => scanCam.current?.click()} disabled={starting}
+                style={{ flex: '1 1 200px', minHeight: 56, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 10, border: 'none', borderRadius: 12, background: T.primaryDeep, color: '#fff', fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                <Camera size={22} /> Take a photo
+              </button>
+              <Btn variant="secondary" size="lg" onClick={() => scanFileInput.current?.click()} disabled={starting}>Choose a photo or PDF</Btn>
+            </div>
+          )}
+          <input ref={scanCam} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} aria-label="Take a photo of the challan" onChange={e => { scanFile(e.target.files?.[0]); e.target.value = '' }} />
+          <input ref={scanFileInput} type="file" accept="image/*,application/pdf" style={{ display: 'none' }} aria-label="Choose a challan photo or PDF" onChange={e => { scanFile(e.target.files?.[0]); e.target.value = '' }} />
+        </div>
+        <button type="button" onClick={() => start(null)} disabled={starting || scanning}
           style={{ width: '100%', textAlign: 'left', border: `1px dashed ${T.border}`, borderRadius: 12, background: T.surface, padding: '16px 18px', marginBottom: 16, cursor: 'pointer', fontFamily: 'inherit', minHeight: 64 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>No purchase order</div>
           <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>Goods bought on the spot, or sent without a PO. You type what they are.</div>
@@ -230,6 +265,16 @@ export function GrnPage({ grnId, poId, onBack, onNavigate }) {
       </div>
 
       {error && <div style={{ marginBottom: 12 }}><Alert type="danger">{error}</Alert></div>}
+
+      {grn.read && isDraft && (
+        <div style={{ marginBottom: 12 }}>
+          <Alert type={grn.read.confidence != null && grn.read.confidence < 0.7 ? 'warning' : 'info'}>
+            <strong>Read from the photo{grn.read.confidence != null ? ` (${Math.round(grn.read.confidence * 100)}% sure)` : ''}.</strong> Check every quantity against the paper before you post it.
+            {grn.read.matchReason ? ` ${grn.read.matchReason}.` : ''}
+            {grn.read.warnings?.length > 0 && <ul style={{ margin: '6px 0 0 18px', padding: 0 }}>{grn.read.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
+          </Alert>
+        </div>
+      )}
 
       {done && (
         <div style={{ marginBottom: 14 }}>

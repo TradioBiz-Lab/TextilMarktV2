@@ -1,4 +1,4 @@
-// Provider-agnostic WhatsApp seam. A real provider (decided later) implements
+// Provider-agnostic WhatsApp seam. A provider (the mock here, Twilio in twilio.js) implements
 // InboundAdapter.normalize and OutboundAdapter; the pipeline never sees a
 // provider payload, only the normalized shape below:
 //   {sender_number, type, media_bytes (Buffer) | null, mime_type, text, received_at}
@@ -7,18 +7,8 @@
 // would let a webhook caller point the server at arbitrary hosts. A real
 // adapter fetches from its provider's own known API host inside normalize().
 
-export class InboundAdapter {
-  /** @returns {Promise<{sender_number:string,type:string,media_bytes:Buffer|null,mime_type:string|null,text:string,received_at:Date}>} */
-  // eslint-disable-next-line no-unused-vars
-  async normalize(_payload) { throw new Error('not implemented') }
-}
-
-export class OutboundAdapter {
-  // eslint-disable-next-line no-unused-vars
-  async sendText(_to, _text) { throw new Error('not implemented') }
-  // eslint-disable-next-line no-unused-vars
-  async sendList(_to, _body, _options) { throw new Error('not implemented') }
-}
+import { InboundAdapter, OutboundAdapter } from './base.js'
+export { InboundAdapter, OutboundAdapter }
 
 const TYPES = ['image', 'audio', 'document', 'text']
 
@@ -50,6 +40,26 @@ export class MockOutboundAdapter extends OutboundAdapter {
   async sendList(to, body, options) { this.sent.push({ to, body, options }) }
 }
 
-const INBOUND = { mock: new MockInboundAdapter() }
-export const getInboundAdapter = provider => INBOUND[provider] || null
-export const outbound = new MockOutboundAdapter()
+import { TwilioInboundAdapter, TwilioOutboundAdapter, twilioConfig, twilioConfigured } from './twilio.js'
+
+const MOCK_IN = new MockInboundAdapter()
+const MOCK_OUT = new MockOutboundAdapter()
+
+/** The adapter for a provider named in the webhook URL, or null (a 404): Twilio only when its credentials are set. */
+export const getInboundAdapter = provider => {
+  if (provider === 'mock') return MOCK_IN
+  if (provider === 'twilio' && twilioConfigured()) { const c = twilioConfig(); return new TwilioInboundAdapter({ sid: c.sid, token: c.token }) }
+  return null
+}
+
+// Replies go through whichever provider is switched on (WHATSAPP_PROVIDER=twilio), else the mock that only records them.
+// Chosen at the moment of sending, so a setting changed in the console applies without a code change.
+const current = () => {
+  if (process.env.WHATSAPP_PROVIDER === 'twilio' && twilioConfigured()) return new TwilioOutboundAdapter(twilioConfig())
+  return MOCK_OUT
+}
+export const outbound = {
+  get sent() { return MOCK_OUT.sent },
+  sendText: (to, text) => current().sendText(to, text),
+  sendList: (to, body, options) => current().sendList(to, body, options),
+}

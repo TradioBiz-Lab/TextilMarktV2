@@ -288,6 +288,8 @@ export const grnsApi = {
   get: id => api.get(`/grns/${id}`),
   // { poId?, supplierName?, challanNo?, lines?, post? }: with a PO and no lines it starts from what the PO still waits for
   create: data => api.post('/grns', data || {}),
+  // { dataUrl }: a photo or PDF of the supplier's challan or invoice; it is read (slow) and a draft note is made from it
+  scan: data => api.post('/grns/scan', data, { timeout: 120000 }),
   update: (id, data) => api.post(`/grns/${id}`, data),
   remove: id => api.post(`/grns/${id}/delete`),
   post: id => api.post(`/grns/${id}/post`, {}, { timeout: 60000 }),

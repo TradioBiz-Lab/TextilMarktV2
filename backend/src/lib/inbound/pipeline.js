@@ -10,11 +10,40 @@ import { matchOrder, mapStageIndex, gateChange } from './matching.js'
 import { applyStageChange } from './applyStage.js'
 import { outbound } from './adapters.js'
 import { createEvidence } from './evidence.js'
+import { isStandalone } from '../platform.js'
+import { draftFromDocument } from '../inventory/ingest.js'
 
 const IMAGE_MIME = ['image/jpeg', 'image/png', 'image/webp']
 const DOC_MIME = [...IMAGE_MIME, 'application/pdf']
 const AUDIO_MIME = ['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/wav', 'audio/mpeg']
 const MAX_MEDIA_BYTES = 8 * 1024 * 1024
+
+// Words in a caption that say "this is the delivery paper".
+const GOODS_HINT = /\b(challan|chalan|invoice|bill|grn|delivery note|goods|received|mal aaya)\b/i
+
+/**
+ * In the standalone product a photo or PDF of a supplier's challan or invoice becomes a DRAFT goods received note
+ * (lib/inventory/ingest.js): the factory checks it in the app and posts it, nothing is added to stock from here.
+ * Returns the message when it was one, or null when the document is something else (the usual handling carries on).
+ */
+async function tryGoodsDocument({ msg, factory, buffer, mimeType }) {
+  const made = await draftFromDocument(
+    { user: { id: factory._id, actorId: factory._id, orgId: factory.orgId, name: factory.name || factory.company || '' } },
+    { buffer, mimeType, source: 'whatsapp', inboundMessageId: msg._id, photoDataUrl: mimeType.startsWith('image/') ? msg.dataUrl : null },
+  ).catch(err => { console.error('[inbound] goods document failed', err.message); return null })
+  if (!made?.ok) return null
+  const n = made.grn.lines.filter(l => l.qty > 0).length
+  msg.grnId = made.grn._id
+  msg.confidence = made.confidence
+  msg.parsed = { kind: 'goods_document', description: `Draft goods received note from a delivery document${made.grn.poId ? ` against ${made.grn.poId}` : ''}`, lines: made.grn.lines.length, poId: made.grn.poId || null, warnings: made.warnings }
+  msg.state = 'auto_applied'
+  msg.reviewReason = 'A draft goods received note was made. The factory checks it and posts it'
+  await msg.save()
+  if (msg.channel === 'whatsapp') {
+    outbound.sendText(msg.senderNumber, `Challan mil gaya ✓ ${n} item${n === 1 ? '' : 's'}${made.grn.poId ? ` (${made.grn.poId})` : ''}. Please check it in the app and post it: Stock > Goods received.`).catch(() => {})
+  }
+  return msg
+}
 
 export const digits = n => String(n || '').replace(/\D/g, '')
 
@@ -61,17 +90,25 @@ export async function ingestMessage(input, deps = {}) {
   const { type, buffer, mimeType } = input
 
   let factory = null
-  if (input.factoryId) factory = await User.findOne({ _id: input.factoryId, role: 'manufacturer', isActive: true }, 'name company language whatsappNumber').lean()
+  if (input.factoryId) factory = await User.findOne({ _id: input.factoryId, role: 'manufacturer', isActive: true }, 'name company language whatsappNumber orgId').lean()
   else if (input.senderNumber) factory = await findFactoryByNumber(input.senderNumber)
 
-  const msg = await InboundMessage.create({
-    factoryId: factory?._id || null,
-    senderNumber: input.senderNumber || factory?.whatsappNumber || null,
-    channel: input.channel, type, mimeType: mimeType || null,
-    dataUrl: buffer ? `data:${mimeType};base64,${buffer.toString('base64')}` : null,
-    rawText: input.text || '',
-    receivedAt: input.receivedAt || new Date(),
-  })
+  let msg
+  try {
+    msg = await InboundMessage.create({
+      externalId: input.externalId || null,
+      factoryId: factory?._id || null,
+      senderNumber: input.senderNumber || factory?.whatsappNumber || null,
+      channel: input.channel, type, mimeType: mimeType || null,
+      dataUrl: buffer ? `data:${mimeType};base64,${buffer.toString('base64')}` : null,
+      rawText: input.text || '',
+      receivedAt: input.receivedAt || new Date(),
+    })
+  } catch (err) {
+    // The provider delivered the same message twice at once: the first is the one being worked on.
+    if (err?.code === 11000 && input.externalId) return InboundMessage.findOne({ externalId: input.externalId })
+    throw err
+  }
 
   const toReview = async reason => {
     msg.state = 'needs_review'; msg.reviewReason = reason
@@ -81,6 +118,15 @@ export async function ingestMessage(input, deps = {}) {
 
   if (!factory) return toReview('Unknown sender, not a registered factory number')
 
+  // A delivery paper sent to a standalone factory goes to goods received. A PDF, or a photo whose caption says so, is read
+  // as one straight away; any other photo is read as a production photo first, and only an unrecognised one is tried as a challan.
+  const goodsEligible = isStandalone() && !!factory.orgId && !!buffer && (type === 'document' || type === 'image')
+  const hinted = goodsEligible && (type === 'document' || GOODS_HINT.test(input.text || ''))
+  if (hinted) {
+    const handled = await tryGoodsDocument({ msg, factory, buffer, mimeType })
+    if (handled) return handled
+  }
+
   try {
     const orders = await loadActiveOrders(factory._id)
     let parsed = null
@@ -89,6 +135,10 @@ export async function ingestMessage(input, deps = {}) {
 
     if (type === 'image') {
       parsed = await d.extractPhoto(buffer, mimeType)
+      if (goodsEligible && !hinted && (!parsed || parsed.stage === 'unknown' || parsed.confidence < 0.6)) {
+        const handled = await tryGoodsDocument({ msg, factory, buffer, mimeType })
+        if (handled) return handled
+      }
       if (parsed) {
         confidence = parsed.confidence
         const issues = parsed.issues || []
