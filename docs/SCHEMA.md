@@ -692,7 +692,8 @@ shared with it. A shared version is immutable: a change is a new version, and sh
 }
 ```
 
-**Indexes:** `{ ownerOrgId: 1, chainId: 1, version: -1 }` (unique), `{ ownerOrgId: 1, updatedAt: -1 }`,
+**Indexes:** `{ ownerOrgId: 1, chainId: 1, version: -1 }` (unique, only for documents that have an `ownerOrgId`, so old documents with
+no company left by an earlier design of the collection cannot stop it being built), `{ ownerOrgId: 1, updatedAt: -1 }`,
 `{ brandOrgId: 1, sharedAt: -1 }`
 
 **Price build-up** (`lib/costing.js`; the browser has a copy for live editing and both run the same cases):

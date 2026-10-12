@@ -82,7 +82,9 @@ const costSheetSchema = new mongoose.Schema({
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 }, { timestamps: true })
 
-costSheetSchema.index({ ownerOrgId: 1, chainId: 1, version: -1 }, { unique: true })
+// Only sheets that belong to a company count: a database that once held another design of this collection may still
+// hold old documents with no company, and they must not stop this guard from being built.
+costSheetSchema.index({ ownerOrgId: 1, chainId: 1, version: -1 }, { unique: true, partialFilterExpression: { ownerOrgId: { $exists: true } } })
 costSheetSchema.index({ ownerOrgId: 1, updatedAt: -1 })
 costSheetSchema.index({ brandOrgId: 1, sharedAt: -1 })
 

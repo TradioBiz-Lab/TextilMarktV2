@@ -3,6 +3,7 @@
 import test, { before, after, beforeEach, afterEach, describe } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import mongoose from 'mongoose'
 
 import { startTestDb, stopTestDb, clearDb } from './helpers/db.js'
 import { startServer, stopServer, as, req } from './helpers/client.js'
@@ -483,5 +484,25 @@ describe('no company can reach another\'s cost sheets', () => {
     const { mfr } = await world()
     assert.equal((await as(mfr).get('/api/cost-sheets/not-an-id')).status, 404)
     assert.equal((await as(mfr).post('/api/cost-sheets/not-an-id/share')).status, 404)
+  })
+})
+
+describe('the one-version-once guard', () => {
+  test('is built even where old documents with no company are present, and still refuses a duplicate', async () => {
+    const col = CostSheet.collection
+    await col.dropIndex('ownerOrgId_1_chainId_1_version_-1')
+    try {
+      // What a database keeps from an older design of this collection: documents with no company, chain or version.
+      await col.insertMany([1, 2, 3].map(n => ({ scopeType: 'tradio_order', orderId: `OLD-${n}`, status: 'draft' })))
+      await CostSheet.createIndexes()
+      const guard = (await col.indexes()).find(i => i.name === 'ownerOrgId_1_chainId_1_version_-1')
+      assert.equal(guard?.unique, true)
+      const org = new mongoose.Types.ObjectId()
+      await col.insertOne({ ownerOrgId: org, chainId: 'CS-TPR-2627-0001', version: 1 })
+      await assert.rejects(col.insertOne({ ownerOrgId: org, chainId: 'CS-TPR-2627-0001', version: 1 }), { code: 11000 })
+    } finally {
+      await col.deleteMany({})
+      await CostSheet.syncIndexes()
+    }
   })
 })
