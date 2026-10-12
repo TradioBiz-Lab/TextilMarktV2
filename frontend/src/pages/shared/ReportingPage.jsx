@@ -290,7 +290,7 @@ export function ReportingPage({ onOpen, initialMo }) {
   const exportCsv = () => {
     const header = ['Customer', 'Master order', 'Order ID', 'Style', 'Manufacturer', 'Qty',
       'Steps done', 'Total steps', '% complete', 'Health', 'Open now', 'Blocked', 'Past deadline',
-      'Next due', 'Next due date', 'Delivery', 'Days to delivery', 'Callout', 'Latest update']
+      'Next due', 'Next due date', 'Delivery', 'Days to delivery', 'Delivered qty', 'Qty difference', 'Callout', 'Latest update']
     const body = filtered.map(r => [
       r.order.buyerCompany || '',
       (r.order.masterOrderId && (masterOrders || []).find(m => m.id === r.order.masterOrderId)?.orderName) || '',
@@ -299,7 +299,7 @@ export function ReportingPage({ onOpen, initialMo }) {
       r.live.map(({ stage }) => stage.name).join(' | '),
       r.blocked.length, r.late.length,
       r.upcoming?.stage.name || '', r.upcoming ? fmtDate(effectiveEta(r.upcoming.stage)) : '',
-      fmtDate(r.delivery.date), r.daysToDelivery ?? '', r.order.callout || '',
+      fmtDate(r.delivery.date), r.daysToDelivery ?? '', r.delivery.deliveredQty ?? '', r.delivery.diff ?? '', r.order.callout || '',
       r.lastUpdate ? `${r.lastUpdate.stageName}: ${r.lastUpdate.text}` : '',
     ])
     downloadCsv([header, ...body], `order-status-${getToday()}.csv`)
@@ -422,6 +422,14 @@ export function ReportingPage({ onOpen, initialMo }) {
                           <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
                             <div style={{ fontSize: 12, color: T.text, fontFamily: "'JetBrains Mono',monospace" }}>{fmtDate(r.delivery.date)}</div>
                             {r.health === 'done' && <div style={{ fontSize: 11, fontWeight: 700, color: T.success }}>Delivered</div>}
+                            {r.health === 'done' && r.delivery.deliveredQty != null && (
+                              <div title="Delivered quantity against the order quantity" style={{ fontSize: 11, fontWeight: 700, color: r.delivery.diff ? '#b45309' : T.textMuted }}>
+                                {r.delivery.deliveredQty.toLocaleString('en-IN')} / {(r.delivery.ordered ?? 0).toLocaleString('en-IN')} pcs{r.delivery.diff ? ` (${r.delivery.diff > 0 ? '+' : ''}${r.delivery.diff.toLocaleString('en-IN')})` : ''}
+                              </div>
+                            )}
+                            {r.health === 'done' && r.delivery.deliveredQty == null && !isBuyer && (
+                              <div title="Open the order and record how many pieces were delivered" style={{ fontSize: 10, color: T.textLight }}>Qty not recorded</div>
+                            )}
                             {r.health !== 'done' && r.daysToDelivery != null && (
                               <div style={{ fontSize: 11, fontWeight: 700, color: r.daysToDelivery < 0 ? T.danger : r.daysToDelivery <= 7 ? '#b45309' : T.textMuted }}>
                                 {r.daysToDelivery < 0 ? `${Math.abs(r.daysToDelivery)}d overdue` : `${r.daysToDelivery}d left`}

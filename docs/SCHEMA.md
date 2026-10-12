@@ -109,6 +109,8 @@ Uses a human-readable custom string `_id` for traceability.
   _id       ObjectId            auto (sub-document _id)
   mfrId     ObjectId → users    required — manufacturer assigned
   qty       Number              required, min: 1
+  deliveredQty Number           pieces actually delivered, default null (= not recorded); often differs from qty,
+                                recorded via POST .../delivered-qty by Tradio or the split's factory, never rewrites qty
   status    String              enum (see Order Status Values below), default: "Processing"
   sub       String              split label — "M1", "M2", … (unique per order)
   note      String              latest free-text note, default: ""

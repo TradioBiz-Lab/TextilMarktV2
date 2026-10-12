@@ -269,7 +269,8 @@ export const kindForCustomerOwner = stage => (stageKindOf(stage) === 'quantity' 
  * Whether a split has been delivered, and the date to show for it. A split is delivered once its
  * Delivery step is done (the server then marks it Delivered), even if an unrelated step was left
  * open. Plans from before the Delivery step count as delivered when every step is done. The date is
- * the Delivery step's actual end once delivered, otherwise the order's promised delivery date.
+ * the Delivery step's actual end once delivered, otherwise the order's promised delivery date. It also
+ * carries the delivered quantity against the ordered one, which often differ.
  */
 export const deliveryStatus = (order, asgn) => {
   const stages = asgn?.stages || []
@@ -277,7 +278,13 @@ export const deliveryStatus = (order, asgn) => {
   const delivered = asgn?.status === 'Delivered'
     || (step ? isStageDone(step) : stages.length > 0 && stages.every(isStageDone))
   const actualEnd = delivered && step?.actualEnd && step.actualEnd !== 'NA' ? step.actualEnd : null
-  return { delivered, date: actualEnd || order?.delivery || null, isActual: !!actualEnd }
+  // Quantity actually delivered against what was ordered for this split. `diff` is negative when short.
+  const ordered = asgn?.qty ?? null
+  const got = asgn?.deliveredQty ?? null
+  return {
+    delivered, date: actualEnd || order?.delivery || null, isActual: !!actualEnd,
+    ordered, deliveredQty: got, diff: got != null && ordered != null ? got - ordered : null,
+  }
 }
 
 /** Percent complete, by kind. Checklists count items, not units. */

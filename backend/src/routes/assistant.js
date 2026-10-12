@@ -190,7 +190,7 @@ function compactOrder(o) {
       const done = stages.filter(st => st.status === 'done').length
       const active = stages.findIndex(st => st.status !== 'done' && (st.unitsDone > 0 || st.status === 'in_progress' || st.blocked))
       return {
-        mid: a.mid, mfrCompany: a.mfrCompany, status: a.status, qty: a.qty,
+        mid: a.mid, mfrCompany: a.mfrCompany, status: a.status, qty: a.qty, deliveredQty: a.deliveredQty ?? null,
         stagesDone: done, stagesTotal: stages.length,
         currentStage: active >= 0 ? { stageIndex: active, name: stages[active].name } : null,
         attention: stages.map((st, i) => ({ st, i })).filter(({ st }) => st.blocked || (st.etaVarianceDays > 0 && st.status !== 'done'))

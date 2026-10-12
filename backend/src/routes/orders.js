@@ -149,6 +149,7 @@ const enrichOrder = (o, viewerMfrId = null) => {
       mfrCode:    mfr?.code     ?? null,
       mfrName:    mfr?.name     ?? null,
       qty:        a.qty,
+      deliveredQty: a.deliveredQty ?? null,
       status:     a.status,
       sub:        a.sub,
       note:       a.note,
@@ -858,6 +859,56 @@ router.post('/:orderId/assignments/:mfrId/reassign', requireAuth, requireAdmin, 
     })
     await notify([newId], { type: 'order', msg: `New order assigned to you: ${orderId}`, orderId }, { exceptUserId: req.user.id })
     await notify([oldId], { type: 'order', msg: `${orderId} has been reassigned to another manufacturer`, orderId }, { exceptUserId: req.user.id })
+
+    res.json(enrichFor(order, req))
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/orders/:orderId/assignments/:mfrId/delivered-qty — record how many pieces were actually
+// delivered for a split. Delivery quantities often differ from the order quantity (short or over
+// shipments), so this is its own figure; it never changes `qty`. Admin, or the split's own
+// manufacturer (who ships it). The customer cannot set it. Body: { deliveredQty } (a whole number
+// >= 0, or null / '' to clear it). May be updated before the Delivery step closes, for part shipments.
+router.post('/:orderId/assignments/:mfrId/delivered-qty', requireAuth, updateLimiter, async (req, res) => {
+  try {
+    const { orderId, mfrId } = req.params
+    if (!mongoose.Types.ObjectId.isValid(mfrId)) return res.status(400).json({ error: 'Invalid manufacturer ID' })
+    if (req.user.role === 'buyer') return res.status(403).json({ error: 'Only Tradio or the manufacturer can record the delivered quantity' })
+    if (req.user.role === 'manufacturer' && String(req.user.id) !== mfrId) return res.status(403).json({ error: 'Forbidden' })
+
+    const raw = req.body?.deliveredQty
+    let value = null
+    if (raw !== null && raw !== undefined && raw !== '') {
+      value = Number(raw)
+      if (!Number.isInteger(value) || value < 0 || value > 1e9)
+        return res.status(400).json({ error: 'Delivered quantity must be a whole number, 0 or more' })
+    }
+
+    const mfrObjectId = new mongoose.Types.ObjectId(mfrId)
+    const existing = await Order.findById(orderId).lean()
+    if (!existing) return res.status(404).json({ error: 'Order not found' })
+    const asgn = (existing.assignments || []).find(a => a.mfrId?.toString() === mfrId)
+    if (!asgn) return res.status(404).json({ error: 'Assignment not found' })
+
+    const order = await Order.findOneAndUpdate(
+      { _id: orderId, 'assignments.mfrId': mfrObjectId },
+      { $set: { 'assignments.$[asgn].deliveredQty': value, 'assignments.$[asgn].updatedAt': new Date() } },
+      { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }], new: true }
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+    if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
+
+    const gap = value == null ? '' : value === asgn.qty ? ' (matches the order)' : ` (${value > asgn.qty ? `${value - asgn.qty} over` : `${asgn.qty - value} short of`} ${asgn.qty} ordered)`
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Delivered Quantity Updated',
+      detail: value == null
+        ? `${orderId}: ${asgn.sub} delivered quantity cleared by ${req.user.name}`
+        : `${orderId}: ${asgn.sub} delivered ${value}${gap} by ${req.user.name}`,
+    })
+    if (value != null) await notifyOrderChange(order, req.user, { msg: `Delivered quantity on ${orderId}: ${value} pcs${gap}`, orderId })
 
     res.json(enrichFor(order, req))
   } catch (err) {
