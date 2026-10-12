@@ -307,6 +307,16 @@ admin enables them in User Setup.
     them). A change is `revise`, a new version; sharing it marks older ones `superseded`. A brand never sees a
     draft, the factory's `internalNote`, or the BOM it came from. Tradio's fee line is forced to 0 unless the
     factory is managed by Tradio. Routes use `requireCosting` (factory or brand) and scope per side.
+  - *Kriyaa.* Factories get `get_bom`, `shopping_list`, `generate_draft_pos` (confirmed: it creates several
+    records) and `share_cost_sheet` (confirmed: it tells the customer); factories and brands both get
+    `list_cost_sheets` and `get_cost_sheet`. Nothing the model is offered can approve a cost sheet: that is the
+    brand's own decision. Every call goes through the caller's session, so scoping applies mechanically.
+  - *Frontend.* The BOM is a tab on the factory's order (`pages/bom/`), the Shopping List and Cost Sheets are
+    sidebar screens (`pages/procurement/ShoppingListPage.jsx`, `pages/costing/`). The editors keep what a
+    person types as strings and work live figures with `lib/bomCalc.js` and `lib/costCalc.js`, which are
+    byte-for-byte copies of the server's files (`src/__tests__/mathParity.test.js` fails if either drifts and
+    runs both against the backend fixtures). Notifications carry a `link` (`#cost=<id>`) that opens a screen.
+    Material lines use the shared `.gl-*` styles (a grid on wide screens, a card per line on phones).
   - *Live refresh.* `/api/floor/feed` carries per-company versions: a factory gets `suppliers`,
     `purchase-orders`, `boms` and `cost-sheets`; a brand gets `cost-sheets` (shared ones only).
 - **Run it locally.** `npm run dev:local` (backend) starts an ephemeral in-memory mongod, seeds a

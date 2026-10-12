@@ -178,6 +178,7 @@ const WRITE_TOOLS = new Set([
   'add_action_item_update', 'update_action_item',
   'create_master_order', 'create_order',
   'create_draft_po', 'send_purchase_order',
+  'generate_draft_pos', 'share_cost_sheet',
 ])
 
 // What an order or master order may be created with. The ID is never the model's to choose: the
@@ -361,6 +362,79 @@ export const TOOL_HANDLERS = {
     const body = pick(input, ['to'])
     if (typeof input.message === 'string') body.message = input.message.slice(0, 1000)
     return loopbackFetch(ctx.cookie, 'POST', `/api/purchase-orders/${input.poNumber}/send`, body)
+  },
+
+  // Bills of materials and the shopping list (standalone manufacturers). Compact: a model does not need every field.
+  get_bom: async (input, ctx) => {
+    if (typeof input?.orderId !== 'string' || !ORDER_ID_RE.test(input.orderId)) return badInput('orderId')
+    const result = await loopbackFetch(ctx.cookie, 'GET', `/api/boms?orderId=${encodeURIComponent(input.orderId)}`)
+    if (!result.ok) return result
+    const b = result.data.current
+    if (!b) return { ...result, data: { hasBom: false, message: 'No bill of materials has been started for this order yet.' } }
+    return { ...result, data: {
+      hasBom: true, version: b.version, status: b.status, pieces: b.plan.totalQty, sizes: b.plan.sizes, sizeRatio: b.plan.ratio, colours: b.plan.colours,
+      linesNeedingACheck: b.lines.filter(l => l.needsReview).length, warnings: b.warnings.map(w => w.message),
+      lines: b.lines.map(l => ({
+        section: l.section, item: l.item, spec: l.spec || undefined, unit: l.unit, perPiece: l.consumption, wastagePercent: l.wastagePct, supplier: l.supplierName || null, rate: l.rate,
+        toOrder: l.computed.orderQty, byColour: l.computed.perColour.length ? l.computed.perColour.map(c => ({ colour: c.colour, toOrder: c.orderQty })) : undefined,
+      })),
+    } }
+  },
+
+  shopping_list: async (input, ctx) => {
+    if (input?.masterOrderId !== undefined && !ORDER_ID_RE.test(String(input.masterOrderId))) return badInput('masterOrderId')
+    const result = await loopbackFetch(ctx.cookie, 'GET', `/api/boms/aggregate${input?.masterOrderId ? `?masterOrderId=${encodeURIComponent(input.masterOrderId)}` : ''}`)
+    if (!result.ok) return result
+    const d = result.data
+    return { ...result, data: {
+      ordersCounted: d.orders, itemsWithNoSupplier: d.unsupplied,
+      rows: d.rows.slice(0, 80).map(r => ({
+        item: r.item, spec: r.spec || undefined, colour: r.colour || undefined, unit: r.unit, supplier: r.supplierName || null,
+        needed: r.required, alreadyOnPurchaseOrders: r.onPo, stillToOrder: r.remaining, belowSupplierMinimum: r.belowMoq || undefined,
+      })),
+      truncated: d.rows.length > 80,
+    } }
+  },
+
+  // Raises one draft PO per supplier for everything still to buy. Drafts email nobody, but this can create several
+  // at once and moves the "ordered" figures, so the user confirms first.
+  generate_draft_pos: async (input, ctx) => {
+    if (input?.masterOrderId !== undefined && !ORDER_ID_RE.test(String(input.masterOrderId))) return badInput('masterOrderId')
+    if (!userConfirmed(ctx.conversation)) return confirmationRequired('draft purchase orders, one for each supplier, for everything still to buy on the shopping list', 'which suppliers and roughly how much for each (from shopping_list)')
+    return loopbackFetch(ctx.cookie, 'POST', '/api/boms/generate-pos', input?.masterOrderId ? { masterOrderId: input.masterOrderId } : {})
+  },
+
+  // Cost sheets, from either side: a factory sees its own, a brand what was shared with it.
+  list_cost_sheets: async (input, ctx) => {
+    const result = await loopbackFetch(ctx.cookie, 'GET', '/api/cost-sheets')
+    if (!result.ok) return result
+    return { ...result, data: result.data.slice(0, 40).map(c => ({
+      costSheetId: c.id, number: `${c.chainId} v${c.version}`, style: c.styleName, styleCode: c.styleCode || undefined, factory: c.factoryName, customer: c.brandName,
+      status: c.status, pricePerPiece: c.price, negotiatedPricePerPiece: c.discountPct > 0 ? c.negotiated : undefined, quantity: c.qty || undefined, updated: c.updatedAt,
+    })) }
+  },
+
+  get_cost_sheet: async (input, ctx) => {
+    if (typeof input?.costSheetId !== 'string' || !OBJECT_ID_RE.test(input.costSheetId)) return badInput('costSheetId')
+    const result = await loopbackFetch(ctx.cookie, 'GET', `/api/cost-sheets/${input.costSheetId}`)
+    if (!result.ok) return result
+    const c = result.data, f = c.computed || {}
+    return { ...result, data: {
+      number: `${c.chainId} v${c.version}`, style: c.styleName, factory: c.factoryName, customer: c.brandName, status: c.status, quantity: c.qty || undefined,
+      perPiece: { fabric: f.fabric, process: f.process, trims: f.trims, labelsAndPackaging: f.labelsPackaging, labour: f.labour, overhead: f.overhead, rejection: f.rejection, margin: f.margin, tradioFee: c.tradioPct > 0 ? f.tradio : undefined, price: f.price, negotiatedPrice: c.discountPct > 0 ? f.negotiated : undefined },
+      percentages: { overhead: c.overheadPct, rejection: c.rejectionPct, margin: c.marginPct, negotiatedDiscount: c.discountPct },
+      approvedAt: c.approvedAt || undefined, approvedPrice: c.approvedPrice ?? undefined,
+      comments: (c.comments || []).slice(-10).map(m => ({ from: m.role === 'buyer' ? 'customer' : 'factory', by: m.by, text: String(m.text).slice(0, 500), askedForChanges: m.kind === 'changes' || undefined })),
+    } }
+  },
+
+  // Sharing tells the customer's team and emails them the PDF, and the version can no longer be edited: confirm first.
+  share_cost_sheet: async (input, ctx) => {
+    if (typeof input?.costSheetId !== 'string' || !OBJECT_ID_RE.test(input.costSheetId)) return badInput('costSheetId')
+    if (!userConfirmed(ctx.conversation)) return confirmationRequired('a share of this cost sheet with the customer (their team is told and emailed the PDF, and this version can no longer be edited)', 'the style, the customer and the price per piece')
+    const body = {}
+    if (typeof input.message === 'string') body.message = input.message.slice(0, 1000)
+    return loopbackFetch(ctx.cookie, 'POST', `/api/cost-sheets/${input.costSheetId}/share`, body)
   },
 
   post_stage_update: (input, ctx) => {
@@ -673,6 +747,36 @@ const TOOLS = [
     },
   },
   {
+    name: 'get_bom',
+    description: "A factory's bill of materials for one order: the quantity plan (pieces, sizes with their ratio, colours), and every fabric, process, trim and label line with its quantity per piece, wastage, supplier, rate and how much to order (per colour for cloth). Also says if lines from a tech pack still need a check. orderId from find_orders.",
+    input_schema: { type: 'object', properties: { orderId: { type: 'string' } }, required: ['orderId'], additionalProperties: false },
+  },
+  {
+    name: 'shopping_list',
+    description: "What this factory still has to buy: its frozen bills of materials added up across orders (cloth per colour), less what is already on a purchase order, with the supplier for each and which items have no supplier yet. Optionally for one master order (masterOrderId from list_master_orders). Use it for 'what do I need to order for the Zara range'.",
+    input_schema: { type: 'object', properties: { masterOrderId: { type: 'string' } }, additionalProperties: false },
+  },
+  {
+    name: 'generate_draft_pos',
+    description: "Raise a draft purchase order for each supplier for everything still to buy on the shopping_list (optionally for one master order). They are only drafts: nothing is emailed, and the user reviews and sends them on the Purchase Orders page. THIS CREATES SEVERAL RECORDS: first call shopping_list, tell the user which suppliers and roughly how much for each, and ask them to confirm; the server refuses until their own reply confirms it. Then tell them which PO numbers were created.",
+    input_schema: { type: 'object', properties: { masterOrderId: { type: 'string' } }, additionalProperties: false },
+  },
+  {
+    name: 'list_cost_sheets',
+    description: "The cost sheets visible to this account, newest first: costSheetId, number and version, style, factory, customer, status (draft, shared, commented, approved or superseded), price per piece and the negotiated price. A factory sees all its own; a customer only those its factories shared with it. Use it for 'which cost sheets are waiting for approval' or 'what did we quote for the hoodie'.",
+    input_schema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'get_cost_sheet',
+    description: "One cost sheet: its price build-up per piece (fabric, process, trims, labels, labour, overhead, rejection, margin, price, negotiated price), the percentages, approval, and the latest comments. costSheetId from list_cost_sheets.",
+    input_schema: { type: 'object', properties: { costSheetId: { type: 'string' } }, required: ['costSheetId'], additionalProperties: false },
+  },
+  {
+    name: 'share_cost_sheet',
+    description: "Share a draft cost sheet with the customer it is for: their team is told in the app and emailed the PDF, and the version can no longer be edited (a change means a new version). THIS TELLS A THIRD PARTY AND CANNOT BE UNDONE: first tell the user the style, the customer and the price per piece and ask them to confirm; the server refuses until their own reply confirms it. Approving a cost sheet is the customer's own decision: you cannot do it.",
+    input_schema: { type: 'object', properties: { costSheetId: { type: 'string' }, message: { type: 'string', maxLength: 1000, description: "A short note to send with it, if the user asked for one." } }, required: ['costSheetId'], additionalProperties: false },
+  },
+  {
     name: 'check_delivery_risk',
     description: "Deterministic date-math helper — NOT you doing arithmetic. Returns, for the given order: every stage's plan-vs-baseline variance in days (etaVarianceDays, positive = the plan slipped later than its original baseline) and, once a stage is actually done, its actual-vs-baseline variance (actualVarianceDays, positive = it actually finished later than its ORIGINAL planned date — always measured against the frozen baseline, never against a since-revised eta); and two DISTINCT order-level numbers — do not conflate them: deliveryOverrunDays is whether the CURRENT plan (the latest stage eta) is consistent with the CURRENT delivery date right now (null if the plan finishes on or before delivery); deliveryVarianceDays is how far the delivery date ITSELF has moved from what was originally promised (baselineDelivery), positive = pushed later, negative = pulled earlier, null if delivery has never been revised. A corrected/realigned delivery date can read deliveryOverrunDays: null while deliveryVarianceDays shows a large number — that means the plan and the promise agree right now, but the promise itself has slipped (or improved) from day one. Call this whenever the admin asks 'what happens if I push this date', 'are we going to miss delivery', or 'how much has this order slipped', or right after moving a stage's eta, so you can state exact numbers instead of estimating.",
     input_schema: {
@@ -696,14 +800,17 @@ const COMPANY_ONLY_TOOLS = new Set(['list_partners'])
 // manufacturers only in the standalone product, where they create their own.
 const CREATE_TOOLS = new Set(['create_master_order', 'create_order'])
 // Suppliers and purchase orders belong to a factory in the standalone product, and to nobody else.
-const PROCUREMENT_TOOLS = new Set(['list_suppliers', 'list_purchase_orders', 'get_purchase_order', 'create_draft_po', 'send_purchase_order'])
+const PROCUREMENT_TOOLS = new Set(['list_suppliers', 'list_purchase_orders', 'get_purchase_order', 'create_draft_po', 'send_purchase_order', 'get_bom', 'shopping_list', 'generate_draft_pos', 'share_cost_sheet'])
+// Cost sheets have two sides: both a factory and a brand may look at them (each only at its own); only the factory writes.
+const COSTING_READ_TOOLS = new Set(['list_cost_sheets', 'get_cost_sheet'])
 // In the standalone product a factory runs its own schedule, so it may also move its own dates.
 const factoryMayUse = (user, name) => name === 'update_stage_dates' && isStandalone() && user?.role === 'manufacturer'
 export const toolsFor = user => TOOLS.filter(t =>
   (user?.role === 'admin' || !ADMIN_ONLY_TOOLS.has(t.name) || factoryMayUse(user, t.name)) &&
   (user?.role !== 'admin' || !COMPANY_ONLY_TOOLS.has(t.name)) &&
   (!CREATE_TOOLS.has(t.name) || user?.role === 'admin' || isStandalone()) &&
-  (!PROCUREMENT_TOOLS.has(t.name) || (isStandalone() && user?.role === 'manufacturer')))
+  (!PROCUREMENT_TOOLS.has(t.name) || (isStandalone() && user?.role === 'manufacturer')) &&
+  (!COSTING_READ_TOOLS.has(t.name) || (isStandalone() && (user?.role === 'manufacturer' || user?.role === 'buyer'))))
 
 const ROLE_SCOPE = {
   buyer: `ROLE SCOPE: you are talking with a CUSTOMER (a buyer), not a Tradio admin. You can only see this customer's own orders, and only read them, plus comment on or update a production stage that is assigned to them (usually an approval step such as Lab Dip or PP Sample). You have no access to the action-item task list, to other customers, or to moving stage dates. If asked to do something outside that, say plainly that it is outside what their account can do and suggest contacting their Tradio coordinator. Where the instructions below mention action items or admin-only tools you do not have, ignore those parts.`,
@@ -755,6 +862,10 @@ REFERRING TO ORDERS: in every reply, name an order by buyer company and product 
 CREATING ORDERS: if you have the create_order and create_master_order tools, you can set up new work by voice or text ("create three styles under the Zara FW26 range"). Resolve every name yourself with list_partners and list_master_orders, never ask for an ID, and make sure you have what an order needs (product, quantity, delivery date; the customer or manufacturer when it is not obvious). These tools create records, so first say exactly what you are about to create and ask ${user.name} to confirm; the server will refuse until their own reply confirms it. Create one order per call, and after each one say what was created in natural words (customer, product, quantity). The production schedule is built afterwards by the factory; do not try to create one.
 
 ${toolsFor(user).some(t => t.name === 'send_purchase_order') ? `PURCHASE ORDERS: you can look up this factory's suppliers and purchase orders, draft a PO (create_draft_po) and send one (send_purchase_order). Resolve a supplier by name with list_suppliers, never ask for an id. Drafting emails nobody: after you draft one, say the PO number, supplier and total, and that it is waiting for review. Sending emails the supplier and cannot be undone: say exactly what will go out and to which address and ask ${user.name} to confirm; the server will refuse until their own reply confirms it. Never send a PO the user has not asked you to send. Rates and GST are the factory's own business: only ever tell ${user.name}, never anyone else.
+
+` : ''}${toolsFor(user).some(t => t.name === 'share_cost_sheet') ? `BILLS OF MATERIALS AND COSTING: you can read this factory's bill of materials for an order (get_bom), what it still has to buy across orders (shopping_list), raise draft purchase orders from that (generate_draft_pos), and read its cost sheets (list_cost_sheets, get_cost_sheet) and share a draft with the customer (share_cost_sheet). Resolve an order by name with find_orders and a master order with list_master_orders, never ask for an id. Raising draft POs creates several records and sharing tells the customer: for both, say exactly what you are about to do and ask ${user.name} to confirm; the server will refuse until their own reply confirms it. Rates, margins and suppliers are the factory's own business: tell only ${user.name}. Approving a cost sheet is the customer's own decision and you cannot do it.
+
+` : ''}${toolsFor(user).some(t => t.name === 'get_cost_sheet') && !toolsFor(user).some(t => t.name === 'share_cost_sheet') ? `COST SHEETS: you can list the cost sheets this customer's factories have shared (list_cost_sheets) and read one in full (get_cost_sheet): the price build-up, comments and approval. You cannot comment on or approve one: that is ${user.name}'s own decision in the app, so tell them where it is waiting (the Cost Sheets page) rather than doing it.
 
 ` : ''}Keep replies short and concrete — this is a fast working chat with one admin, not a written report.
 
