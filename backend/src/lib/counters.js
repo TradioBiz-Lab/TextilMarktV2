@@ -1,12 +1,12 @@
-// Server-side numbering for IDs people read (order IDs, master order IDs, PO numbers, and later GRN
-// numbers).
+// Server-side numbering for IDs people read (order IDs, master order IDs, PO and cost sheet numbers, and
+// later GRN numbers).
 //
 // The browser used to work out "highest number I can see, plus one". That only works while one
 // kind of user creates everything: once manufacturers and brands both create orders, neither can see
 // all of the numbers in a series, and two people creating at once collide. Numbering lives here
 // instead, advanced with one atomic update per number, so it is correct for concurrent requests and
 // would stay correct if the server ever ran more than one process.
-import { Counter, Order, MasterOrder, PurchaseOrder } from '../db/index.js'
+import { Counter, Order, MasterOrder, PurchaseOrder, CostSheet } from '../db/index.js'
 import { fiscalYearCode } from './fiscalYear.js'
 
 const escapeRe = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -65,6 +65,17 @@ export async function allocatePoId({ orgId, orgCode, now = new Date() }) {
   const seq = await nextSeq(`po:${orgId}:${fy}`, async () => {
     const ids = await PurchaseOrder.find({ _id: new RegExp(`^${escapeRe(prefix)}\\d+$`) }, { _id: 1 }).lean()
     return ids.reduce((max, p) => Math.max(max, trailingNumber(p._id)), 0)
+  })
+  return `${prefix}${String(seq).padStart(4, '0')}`
+}
+
+/** Next cost sheet number, e.g. CS-TPR-2627-0003: per factory per Indian financial year, shared by all versions of a sheet. */
+export async function allocateCostSheetRef({ orgId, orgCode, now = new Date() }) {
+  const fy = fiscalYearCode(now)
+  const prefix = `CS-${orgCode}-${fy}-`
+  const seq = await nextSeq(`cs:${orgId}:${fy}`, async () => {
+    const ids = await CostSheet.distinct('chainId', { chainId: new RegExp(`^${escapeRe(prefix)}\\d+$`) })
+    return ids.reduce((max, id) => Math.max(max, trailingNumber(id)), 0)
   })
   return `${prefix}${String(seq).padStart(4, '0')}`
 }

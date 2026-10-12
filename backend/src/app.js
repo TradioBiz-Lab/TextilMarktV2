@@ -33,6 +33,7 @@ import partnersRouter from './routes/partners.js'
 import suppliersRouter from './routes/suppliers.js'
 import purchaseOrdersRouter from './routes/purchaseOrders.js'
 import bomsRouter from './routes/boms.js'
+import costSheetsRouter from './routes/costSheets.js'
 import viewAsRouter from './routes/viewAs.js'  // on in standalone mode; sandbox-only flag (ENABLE_VIEW_AS) otherwise
 
 // ── Validate required env vars at startup ──────────────────────────────────
@@ -192,6 +193,7 @@ app.use('/api/partners',      partnersRouter)
 app.use('/api/suppliers',     suppliersRouter)           // standalone product only (404 otherwise)
 app.use('/api/purchase-orders', purchaseOrdersRouter)    // standalone product only (404 otherwise)
 app.use('/api/boms',          bomsRouter)               // standalone product only (404 otherwise)
+app.use('/api/cost-sheets',   costSheetsRouter)         // standalone product only (404 otherwise)
 
 // ── Health check ────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

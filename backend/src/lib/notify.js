@@ -8,14 +8,14 @@ import { isStandalone } from './platform.js'
 const idOf = v => (v == null ? null : String(v._id ?? v))
 
 /** Create one notification per recipient, skipping duplicates and the person who acted. */
-export async function notify(recipients, { type = 'status', msg, orderId = null }, { exceptUserId = null } = {}) {
+export async function notify(recipients, { type = 'status', msg, orderId = null, link = null }, { exceptUserId = null } = {}) {
   try {
     if (!msg) return
     const skip = exceptUserId ? String(exceptUserId) : null
     const ids = [...new Set((recipients || []).map(idOf).filter(Boolean))].filter(id => id !== skip)
     if (ids.length === 0) return
     await Notification.insertMany(ids.map(toUser => ({
-      toUser, type, msg: String(msg).slice(0, 500), orderId, isRead: false,
+      toUser, type, msg: String(msg).slice(0, 500), orderId, link, isRead: false,
     })))
   } catch (err) {
     console.error('[notify]', err)

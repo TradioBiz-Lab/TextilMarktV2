@@ -87,3 +87,23 @@ describe('the procurement routers (suppliers, purchase orders, bills of material
     }
   })
 })
+
+describe('the cost sheet router', async () => {
+  const { default: costSheetsRouter } = await import('../src/routes/costSheets.js')
+  const { requireAuth } = await import('../src/middleware/auth.js')
+  const { requireCosting } = await import('../src/lib/procurement.js')
+
+  test('every route sits behind sign-in and the factory-or-brand gate', () => {
+    const layers = costSheetsRouter.stack
+    assert.equal(layers[0].handle, requireAuth)
+    assert.equal(layers[1].handle, requireCosting)
+    const routes = layers.filter(l => l.route)
+    assert.ok(routes.length >= 8, `expected the cost sheet router to hold its routes, found ${routes.length}`)
+    for (const l of routes) assert.ok(layers.indexOf(l) > 1, `${l.route.path} is registered before the gate`)
+  })
+
+  test('write routes are rate limited', () => {
+    const writes = costSheetsRouter.stack.filter(l => l.route?.methods?.post)
+    assert.equal(writes.filter(l => l.route.stack.length >= 2).length, writes.length, 'a write route has no limiter')
+  })
+})

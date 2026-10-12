@@ -26,6 +26,7 @@
 | `purchaseorders` | Purchase orders a manufacturer raises with its suppliers, emailed as PDF | String (custom) |
 | `boms`         | A manufacturer's bill of materials for an order: sizes, colours and every fabric, trim and label line (private) | ObjectId |
 | `specsheets`   | The measurement spec of a style read from its tech pack (shared by the order's brand and factory) | ObjectId |
+| `costsheets`   | A factory's open cost sheet for a style, versioned, shared with a brand that comments and approves | ObjectId |
 
 ---
 
@@ -651,6 +652,49 @@ extracted it can correct it.
 ```
 
 **Indexes:** `{ orderId: 1, ownerOrgId: 1 }` (unique)
+
+---
+
+## 19. `costsheets`
+
+The price of a style built up line by line, the way the factory's approved costing sheet is. A factory
+drafts it (optionally seeded from a frozen BOM), **shares a version** with one of its customers, and the
+brand comments and approves it. **A draft is the factory's alone**; a brand reads only versions that were
+shared with it. A shared version is immutable: a change is a new version, and sharing it supersedes the old.
+
+```
+{
+  ownerOrgId, mfrId                 the factory (organization, party id)
+  brandOrgId, brandId               the customer it is for (organization, party id); must be an active partner
+  chainId     String                CS-<company code>-<financial year>-NNNN, shared by all versions of a sheet
+  version     Number                1, 2, ...
+  status      String                enum: ["draft","shared","commented","approved","superseded"]
+  styleName, styleCode, orderId | null, bomId | null, qty
+  fabric[], process[], trims[], labelsPackaging[]
+              { name, spec, unit, consumption (per piece), wastagePct, rate, freight, dutyPct, note }
+              amount = consumption x ((rate + freight) x (1 + duty%)) x (1 + wastage%)
+  labour      { cuttingThreads, making, finishingPacking }          per piece
+  overheadPct 5, rejectionPct 3, marginPct 20, discountPct          the sheet's usual percentages
+  tradioPct   Number                Tradio's fee line: ALWAYS 0 unless the factory is managed by Tradio
+  computed    what lib/costing.js made of the inputs at the last save; the figures shared and approved
+  internalNote                      the factory's own; never shown to the brand
+  comments[]  { at, byUser, byName, byRole: 'manufacturer'|'buyer', kind: 'comment'|'changes', text }
+  sharedAt, sharedBy, sharedMessage, approvedAt, approvedBy, approvedByName, approvedPrice
+}
+```
+
+**Indexes:** `{ ownerOrgId: 1, chainId: 1, version: -1 }` (unique), `{ ownerOrgId: 1, updatedAt: -1 }`,
+`{ brandOrgId: 1, sharedAt: -1 }`
+
+**Price build-up** (`lib/costing.js`; the browser has a copy for live editing and both run the same cases):
+materials = fabric + process + trims + labels; base = materials + labour; overhead = base x overhead %;
+rejection = (base + overhead) x rejection %; margin = (base + overhead + rejection) x margin %; Tradio fee =
+base x tradio % (not compounded); price = the five added; negotiated price = price less the discount.
+Verified on all six styles of the Fitleasure core costing sheet against the workbook's own figures.
+
+**Lifecycle:** `draft` -> `shared` (the brand is told in the app and by email, with the PDF) -> `commented`
+(the brand comments) -> `approved` (only the brand approves, never Tradio on its behalf); a newer shared
+version marks the older ones `superseded`.
 
 ---
 

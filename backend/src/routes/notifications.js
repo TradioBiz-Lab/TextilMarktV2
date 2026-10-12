@@ -17,7 +17,7 @@ const router = Router()
 
 const mapNotif = n => ({
   id: n._id.toString(), to: n.toUser?.toString(), type: n.type, msg: n.msg,
-  orderId: n.orderId?.toString() || null, read: n.isRead, at: n.createdAt,
+  orderId: n.orderId?.toString() || null, link: n.link || null, read: n.isRead, at: n.createdAt,
 })
 
 // GET /api/notifications

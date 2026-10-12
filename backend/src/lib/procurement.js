@@ -21,6 +21,18 @@ export function requireProcurement(req, res, next) {
   next()
 }
 
+/**
+ * Put on every cost sheet route. The module exists only in the standalone product, and for the two sides of
+ * a sheet: the factory that prepares it and the brand it is shared with. Each route then scopes to what
+ * that side may reach. A master admin looking at a company is that company's own session, read-only.
+ */
+export function requireCosting(req, res, next) {
+  if (!isStandalone()) return res.status(404).json({ error: 'Not found' })
+  if ((req.user?.role !== 'manufacturer' && req.user?.role !== 'buyer') || !req.user.orgId)
+    return res.status(403).json({ error: 'Cost sheets are for manufacturers and their customers' })
+  next()
+}
+
 export const isId = v => mongoose.Types.ObjectId.isValid(v) && String(new mongoose.Types.ObjectId(String(v))) === String(v)
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/

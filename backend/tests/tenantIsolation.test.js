@@ -275,14 +275,14 @@ describe('procurement: a company\'s suppliers and purchase orders are its own (s
     const { A, B, X, admin } = await stock()
     const v = async u => (await as(u).get('/api/floor/feed')).body.versions
     const [a0, b0] = [await v(A), await v(B)]
-    assert.deepEqual(Object.keys(a0).sort(), ['purchase-orders', 'suppliers'])
+    assert.deepEqual(Object.keys(a0).sort(), ['boms', 'cost-sheets', 'purchase-orders', 'suppliers'])
     // A changes something; B's numbers do not move, and A's do.
     await as(A).post('/api/suppliers', { name: 'Another A Mill' })
     const [a1, b1] = [await v(A), await v(B)]
     assert.notEqual(a1.suppliers, a0.suppliers)
     assert.deepEqual(b1, b0)
-    // Brands and Tradio staff get no procurement versions at all.
-    assert.equal((await as(X).get('/api/floor/feed')).body.versions, undefined)
+    // A brand gets only the versions of what is shared with it, and Tradio staff none at all.
+    assert.deepEqual(Object.keys((await as(X).get('/api/floor/feed')).body.versions), ['cost-sheets'])
     assert.equal((await as(admin).get('/api/floor/feed')).body.versions, undefined)
   })
 
@@ -379,5 +379,99 @@ describe('bills of materials: a company\'s BOMs and shopping list are its own (s
     delete process.env.PLATFORM_MODE
     assert.equal((await as(A).get('/api/boms?orderId=XAB')).status, 404)
     assert.equal((await as(A).get('/api/boms/aggregate')).status, 404)
+  })
+})
+
+describe('cost sheets: each brand sees only what its factories shared with it (standalone product)', () => {
+  beforeEach(() => { process.env.PLATFORM_MODE = 'standalone'; setMailerForTests({ emails: { send: async () => ({ data: { id: 'x' }, error: null }) } }) })
+  after(() => setMailerForTests(null))
+
+  const sheet = (brand, name) => ({
+    brandId: String(brand._id), styleName: name, qty: 100,
+    fabric: [{ name: 'Jersey', consumption: 1, rate: 200 }], labour: { making: 50 },
+  })
+
+  /** A and B each draft one sheet for brand X, and share one. B also works for Y: it shares one with Y. */
+  async function stock() {
+    const w = await world()
+    const out = {}
+    const make = async (u, brand, name, shareIt) => {
+      const r = await as(u).post('/api/cost-sheets', sheet(brand, name))
+      assert.equal(r.status, 201, JSON.stringify(r.body))
+      if (shareIt) assert.equal((await as(u).post(`/api/cost-sheets/${r.body.id}/share`, {})).status, 200)
+      return r.body
+    }
+    out.aDraft = await make(w.A, w.X, 'A draft for X', false)
+    out.aShared = await make(w.A, w.X, 'A shared with X', true)
+    out.bShared = await make(w.B, w.X, 'B shared with X', true)
+    out.bForY = await make(w.B, w.Y, 'B shared with Y', true)
+    return { ...w, ...out }
+  }
+
+  test('a brand lists only what was shared with it, never a draft and never another brand\'s', async () => {
+    const { X, Y, aShared, bShared, bForY } = await stock()
+    assert.deepEqual((await as(X).get('/api/cost-sheets')).body.map(r => r.id).sort(), [aShared.id, bShared.id].sort())
+    assert.deepEqual((await as(Y).get('/api/cost-sheets')).body.map(r => r.id), [bForY.id])
+  })
+
+  test('a factory lists only its own sheets, drafts included', async () => {
+    const { A, B, aDraft, aShared, bShared, bForY } = await stock()
+    assert.deepEqual((await as(A).get('/api/cost-sheets')).body.map(r => r.id).sort(), [aDraft.id, aShared.id].sort())
+    assert.deepEqual((await as(B).get('/api/cost-sheets')).body.map(r => r.id).sort(), [bShared.id, bForY.id].sort())
+  })
+
+  test('a direct read of a sheet that is not yours, or is still a draft, is "not found"', async () => {
+    const { A, B, X, Y, aDraft, aShared, bForY } = await stock()
+    assert.equal((await as(X).get(`/api/cost-sheets/${aDraft.id}`)).status, 404)       // brand, a draft
+    assert.equal((await as(Y).get(`/api/cost-sheets/${aShared.id}`)).status, 404)      // another brand
+    assert.equal((await as(X).get(`/api/cost-sheets/${bForY.id}`)).status, 404)        // shared, but with another brand
+    assert.equal((await as(B).get(`/api/cost-sheets/${aShared.id}`)).status, 404)      // another factory
+    assert.equal((await as(A).get(`/api/cost-sheets/${bForY.id}`)).status, 404)
+    assert.equal((await as(X).get(`/api/cost-sheets/${aShared.id}/pdf`)).status, 200)
+    assert.equal((await as(Y).get(`/api/cost-sheets/${aShared.id}/pdf`)).status, 404)
+  })
+
+  test('nobody can comment on, approve, revise or change a sheet that is not theirs', async () => {
+    const { A, B, Y, aShared, aDraft } = await stock()
+    assert.equal((await as(Y).post(`/api/cost-sheets/${aShared.id}/comments`, { text: 'hi' })).status, 404)
+    assert.equal((await as(Y).post(`/api/cost-sheets/${aShared.id}/approve`)).status, 404)
+    assert.equal((await as(B).post(`/api/cost-sheets/${aShared.id}/comments`, { text: 'hi' })).status, 404)
+    assert.equal((await as(B).post(`/api/cost-sheets/${aShared.id}/revise`)).status, 404)
+    assert.equal((await as(B).post(`/api/cost-sheets/${aDraft.id}`, { styleName: 'hijack' })).status, 404)
+    assert.equal((await as(B).post(`/api/cost-sheets/${aDraft.id}/share`, {})).status, 404)
+    assert.equal((await as(A).get(`/api/cost-sheets/${aDraft.id}`)).body.styleName, 'A draft for X')
+  })
+
+  test('a factory cannot start a sheet for a brand it does not work with, or seed it from a rival\'s bill of materials', async () => {
+    const { A, Y } = await stock()
+    assert.equal((await as(A).post('/api/cost-sheets', sheet(Y, 'Not my customer'))).status, 400)
+  })
+
+  test('the brand does not see a factory\'s own note on a sheet it shared', async () => {
+    const { A, X } = await stock()
+    const made = await as(A).post('/api/cost-sheets', { ...sheet(X, 'Noted'), internalNote: 'the real margin' })
+    await as(A).post(`/api/cost-sheets/${made.body.id}/share`, {})
+    assert.ok(!JSON.stringify((await as(X).get(`/api/cost-sheets/${made.body.id}`)).body).includes('the real margin'))
+  })
+
+  test('Tradio staff and visitors cannot use them, and the Tradio portal has none', async () => {
+    const { admin, master, A } = await stock()
+    for (const u of [admin, master]) assert.equal((await as(u).get('/api/cost-sheets')).status, 403, u.role)
+    assert.equal((await req('GET', '/api/cost-sheets')).status, 401)
+    delete process.env.PLATFORM_MODE
+    assert.equal((await as(A).get('/api/cost-sheets')).status, 404)
+  })
+
+  test('the live feed\'s cost sheet version moves for the two sides of a sheet and no one else', async () => {
+    const { A, B, X, Y } = await stock()
+    const v = async u => (await as(u).get('/api/floor/feed')).body.versions['cost-sheets']
+    const [y0, b0] = [await v(Y), await v(B)]
+    await as(A).post('/api/cost-sheets', sheet(X, 'Another A sheet for X'))
+    assert.equal(await v(Y), y0)                      // Y's view did not move
+    assert.equal(await v(B), b0)                      // nor did B's
+    const sharedNow = (await as(A).post('/api/cost-sheets', sheet(X, 'Shared later'))).body
+    const x0 = await v(X)
+    await as(A).post(`/api/cost-sheets/${sharedNow.id}/share`, {})
+    assert.notEqual(await v(X), x0)                   // X's did, once something was shared with it
   })
 })

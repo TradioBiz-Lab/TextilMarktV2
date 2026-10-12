@@ -383,3 +383,44 @@ export function emailPurchaseOrder({ to, supplierName, poNumber, buyerName, mess
   )
   return { to, subject: `Purchase order ${poNumber} from ${buyerName}`, html }
 }
+
+const rupees = n => `Rs ${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+/**
+ * The mail a brand's team receives when a factory shares a cost sheet: the PDF attached and a link that
+ * opens the sheet in the app, where they comment and approve. The link carries only the sheet's id and
+ * needs a sign-in, so a forwarded email shows the PDF the sender chose to share and nothing more.
+ */
+export function emailCostSheetShared({ to, factoryName, brandName, styleName, label, price, negotiated, message, link, senderName }) {
+  const shown = negotiated && negotiated !== price ? negotiated : price
+  const html = wrap(
+    header(`Cost sheet for ${styleName}`) +
+    `<p style="font-size:14px;color:#334155;line-height:1.6;margin:0 0 16px">${esc(factoryName)} has shared a cost sheet with ${esc(brandName)}. Open it to see the full build-up, comment on it, or approve it.</p>` +
+    (message ? `<div style="margin:0 0 16px;padding:12px 16px;background:#f8fafc;border-left:3px solid #C4622D;font-size:13px;color:#334155;white-space:pre-wrap;line-height:1.55">${esc(message)}</div>` : '') +
+    table(
+      row('Style', esc(styleName)) +
+      row('Cost sheet', `<code style="background:#f1f5f9;padding:2px 8px;border-radius:4px">${esc(label)}</code>`) +
+      row(negotiated && negotiated !== price ? 'Negotiated price' : 'Price per piece', esc(rupees(shown)))
+    ) +
+    btn('Review the cost sheet', link) +
+    `<p style="font-size:13px;color:#64748b;line-height:1.6;margin:0">The PDF is attached.${senderName ? ` ${esc(senderName)} will see your comments.` : ''}</p>` +
+    footer()
+  )
+  return { to, subject: `Cost sheet ${label}: ${styleName} from ${factoryName}`, html }
+}
+
+/** The mail a factory receives when the brand approves a cost sheet. */
+export function emailCostSheetApproved({ to, brandName, styleName, label, price, approvedBy, link }) {
+  const html = wrap(
+    header(`${styleName} approved`) +
+    `<p style="font-size:14px;color:#334155;line-height:1.6;margin:0 0 16px">${esc(brandName)} has approved your cost sheet${approvedBy ? ` (${esc(approvedBy)})` : ''}.</p>` +
+    table(
+      row('Style', esc(styleName)) +
+      row('Cost sheet', `<code style="background:#f1f5f9;padding:2px 8px;border-radius:4px">${esc(label)}</code>`) +
+      row('Approved price', esc(rupees(price)))
+    ) +
+    btn('Open the cost sheet', link) +
+    footer()
+  )
+  return { to, subject: `Approved: ${styleName} (${label})`, html }
+}
