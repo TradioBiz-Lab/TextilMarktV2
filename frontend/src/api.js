@@ -211,6 +211,49 @@ export const orgsApi = {
   disconnect: (id, partnerOrgId) => api.post(`/orgs/${id}/partners/${partnerOrgId}/revoke`),
   // Only the company's owner can change who may look at it; Tradio cannot.
   setTradioAccess: tradioCanView => api.post('/orgs/me/privacy', { tradioCanView }),
+  // The company's business details (GSTIN, address, state): the header of its purchase orders.
+  updateProfile: profile => api.post('/orgs/me/profile', profile),
+}
+
+// A manufacturer's private supplier book (standalone product).
+export const suppliersApi = {
+  list: ({ all = false } = {}) => api.get(`/suppliers${all ? '?all=1' : ''}`),
+  get: id => api.get(`/suppliers/${id}`),
+  create: data => api.post('/suppliers', data),
+  update: (id, data) => api.post(`/suppliers/${id}`, data),
+  archive: id => api.post(`/suppliers/${id}/archive`),
+  restore: id => api.post(`/suppliers/${id}/restore`),
+  bulk: suppliers => api.post('/suppliers/bulk', { suppliers }),
+  addItem: (id, data) => api.post(`/suppliers/${id}/items`, data),
+  updateItem: (id, itemId, data) => api.post(`/suppliers/${id}/items/${itemId}`, data),
+  archiveItem: (id, itemId) => api.post(`/suppliers/${id}/items/${itemId}/archive`),
+  restoreItem: (id, itemId) => api.post(`/suppliers/${id}/items/${itemId}/restore`),
+  bulkItems: (id, items) => api.post(`/suppliers/${id}/items/bulk`, { items }),
+}
+
+// Purchase orders a manufacturer raises with its suppliers (standalone product). Every figure on a PO
+// is computed by the server; what is sent here is only what the person typed.
+export const purchaseOrdersApi = {
+  list: ({ status, supplierId, orderId } = {}) => {
+    const q = new URLSearchParams()
+    if (status) q.set('status', status)
+    if (supplierId) q.set('supplierId', supplierId)
+    if (orderId) q.set('orderId', orderId)
+    const qs = q.toString()
+    return api.get(`/purchase-orders${qs ? `?${qs}` : ''}`)
+  },
+  get: id => api.get(`/purchase-orders/${id}`),
+  create: data => api.post('/purchase-orders', data),
+  update: (id, data) => api.post(`/purchase-orders/${id}`, data),
+  remove: id => api.post(`/purchase-orders/${id}/delete`),
+  pdf: id => api.get(`/purchase-orders/${id}/pdf`),
+  // { to?: [emails], message? } - emails the supplier the PDF; slower than the rest (it renders and sends)
+  send: (id, data) => api.post(`/purchase-orders/${id}/send`, data || {}, { timeout: 60000 }),
+  acknowledge: (id, data) => api.post(`/purchase-orders/${id}/acknowledge`, data || {}),
+  close: (id, reason) => api.post(`/purchase-orders/${id}/close`, { reason }),
+  cancel: (id, reason) => api.post(`/purchase-orders/${id}/cancel`, { reason }),
+  // { lines: [{ lineId, qty }], note? }
+  receive: (id, data) => api.post(`/purchase-orders/${id}/receive`, data),
 }
 
 export const inboundApi = {

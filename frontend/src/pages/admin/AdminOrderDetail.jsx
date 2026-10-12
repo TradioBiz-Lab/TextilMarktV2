@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, Fragment } from 'react'
 import Papa from 'papaparse'
 import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight, Trash2 } from '../../icons.jsx'
 import {
-  T, ORDER_STATUSES, evidenceTypesFor, DOC_ICONS,
+  T, ORDER_STATUSES, evidenceTypesFor, DOC_ICONS, isSystemDoc,
   stageKindOf, kindForCustomerOwner, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
   stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber, getToday, planProgress,
   PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor,
@@ -12,6 +12,7 @@ import { useApp } from '../../context.jsx'
 import { normalizeCsvDate } from '../../csvDates.js'
 import { capsFor, canWriteStage, canSetAssignmentStatus, canEditPlan, orderCaps } from '../../caps.js'
 import { usePartners } from '../../lib/usePartners.js'
+import { stagePoSummary } from '../../lib/procurement.js'
 import { OwnerChip } from '../../components/OwnerChip.jsx'
 import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
@@ -31,7 +32,7 @@ const BULK_EDIT_COLS = '170px 168px 168px 150px 78px minmax(120px, 1fr) 30px 64p
 
 export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   const { currentUser, orders, docs, users, loading, updateAssignment, updateStage, uploadDoc, getDocData, refreshOrders, editOrder, deleteOrder,
-    addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
+    addStageUpdate,
     addStageItem, updateStageItem, removeStageItem, addAssignment, reassignAssignment, insertStage, bulkUpdateStages } = useApp()
   const toast = useToast()
   // Same screen for every role; this decides which controls each one gets. `caps` is the role's
@@ -102,7 +103,9 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   // Per-stage updates thread + materials checklist (expand, in the stage grid)
   const [expandedStage, setExpandedStage] = useState(null) // `${mfrId}:${stageIndex}` or null
   const [updateDrafts, setUpdateDrafts] = useState({})
-  const [materialDrafts, setMaterialDrafts] = useState({}) // keyed by `${mfrId}:${stageIndex}` -> new-line form
+  // Stage notes being posted right now. A hook, so it lives up here with the others: anything below the early
+  // returns for a missing order would change the hook count between the loading render and the loaded one.
+  const postingNotes = useRef(new Set())
 
   // Doc upload modal
   const [showUp, setShowUp] = useState(false)
@@ -116,14 +119,6 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   const [sdStageIdx, setSdStageIdx] = useState(0)
   const [sdItems, setSdItems] = useState([{ type: '', name: '', file: null, notes: '', fileErr: '' }])
   const [sdErr, setSdErr] = useState('')
-
-  // Material PO attachment modal
-  const [showMaterialPo, setShowMaterialPo] = useState(false)
-  const [mpMfrId, setMpMfrId] = useState(null)
-  const [mpStageIdx, setMpStageIdx] = useState(0)
-  const [mpLineIdx, setMpLineIdx] = useState(0)
-  const [mpFile, setMpFile] = useState(null)
-  const [mpFileErr, setMpFileErr] = useState('')
 
   const [saving, setSaving] = useState(false)
   const [selectedMid, setSelectedMid] = useState(initialMid || null)
@@ -267,7 +262,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   const selectedAsgn = order.assignments?.find(a => String(a.mid) === effectiveMid) || null
 
   const orderDocs = docs.filter(d => String(d.orderId) === String(order.id) && d.isActive !== false)
-  const mfrDocs = docs.filter(d => d.mfrId && d.stageIndex == null && (order.assignments || []).some(a => String(a.mid) === String(d.mfrId)) && d.isActive !== false)
+  const mfrDocs = docs.filter(d => d.mfrId && d.stageIndex == null && !isSystemDoc(d) && (order.assignments || []).some(a => String(a.mid) === String(d.mfrId)) && d.isActive !== false)
   const txnDocs = effectiveMid
     ? orderDocs.filter(d => d.stageIndex == null || String(d.mfrId || '') === effectiveMid)
     : orderDocs
@@ -408,7 +403,6 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   }
 
   // ── Stage updates thread + materials checklist (expand row) ──
-  const postingNotes = useRef(new Set())
   const submitStageUpdateNote = async (mfrId, stageIndex) => {
     const key = `${mfrId}:${stageIndex}`
     const text = (updateDrafts[key] || '').trim()
@@ -449,67 +443,6 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     } catch (err) {
       toast(err?.message || 'Could not update item', 'error')
     }
-  }
-
-  const emptyMaterialDraft = { name: '', requiredQty: '', unit: '', supplier: '', poNumber: '', expectedDate: '' }
-  const submitAddMaterial = async (mfrId, stageIndex) => {
-    const key = `${mfrId}:${stageIndex}`
-    const draft = materialDrafts[key] || emptyMaterialDraft
-    if (!draft.name.trim() || !draft.requiredQty) return
-    try {
-      await addStageMaterial(order.id, mfrId, stageIndex, {
-        name: draft.name.trim(), requiredQty: draft.requiredQty, unit: draft.unit,
-        supplier: draft.supplier, poNumber: draft.poNumber, expectedDate: draft.expectedDate || null,
-      })
-      setMaterialDrafts(d => ({ ...d, [key]: emptyMaterialDraft }))
-    } catch (err) {
-      toast(err?.message || 'Failed to add material', 'error')
-    }
-  }
-
-  const advanceMaterialStatus = async (mfrId, stageIndex, lineIndex, currentStatus) => {
-    const next = currentStatus === 'pending' ? 'ordered' : currentStatus === 'ordered' ? 'received' : 'pending'
-    try {
-      await updateStageMaterial(order.id, mfrId, stageIndex, lineIndex, { status: next })
-    } catch (err) {
-      toast(err?.message || 'Failed to update material', 'error')
-    }
-  }
-
-  const deleteMaterial = async (mfrId, stageIndex, lineIndex) => {
-    try {
-      await removeStageMaterial(order.id, mfrId, stageIndex, lineIndex)
-    } catch (err) {
-      toast(err?.message || 'Failed to delete material', 'error')
-    }
-  }
-
-  // ── Material PO attachment ──
-  const openMaterialPoUpload = (mfrId, stageIndex, lineIndex) => {
-    setMpMfrId(mfrId)
-    setMpStageIdx(stageIndex)
-    setMpLineIdx(lineIndex)
-    setMpFile(null)
-    setMpFileErr('')
-    setShowMaterialPo(true)
-  }
-
-  const submitMaterialPo = async () => {
-    if (!mpFile) { setMpFileErr('Please select a file.'); return }
-    setSaving(true)
-    try {
-      const asgn = order.assignments.find(a => String(a.mid) === String(mpMfrId))
-      const material = asgn?.stages?.[mpStageIdx]?.materials?.[mpLineIdx]
-      await uploadDoc({
-        type: 'material_po', name: material?.name ? `${material.name} — PO` : 'Material PO',
-        orderId: order.id, mfrId: mpMfrId, stageIndex: mpStageIdx, materialLineIndex: mpLineIdx,
-        ...fileUploadPayload(mpFile),
-      })
-      toast('PO document attached', 'success')
-      setShowMaterialPo(false)
-    } catch (err) {
-      toast(err?.message || 'Failed to attach PO document', 'error')
-    } finally { setSaving(false) }
   }
 
   // ── Status Override ──
@@ -1360,22 +1293,6 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
         </Modal>
       )}
 
-      {/* ── Attach PO Document Modal ── */}
-      {showMaterialPo && mpMfrId && (() => {
-        const material = order.assignments.find(a => String(a.mid) === String(mpMfrId))?.stages?.[mpStageIdx]?.materials?.[mpLineIdx]
-        return (
-          <Modal title="Attach PO Document" subtitle={material?.name ? `${material.name} — attach the purchase order for this material line` : 'Attach a PO document for this material line'} onClose={() => setShowMaterialPo(false)}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <FileUpload file={mpFile} onFile={f => { setMpFile(f); setMpFileErr('') }} error={mpFileErr} onError={setMpFileErr} />
-              <FlexRow justify="flex-end" gap={8}>
-                <Btn variant="secondary" onClick={() => setShowMaterialPo(false)}>Cancel</Btn>
-                <Btn disabled={!mpFile || saving} onClick={submitMaterialPo}>{saving ? 'Uploading…' : 'Attach PO'}</Btn>
-              </FlexRow>
-            </div>
-          </Modal>
-        )
-      })()}
-
       {/* ── Inline document viewer ── */}
       {(viewerBlob || viewerLoading) && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.75)', zIndex: 2000, display: 'flex', flexDirection: 'column' }}
@@ -1617,6 +1534,11 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                                   {(s.materials || []).length > 0 && (
                                     <span style={{ fontSize: 9, fontWeight: 800, padding: '1px 5px', borderRadius: 3, background: receivedCount === s.materials.length ? T.successBg : T.warningBg, color: receivedCount === s.materials.length ? T.success : T.warning, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
                                       <Package size={9} /> {receivedCount}/{s.materials.length}
+                                    </span>
+                                  )}
+                                  {stagePoSummary(s) && (
+                                    <span title="Material lines bought on purchase orders" style={{ fontSize: 9, fontWeight: 800, padding: '1px 5px', borderRadius: 3, background: T.infoBg, color: T.info, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                                      {stagePoSummary(s).pos.length === 1 ? stagePoSummary(s).pos[0] : `${stagePoSummary(s).pos.length} POs`}
                                     </span>
                                   )}
                                   {(s.updates || []).length > 0 && <span style={{ fontSize: 9, color: T.textMuted, display: 'inline-flex', alignItems: 'center', gap: 2 }}><MessageCircle size={9} /> {s.updates.length}</span>}

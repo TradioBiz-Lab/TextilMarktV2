@@ -1,7 +1,7 @@
 import { ViewAsPicker } from './ViewAsPicker.jsx'
 import { ViewAsBanner } from './ViewAsBanner.jsx'
 import { useState, useEffect } from 'react'
-import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot, Inbox, Building2 } from '../icons.jsx'
+import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot, Inbox, Building2, Storefront, Receipt } from '../icons.jsx'
 import { T } from '../constants.js'
 import { Btn, RibbonBanner } from './ui.jsx'
 import { Logo } from './Brand.jsx'
@@ -11,7 +11,7 @@ import { useApp } from '../context.jsx'
 import { navSections, navIdForView } from '../nav.js'
 
 // nav.js names icons so it can stay free of React; these are the components behind the names.
-const NAV_ICONS = { Home, ListChecks, Bot, Package, Inbox, Folder, BarChart3, History, Users, Buildings: Building2 }
+const NAV_ICONS = { Home, ListChecks, Bot, Package, Inbox, Folder, BarChart3, History, Users, Buildings: Building2, Storefront, Receipt }
 
 function NetworkBanner() {
   const [online, setOnline] = useState(navigator.onLine)

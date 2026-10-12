@@ -3,6 +3,7 @@ import { Building2, Factory, LockKey, ShieldCheck, Handshake } from '../../icons
 import { T } from '../../constants.js'
 import { Btn, Card, PageHeader, Alert, LoadingScreen, EmptyState, SectionLabel, useToast } from '../../components/ui.jsx'
 import { Switch } from '../../components/Switch.jsx'
+import { BusinessDetails } from './BusinessDetails.jsx'
 import { useApp } from '../../context.jsx'
 import { capsFor } from '../../caps.js'
 import { orgsApi, partnersApi } from '../../api.js'
@@ -75,6 +76,9 @@ export function CompanyPage() {
           </div>
         </div>
       </Card>
+
+      <div style={{ height: 14 }} />
+      <BusinessDetails org={org} canEdit={user?.orgRole === 'owner' && !user?.viewAsBy} onSaved={setOrg} />
 
       <div style={{ height: 14 }} />
       <Card>

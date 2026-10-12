@@ -147,10 +147,11 @@ export function KriyaaWidget() {
       )}
 
       <button
+        className="kriyaa-fab"
         onClick={() => setOpen(p => !p)}
         title="Kriyaa — AI assistant"
         style={{
-          position: 'fixed', bottom: 24, right: 24, zIndex: 500,
+          position: 'fixed', bottom: 'var(--kriyaa-bottom, 24px)', right: 24, zIndex: 500,
           width: 52, height: 52, borderRadius: '50%', border: 'none', cursor: 'pointer',
           background: T.primary, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
           boxShadow: '0 6px 20px rgba(194,65,12,0.35)',

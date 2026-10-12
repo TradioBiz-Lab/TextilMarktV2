@@ -1,0 +1,565 @@
+[
+  {
+    "name": "one line, same state: CGST and SGST each half the rate",
+    "mode": "intra",
+    "lines": [
+      {
+        "qty": 100,
+        "rate": 200,
+        "taxPct": 12,
+        "discountPct": 0
+      }
+    ],
+    "expected": {
+      "taxMode": "intra",
+      "lines": [
+        {
+          "amount": 20000,
+          "taxAmount": 2400,
+          "lineTotal": 22400
+        }
+      ],
+      "totals": {
+        "subtotal": 20000,
+        "discount": 0,
+        "taxable": 20000,
+        "cgst": 1200,
+        "sgst": 1200,
+        "igst": 0,
+        "gst": 0,
+        "taxTotal": 2400,
+        "roundOff": 0,
+        "grandTotal": 22400,
+        "byRate": [
+          {
+            "rate": 12,
+            "taxable": 20000,
+            "cgst": 1200,
+            "sgst": 1200,
+            "igst": 0,
+            "gst": 0
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "one line, another state: IGST is the whole rate",
+    "mode": "inter",
+    "lines": [
+      {
+        "qty": 100,
+        "rate": 200,
+        "taxPct": 12,
+        "discountPct": 0
+      }
+    ],
+    "expected": {
+      "taxMode": "inter",
+      "lines": [
+        {
+          "amount": 20000,
+          "taxAmount": 2400,
+          "lineTotal": 22400
+        }
+      ],
+      "totals": {
+        "subtotal": 20000,
+        "discount": 0,
+        "taxable": 20000,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 2400,
+        "gst": 0,
+        "taxTotal": 2400,
+        "roundOff": 0,
+        "grandTotal": 22400,
+        "byRate": [
+          {
+            "rate": 12,
+            "taxable": 20000,
+            "cgst": 0,
+            "sgst": 0,
+            "igst": 2400,
+            "gst": 0
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "one line, a state missing: one combined GST figure",
+    "mode": "unknown",
+    "lines": [
+      {
+        "qty": 100,
+        "rate": 200,
+        "taxPct": 12,
+        "discountPct": 0
+      }
+    ],
+    "expected": {
+      "taxMode": "unknown",
+      "lines": [
+        {
+          "amount": 20000,
+          "taxAmount": 2400,
+          "lineTotal": 22400
+        }
+      ],
+      "totals": {
+        "subtotal": 20000,
+        "discount": 0,
+        "taxable": 20000,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "gst": 2400,
+        "taxTotal": 2400,
+        "roundOff": 0,
+        "grandTotal": 22400,
+        "byRate": [
+          {
+            "rate": 12,
+            "taxable": 20000,
+            "cgst": 0,
+            "sgst": 0,
+            "igst": 0,
+            "gst": 2400
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "a line discount comes off before tax",
+    "mode": "inter",
+    "lines": [
+      {
+        "qty": 10,
+        "rate": 100,
+        "taxPct": 18,
+        "discountPct": 10
+      }
+    ],
+    "expected": {
+      "taxMode": "inter",
+      "lines": [
+        {
+          "amount": 900,
+          "taxAmount": 162,
+          "lineTotal": 1062
+        }
+      ],
+      "totals": {
+        "subtotal": 1000,
+        "discount": 100,
+        "taxable": 900,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 162,
+        "gst": 0,
+        "taxTotal": 162,
+        "roundOff": 0,
+        "grandTotal": 1062,
+        "byRate": [
+          {
+            "rate": 18,
+            "taxable": 900,
+            "cgst": 0,
+            "sgst": 0,
+            "igst": 162,
+            "gst": 0
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "the grand total rounds to the rupee and shows the difference",
+    "mode": "inter",
+    "lines": [
+      {
+        "qty": 3,
+        "rate": 33.33,
+        "taxPct": 5,
+        "discountPct": 0
+      }
+    ],
+    "expected": {
+      "taxMode": "inter",
+      "lines": [
+        {
+          "amount": 99.99,
+          "taxAmount": 5,
+          "lineTotal": 104.99
+        }
+      ],
+      "totals": {
+        "subtotal": 99.99,
+        "discount": 0,
+        "taxable": 99.99,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 5,
+        "gst": 0,
+        "taxTotal": 5,
+        "roundOff": 0.01,
+        "grandTotal": 105,
+        "byRate": [
+          {
+            "rate": 5,
+            "taxable": 99.99,
+            "cgst": 0,
+            "sgst": 0,
+            "igst": 5,
+            "gst": 0
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "tax groups by rate across lines (cloth at 5, trims at 12 and 18)",
+    "mode": "intra",
+    "lines": [
+      {
+        "qty": 1250.5,
+        "rate": 342.5,
+        "taxPct": 5,
+        "discountPct": 0
+      },
+      {
+        "qty": 85,
+        "rate": 410,
+        "taxPct": 5,
+        "discountPct": 2
+      },
+      {
+        "qty": 3600,
+        "rate": 18.75,
+        "taxPct": 18,
+        "discountPct": 0
+      },
+      {
+        "qty": 1000,
+        "rate": 0.85,
+        "taxPct": 12,
+        "discountPct": 0
+      }
+    ],
+    "expected": {
+      "taxMode": "intra",
+      "lines": [
+        {
+          "amount": 428296.25,
+          "taxAmount": 21414.82,
+          "lineTotal": 449711.07
+        },
+        {
+          "amount": 34153,
+          "taxAmount": 1707.66,
+          "lineTotal": 35860.66
+        },
+        {
+          "amount": 67500,
+          "taxAmount": 12150,
+          "lineTotal": 79650
+        },
+        {
+          "amount": 850,
+          "taxAmount": 102,
+          "lineTotal": 952
+        }
+      ],
+      "totals": {
+        "subtotal": 531496.25,
+        "discount": 697,
+        "taxable": 530799.25,
+        "cgst": 17687.24,
+        "sgst": 17687.24,
+        "igst": 0,
+        "gst": 0,
+        "taxTotal": 35374.48,
+        "roundOff": 0.27,
+        "grandTotal": 566174,
+        "byRate": [
+          {
+            "rate": 5,
+            "taxable": 462449.25,
+            "cgst": 11561.24,
+            "sgst": 11561.24,
+            "igst": 0,
+            "gst": 0
+          },
+          {
+            "rate": 12,
+            "taxable": 850,
+            "cgst": 51,
+            "sgst": 51,
+            "igst": 0,
+            "gst": 0
+          },
+          {
+            "rate": 18,
+            "taxable": 67500,
+            "cgst": 6075,
+            "sgst": 6075,
+            "igst": 0,
+            "gst": 0
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "fractions of a paisa never drift: seven lines of 3 x 0.1",
+    "mode": "unknown",
+    "lines": [
+      {
+        "qty": 3,
+        "rate": 0.1,
+        "taxPct": 0,
+        "discountPct": 0
+      },
+      {
+        "qty": 3,
+        "rate": 0.1,
+        "taxPct": 0,
+        "discountPct": 0
+      },
+      {
+        "qty": 3,
+        "rate": 0.1,
+        "taxPct": 0,
+        "discountPct": 0
+      },
+      {
+        "qty": 3,
+        "rate": 0.1,
+        "taxPct": 0,
+        "discountPct": 0
+      },
+      {
+        "qty": 3,
+        "rate": 0.1,
+        "taxPct": 0,
+        "discountPct": 0
+      },
+      {
+        "qty": 3,
+        "rate": 0.1,
+        "taxPct": 0,
+        "discountPct": 0
+      },
+      {
+        "qty": 3,
+        "rate": 0.1,
+        "taxPct": 0,
+        "discountPct": 0
+      }
+    ],
+    "expected": {
+      "taxMode": "unknown",
+      "lines": [
+        {
+          "amount": 0.3,
+          "taxAmount": 0,
+          "lineTotal": 0.3
+        },
+        {
+          "amount": 0.3,
+          "taxAmount": 0,
+          "lineTotal": 0.3
+        },
+        {
+          "amount": 0.3,
+          "taxAmount": 0,
+          "lineTotal": 0.3
+        },
+        {
+          "amount": 0.3,
+          "taxAmount": 0,
+          "lineTotal": 0.3
+        },
+        {
+          "amount": 0.3,
+          "taxAmount": 0,
+          "lineTotal": 0.3
+        },
+        {
+          "amount": 0.3,
+          "taxAmount": 0,
+          "lineTotal": 0.3
+        },
+        {
+          "amount": 0.3,
+          "taxAmount": 0,
+          "lineTotal": 0.3
+        }
+      ],
+      "totals": {
+        "subtotal": 2.1,
+        "discount": 0,
+        "taxable": 2.1,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "gst": 0,
+        "taxTotal": 0,
+        "roundOff": -0.1,
+        "grandTotal": 2,
+        "byRate": [
+          {
+            "rate": 0,
+            "taxable": 2.1,
+            "cgst": 0,
+            "sgst": 0,
+            "igst": 0,
+            "gst": 0
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "quantities with decimals and an odd rate",
+    "mode": "intra",
+    "lines": [
+      {
+        "qty": 12.345,
+        "rate": 99.99,
+        "taxPct": 5,
+        "discountPct": 0
+      },
+      {
+        "qty": 0.5,
+        "rate": 1234.56,
+        "taxPct": 12,
+        "discountPct": 0
+      }
+    ],
+    "expected": {
+      "taxMode": "intra",
+      "lines": [
+        {
+          "amount": 1234.38,
+          "taxAmount": 61.72,
+          "lineTotal": 1296.1
+        },
+        {
+          "amount": 617.28,
+          "taxAmount": 74.08,
+          "lineTotal": 691.36
+        }
+      ],
+      "totals": {
+        "subtotal": 1851.66,
+        "discount": 0,
+        "taxable": 1851.66,
+        "cgst": 67.9,
+        "sgst": 67.9,
+        "igst": 0,
+        "gst": 0,
+        "taxTotal": 135.8,
+        "roundOff": -0.46,
+        "grandTotal": 1987,
+        "byRate": [
+          {
+            "rate": 5,
+            "taxable": 1234.38,
+            "cgst": 30.86,
+            "sgst": 30.86,
+            "igst": 0,
+            "gst": 0
+          },
+          {
+            "rate": 12,
+            "taxable": 617.28,
+            "cgst": 37.04,
+            "sgst": 37.04,
+            "igst": 0,
+            "gst": 0
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "a zero rate (free of charge sample) adds nothing",
+    "mode": "inter",
+    "lines": [
+      {
+        "qty": 10,
+        "rate": 0,
+        "taxPct": 5,
+        "discountPct": 0
+      },
+      {
+        "qty": 2,
+        "rate": 50,
+        "taxPct": 5,
+        "discountPct": 0
+      }
+    ],
+    "expected": {
+      "taxMode": "inter",
+      "lines": [
+        {
+          "amount": 0,
+          "taxAmount": 0,
+          "lineTotal": 0
+        },
+        {
+          "amount": 100,
+          "taxAmount": 5,
+          "lineTotal": 105
+        }
+      ],
+      "totals": {
+        "subtotal": 100,
+        "discount": 0,
+        "taxable": 100,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 5,
+        "gst": 0,
+        "taxTotal": 5,
+        "roundOff": 0,
+        "grandTotal": 105,
+        "byRate": [
+          {
+            "rate": 5,
+            "taxable": 100,
+            "cgst": 0,
+            "sgst": 0,
+            "igst": 5,
+            "gst": 0
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "no lines at all",
+    "mode": "intra",
+    "lines": [],
+    "expected": {
+      "taxMode": "intra",
+      "lines": [],
+      "totals": {
+        "subtotal": 0,
+        "discount": 0,
+        "taxable": 0,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "gst": 0,
+        "taxTotal": 0,
+        "roundOff": 0,
+        "grandTotal": 0,
+        "byRate": []
+      }
+    }
+  }
+]

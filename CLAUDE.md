@@ -54,12 +54,14 @@ backend/src/
   middleware/asyncErrors.js # forwards rejected async handlers to the error handler
   models/             # User, Order, Document, Notification, AuditLog, Ribbon, MasterOrder,
                        # ActionItem, DroppedRecord, InboundMessage,
-                       # Organization, Partnership, Counter (standalone product, see below)
+                       # Organization, Partnership, Counter (standalone product, see below),
+                       # Supplier, SupplierItem, PurchaseOrder (procurement, standalone only)
   routes/             # auth, viewAs, orders, documents, users, notifications, audit, ribbons,
                        # masterOrders, signup, actionItems, assistant (Kriyaa), voice, inbound,
-                       # review, floor, dropped, orgs, partners
+                       # review, floor, dropped, orgs, partners, suppliers, purchaseOrders
   lib/                # email, stageMath, notify, redact, dropRecord, sarvam, ai/, inbound/,
-                       # platform, authz, orgs, session, orderCreate, counters, migrate
+                       # platform, authz, orgs, session, orderCreate, counters, migrate,
+                       # procurement, poMath, poSync, gst, fiscalYear, words, orgProfile, pdf/
 frontend/src/
   App.jsx             # top-level view router (hand-rolled, no react-router)
   context.jsx         # AppProvider — single global data/actions store
@@ -70,6 +72,8 @@ frontend/src/
   pages/admin/...      # the screens ALL roles use (Dashboard, Orders, Order detail, Documents, ...)
   pages/shared/...     # Reports, Action Items, CompanyPage (standalone: team, partners, privacy switch)
   pages/master/...     # ViewerHome: the master admin's company directory (standalone)
+  pages/procurement/... # Suppliers, purchase orders, builder, receive (standalone, manufacturers)
+  stores/              # feature stores (createFeatureStore): per-feature lists with live refresh
   pages/buyer/BuyerSubmitReq.jsx  # customer-only 'Submit Requirement'
   caps.js              # what each role may do in the shared screens (mirrors the server rules)
   nav.js               # the sidebar as data, built from caps
@@ -232,6 +236,47 @@ admin enables them in User Setup.
   matrix in both modes (two brands, two manufacturers). Every new resource must be added to it before
   its phase counts as done. Write each new route's scoping with one helper per resource, never a bare
   model read.
+- **Procurement: suppliers and purchase orders** (standalone only; `/api/suppliers` and
+  `/api/purchase-orders` answer 404 in the Tradio portal, `requireProcurement` in `lib/procurement.js`).
+  - *Who.* A manufacturer's own session (a master admin sees it through view-as, read-only unless acting
+    for a Tradio-enabled factory). Brands get 403 on both routers and never see who a factory buys from:
+    `enrichOrder(..., { hideSupply })` blanks `supplier`, `poNumber`, `supplierId` and `poId` on material
+    lines for brands, and `PO_HIDDEN_FROM_BRANDS` (`supplier_po`, `material_po`) keeps those documents
+    out of their lists. Suppliers and catalog items carry `visibility: 'private'` (reserved for a future
+    marketplace; nothing reads another company's rows).
+  - *Scoping.* Every row has `ownerOrgId`; each router has one `mine(req)` helper and answers 404 (never
+    403) for another company's id. All three resources are in the `tenantIsolation` matrix.
+  - *Money is the server's.* `lib/poMath.js` works in whole paise: tax per line, CGST+SGST when the
+    supplier and the factory are in the same state, IGST otherwise, one combined GST figure when a state
+    is unknown, round-off to the rupee. The browser mirror is `frontend/src/lib/poCalc.js`; both suites run
+    the same cases from `backend/tests/fixtures/poMath.cases.json`, so a drift fails a test. GSTIN check
+    characters are validated (`lib/gst.js`, mirrored in the frontend). Client-sent totals are ignored.
+  - *Numbers and lifecycle.* `PO-<company code>-<FY>-NNNN` from `allocatePoId` (Indian financial year, in
+    IST). draft, then `sending` (an atomic claim; one older than 2 minutes is a crashed send and may be
+    retried), then sent, acknowledged, partially received, closed; cancelled is final. Supplier and company
+    details are frozen on the PO at send. Receipts tolerate 10 percent over the ordered quantity (cloth is
+    measured, not counted).
+  - *The order's material lines.* `lib/poSync.js` is the only thing that moves them: send marks a linked
+    line ordered (with `poId`, supplier and expected date), receiving brings it in (which opens the
+    production step's materials gate), cancelling releases it. A line is found by its recorded position and
+    name, falling back to the name alone if steps moved. `lib/authz.js` `mayRunStep` lets a manufacturer
+    work the materials and checklist of every step of its own split in standalone (the Tradio portal still
+    needs the step's named owner).
+  - *PDF and email.* `lib/pdf/` uses pdfkit with Noto Sans bundled in `backend/assets/fonts` (for the rupee
+    sign), no browser engine. The as-sent PDF is stored as a `supplier_po` Document: it cannot be uploaded,
+    edited or deleted by hand (409), the frontend treats it as a system document (`isSystemDoc`), and it is
+    kept out of the order's Compliance tab. Email goes through `sendEmailDetailed` (attachments, reply-to
+    the sender, "<company> via TextilMarkt"); with no `RESEND_API_KEY` the PO is still marked sent and the
+    UI says nothing was emailed. Tests swap the mailer with `setMailerForTests`.
+  - *Frontend.* Lists and the PO's items use `DataTable` (cards on phones). `stores/procurement.jsx` mounts
+    the suppliers and POs stores once for every procurement view (`ProcurementProviders`). The builder's
+    `reconcileLines` (in `lib/procurement.js`) keeps lines valid when the supplier changes: a catalog tie to
+    another supplier's item is dropped (the server refuses it) and blank lines take the new supplier's
+    rate by name. Deep link `#po=<id>` opens a PO. On phones the builder adds `has-action-bar` to `body`,
+    which lifts the Kriyaa button above the pinned totals bar (`--kriyaa-bottom`).
+  - *Deploy.* `pdfkit` is a new dependency (`predeploy` runs `npm install`) and `backend/assets/fonts` ships
+    with the backend. Seed data: `seedProcurement` in `db/seed.js` (6 suppliers, 5 catalog items, 3 POs for
+    Tiruppur Textiles).
 - **Run it locally.** `npm run dev:local` (backend) starts an ephemeral in-memory mongod, seeds a
   standalone environment and blanks the email key, so nothing touches Atlas and no email is sent. It
   uses the same seed logins as `npm run seed:sandbox` (never run that against the shared sandbox DB

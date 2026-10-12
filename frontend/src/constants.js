@@ -1,7 +1,7 @@
 import {
   ClipboardList, ShoppingCart, Ruler, Wallet, Mail, FileText, ShieldCheck, Search,
   FlaskConical, Leaf, ShieldPlus, Package, Layers, CheckCircle2, Palette, Settings2,
-  Scissors, Shirt, Trophy, Truck, Factory, Camera } from './icons.jsx'
+  Scissors, Shirt, Trophy, Truck, Factory, Camera, Receipt } from './icons.jsx'
 import { BRAND_NAVY, BRAND_ORANGE } from './brandMark.js'
 
 // Legacy status flow (kept for admin/mfr pages not yet migrated)
@@ -77,6 +77,11 @@ export const STAGE_DOC_TYPES = [
   { v: 'floor_evidence', l: 'Floor evidence',       stageIndex: -1 },
 ]
 
+// Records the server makes itself: the PDF of a purchase order as it was sent. They are shown with a name
+// and an icon, never offered for upload, and never edited or deleted by hand (the server refuses it too).
+export const SYSTEM_DOC_TYPES = [{ v: 'supplier_po', l: 'Supplier PO' }]
+export const isSystemDoc = d => SYSTEM_DOC_TYPES.some(t => t.v === d?.type)
+
 // Map stageIndex → allowed evidence doc types for that stage
 export const STAGE_DOC_MAP = STAGE_DOC_TYPES.reduce((acc, d) => {
   if (!acc[d.stageIndex]) acc[d.stageIndex] = []
@@ -113,6 +118,7 @@ export const DOC_ICONS = {
   floor_evidence: Camera, cutting_qc: Scissors, stitching_qc: Shirt, final_qc: Trophy,
   packing_qc: Package, dispatch_docs: Truck,
   mfr_profile: Factory,
+  supplier_po: Receipt,
 }
 
 export const CATEGORIES = ['TSHRT', 'JEANS', 'BEDSH', 'SHIRT', 'DRESS', 'JACKET', 'POLO', 'SHORTS', 'HOODIE']

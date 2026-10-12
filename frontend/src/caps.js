@@ -59,6 +59,10 @@ export function capsFor(user) {
     seeViewerHome: isMaster && standalone,
     // A company's own settings page: its team, partners and the Tradio access switch.
     seeCompanyPage: standalone && isCompany,
+    // Suppliers and purchase orders: a manufacturer's own, in the standalone product only. A master
+    // admin viewing a factory read-only is that factory's session, so sees them but cannot write.
+    seeProcurement: standalone && isMfr,
+    manageProcurement: w(standalone && isMfr),
     changeTradioAccess: standalone && isCompany && user?.orgRole === 'owner' && !user?.viewAsBy,
   }
 }

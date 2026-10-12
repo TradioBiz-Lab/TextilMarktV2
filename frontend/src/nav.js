@@ -23,7 +23,7 @@ export function navSections(user) {
 
   // Every role gets the same six tabs, in the same order. Admins get three extra management tabs;
   // what each tab shows is scoped to the signed-in user's own data.
-  const items = [
+  const main = [
     { id: 'dashboard', icon: 'Home', label: 'Dashboard' },
     { id: 'action_items', icon: 'ListChecks', label: 'Action Items' },
     { id: 'kriyaa', icon: 'Bot', label: 'Kriyaa' },
@@ -33,10 +33,28 @@ export function navSections(user) {
     { id: 'reports', icon: 'BarChart3', label: 'Reports' },
     ...(caps.seeAudit ? [{ id: 'audit', icon: 'History', label: 'Audit Log' }] : []),
     ...(caps.seeUserSetup ? [{ id: 'users', icon: 'Users', label: 'User Setup' }] : []),
-    ...(caps.seeCompanyPage ? [{ id: 'company', icon: 'Buildings', label: 'Company' }] : []),
   ]
-  return [{ items }]
+  const company = caps.seeCompanyPage ? [{ id: 'company', icon: 'Buildings', label: 'Company' }] : []
+
+  // A manufacturer in the standalone product also buys: its supplier book and purchase orders get a
+  // section of their own, so style-level depth stays inside the order and the sidebar stays short.
+  if (caps.seeProcurement) {
+    return [
+      { items: main },
+      { label: 'Purchasing', items: [
+        { id: 'suppliers', icon: 'Storefront', label: 'Suppliers' },
+        { id: 'purchase_orders', icon: 'Receipt', label: 'Purchase Orders' },
+      ] },
+      ...(company.length ? [{ label: 'Account', items: company }] : []),
+    ]
+  }
+  return [{ items: [...main, ...company] }]
 }
 
 /** Which sidebar item lights up for a view (a detail screen belongs to its list). */
-export const navIdForView = view => (view === 'order_detail' || view === 'submit_req' ? 'orders' : view)
+export function navIdForView(view) {
+  if (view === 'order_detail' || view === 'submit_req') return 'orders'
+  if (view === 'po_builder' || view === 'po_detail') return 'purchase_orders'
+  if (view === 'supplier_detail') return 'suppliers'
+  return view
+}

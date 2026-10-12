@@ -82,6 +82,16 @@ describe('the standalone product: brands and manufacturers create their own work
     expect(capsFor(sMaster).seeCompanyPage).toBe(false)
   })
 
+  test('suppliers and purchase orders: a factory\'s own, in the standalone product only; read-only while merely viewed', () => {
+    expect(capsFor(sMfr).seeProcurement).toBe(true)
+    expect(capsFor(sMfr).manageProcurement).toBe(true)
+    expect(capsFor(mfr).seeProcurement).toBe(false)                   // the Tradio portal
+    for (const u of [sBuyer, sAdmin, sMaster]) { expect(capsFor(u).seeProcurement).toBe(false); expect(capsFor(u).manageProcurement).toBe(false) }
+    expect(capsFor(viewing(sMfr)).seeProcurement).toBe(true)          // the master admin sees what the factory sees...
+    expect(capsFor(viewing(sMfr)).manageProcurement).toBe(false)      // ...but cannot change it
+    expect(capsFor({ ...viewing(sMfr), actingFor: true }).manageProcurement).toBe(true)
+  })
+
   test('only a company\'s owner changes Tradio\'s access, and never from inside a view-as session', () => {
     expect(capsFor(sMfr).changeTradioAccess).toBe(true)
     expect(capsFor({ ...sMfr, orgRole: 'member' }).changeTradioAccess).toBe(false)

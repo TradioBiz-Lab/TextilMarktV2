@@ -85,6 +85,7 @@ export function AdminDocuments() {
     { v: 'tech_pack', l: 'Tech Packs' }, { v: 'cost_sheet', l: 'Cost Sheets' },
     { v: 'compliance_cert', l: 'Compliance' }, { v: 'factory_audit', l: 'Audit Reports' },
     { v: 'mfr_profile', l: 'Mfr Profiles', Icon: Factory },
+    ...(nonStageDocs.some(d => d.type === 'supplier_po') ? [{ v: 'supplier_po', l: 'Supplier POs' }] : []),
   ]
 
   const certTabs = [

@@ -14,6 +14,11 @@ import { KriyaaPage } from './pages/admin/KriyaaPage.jsx'
 import { ReviewQueuePage } from './pages/admin/ReviewQueuePage.jsx'
 import { ViewerHome } from './pages/master/ViewerHome.jsx'
 import { CompanyPage } from './pages/shared/CompanyPage.jsx'
+import { ProcurementProviders } from './stores/procurement.jsx'
+import { SuppliersPage } from './pages/procurement/SuppliersPage.jsx'
+import { PoListPage } from './pages/procurement/PoListPage.jsx'
+import { PoBuilder } from './pages/procurement/PoBuilder.jsx'
+import { PoDetail } from './pages/procurement/PoDetail.jsx'
 import { LiveRefresh } from './components/LiveRefresh.jsx'
 import { KriyaaChatProvider } from './kriyaaChatContext.jsx'
 import { ReportingPage } from './pages/shared/ReportingPage.jsx'
@@ -82,6 +87,8 @@ function Inner() {
   const [ordersStatus, setOrdersStatus] = useState(null)
   const [ordersMo, setOrdersMo] = useState(null)     // master order to open on the Orders page
   const [reportsMo, setReportsMo] = useState(null)   // master order to open on the Reports page
+  const [selPo, setSelPo] = useState(null)           // purchase order open (or being edited) on the purchasing screens
+  const [selSupplier, setSelSupplier] = useState(null) // supplier to open on the Suppliers page, or to start a new PO for
 
   // ── Navigation with real history ──
   // Every screen change is a snapshot pushed onto a stack that is mirrored into the browser's own
@@ -89,10 +96,11 @@ function Inner() {
   // you came from. Before leaving a list for an order, that list's snapshot is stamped with the
   // order's master order, so coming back re-opens (and scrolls to) the group you were in.
   const hist = useRef({ stack: [], idx: -1 })
-  const BLANK = { view: 'dashboard', selOid: null, selMid: null, ordersStatus: null, ordersMo: null, reportsMo: null }
+  const BLANK = { view: 'dashboard', selOid: null, selMid: null, ordersStatus: null, ordersMo: null, reportsMo: null, selPo: null, selSupplier: null }
   const apply = useCallback(s => {
     setView(s.view); setSelOid(s.selOid); setSelMid(s.selMid)
     setOrdersStatus(s.ordersStatus); setOrdersMo(s.ordersMo); setReportsMo(s.reportsMo)
+    setSelPo(s.selPo ?? null); setSelSupplier(s.selSupplier ?? null)
   }, [])
   const go = useCallback(next => {
     const h = hist.current
@@ -119,7 +127,7 @@ function Inner() {
     const link = parseDeepLink(window.location.hash)
     if (link) {
       window.history.replaceState({ nav: 0 }, '', window.location.pathname + window.location.search)
-      go(link.view === 'order_detail' ? { view: 'order_detail', selOid: link.orderId } : { view: link.view })
+      go(link.view === 'order_detail' ? { view: 'order_detail', selOid: link.orderId } : link.view === 'po_detail' ? { view: 'po_detail', selPo: link.poId } : { view: link.view })
     }
   }, [user?.id, apply, go])
 
@@ -152,6 +160,8 @@ function Inner() {
     ordersStatus: params?.status ?? null,
     ordersMo: v === 'orders' ? (params?.mo ?? null) : null,
     reportsMo: v === 'reports' ? (params?.mo ?? null) : null,
+    selPo: params?.po ?? null,
+    selSupplier: params?.supplier ?? null,
   })
   const openOrder = (id, mid) => {
     // Remember which master order we are leaving from, so Back re-opens that group.
@@ -172,6 +182,20 @@ function Inner() {
     // signed-in user, and hides the controls that role cannot use (see caps.js).
     if (view === 'dashboard') return <AdminDashboard onNavigate={navTo} onOpen={openOrder} />
     if (view === 'kriyaa') return <KriyaaPage />
+    // Suppliers and purchase orders (a manufacturer's own, standalone product). One provider wraps all four
+    // screens, in the same place in the tree, so moving between them keeps what was loaded.
+    if (caps.seeProcurement && ['suppliers', 'purchase_orders', 'po_builder', 'po_detail'].includes(view)) {
+      const toList = () => goBack({ view: 'purchase_orders' })
+      return (
+        <ProcurementProviders>
+          {view === 'suppliers' ? <SuppliersPage key={`s:${selSupplier || 'all'}`} initialSupplier={selSupplier} onNavigate={navTo} />
+            : view === 'purchase_orders' ? <PoListPage onNavigate={navTo} />
+            : view === 'po_builder' ? <PoBuilder key={`b:${selPo || selSupplier || 'new'}`} poId={selPo} initialSupplier={selSupplier} onBack={toList} onNavigate={navTo} />
+            : selPo ? <PoDetail key={`d:${selPo}`} poId={selPo} onBack={toList} onNavigate={navTo} onOpenOrder={openOrder} />
+            : <PoListPage onNavigate={navTo} />}
+        </ProcurementProviders>
+      )
+    }
     if (view === 'viewer' && caps.seeViewerHome) return <ViewerHome />
     if (view === 'company' && caps.seeCompanyPage) return <CompanyPage />
     if (view === 'orders') return <AdminOrders key={`o:${ordersMo || 'all'}`} onOpen={openOrder} initialStatus={ordersStatus} initialMo={ordersMo} onSubmitReq={user.role === 'buyer' ? () => navTo('submit_req') : undefined} />

@@ -470,3 +470,54 @@ table { border-collapse: collapse; width: 100%; }
 
 /* ── Sidebar section heading (a labelled group of navigation items) ── */
 .sidebar-section-label { font-size: 10px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: rgba(255,255,255,0.38); padding: 12px 12px 4px; }
+
+/* ── Purchase order builder ─────────────────────────────────────────────────────
+   Desktop: one row per line, column headers on top. Phone: each line becomes a card, two fields to a
+   row, with its own labels and 44px touch targets, because a factory manager enters these on a phone. */
+.po-lines-head, .po-line { display: grid; grid-template-columns: minmax(200px, 3.2fr) 78px 84px 62px 92px 64px 64px 110px 34px; gap: 8px; align-items: start; }
+.po-lines-head { font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.07em; padding: 0 0 6px; border-bottom: 1px solid #e2e8f0; }
+.po-line { padding: 10px 0; border-bottom: 1px solid #f1f5f9; position: relative; }
+.po-line label { display: block; }
+.po-line input { width: 100%; box-sizing: border-box; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 9px; font-size: 13px; font-family: inherit; color: #0f172a; background: #fff; min-width: 0; }
+.po-line input:focus { outline: 2px solid #fdba74; outline-offset: 0; border-color: #c4622d; }
+.po-line .po-num { text-align: right; font-variant-numeric: tabular-nums; }
+.po-line .po-amount { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 13px; padding-top: 9px; color: #0f172a; }
+.po-mlabel { display: none; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; margin-bottom: 3px; }
+.po-remove { border: 1px solid #e2e8f0; background: #fff; border-radius: 8px; width: 34px; height: 34px; cursor: pointer; color: #64748b; display: inline-flex; align-items: center; justify-content: center; }
+.po-remove:hover { background: #fef2f2; color: #b91c1c; border-color: #fca5a5; }
+.po-chip { margin-top: 5px; font-size: 11px; color: #475569; background: #f1f5f9; border-radius: 6px; padding: 3px 8px; display: inline-flex; align-items: center; gap: 4px; }
+.po-chip-warn { color: #9a3412; background: #fff7ed; }
+.po-totals-bar { position: sticky; bottom: 0; z-index: 20; margin: 16px -4px -4px; padding: 12px 88px 12px 16px; background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(6px); border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 -4px 18px rgba(15, 23, 42, 0.08); display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.po-totals-sum { display: flex; gap: 22px; align-items: flex-end; flex-wrap: wrap; }
+.po-totals-sum > div { display: flex; flex-direction: column; gap: 1px; }
+.po-totals-sum span { font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; }
+.po-totals-sum strong { font-size: 15px; font-variant-numeric: tabular-nums; color: #0f172a; }
+.po-totals-sum .po-grand strong { font-size: 20px; color: #1d2d50; }
+.po-totals-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 1180px) {
+  .po-lines-head { display: none; }
+  .po-line { grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 10px; background: #fff; }
+  .po-line .po-desc { grid-column: 1 / -1; padding-right: 42px; }
+  .po-line .po-amount { grid-column: 1 / -1; text-align: right; padding-top: 0; font-size: 15px; }
+  .po-line .po-mlabel { display: block; }
+  .po-line input { min-height: 44px; font-size: 16px; }
+  .po-remove { position: absolute; top: 10px; right: 10px; }
+  .po-totals-bar { margin: 16px 0 0; padding: 12px 80px 12px 12px; }
+  .po-totals-actions { width: 100%; }
+  .po-totals-actions > * { flex: 1 1 auto; }
+}
+.po-short { display: none; }
+/* Phones: the Kriyaa button is lifted above the bar (the builder sets has-action-bar), so the bar uses the
+   full width and its three buttons fit on one row at a thumb-sized height. */
+@media (max-width: 560px) {
+  .po-long { display: none; }
+  .po-short { display: inline; }
+  .po-totals-bar { padding: 8px 12px 10px; gap: 8px; }
+  .po-totals-sum { width: 100%; gap: 8px; flex-wrap: nowrap; justify-content: space-between; }
+  .po-totals-sum strong { font-size: 13px; }
+  .po-totals-sum .po-grand strong { font-size: 17px; }
+  .po-totals-actions { flex-wrap: nowrap; gap: 6px; }
+  .po-totals-actions button { min-height: 44px; padding-left: 8px; }
+  body.has-action-bar { --kriyaa-bottom: 124px; }
+  body.has-action-bar:has(input:focus, textarea:focus, select:focus) .kriyaa-fab { opacity: 0; pointer-events: none; }
+}

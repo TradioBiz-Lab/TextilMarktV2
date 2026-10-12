@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, createContext, useContext, isValidElement, cloneElement } from 'react'
 import { Folder, Link2, Package, Factory, Eye, Download, FileText, StickyNote, AlertTriangle, CheckCircle2, Info, X, Image as ImageIcon, Paperclip, Upload, ChevronLeft, ChevronRight, Crown, Check, Pencil, Trash2, Camera } from '../icons.jsx'
-import { T, ST, DOC_TYPES, STAGE_DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired } from '../constants.js'
+import { T, ST, DOC_TYPES, STAGE_DOC_TYPES, SYSTEM_DOC_TYPES, isSystemDoc, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired } from '../constants.js'
 import { useApp } from '../context.jsx'
 import { compressImage } from '../lib/imageCompress.js'
 import * as pdfjsLib from 'pdfjs-dist'
@@ -199,6 +199,66 @@ function PdfPageViewer({ bytes, onReady }) {
           <span style={{ color: '#94a3b8', fontSize: 12 }}>Page {pageNum} of {numPages}</span>
           <button onClick={() => setPageNum(p => Math.min(numPages, p + 1))} disabled={pageNum >= numPages}
             style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: pageNum >= numPages ? 'not-allowed' : 'pointer', opacity: pageNum >= numPages ? 0.4 : 1, fontSize: 13, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}>Next <ChevronRight size={14} /></button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * A full-screen viewer for one file held as a data URL (a PDF or an image): the same pdf.js viewer the
+ * Documents page uses, for screens that generate a file rather than list one (a purchase order's PDF).
+ * `name` is shown in the toolbar, `fileName` is what Download saves it as.
+ */
+export function FileViewer({ name, fileName, dataUrl, onClose }) {
+  const [blob, setBlob] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [bad, setBad] = useState(false)
+  useEffect(() => {
+    const b = dataUrlToBlobUrl(dataUrl)
+    if (!b) { setBad(true); setLoading(false); return undefined }
+    setBlob(b)
+    return () => b.revoke()
+  }, [dataUrl])
+  useEffect(() => {
+    const h = e => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', h)
+    return () => document.removeEventListener('keydown', h)
+  }, [onClose])
+  const download = () => {
+    if (!blob) return
+    const a = document.createElement('a')
+    a.href = blob.url
+    a.download = fileName || name || 'document'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  }
+  const stop = useCallback(() => setLoading(false), [])
+  return (
+    <div role="dialog" aria-label={name} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.75)', zIndex: 2000, display: 'flex', flexDirection: 'column' }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ minHeight: 48, background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', flexShrink: 0, gap: 12 }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          {blob && (
+            <button onClick={download} style={{ background: '#1e293b', border: '1px solid #334155', color: '#e2e8f0', borderRadius: 7, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Download size={14} /> Download
+            </button>
+          )}
+          <button onClick={onClose} style={{ background: '#ef4444', border: 'none', color: '#fff', borderRadius: 7, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }} aria-label="Close"><X size={16} /></button>
+        </div>
+      </div>
+      {bad && <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fca5a5', fontSize: 13 }}>This file could not be opened.</div>}
+      {loading && !bad && (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, background: '#0f172a' }}>
+          <div style={{ width: 40, height: 40, border: '3px solid #334155', borderTopColor: '#f97316', borderRadius: '50%', animation: 'tradio-spin 0.7s linear infinite' }} />
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#94a3b8' }}>Loading...</div>
+        </div>
+      )}
+      {blob && (
+        <div style={{ flex: 1, minHeight: 0, display: loading ? 'none' : 'flex', flexDirection: 'column' }}>
+          <DocBody blob={blob} doc={{ name, fileName }} onReady={stop} />
         </div>
       )}
     </div>
@@ -767,7 +827,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
   const { currentUser, deleteDoc } = useApp()
   const toast = useToast()
   const [showEdit, setShowEdit] = useState(false)
-  const canManage = !!currentUser && (currentUser.role === 'admin' || String(doc.uploadedBy) === String(currentUser.id))
+  const canManage = !!currentUser && !isSystemDoc(doc) && (currentUser.role === 'admin' || String(doc.uploadedBy) === String(currentUser.id))
 
   const handleDelete = async (e) => {
     e.stopPropagation()
@@ -798,7 +858,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
     : null
   const exp = isExpiringSoon(doc.expiryDate), expd = isExpired(doc.expiryDate)
   const DocIcon = DOC_ICONS[doc.type] || FileText
-  const typLabel = DOC_TYPES.find(d => d.v === doc.type)?.l || STAGE_DOC_TYPES.find(d => d.v === doc.type)?.l || doc.type
+  const typLabel = DOC_TYPES.find(d => d.v === doc.type)?.l || STAGE_DOC_TYPES.find(d => d.v === doc.type)?.l || SYSTEM_DOC_TYPES.find(d => d.v === doc.type)?.l || doc.type
   const [fileData, setFileData] = useState(null)
   const [fetching, setFetching] = useState(false)
   const [viewerBlob, setViewerBlob] = useState(null) // { url, mimeType, revoke }

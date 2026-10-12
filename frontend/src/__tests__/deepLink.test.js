@@ -17,6 +17,13 @@ describe('deep links', () => {
     expect(parseDeepLink('#order=' + 'A'.repeat(400))).toBeNull()
   })
 
+  test('a purchase order number opens that PO, and the purchasing screens can be linked', () => {
+    expect(parseDeepLink('#po=PO-TPR-2627-0001')).toEqual({ view: 'po_detail', poId: 'PO-TPR-2627-0001' })
+    expect(parseDeepLink('#view=purchase_orders')).toEqual({ view: 'purchase_orders' })
+    expect(parseDeepLink('#view=suppliers')).toEqual({ view: 'suppliers' })
+    for (const bad of ['#po=', '#po=PO-1', '#po=../x', '#po=PO-TPR-2627-0001/../x', '#po=po-tpr-2627-0001', '#po=<b>']) expect(parseDeepLink(bad), bad).toBeNull()
+  })
+
   test('an order id wins over a screen when both are given', () => {
     expect(parseDeepLink('#view=orders&order=ZAR-1')).toEqual({ view: 'order_detail', orderId: 'ZAR-1' })
   })

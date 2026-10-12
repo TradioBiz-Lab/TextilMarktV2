@@ -1,6 +1,7 @@
 // The pure pieces of procurement: GST rules, PO arithmetic, amounts in words, the financial year.
 import test, { describe } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 
 import { isValidGstin, normalizeGstin, gstinCheckChar, stateCodeFromGstin, taxModeFor, isValidPan, stateName } from '../src/lib/gst.js'
 import { cleanLine, computeLine, computeTotals, moqWarnings } from '../src/lib/poMath.js'
@@ -193,4 +194,14 @@ describe('financial year code', () => {
     assert.equal(fiscalYearCode(new Date('2027-03-31T21:00:00Z')), '2728')
     assert.equal(fiscalYearCode(new Date('2027-03-31T18:00:00Z')), '2627')
   })
+})
+
+// The browser works the same sums while a PO is typed (frontend/src/lib/poCalc.js). Both sides are held
+// to these shared cases, so what a user sees before saving is what the server will save.
+// If the rules change on purpose, regenerate the file and run both suites.
+describe('shared fixtures with the browser', () => {
+  const cases = JSON.parse(readFileSync(new URL('./fixtures/poMath.cases.json', import.meta.url), 'utf8'))
+  for (const c of cases) {
+    test(c.name, () => assert.deepEqual(computeTotals(c.lines, c.mode), c.expected))
+  }
 })
