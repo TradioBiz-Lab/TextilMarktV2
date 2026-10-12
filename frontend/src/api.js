@@ -258,6 +258,47 @@ export const purchaseOrdersApi = {
 
 // Bills of materials (a factory's, per order), the shopping list across orders, and reading tech packs.
 // Quantities are computed by the server; what is sent is what the person typed.
+// A factory's stock and the goods it receives (standalone product). The server works every balance from the
+// ledger; what is sent here is only what the person typed or photographed.
+const query = params => {
+  const q = new URLSearchParams()
+  for (const [k, v] of Object.entries(params || {})) if (v !== undefined && v !== null && v !== '' && v !== false) q.set(k, v === true ? '1' : String(v))
+  const qs = q.toString()
+  return qs ? `?${qs}` : ''
+}
+export const inventoryApi = {
+  items: params => api.get(`/inventory/items${query(params)}`),
+  item: id => api.get(`/inventory/items/${id}`),
+  createItem: data => api.post('/inventory/items', data),
+  updateItem: (id, data) => api.post(`/inventory/items/${id}`, data),
+  archiveItem: id => api.post(`/inventory/items/${id}/archive`),
+  restoreItem: id => api.post(`/inventory/items/${id}/restore`),
+  // this item is the same thing as `intoId`: its stock moves there and it is archived
+  mergeItem: (id, intoId) => api.post(`/inventory/items/${id}/merge`, { intoId }),
+  ledger: params => api.get(`/inventory/ledger${query(params)}`),
+  // { itemId, counted | delta, reason }
+  adjust: data => api.post('/inventory/adjustments', data),
+  issues: params => api.get(`/inventory/issues${query(params)}`),
+  issue: id => api.get(`/inventory/issues/${id}`),
+  // { orderId, lines: [{ itemId, qty }], type?: 'issue' | 'return', stageIndex?, note?, issuedOn? }
+  createIssue: data => api.post('/inventory/issues', data),
+}
+export const grnsApi = {
+  list: params => api.get(`/grns${query(params)}`),
+  get: id => api.get(`/grns/${id}`),
+  // { poId?, supplierName?, challanNo?, lines?, post? }: with a PO and no lines it starts from what the PO still waits for
+  create: data => api.post('/grns', data || {}),
+  update: (id, data) => api.post(`/grns/${id}`, data),
+  remove: id => api.post(`/grns/${id}/delete`),
+  post: id => api.post(`/grns/${id}/post`, {}, { timeout: 60000 }),
+  pdf: id => api.get(`/grns/${id}/pdf`),
+  photos: id => api.get(`/grns/${id}/photos`),
+  // { dataUrl, kind?: 'challan' | 'goods' | 'damage' | 'other', name?, caption? }
+  addPhoto: (id, data) => api.post(`/grns/${id}/photos`, data, { timeout: 60000 }),
+  photo: (id, photoId) => api.get(`/grns/${id}/photos/${photoId}`),
+  removePhoto: (id, photoId) => api.post(`/grns/${id}/photos/${photoId}/delete`),
+}
+
 export const bomsApi = {
   // the order's versions, the working one in full, and what a new one would start as
   forOrder: orderId => api.get(`/boms?orderId=${encodeURIComponent(orderId)}`),

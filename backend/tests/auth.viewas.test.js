@@ -96,8 +96,12 @@ describe('view as', () => {
     const master = await makeMaster(), buyer = await makeBuyer()
     const a = await as(master).post('/api/auth/view-as', { userId: String(buyer._id) })
     await req('POST', '/api/auth/view-as/exit', { token: tokenFrom(a) })
-    await new Promise(r => setTimeout(r, 100))
-    const logs = await AuditLog.find({ action: /^View As/ }).sort({ createdAt: 1 }).lean()
+    // The audit rows are written without the request waiting for them, so give a busy machine a moment.
+    let logs = []
+    for (let i = 0; i < 30 && logs.length < 2; i++) {
+      if (i) await new Promise(r => setTimeout(r, 100))
+      logs = await AuditLog.find({ action: /^View As/ }).sort({ createdAt: 1 }).lean()
+    }
     assert.deepEqual(logs.map(l => l.action), ['View As Started', 'View As Ended'])
     assert.ok(logs.every(l => String(l.byUser) === String(master._id)))
   })

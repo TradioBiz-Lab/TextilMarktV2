@@ -344,6 +344,14 @@ admin enables them in User Setup.
     at most 12 a note, kept after posting), never `Document`s.
   - *Issues to orders* (`StockIssue`) are how what an order really used is known; a return only takes back what was
     issued to that order. A count (`/adjustments`) puts the book right and needs a reason.
+  - *Frontend (`pages/inventory/`).* Stock page (Stock, Goods received, Issued to orders tabs; item dialog with its movement
+    history, count, issue, combine two items that are the same thing) and the receiving page `GrnPage` (view `grn`, deep
+    link `#grn=<id>`), built for a phone at the gate: photograph the challan first (`PhotoStrip`: rear camera, compressed,
+    sent at once), type what arrived beside what was ordered (`lineHint` says short, matching or too far over as it is typed),
+    and post. The note is a server draft from the first moment and every change is saved a moment after it is typed
+    (`saveNow`); a line is tied to the stock item it is (`stockMatch`: the exact name, or a one-tap suggestion; nothing is
+    guessed, two colours of one cloth are two items). `lib/inventory.js` holds the form state and helpers (tested).
+    Receiving from a PO opens this page (`onNavigate('grn', { po })`); the old receive dialog is gone.
 - **Run it locally.** `npm run dev:local` (backend) starts an ephemeral in-memory mongod, seeds a
   standalone environment and blanks the email key, so nothing touches Atlas and no email is sent. It
   uses the same seed logins as `npm run seed:sandbox` (never run that against the shared sandbox DB

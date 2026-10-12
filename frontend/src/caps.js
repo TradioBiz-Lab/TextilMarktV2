@@ -63,6 +63,9 @@ export function capsFor(user) {
     // admin viewing a factory read-only is that factory's session, so sees them but cannot write.
     seeProcurement: standalone && isMfr,
     manageProcurement: w(standalone && isMfr),
+    // Stock and goods received notes: a factory's store (same rule as purchasing).
+    seeInventory: standalone && isMfr,
+    manageInventory: w(standalone && isMfr),
     // Bills of materials and the shopping list are a factory's own (like purchasing). Cost sheets have two
     // sides: the factory drafts, revises and shares; the brand it is shared with comments and approves.
     seeBom: standalone && isMfr,

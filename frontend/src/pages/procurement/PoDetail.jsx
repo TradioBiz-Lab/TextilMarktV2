@@ -10,7 +10,6 @@ import { rupees, fmtQty, fmtDay, OPEN_STATUSES } from '../../lib/procurement.js'
 import { DataTable } from '../../components/DataTable.jsx'
 import { StatusPill, Progress, Fact } from './common.jsx'
 import { SendPoModal } from './SendPoModal.jsx'
-import { ReceiveModal } from './ReceiveModal.jsx'
 
 const receivedColor = l => (l.receivedQty >= l.qty ? T.success : l.receivedQty ? T.warning : T.textLight)
 
@@ -22,7 +21,7 @@ export function PoDetail({ poId, onBack, onNavigate, onOpenOrder }) {
   const { items: list, refresh } = posStore.useStore()
   const [po, setPo] = useState(null)
   const [error, setError] = useState('')
-  const [dialog, setDialog] = useState(null)        // 'send' | 'receive' | 'ack' | 'close' | 'cancel' | 'delete'
+  const [dialog, setDialog] = useState(null)        // 'send' | 'ack' | 'close' | 'cancel' | 'delete'
   const [pdf, setPdf] = useState(null)              // { fileName, dataUrl }
   const [busy, setBusy] = useState(false)
 
@@ -90,7 +89,7 @@ export function PoDetail({ poId, onBack, onNavigate, onOpenOrder }) {
           <FlexRow gap={8} style={{ flexWrap: 'wrap' }}>
             {draft && can && <Btn icon={<Send size={14} />} onClick={() => setDialog('send')}>Send to supplier</Btn>}
             {draft && can && <Btn variant="secondary" icon={<Pencil size={13} />} onClick={() => onNavigate('po_builder', { po: po.id })}>Edit</Btn>}
-            {open && can && po.lines.some(l => l.receivedQty < l.qty) && <Btn variant="success" icon={<Package size={14} />} onClick={() => setDialog('receive')}>Goods received</Btn>}
+            {open && can && po.lines.some(l => l.receivedQty < l.qty) && <Btn variant="success" icon={<Package size={14} />} onClick={() => onNavigate('grn', { po: po.id })}>Receive goods</Btn>}
             {po.status === 'sent' && can && <Btn variant="secondary" icon={<Check size={13} />} onClick={() => setDialog('ack')}>Supplier confirmed</Btn>}
             <Btn variant="secondary" icon={draft ? <Eye size={13} /> : <Download size={13} />} disabled={busy} onClick={preview}>{draft ? 'Preview PDF' : 'View PDF'}</Btn>
             {open && can && <Btn variant="secondary" onClick={() => setDialog('close')}>Close</Btn>}
@@ -171,7 +170,7 @@ export function PoDetail({ poId, onBack, onNavigate, onOpenOrder }) {
             <SectionLabel>Deliveries received</SectionLabel>
             {po.receipts.map((r, i) => (
               <div key={i} style={{ padding: '10px 0', borderBottom: `1px solid ${T.border}`, fontSize: 13 }}>
-                <div style={{ fontWeight: 700, color: T.text }}>{fmtDay(r.at)}{r.note ? <span style={{ fontWeight: 400, color: T.textMuted }}> · {r.note}</span> : null}</div>
+                <div style={{ fontWeight: 700, color: T.text }}>{fmtDay(r.at)}{r.note ? <span style={{ fontWeight: 400, color: T.textMuted }}> · {r.note}</span> : null}{r.grnId ? <> <button type="button" className="gl-link" onClick={() => onNavigate('grn', { grn: r.grnId })}>open note</button></> : null}</div>
                 <div style={{ color: T.textMuted, marginTop: 3 }}>{r.lines.map(rl => { const l = po.lines.find(x => x.lineId === rl.lineId); return l ? `${fmtQty(rl.qty)} ${l.unit} of ${l.description}` : null }).filter(Boolean).join('; ')}</div>
               </div>
             ))}
@@ -186,11 +185,6 @@ export function PoDetail({ poId, onBack, onNavigate, onOpenOrder }) {
         if (notice.emailSkipped) toast('Marked as sent, but no email went out: email is not set up on this server', 'warning')
         else toast(`Sent to ${(notice.emailed || []).join(', ')}`, 'success')
         if (notice.unlinkedLines?.length) toast(`Could not link: ${notice.unlinkedLines.join(', ')} (the material is no longer on the order)`, 'warning')
-      }} />}
-      {dialog === 'receive' && <ReceiveModal po={po} onClose={() => setDialog(null)} onReceived={async (next, notice) => {
-        setDialog(null); await changed(next)
-        toast(next.status === 'closed' ? 'All goods received' : 'Delivery recorded', 'success')
-        if (notice.unlinkedLines?.length) toast(`Could not update: ${notice.unlinkedLines.join(', ')} (the material is no longer on the order)`, 'warning')
       }} />}
       {dialog === 'ack' && <AckDialog po={po} onClose={() => setDialog(null)} onDone={async next => { setDialog(null); await changed(next); toast('Marked as confirmed by the supplier', 'success') }} />}
       {dialog === 'close' && <ReasonDialog title="Close this purchase order?" blurb="Use this when the supplier has delivered what they will, even if it is short. Nothing more is expected." action="Close purchase order" optional

@@ -97,6 +97,10 @@ import {
   TreeStructure as P_TreeStructure,
   Trophy as P_Trophy,
   Truck as P_Truck,
+  TrayArrowDown as P_TrayArrowDown,
+  TrayArrowUp as P_TrayArrowUp,
+  Warehouse as P_Warehouse,
+  Minus as P_Minus,
   UploadSimple as P_UploadSimple,
   User as P_User,
   Users as P_Users,
@@ -262,6 +266,10 @@ export const Trash2 = make(P_Trash, 'Trash2')
 export const TreeStructure = make(P_TreeStructure, 'TreeStructure')
 export const Trophy = make(P_Trophy, 'Trophy')
 export const Truck = make(P_Truck, 'Truck')
+export const ReceiveGoods = make(P_TrayArrowDown, 'ReceiveGoods')
+export const IssueGoods = make(P_TrayArrowUp, 'IssueGoods')
+export const Warehouse = make(P_Warehouse, 'Warehouse')
+export const Minus = make(P_Minus, 'Minus')
 export const Upload = make(P_UploadSimple, 'Upload')
 export const UploadCloud = make(P_CloudArrowUp, 'UploadCloud')
 export const User = make(P_User, 'User')

@@ -90,6 +90,12 @@ describe('the standalone product: brands and manufacturers create their own work
     expect(capsFor(viewing(sMfr)).seeProcurement).toBe(true)          // the master admin sees what the factory sees...
     expect(capsFor(viewing(sMfr)).manageProcurement).toBe(false)      // ...but cannot change it
     expect(capsFor({ ...viewing(sMfr), actingFor: true }).manageProcurement).toBe(true)
+    // Stock and goods received follow the same rule as purchasing.
+    expect([capsFor(sMfr).seeInventory, capsFor(sMfr).manageInventory]).toEqual([true, true])
+    expect([capsFor(mfr).seeInventory, capsFor(mfr).manageInventory]).toEqual([false, false])
+    for (const u of [sBuyer, sAdmin, sMaster]) expect([capsFor(u).seeInventory, capsFor(u).manageInventory]).toEqual([false, false])
+    expect([capsFor(viewing(sMfr)).seeInventory, capsFor(viewing(sMfr)).manageInventory]).toEqual([true, false])
+    expect(capsFor({ ...viewing(sMfr), actingFor: true }).manageInventory).toBe(true)
   })
 
   test('bills of materials are a factory\'s own; cost sheets have two sides: the factory prepares, the brand reviews and approves', () => {

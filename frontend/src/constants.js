@@ -77,9 +77,9 @@ export const STAGE_DOC_TYPES = [
   { v: 'floor_evidence', l: 'Floor evidence',       stageIndex: -1 },
 ]
 
-// Records the server makes itself: the PDF of a purchase order as it was sent. They are shown with a name
+// Records the server makes itself: the PDF of a purchase order as it was sent, and of a posted goods received note. They are shown with a name
 // and an icon, never offered for upload, and never edited or deleted by hand (the server refuses it too).
-export const SYSTEM_DOC_TYPES = [{ v: 'supplier_po', l: 'Supplier PO' }]
+export const SYSTEM_DOC_TYPES = [{ v: 'supplier_po', l: 'Supplier PO' }, { v: 'goods_receipt', l: 'Goods received note' }]
 export const isSystemDoc = d => SYSTEM_DOC_TYPES.some(t => t.v === d?.type)
 
 // Map stageIndex → allowed evidence doc types for that stage
@@ -119,6 +119,7 @@ export const DOC_ICONS = {
   packing_qc: Package, dispatch_docs: Truck,
   mfr_profile: Factory,
   supplier_po: Receipt,
+  goods_receipt: ClipboardList,
 }
 
 export const CATEGORIES = ['TSHRT', 'JEANS', 'BEDSH', 'SHIRT', 'DRESS', 'JACKET', 'POLO', 'SHORTS', 'HOODIE']

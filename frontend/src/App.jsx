@@ -20,6 +20,9 @@ import { PoListPage } from './pages/procurement/PoListPage.jsx'
 import { PoBuilder } from './pages/procurement/PoBuilder.jsx'
 import { PoDetail } from './pages/procurement/PoDetail.jsx'
 import { ShoppingListPage } from './pages/procurement/ShoppingListPage.jsx'
+import { InventoryProviders } from './stores/inventory.jsx'
+import { StockPage } from './pages/inventory/StockPage.jsx'
+import { GrnPage } from './pages/inventory/GrnPage.jsx'
 import { CostingProviders } from './stores/costing.jsx'
 import { CostingPage } from './pages/costing/CostingPage.jsx'
 import { CostSheetPage } from './pages/costing/CostSheetPage.jsx'
@@ -94,6 +97,7 @@ function Inner() {
   const [selPo, setSelPo] = useState(null)           // purchase order open (or being edited) on the purchasing screens
   const [selSupplier, setSelSupplier] = useState(null) // supplier to open on the Suppliers page, or to start a new PO for
   const [selCost, setSelCost] = useState(null)       // cost sheet open on the costing screens
+  const [selGrn, setSelGrn] = useState(null)         // goods received note open on the receiving screen (a PO in selPo starts a new one against it)
 
   // ── Navigation with real history ──
   // Every screen change is a snapshot pushed onto a stack that is mirrored into the browser's own
@@ -101,11 +105,11 @@ function Inner() {
   // you came from. Before leaving a list for an order, that list's snapshot is stamped with the
   // order's master order, so coming back re-opens (and scrolls to) the group you were in.
   const hist = useRef({ stack: [], idx: -1 })
-  const BLANK = { view: 'dashboard', selOid: null, selMid: null, ordersStatus: null, ordersMo: null, reportsMo: null, selPo: null, selSupplier: null, selCost: null }
+  const BLANK = { view: 'dashboard', selOid: null, selMid: null, ordersStatus: null, ordersMo: null, reportsMo: null, selPo: null, selSupplier: null, selCost: null, selGrn: null }
   const apply = useCallback(s => {
     setView(s.view); setSelOid(s.selOid); setSelMid(s.selMid)
     setOrdersStatus(s.ordersStatus); setOrdersMo(s.ordersMo); setReportsMo(s.reportsMo)
-    setSelPo(s.selPo ?? null); setSelSupplier(s.selSupplier ?? null); setSelCost(s.selCost ?? null)
+    setSelPo(s.selPo ?? null); setSelSupplier(s.selSupplier ?? null); setSelCost(s.selCost ?? null); setSelGrn(s.selGrn ?? null)
   }, [])
   const go = useCallback(next => {
     const h = hist.current
@@ -125,6 +129,7 @@ function Inner() {
     go(link.view === 'order_detail' ? { view: 'order_detail', selOid: link.orderId }
       : link.view === 'po_detail' ? { view: 'po_detail', selPo: link.poId }
       : link.view === 'cost_sheet' ? { view: 'cost_sheet', selCost: link.costId }
+      : link.view === 'grn' ? { view: 'grn', selGrn: link.grnId }
       : { view: link.view })
     return true
   }, [go])
@@ -178,6 +183,7 @@ function Inner() {
     selPo: params?.po ?? null,
     selSupplier: params?.supplier ?? null,
     selCost: params?.cost ?? null,
+    selGrn: params?.grn ?? null,
   })
   const openOrder = (id, mid) => {
     // Remember which master order we are leaving from, so Back re-opens that group.
@@ -216,6 +222,17 @@ function Inner() {
     // lives with the purchasing screens and shares their providers.
     if (view === 'shopping_list' && caps.seeBom) {
       return <ProcurementProviders><ShoppingListPage onNavigate={navTo} onOpenOrder={openOrder} /></ProcurementProviders>
+    }
+    // Stock and goods received (a factory's own). Receiving needs the purchase orders and suppliers, so it shares their providers.
+    if (caps.seeInventory && ['inventory', 'grn'].includes(view)) {
+      const toStock = () => goBack({ view: 'inventory' })
+      return (
+        <ProcurementProviders>
+          <InventoryProviders>
+            {view === 'grn' ? <GrnPage key={`g:${selGrn || selPo || 'new'}`} grnId={selGrn} poId={selGrn ? null : selPo} onBack={toStock} onNavigate={navTo} /> : <StockPage onNavigate={navTo} />}
+          </InventoryProviders>
+        </ProcurementProviders>
+      )
     }
     // Cost sheets: a factory's own, or what has been shared with a brand. One provider for both screens.
     if (caps.seeCosting && ['costing', 'cost_sheet'].includes(view)) {

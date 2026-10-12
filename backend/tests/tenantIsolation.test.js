@@ -528,6 +528,8 @@ describe('stock and goods received notes: a company\'s inventory is its own (sta
     assert.equal((await as(B).post(`/api/grns/${dataA.draft.id}/photos`, { dataUrl: PHOTO })).status, 404)
     assert.equal((await as(B).post(`/api/inventory/items/${dataA.item.id}`, { name: 'hijack' })).status, 404)
     assert.equal((await as(B).post(`/api/inventory/items/${dataA.item.id}/archive`)).status, 404)
+    assert.equal((await as(B).post(`/api/inventory/items/${dataA.item.id}/merge`, { intoId: (await as(B).get('/api/inventory/items')).body[0].id })).status, 404)
+    assert.equal((await as(B).post(`/api/inventory/items/${(await as(B).get('/api/inventory/items')).body[0].id}/merge`, { intoId: dataA.item.id })).status, 400)
     assert.equal((await as(B).post('/api/inventory/issues', { orderId: 'BY', lines: [{ itemId: dataA.item.id, qty: 1 }] })).status, 400)
     assert.equal((await as(B).post('/api/inventory/adjustments', { itemId: dataA.item.id, delta: 5, reason: 'x' })).status, 400)
     assert.equal((await as(B).post('/api/grns', { lines: [{ description: 'x', qty: 1, itemId: dataA.item.id }] })).status, 400)

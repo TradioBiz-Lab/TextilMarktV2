@@ -43,9 +43,11 @@ export async function itemFor({ orgId, name, unit, category, supplierId = null, 
   const key = itemKey(name, unit)
   const cleanName = String(name).trim().slice(0, 300)
   const cleanUnit = String(unit || 'pcs').trim().slice(0, 20) || 'pcs'
-  const filter = { ownerOrgId: orgId, key }
+  // An item combined into another is still found by its old name, and goods arriving for an archived item bring it back.
+  const filter = { ownerOrgId: orgId, $or: [{ key }, { aliases: key }] }
   const update = {
     $setOnInsert: { ownerOrgId: orgId, key, name: cleanName, unit: cleanUnit, category: category || guessCategory(cleanName, cleanUnit), hsnCode: String(hsnCode || '').slice(0, 8), createdBy: userId },
+    $set: { isActive: true },
     ...(supplierId ? { $addToSet: { supplierIds: supplierId } } : {}),
   }
   for (let attempt = 0; ; attempt++) {

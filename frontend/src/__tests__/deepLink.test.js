@@ -31,6 +31,12 @@ describe('deep links', () => {
     for (const bad of ['#cost=', '#cost=123', '#cost=0123456789ABCDEF01234567', '#cost=../x', '#cost=0123456789abcdef0123456g', '#cost=<b>']) expect(parseDeepLink(bad), bad).toBeNull()
   })
 
+  test('a goods received note: #grn=<24 hex characters>, nothing else', () => {
+    expect(parseDeepLink('#grn=0123456789abcdef01234567')).toEqual({ view: 'grn', grnId: '0123456789abcdef01234567' })
+    for (const bad of ['#grn=', '#grn=123', '#grn=0123456789ABCDEF01234567', '#grn=../x', '#grn=<b>']) expect(parseDeepLink(bad), bad).toBeNull()
+    expect(parseDeepLink('#view=inventory')).toEqual({ view: 'inventory' })
+  })
+
   test('an order id wins over a screen when both are given', () => {
     expect(parseDeepLink('#view=orders&order=ZAR-1')).toEqual({ view: 'order_detail', orderId: 'ZAR-1' })
   })

@@ -148,6 +148,9 @@ for (const [action, isActive] of [['archive', false], ['restore', true]]) {
   router.post(`/items/:id/${action}`, writeLimiter, async (req, res) => {
     try {
       if (!isId(req.params.id)) return fail(res, 404, 'Item not found')
+      const before = await InventoryItem.findOne({ _id: req.params.id, ...mine(req) }, 'key').lean()
+      if (!before) return fail(res, 404, 'Item not found')
+      if (isActive && String(before.key).startsWith('merged:')) return fail(res, 409, 'This item was combined into another. Add a new item instead')
       const item = await InventoryItem.findOneAndUpdate({ _id: req.params.id, ...mine(req) }, { $set: { isActive } }, { new: true }).lean()
       if (!item) return fail(res, 404, 'Item not found')
       const bal = await balances(req.user.orgId, { itemIds: [item._id] })
@@ -155,6 +158,42 @@ for (const [action, isActive] of [['archive', false], ['restore', true]]) {
     } catch (err) { console.error('[inventory]', err); fail(res, 500, 'Server error') }
   })
 }
+
+// POST /api/inventory/items/:id/merge { intoId } - this item is the same thing as another: its stock moves there
+// (as two matching count corrections, so the ledger stays whole), it is archived, and goods that come in under its
+// name are booked to the other from now on
+router.post('/items/:id/merge', writeLimiter, async (req, res) => {
+  try {
+    if (!isId(req.params.id)) return fail(res, 404, 'Item not found')
+    if (!isId(req.body?.intoId)) return fail(res, 400, 'Choose the item to combine it with')
+    if (String(req.params.id) === String(req.body.intoId)) return fail(res, 400, 'Choose a different item')
+    const [from, into] = await Promise.all([
+      InventoryItem.findOne({ _id: req.params.id, ...mine(req) }).lean(),
+      InventoryItem.findOne({ _id: req.body.intoId, ...mine(req), isActive: true }).lean(),
+    ])
+    if (!from) return fail(res, 404, 'Item not found')
+    if (!into) return fail(res, 400, 'Choose an item from your stock list')
+    if (itemKey('', from.unit) !== itemKey('', into.unit)) return fail(res, 409, `They are counted in different units (${from.unit} and ${into.unit}), so they cannot be combined`)
+
+    const bal = (await balances(req.user.orgId, { itemIds: [from._id] })).get(String(from._id))
+    const refId = String(newId())
+    const at = new Date()
+    const rows = []
+    for (const [location, qty] of Object.entries(bal?.byLocation || {})) {
+      if (qty === 0) continue
+      const base = { ownerOrgId: req.user.orgId, location, type: 'adjustment', unit: from.unit, refType: 'adjustment', refId, at, by: req.user.actorId }
+      rows.push({ ...base, itemId: from._id, qty: -qty, note: `Combined into ${into.name}`.slice(0, 300), key: `merge:${refId}:out:${location}` })
+      rows.push({ ...base, itemId: into._id, qty, note: `Combined from ${from.name}`.slice(0, 300), key: `merge:${refId}:in:${location}` })
+    }
+    // The ledger rows go first: if the server stopped after them the stock is already where it belongs, and merging again finishes the rest.
+    await writeLedger(rows)
+    await InventoryItem.updateOne({ _id: from._id, ...mine(req) }, { $set: { isActive: false, key: `merged:${from._id}` } })
+    await InventoryItem.updateOne({ _id: into._id, ...mine(req) }, { $addToSet: { aliases: from.key, supplierIds: { $each: from.supplierIds || [] } } })
+    await AuditLog.create({ byUser: req.user.id, action: 'Stock Items Combined', detail: `${from.name} was combined into ${into.name} by ${req.user.name}` }).catch(() => {})
+    const after = await balances(req.user.orgId, { itemIds: [into._id] })
+    res.json(itemView(await InventoryItem.findById(into._id).lean(), after.get(String(into._id))))
+  } catch (err) { console.error('[inventory]', err); fail(res, 500, 'Server error') }
+})
 
 // ── Ledger ──
 

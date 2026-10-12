@@ -6,11 +6,12 @@
 const ORDER_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/
 const PO_ID = /^PO-[A-Z0-9]{1,5}-\d{4}-\d{4,}$/
 const COST_ID = /^[a-f0-9]{24}$/
+const GRN_ID = /^[a-f0-9]{24}$/
 // Screens a link may name. Later modules add theirs here (cost sheets, inspections). A screen the signed-in
 // user does not have (purchasing, for a brand) simply is not found: the app shows its "page not found".
-const LINKABLE_VIEWS = new Set(['dashboard', 'orders', 'documents', 'reports', 'action_items', 'kriyaa', 'company', 'suppliers', 'purchase_orders', 'shopping_list', 'costing'])
+const LINKABLE_VIEWS = new Set(['dashboard', 'orders', 'documents', 'reports', 'action_items', 'kriyaa', 'company', 'suppliers', 'purchase_orders', 'shopping_list', 'costing', 'inventory'])
 
-/** @returns {{view: 'order_detail', orderId: string} | {view: 'po_detail', poId: string} | {view: 'cost_sheet', costId: string} | {view: string} | null} */
+/** @returns {{view: 'order_detail', orderId: string} | {view: 'po_detail', poId: string} | {view: 'cost_sheet', costId: string} | {view: 'grn', grnId: string} | {view: string} | null} */
 export function parseDeepLink(hash) {
   const raw = String(hash || '').replace(/^#/, '').trim()
   if (!raw || raw.length > 300) return null
@@ -22,6 +23,8 @@ export function parseDeepLink(hash) {
   if (po) return PO_ID.test(po) ? { view: 'po_detail', poId: po } : null
   const cost = params.get('cost')
   if (cost) return COST_ID.test(cost) ? { view: 'cost_sheet', costId: cost } : null
+  const grn = params.get('grn')
+  if (grn) return GRN_ID.test(grn) ? { view: 'grn', grnId: grn } : null
   const view = params.get('view')
   return view && LINKABLE_VIEWS.has(view) ? { view } : null
 }

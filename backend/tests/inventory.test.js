@@ -528,3 +528,56 @@ describe('what is in stock comes only from the ledger', () => {
     assert.ok(mfr)
   })
 })
+
+describe('combining two items that are the same thing', () => {
+  async function twoItems() {
+    const mfr = await factory()
+    const a = (await startGrn(mfr, { lines: [{ description: 'Brushed fleece 280 GSM', unit: 'kg', qty: 100 }] })).body
+    await post(mfr, a.id)
+    const b = (await startGrn(mfr, { lines: [{ description: 'Brushed fleece 280 GSM, 72 in, 80/20 CVC', unit: 'kg', qty: 40 }] })).body
+    await post(mfr, b.id)
+    const items = (await as(mfr).get('/api/inventory/items')).body
+    return { mfr, plain: items.find(i => i.name === 'Brushed fleece 280 GSM'), long: items.find(i => i.name.includes('72 in')) }
+  }
+
+  test('moves the stock across as matching corrections, archives the other, and sends later goods to it', async () => {
+    const { mfr, plain, long } = await twoItems()
+    const r = await as(mfr).post(`/api/inventory/items/${long.id}/merge`, { intoId: plain.id })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.deepEqual([r.body.id, r.body.onHand], [plain.id, 140])
+    const items = (await as(mfr).get('/api/inventory/items')).body
+    assert.deepEqual(items.map(i => [i.name, i.onHand]), [['Brushed fleece 280 GSM', 140]])
+    assert.equal((await as(mfr).get('/api/inventory/items?archived=1')).body.length, 2)
+    const moves = (await as(mfr).get(`/api/inventory/items/${long.id}`)).body.ledger
+    assert.deepEqual(moves.map(m => [m.type, m.qty]), [['adjustment', -40], ['receipt', 40]])           // the history is kept; a correction takes the stock out
+    // The next delivery under the old name goes into the item it was combined with, and nothing new is made.
+    const later = (await startGrn(mfr, { lines: [{ description: 'brushed fleece 280 gsm, 72 in, 80/20 cvc', unit: 'KG', qty: 10 }] })).body
+    await post(mfr, later.id)
+    assert.equal((await stockOf(mfr, 'Brushed fleece')).onHand, 150)
+    assert.equal(await InventoryItem.countDocuments({}), 2)
+  })
+
+  test('is refused for different units, itself, another company\'s item, and bringing a combined item back', async () => {
+    const { mfr, plain, long } = await twoItems()
+    const metres = (await as(mfr).post('/api/inventory/items', { name: 'Brushed fleece in metres', unit: 'm' })).body
+    assert.equal((await as(mfr).post(`/api/inventory/items/${long.id}/merge`, { intoId: metres.id })).status, 409)
+    assert.equal((await as(mfr).post(`/api/inventory/items/${long.id}/merge`, { intoId: long.id })).status, 400)
+    assert.equal((await as(mfr).post(`/api/inventory/items/${long.id}/merge`, {})).status, 400)
+    const other = await factory({ code: 'ZZZ' })
+    assert.equal((await as(other).post(`/api/inventory/items/${long.id}/merge`, { intoId: plain.id })).status, 404)
+    assert.equal((await as(mfr).post(`/api/inventory/items/${long.id}/merge`, { intoId: plain.id })).status, 200)
+    assert.equal((await as(mfr).post(`/api/inventory/items/${long.id}/restore`)).status, 409)
+    assert.equal((await as(mfr).post(`/api/inventory/items/${long.id}/merge`, { intoId: plain.id })).status, 200)       // doing it again finds nothing left to move
+    assert.equal((await stockOf(mfr, 'Brushed fleece')).onHand, 140)
+  })
+
+  test('goods arriving for an archived item bring it back', async () => {
+    const mfr = await factory()
+    const item = (await as(mfr).post('/api/inventory/items', { name: 'Elastic 25 mm', unit: 'm' })).body
+    await as(mfr).post(`/api/inventory/items/${item.id}/archive`)
+    await post(mfr, (await startGrn(mfr, { lines: [{ description: 'Elastic 25 mm', unit: 'm', qty: 50 }] })).body.id)
+    const back = (await as(mfr).get('/api/inventory/items')).body
+    assert.deepEqual(back.map(i => [i.id, i.onHand, i.isActive]), [[item.id, 50, true]])
+  })
+})
+

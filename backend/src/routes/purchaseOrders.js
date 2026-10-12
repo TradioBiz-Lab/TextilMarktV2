@@ -71,7 +71,7 @@ export const poView = (po, extra = {}) => ({
   lines: (po.lines || []).map(lineView), taxMode: po.taxMode, totals: po.totals,
   expectedDate: po.expectedDate || null, shipTo: po.shipTo || '', paymentTerms: po.paymentTerms || '', terms: po.terms || '',
   internalNote: po.internalNote || '', sentAt: po.sentAt || null, sentTo: po.sentTo || [], hasPdf: !!po.documentId,
-  receipts: (po.receipts || []).map(r => ({ at: r.at, note: r.note || '', lines: r.lines || [] })),
+  receipts: (po.receipts || []).map(r => ({ at: r.at, note: r.note || '', lines: r.lines || [], grnId: r.grnId || null })),
   timeline: (po.timeline || []).map(t => ({ at: t.at, byName: t.byName || '', action: t.action, note: t.note || '' })),
   cancelReason: po.cancelReason || '', closedReason: po.closedReason || '',
   receivedPct: receivedPct(po), createdAt: po.createdAt, updatedAt: po.updatedAt, ...extra,

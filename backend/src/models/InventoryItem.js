@@ -16,6 +16,8 @@ const inventoryItemSchema = new mongoose.Schema({
   category: { type: String, enum: INVENTORY_CATEGORIES, default: 'other' },
   // Derived from name and unit (itemKey in lib/inventory/stock.js): how a received line finds its item again.
   key: { type: String, required: true },
+  // Keys of items that were combined into this one: goods received under any of those names land here.
+  aliases: { type: [String], default: [] },
   supplierIds: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Supplier' }], default: [] },
   // Below this much in the store the item is flagged to be bought. 0 means no level is set.
   reorderLevel: { type: Number, default: 0, min: 0 },
@@ -26,6 +28,7 @@ const inventoryItemSchema = new mongoose.Schema({
 }, { timestamps: true })
 
 inventoryItemSchema.index({ ownerOrgId: 1, key: 1 }, { unique: true })
+inventoryItemSchema.index({ ownerOrgId: 1, aliases: 1 })
 inventoryItemSchema.index({ ownerOrgId: 1, isActive: 1, category: 1 })
 
 export const InventoryItem = mongoose.model('InventoryItem', inventoryItemSchema)
