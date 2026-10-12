@@ -3,7 +3,7 @@ import { ArrowRight, X, AlertTriangle, Paperclip, Plus } from '../../icons.jsx'
 import { T, evidenceTypesFor, kindForCustomerOwner, stageKindOf, stageStatusOf, stageVariance, stageActualVariance, STAGE_STATUS_LABELS, fmtStageDate, getToday } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, FlexRow, Input, FileUpload, DocCard, useToast, fileUploadPayload, SectionLabel } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
-import { capsFor, canWriteStage } from '../../caps.js'
+import { capsFor, canWriteStage, canEditPlan } from '../../caps.js'
 import { ordersApi } from '../../api.js'
 
 // 'YYYY-MM-DD' or 'NA' → the value a native <input type="date"> (or the 'NA'
@@ -38,10 +38,13 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
   const order = (orders || []).find(o => o.id === orderId)
   const asgn = order?.assignments.find(a => String(a.mid) === String(mfrId))
   const stage = asgn?.stages?.[stageIndex]
-  const isMaster = currentUser?.adminType === 'master'
   // The same modal serves every role; what each may change follows the server's rules (caps.js).
   const caps = capsFor(currentUser)
+  const isMaster = caps.isMaster
   const writable = canWriteStage(currentUser, asgn, stage)
+  // Whether this user runs THIS split's calendar: Tradio staff, or the split's own manufacturer in
+  // the standalone product. Asked per split, never from the role alone.
+  const canPlan = canEditPlan(currentUser, asgn)
 
   const [description, setDescription] = useState(stage?.description || '')
   const [units, setUnits] = useState(String(stage?.unitsDone ?? 0))
@@ -65,12 +68,19 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
 
   // Who can own this step: the order's customer first (approvals like Lab Dip and PP Sample sit with
   // them), then Tradio admins and factories. The customer cannot own Delivery, which only Tradio or
-  // the factory may close.
-  const customer = (users || []).find(u => u.role === 'buyer' && u.isActive && String(u.id) === String(order?.buyerId))
+  // the factory may close. A manufacturer running its own plan (standalone) never sees a user list:
+  // its choices are the companies on this order, the only ones the server accepts.
+  const customer = caps.isAdmin
+    ? (users || []).find(u => u.role === 'buyer' && u.isActive && String(u.id) === String(order?.buyerId))
+    : (order ? { id: String(order.buyerId), company: order.buyerCompany, name: order.buyerCompany } : null)
   const ownerOptions = [
     ...(customer && !stage?.isDelivery ? [{ value: customer.id, label: `Customer: ${customer.company || customer.name}` }] : []),
-    ...(users || []).filter(u => u.isActive && u.role === 'admin').map(u => ({ value: u.id, label: `Tradio: ${u.name}` })),
-    ...(users || []).filter(u => u.isActive && u.role === 'manufacturer').map(u => ({ value: u.id, label: `Factory: ${u.company}` })),
+    ...(caps.isAdmin
+      ? [
+          ...(users || []).filter(u => u.isActive && u.role === 'admin').map(u => ({ value: u.id, label: `Tradio: ${u.name}` })),
+          ...(users || []).filter(u => u.isActive && u.role === 'manufacturer').map(u => ({ value: u.id, label: `Factory: ${u.company}` })),
+        ]
+      : (order?.assignments || []).map(a => ({ value: String(a.mid), label: `Factory: ${a.mfrCompany}` }))),
   ]
   const saveOwner = async value => {
     if (savingOwner) return
@@ -337,7 +347,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div>
           <SectionLabel>Description</SectionLabel>
-          {caps.editPlan ? (
+          {canPlan ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="What does this stage involve? (optional)" />
               <FlexRow justify="flex-end">
@@ -435,7 +445,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
           )}
         </div>
 
-        {caps.editPlan && (
+        {canPlan && (
           <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
             <SectionLabel>Assignment</SectionLabel>
             <div style={{ fontSize: 11, color: T.textMuted, margin: '2px 0 8px' }}>
@@ -482,8 +492,8 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
               )}
             </div>
             <div>
-              <div style={{ fontSize: 10, color: T.textLight, marginBottom: 4 }}>{caps.editPlan ? 'New planned date' : 'Current planned date'}</div>
-              {!caps.editPlan ? <div style={{ fontSize: 12, fontWeight: 700, color: T.text, padding: '5px 0' }}>{fmtStageDate(stage.eta)}</div> : <FlexRow gap={4}>
+              <div style={{ fontSize: 10, color: T.textLight, marginBottom: 4 }}>{canPlan ? 'New planned date' : 'Current planned date'}</div>
+              {!canPlan ? <div style={{ fontSize: 12, fontWeight: 700, color: T.text, padding: '5px 0' }}>{fmtStageDate(stage.eta)}</div> : <FlexRow gap={4}>
                 <input
                   type={etaDraft === 'NA' ? 'text' : 'date'}
                   value={etaDraft}
@@ -521,7 +531,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
               )}
             </div>
           </div>
-          {caps.editPlan && <FlexRow justify="flex-end" style={{ marginTop: 10 }}>
+          {canPlan && <FlexRow justify="flex-end" style={{ marginTop: 10 }}>
             <Btn
               size="sm"
               disabled={savingEta || (

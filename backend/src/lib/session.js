@@ -8,6 +8,7 @@
 //            permission check that compares `req.user.id` with one of those keeps working for the
 //            whole team unchanged. requireAuth sets `req.user.id` to this.
 import { ensureOrgForUser, isPartyRole } from './orgs.js'
+import { platformMode } from './platform.js'
 
 /** Resolve a user document (lean) to the identity a request runs as. Creates the org on first sight. */
 export async function identityFor(dbUser) {
@@ -33,6 +34,9 @@ export function publicUser(u) {
     id: u.id, actorId: u.actorId ?? u.id,
     email: u.email, role: u.role, adminType: u.adminType ?? null,
     name: u.name, company: u.company, code: u.code, mustChangePw: !!u.mustChangePw,
+    // Which product this deployment is, so the UI can mirror the server's rules (what a brand or
+    // manufacturer may create, whether Tradio staff are viewers). The server stays the real gate.
+    platformMode: platformMode(),
     ...(u.orgId ? {
       orgId: u.orgId, orgRole: u.orgRole, orgType: u.orgType,
       tradioEnabled: !!u.tradioEnabled, tradioCanView: u.tradioCanView !== false,

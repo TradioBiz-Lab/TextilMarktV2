@@ -3,6 +3,8 @@ import { X, Plus, Trash2, ChevronLeft, ChevronRight, AlertTriangle } from '../..
 import { T, CATEGORIES, PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, getToday } from '../../constants.js'
 import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
+import { capsFor } from '../../caps.js'
+import { usePartners } from '../../lib/usePartners.js'
 
 let _styleKeySeq = 1
 const newStyle = () => ({
@@ -19,29 +21,29 @@ const newStyle = () => ({
   ecommerceLink: '',
 })
 
-// Next sequence number for this buyer+category+season, derived from the
-// highest existing suffix (not array length) — same fix as genMoId, so a
-// deleted style can't cause the next one to collide with a survivor.
-function genStyleId(orders, buyerCode, cat, season) {
-  const prefix = `${buyerCode}-${cat}-${season}-`
-  const maxN = orders
-    .filter(o => o.id.startsWith(prefix))
-    .reduce((max, o) => {
-      const n = parseInt(o.id.slice(prefix.length), 10)
-      return Number.isFinite(n) && n > max ? n : max
-    }, 0)
-  return `${prefix}${String(maxN + 1).padStart(3, '0')}`
-}
-
 const STEPS = ['Master order & basic details', 'Colourways & fabric (optional)', 'Reference documents (optional)']
 
 // Decision-tree modal: Node 1 picks the Master Order and defines one or more
 // styles' basic details; Node 2 collects colourways/fabric per style; Node 3
-// collects optional reference documents per style. No manufacturer, no
-// production stages (TNA) here at all — both are added later from the Style
-// Detail page once the style exists.
+// collects optional reference documents per style. No production stages (TNA)
+// here at all: the plan is added later from the Style Detail page. The server numbers
+// every style (id: 'auto'), so two people creating at once never clash.
+//
+// Who makes the style decides the manufacturer step. A manufacturer is always the
+// manufacturer of the style it creates (the server assigns it), so it picks nothing. A
+// brand may name one of the manufacturers it is connected with, or leave it for later.
+// Tradio staff in the standalone product must name a manufacturer Tradio manages; in the
+// Tradio portal the manufacturer is added later, as before.
 export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMasterOrder }) {
-  const { orders, createOrder, uploadDoc } = useApp()
+  const { createOrder, uploadDoc, currentUser, users } = useApp()
+  const caps = capsFor(currentUser)
+  const { partners, loading: partnersLoading } = usePartners(caps.standalone && caps.isCompany)
+  const mfrChoices = caps.isAdmin
+    ? users.filter(u => u.role === 'manufacturer' && u.isActive)
+    : partners.filter(p => p.role === 'manufacturer')
+  const asksForManufacturer = caps.standalone && (caps.isAdmin || caps.isBuyer)
+  const mfrRequired = caps.standalone && caps.isAdmin
+  const [mfrId, setMfrId] = useState('')
   const [step, setStep] = useState(1)
   const [masterOrderId, setMasterOrderId] = useState('')
   const [styles, setStyles] = useState([newStyle()])
@@ -74,7 +76,7 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
     ...s, fabrics: s.fabrics.filter(f => f._key !== fKey),
   }))
 
-  const step1Valid = masterOrderId && styles.every(s =>
+  const step1Valid = masterOrderId && (!mfrRequired || mfrId) && styles.every(s =>
     s.product.trim() && s.styleNumber.trim() &&
     (s.category && s.category !== '__custom__' ? true : s.customCategory.trim()) &&
     s.totalQty && Number(s.totalQty) > 0 && s.delivery
@@ -85,28 +87,26 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
     setSaving(true)
     const createdIds = []
     const createdKeys = []
-    // Styles made earlier in this same run are not in `orders` yet, so the next ID has to
-    // count them too, or two styles in one category both get -001.
-    const justCreated = []
     try {
       for (const s of styles) {
         const category = s.category === '__custom__' ? s.customCategory.trim() : s.category
-        const id = genStyleId([...orders, ...justCreated], mo.buyerCode, (category || 'XX').toUpperCase().slice(0, 6), mo.season || 'XX')
+        const totalQty = Math.floor(Number(s.totalQty))
         const photoPayload = fileUploadPayload(s.photoFile)
         const colourways = s.colourways.filter(c => c.name.trim()).map(c => ({ name: c.name.trim(), code: c.code.trim(), hex: c.hex.trim() }))
         const fabricDetails = s.fabrics.filter(f => f.name.trim()).map(f => ({
           name: f.name.trim(), composition: f.composition.trim(), gsm: f.gsm.trim(), supplier: f.supplier.trim(),
         }))
         const created = await createOrder({
-          id, buyerId: mo.buyerId, product: s.product.trim(), styleNumber: s.styleNumber.trim(),
+          id: 'auto', buyerId: mo.buyerId, product: s.product.trim(), styleNumber: s.styleNumber.trim(),
           category, season: mo.season || undefined, masterOrderId,
-          totalQty: Math.floor(Number(s.totalQty)), delivery: s.delivery,
+          totalQty, delivery: s.delivery,
           createdAt: getToday(),
           colourways, fabricDetails, ecommerceLink: s.ecommerceLink.trim(),
           imageDataUrl: photoPayload.dataUrl || null, imageUrl: photoPayload.externalUrl || null,
+          // A manufacturer's own style is assigned to it by the server, so only brands and Tradio name one.
+          ...(asksForManufacturer && mfrId ? { assignments: [{ mid: mfrId, qty: totalQty }] } : {}),
         })
         createdIds.push(created.id)
-        justCreated.push({ id: created.id })
         createdKeys.push(s._key)
 
         const docUploads = [
@@ -164,9 +164,29 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
                 </select>
               </div>
 
-              {styles.map((s, si) => {
-                const catForId = s.category === '__custom__' ? (s.customCategory || 'CUST').toUpperCase().slice(0, 6) : (s.category || 'XX')
-                return (
+              {asksForManufacturer && (
+                <div>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+                    Manufacturer {mfrRequired ? '*' : '(optional)'}
+                  </label>
+                  {!mfrRequired && !partnersLoading && mfrChoices.length === 0 ? (
+                    <div style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.5 }}>
+                      You are not connected with a manufacturer yet. You can still create the style and assign one later, once Tradio has connected you.
+                    </div>
+                  ) : (
+                    <select value={mfrId} onChange={e => setMfrId(e.target.value)}
+                      style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 8, padding: '9px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit' }}>
+                      <option value="">{mfrRequired ? 'Select manufacturer' : 'Decide later'}</option>
+                      {mfrChoices.map(m => <option key={m.id} value={m.id}>{m.company} ({m.code})</option>)}
+                    </select>
+                  )}
+                  <div style={{ fontSize: 11, color: T.textLight, marginTop: 5 }}>
+                    {mfrRequired ? 'Tradio can only create styles for manufacturers it manages.' : 'The whole quantity goes to this manufacturer. You can split it between several later.'}
+                  </div>
+                </div>
+              )}
+
+              {styles.map((s, si) => (
                   <div key={s._key} style={{ background: '#f8fafc', border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                     <FlexRow justify="space-between">
                       <span style={{ fontSize: 11, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Style {si + 1}</span>
@@ -194,15 +214,9 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
                       <Input label="Quantity *" type="number" value={s.totalQty} onChange={e => updateStyle(s._key, { totalQty: e.target.value })} placeholder="5000" />
                     </div>
                     <Input label="Expected Delivery *" type="date" value={s.delivery} onChange={e => updateStyle(s._key, { delivery: e.target.value })} />
-
-                    {mo && (s.product || s.styleNumber) && (
-                      <div style={{ fontSize: 11, color: T.textLight, fontFamily: "'JetBrains Mono',monospace" }}>
-                        ID preview: {genStyleId(orders, mo.buyerCode, catForId, mo.season || 'XX')}
-                      </div>
-                    )}
                   </div>
-                )
-              })}
+              ))}
+              <div style={{ fontSize: 11, color: T.textLight }}>Style IDs are numbered automatically when you create.</div>
               <button onClick={addStyle} style={{ alignSelf: 'flex-start', fontSize: 12, color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 4 }}>
                 <Plus size={13} /> Add another style
               </button>

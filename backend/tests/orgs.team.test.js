@@ -86,6 +86,13 @@ describe('a teammate acts as their company', () => {
     assert.equal(me.body.user.orgType, 'manufacturer')
   })
 
+  test('the user object carries the platform mode, so the UI mirrors the server\'s rules', async () => {
+    const mfr = await makeMfr()
+    assert.equal((await as(mfr).get('/api/auth/me')).body.user.platformMode, 'tradio')
+    process.env.PLATFORM_MODE = 'standalone'
+    try { assert.equal((await as(mfr).get('/api/auth/me')).body.user.platformMode, 'standalone') } finally { delete process.env.PLATFORM_MODE }
+  })
+
   test('refreshing the session never turns a teammate into the owner', async () => {
     const mfr = await makeMfr(), member = await makeMember(mfr, { name: 'Merchandiser' })
     let token = tokenFor(member)

@@ -7,7 +7,9 @@ import {
 } from '../../constants.js'
 import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, FileUpload, LoadingScreen, useToast, fileUploadPayload, ProductThumb, Modal, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
-import { capsFor } from '../../caps.js'
+import { capsFor, orderCaps, canEditMasterOrder } from '../../caps.js'
+import { usePartners } from '../../lib/usePartners.js'
+import { OwnerChip } from '../../components/OwnerChip.jsx'
 import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
@@ -33,7 +35,9 @@ function fmtDate(d) {
 // only gets a client prefix when every order in it happens to share one.
 function groupDisplayLabel(g) {
   const base = g.mo?.orderName || (g.moId === '__none__' ? 'Other Orders' : g.moId)
-  return withBuyerPrefix(base, g.orders)
+  // A master order with no styles yet has no orders to read the buyer from: use its own.
+  const source = g.orders.length === 0 && g.mo?.buyerCompany ? [{ buyerCompany: g.mo.buyerCompany }] : g.orders
+  return withBuyerPrefix(base, source)
 }
 
 export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
@@ -96,7 +100,14 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
   const [moErr, setMoErr] = useState('')
   const [moSaving, setMoSaving] = useState(false)
 
-  const buyerUsers = users.filter(u => u.role === 'buyer' && u.isActive)  // used in Master Order modal
+  // Who a master order can be for. A brand: itself, always. A manufacturer (standalone): only the
+  // brands it is connected with. Tradio staff: any active brand.
+  const { partners, loading: partnersLoading } = usePartners(caps.standalone && caps.isCompany)
+  const customerChoices = caps.standalone && caps.isMfr
+    ? partners.filter(p => p.role === 'buyer')
+    : users.filter(u => u.role === 'buyer' && u.isActive)
+  const noConnectedBrands = caps.standalone && caps.isMfr && !partnersLoading && customerChoices.length === 0
+  const moBuyerId = caps.isBuyer ? currentUser.id : mo.buyerId
 
   const toggleSort = col => {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -133,6 +144,12 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
     const result = [...groups.entries()].map(([moId, ords]) => ({
       moId, mo: moId !== '__none__' ? masterOrders.find(m => m.id === moId) : null, orders: ords,
     }))
+    // Standalone product: a master order with no styles yet still shows, otherwise one you just
+    // created looks lost and an empty one could never be edited or dropped. Hidden while searching
+    // or filtering, when only matching styles are wanted. (The Tradio portal keeps its list as is.)
+    if (caps.standalone && !q && sfilt === 'All') {
+      masterOrders.forEach(m => { if (!groups.has(m.id)) result.push({ moId: m.id, mo: m, orders: [] }) })
+    }
     result.sort((a, b) => {
       if (a.moId === '__none__') return 1
       if (b.moId === '__none__') return -1
@@ -159,19 +176,6 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
     const t = setTimeout(() => document.getElementById(`mo-group-${initialMo}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 80)
     return () => clearTimeout(t)
   }, [initialMo, groupedOrders.length])
-
-  const genMoId = () => {
-    const b = users.find(u => u.id === mo.buyerId)
-    if (!b) return null
-    const prefix = `MO-${b.code}-`
-    const maxN = masterOrders
-      .filter(m => m.buyerId === mo.buyerId && m.id.startsWith(prefix))
-      .reduce((max, m) => {
-        const n = parseInt(m.id.slice(m.id.lastIndexOf('-') + 1), 10)
-        return Number.isFinite(n) && n > max ? n : max
-      }, 0)
-    return `${prefix}${mo.season || 'XX'}-${String(maxN + 1).padStart(3, '0')}`
-  }
 
   const resetMoForm = () => {
     setMo({ buyerId: '', orderName: '', season: 'SS26' })
@@ -239,10 +243,21 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
               <button onClick={() => { setShowMO(false); resetMoForm() }} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: T.textMuted }} aria-label="Close"><X size={14} /></button>
             </div>
             <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <Select label="Buyer *" value={mo.buyerId} onChange={e => setMo({ ...mo, buyerId: e.target.value })}>
-                <option value="">Select buyer…</option>
-                {buyerUsers.map(b => <option key={b.id} value={b.id}>{b.company} ({b.code})</option>)}
-              </Select>
+              {caps.isBuyer ? (
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 6 }}>Brand</label>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{currentUser.company}</div>
+                </div>
+              ) : noConnectedBrands ? (
+                <div style={{ fontSize: 13, color: T.textMuted, background: T.warningBg, border: `1px solid ${T.warningBorder}`, borderRadius: 8, padding: '10px 12px', lineHeight: 1.5 }}>
+                  You are not connected with any brand yet. Ask your Tradio contact to connect you with the brands you work for, then you can set up their orders here.
+                </div>
+              ) : (
+                <Select label={caps.isMfr ? 'Customer (brand) *' : 'Buyer *'} value={mo.buyerId} onChange={e => setMo({ ...mo, buyerId: e.target.value })}>
+                  <option value="">{caps.isMfr ? 'Select customer…' : 'Select buyer…'}</option>
+                  {customerChoices.map(b => <option key={b.id} value={b.id}>{b.company} ({b.code})</option>)}
+                </Select>
+              )}
               <Input label="Order Name *" value={mo.orderName} onChange={e => setMo({ ...mo, orderName: e.target.value })} placeholder="e.g. H1, H26, Core Series" hint="The buyer name is added automatically wherever this shows — e.g. Cocoblu — H1." />
               <Select label="Season" value={mo.season} onChange={e => setMo({ ...mo, season: e.target.value })}>
                 {SEASONS.map(s => <option key={s}>{s}</option>)}
@@ -251,22 +266,17 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
                 <label style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 8 }}>PO / RFQ Attachment (optional)</label>
                 <FileUpload file={moFile} onFile={f => { setMoFile(f); setMoFileErr('') }} error={moFileErr} onError={setMoFileErr} />
               </div>
-              {genMoId() && (
-                <div style={{ background: T.primaryLight, border: '1px solid #c7d2fe', borderRadius: 8, padding: '8px 14px' }}>
-                  <div style={{ fontSize: 10, color: T.primary, fontWeight: 700, marginBottom: 2 }}>GENERATED ID</div>
-                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: T.primaryDark }}>{genMoId()}</span>
-                </div>
-              )}
-              {moErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {moErr}</div>}
+              <div style={{ fontSize: 12, color: T.textLight }}>The master order number is assigned automatically when you create it.</div>
+              {moErr &&<div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {moErr}</div>}
               <FlexRow justify="flex-end" gap={8}>
                 <Btn variant="secondary" onClick={() => { setShowMO(false); resetMoForm() }}>Cancel</Btn>
-                <Btn disabled={!mo.buyerId || !mo.orderName.trim() || moSaving} onClick={async () => {
-                  const moId = genMoId()
-                  if (!moId) return
+                <Btn disabled={!moBuyerId || !mo.orderName.trim() || moSaving} onClick={async () => {
                   setMoErr('')
                   setMoSaving(true)
                   try {
-                    await createMasterOrder({ id: moId, buyerId: mo.buyerId, orderName: mo.orderName.trim(), season: mo.season })
+                    // The server numbers it (a new number can never clash with one a teammate just made).
+                    const created = await createMasterOrder({ id: 'auto', buyerId: moBuyerId, orderName: mo.orderName.trim(), season: mo.season })
+                    const moId = created.id
                     // Upload attached file as PO/RFQ linked to this master order
                     let fileFailed = null
                     if (moFile) {
@@ -295,7 +305,10 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
 
       <PageHeader
         title="Order Management"
-        subtitle={caps.createOrders ? 'Create styles, assign manufacturers, and manage the full order lifecycle'
+        subtitle={caps.createOrders
+          ? (caps.standalone && caps.isMfr ? 'Set up styles for your brands and take each one through production'
+            : caps.standalone && caps.isBuyer ? 'Place styles with your manufacturers and follow each one through production'
+            : 'Create styles, assign manufacturers, and manage the full order lifecycle')
           : caps.isBuyer ? 'Every style you have placed, and where each one stands'
           : 'Every style assigned to your factory, and where each one stands'}
         action={caps.createOrders ? (
@@ -416,7 +429,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
                         <span style={{ fontSize: 13, fontWeight: 800, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Folder size={13} /> {groupLabel}</span>
                         {g.mo?.season && <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', background: '#dbeafe', padding: '2px 7px', borderRadius: 4 }}>{g.mo.season}</span>}
                         <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{g.orders.length} order{g.orders.length !== 1 ? 's' : ''}</span>
-                        {caps.editOrders && g.mo && (
+                        {canEditMasterOrder(currentUser, g.mo) && (
                           <button onClick={e => { e.stopPropagation(); setEditMo(g.mo) }} title="Edit master order" aria-label={`Edit master order ${groupLabel}`}
                             style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.textMuted, cursor: 'pointer', fontFamily: 'inherit' }}>
                             <Pencil size={11} /> Edit
@@ -427,7 +440,15 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
                   </tr>
                 )
                 if (collapsed) return [spacerRow, headerRow].filter(Boolean)
+                if (g.orders.length === 0) {
+                  return [spacerRow, headerRow, (
+                    <tr key={`e-${g.moId}`}><td colSpan={8} style={{ padding: '14px 16px', fontSize: 12, color: T.textMuted }}>
+                      No styles in this master order yet.{caps.createOrders ? ' Use Create Style to add the first one.' : ''}
+                    </td></tr>
+                  )].filter(Boolean)
+                }
                 const rows = g.orders.flatMap(o => {
+                  const oc = orderCaps(currentUser, o)   // what this user may do to this one order
                   const visibleAsgns = sfilt === 'All'
                     ? (o.assignments.length > 0 ? o.assignments : [null])
                     : o.assignments.filter(a => a.status === sfilt)
@@ -442,7 +463,13 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
                         <Mono style={{ fontSize: 11 }}>{o.id}{a ? `-${a.sub}` : ''}</Mono>
                       </td>
                       <td style={{ padding: '11px 16px', fontWeight: 600, color: T.text, fontSize: 13 }}>
-                        <FlexRow gap={10}><ProductThumb order={o} size="sm" onClick={caps.editOrders ? (e => { e.stopPropagation(); setEditTarget(o) }) : undefined} />{o.product}</FlexRow>
+                        <FlexRow gap={10}>
+                          <ProductThumb order={o} size="sm" onClick={oc.uploadPhoto ? (e => { e.stopPropagation(); setEditTarget(o) }) : undefined} />
+                          <div style={{ minWidth: 0 }}>
+                            <div>{o.product}</div>
+                            <OwnerChip order={o} user={currentUser} style={{ marginTop: 3 }} />
+                          </div>
+                        </FlexRow>
                       </td>
                       <td style={{ padding: '11px 16px', color: T.textMuted, fontSize: 13 }}>{o.buyerCompany || '—'}</td>
                       <td style={{ padding: '11px 16px' }}>
@@ -468,8 +495,8 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
                       <td style={{ padding: '11px 16px' }}>
                         <FlexRow gap={6}>
                           <Btn size="sm" onClick={(e) => { e.stopPropagation(); onOpen(o.id, a?.mid) }}>{caps.isAdmin ? 'Manage' : 'Open'} <ArrowRight size={12} style={{ marginLeft: -2 }} /></Btn>
-                          {caps.editOrders && <Btn size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); setEditTarget(o) }}>Edit</Btn>}
-                          {caps.deleteOrders && <button
+                          {oc.edit && <Btn size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); setEditTarget(o) }}>Edit</Btn>}
+                          {oc.remove && <button
                             onClick={(e) => { e.stopPropagation(); setDeleteTarget(o) }}
                             style={{ padding: '4px 10px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: `1px solid ${T.dangerBorder}`, background: T.dangerBg, color: T.danger, cursor: 'pointer', fontFamily: 'inherit' }}
                           >Drop</button>}
@@ -480,7 +507,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
                 })
                 return [spacerRow, headerRow, ...rows].filter(Boolean)
               })}
-              {filtered.length === 0 && <tr><td colSpan={8}><EmptyState icon={<Package size={26} color={T.textLight} />} title="No orders" desc={caps.createOrders ? "Create your first order above" : "Orders will appear here once they are placed"} /></td></tr>}
+              {groupedOrders.length === 0 && <tr><td colSpan={8}><EmptyState icon={<Package size={26} color={T.textLight} />} title="No orders" desc={caps.createOrders ? "Create your first order above" : "Orders will appear here once they are placed"} /></td></tr>}
             </tbody>
           </table>
         </div>
@@ -509,8 +536,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
                   const dy = y.order.delivery ? new Date(y.order.delivery).getTime() : Infinity
                   return dx - dy
                 })
-              if (entries.length === 0) return null
-              const spine = buildMatrixSpine(entries)
+              const spine = entries.length ? buildMatrixSpine(entries) : []
               const groupLabel = groupDisplayLabel(g)
               const isOpen = expandedGroups.has(g.moId)
               return (
@@ -521,7 +547,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
                     <span style={{ fontSize: 13, fontWeight: 800, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Folder size={13} /> {groupLabel}</span>
                     {g.mo?.season && <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', background: '#dbeafe', padding: '1px 7px', borderRadius: 4 }}>{g.mo.season}</span>}
                     <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{entries.length} style{entries.length !== 1 ? 's' : ''} · {spine.length} steps</span>
-                    {caps.editOrders && g.mo && (
+                    {canEditMasterOrder(currentUser, g.mo) && (
                           <button onClick={e => { e.stopPropagation(); setEditMo(g.mo) }} title="Edit master order" aria-label={`Edit master order ${groupLabel}`}
                             style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.textMuted, cursor: 'pointer', fontFamily: 'inherit' }}>
                             <Pencil size={11} /> Edit
@@ -529,7 +555,12 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
                         )}
                   </FlexRow>
 
-                  {isOpen && (
+                  {isOpen && entries.length === 0 && (
+                    <div style={{ padding: '14px 16px', fontSize: 12, color: T.textMuted }}>
+                      No styles in this master order yet.{caps.createOrders ? ' Use Create Style to add the first one.' : ''}
+                    </div>
+                  )}
+                  {isOpen && entries.length > 0 && (
                     <div className="table-scroll">
                       <table style={{ borderCollapse: 'collapse', minWidth: 340 + entries.length * 150 }}>
                         <thead>

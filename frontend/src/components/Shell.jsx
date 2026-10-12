@@ -1,12 +1,17 @@
-import { ViewAsPicker } from './ViewAsPicker.jsx'  // sandbox-only, remove with the feature
+import { ViewAsPicker } from './ViewAsPicker.jsx'
+import { ViewAsBanner } from './ViewAsBanner.jsx'
 import { useState, useEffect } from 'react'
-import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot, Inbox } from '../icons.jsx'
+import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot, Inbox, Building2 } from '../icons.jsx'
 import { T } from '../constants.js'
 import { Btn, RibbonBanner } from './ui.jsx'
 import { Logo } from './Brand.jsx'
 import { NotifPanel } from './NotifPanel.jsx'
 import { KriyaaWidget } from './KriyaaWidget.jsx'
 import { useApp } from '../context.jsx'
+import { navSections, navIdForView } from '../nav.js'
+
+// nav.js names icons so it can stay free of React; these are the components behind the names.
+const NAV_ICONS = { Home, ListChecks, Bot, Package, Inbox, Folder, BarChart3, History, Users, Buildings: Building2 }
 
 function NetworkBanner() {
   const [online, setOnline] = useState(navigator.onLine)
@@ -58,19 +63,8 @@ export function Shell({ view, setView, children, onOpenOrder }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
-  // Every role gets the same six tabs, in the same order. Admins get three extra
-  // management tabs; what each tab shows is scoped to the signed-in user's own data.
-  const nav = !user ? [] : [
-    { id: 'dashboard', icon: Home, label: 'Dashboard' },
-    { id: 'action_items', icon: ListChecks, label: 'Action Items' },
-    { id: 'kriyaa', icon: Bot, label: 'Kriyaa' },
-    { id: 'orders', icon: Package, label: 'Orders' },
-    ...(user.role === 'admin' ? [{ id: 'review', icon: Inbox, label: 'Review Queue' }] : []),
-    { id: 'documents', icon: Folder, label: 'Documents' },
-    { id: 'reports', icon: BarChart3, label: 'Reports' },
-    ...(user.role === 'admin' ? [{ id: 'audit', icon: History, label: 'Audit Log' }] : []),
-    ...(user.role === 'admin' && user.adminType === 'master' ? [{ id: 'users', icon: Users, label: 'User Setup' }] : []),
-  ]
+  // The sidebar is data (nav.js), built from what this user may do rather than from role strings.
+  const sections = navSections(user)
 
   const roleLabel = user?.role === 'admin'
     ? (user?.adminType === 'master' ? 'Master Admin' : 'Admin Portal')
@@ -112,17 +106,22 @@ export function Shell({ view, setView, children, onOpenOrder }) {
         </div>
 
         <nav style={{ flex: 1, padding: sidebarCollapsed ? '8px 4px' : '8px', display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto' }}>
-          {nav.map(n => {
-            const active = view === n.id || (n.id === 'orders' && (view === 'order_detail' || view === 'submit_req'))
-            const Icon = n.icon
-            return (
-              <button key={n.id} onClick={() => handleNav(n.id)} title={sidebarCollapsed ? n.label : undefined}
-                className="sidebar-nav-item" aria-current={active ? 'page' : undefined}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', gap: 10, padding: sidebarCollapsed ? '9px 0' : '9px 12px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: active ? 700 : 500, textAlign: 'left', background: active ? 'rgba(255,255,255,0.12)' : 'transparent', color: active ? '#fff' : 'rgba(255,255,255,0.55)', transition: 'all 0.12s', fontFamily: 'inherit' }}>
-                <Icon size={18} weight={active ? 'fill' : 'regular'} style={{ flexShrink: 0 }} />{!sidebarCollapsed && n.label}
-              </button>
-            )
-          })}
+          {sections.map((sec, si) => (
+            <div key={si} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {sec.label && !sidebarCollapsed && <div className="sidebar-section-label">{sec.label}</div>}
+              {sec.items.map(n => {
+                const active = navIdForView(view) === n.id
+                const Icon = NAV_ICONS[n.icon] || Home
+                return (
+                  <button key={n.id} onClick={() => handleNav(n.id)} title={sidebarCollapsed ? n.label : undefined}
+                    className="sidebar-nav-item" aria-current={active ? 'page' : undefined}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', gap: 10, padding: sidebarCollapsed ? '9px 0' : '9px 12px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: active ? 700 : 500, textAlign: 'left', background: active ? 'rgba(255,255,255,0.12)' : 'transparent', color: active ? '#fff' : 'rgba(255,255,255,0.55)', transition: 'all 0.12s', fontFamily: 'inherit' }}>
+                    <Icon size={18} weight={active ? 'fill' : 'regular'} style={{ flexShrink: 0 }} />{!sidebarCollapsed && n.label}
+                  </button>
+                )
+              })}
+            </div>
+          ))}
         </nav>
 
         {/* Collapse toggle */}
@@ -181,6 +180,9 @@ export function Shell({ view, setView, children, onOpenOrder }) {
             <div className="header-signout"><Btn variant="secondary" size="sm" onClick={logout}>Sign out</Btn></div>
           </div>
         </header>
+
+        {/* A master admin looking at a company: whose account this is, and whether changes are real */}
+        <ViewAsBanner />
 
         {/* Network status banner */}
         <NetworkBanner />

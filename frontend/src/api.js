@@ -186,11 +186,31 @@ export const droppedApi = {
   get: id => api.get(`/dropped/${id}`),
 }
 
-// SANDBOX ONLY, TEMPORARY (see backend/src/routes/viewAs.js)
+// The master admin's way into a company (see backend/src/routes/viewAs.js). Read-only by default in
+// the standalone product; `act: true` switches on "acting for", which the server only allows for a
+// Tradio-enabled manufacturer.
 export const viewAsApi = {
   options: () => api.get('/auth/view-as/options'),
-  start: userId => api.post('/auth/view-as', { userId }),
+  start: (userId, { act = false } = {}) => api.post('/auth/view-as', act ? { userId, act: true } : { userId }),
   exit: () => api.post('/auth/view-as/exit'),
+}
+
+// The only other companies a brand or manufacturer can read: the ones it is connected with.
+export const partnersApi = {
+  list: () => api.get('/partners'),
+}
+
+// Companies, their teams, connections and the two Tradio switches (see backend/src/routes/orgs.js).
+export const orgsApi = {
+  list: () => api.get('/orgs'),                                   // admins
+  mine: () => api.get('/orgs/me'),                                // the signed-in company
+  create: data => api.post('/orgs', data),                        // master admin
+  update: (id, data) => api.post(`/orgs/${id}`, data),            // master admin: name, tradioEnabled, isActive
+  addMember: (id, data) => api.post(`/orgs/${id}/members`, data), // master admin
+  connect: (id, partnerOrgId) => api.post(`/orgs/${id}/partners`, { partnerOrgId }),
+  disconnect: (id, partnerOrgId) => api.post(`/orgs/${id}/partners/${partnerOrgId}/revoke`),
+  // Only the company's owner can change who may look at it; Tradio cannot.
+  setTradioAccess: tradioCanView => api.post('/orgs/me/privacy', { tradioCanView }),
 }
 
 export const inboundApi = {

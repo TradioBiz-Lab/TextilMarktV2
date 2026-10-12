@@ -12,11 +12,15 @@ import { AdminAuditLog } from './pages/admin/AdminAuditLog.jsx'
 import { UserSetup } from './pages/admin/UserSetup.jsx'
 import { KriyaaPage } from './pages/admin/KriyaaPage.jsx'
 import { ReviewQueuePage } from './pages/admin/ReviewQueuePage.jsx'
+import { ViewerHome } from './pages/master/ViewerHome.jsx'
+import { CompanyPage } from './pages/shared/CompanyPage.jsx'
 import { LiveRefresh } from './components/LiveRefresh.jsx'
 import { KriyaaChatProvider } from './kriyaaChatContext.jsx'
 import { ReportingPage } from './pages/shared/ReportingPage.jsx'
 import { ActionItemsPage } from './pages/shared/ActionItemsPage.jsx'
 import { authApi } from './api.js'
+import { capsFor, homeViewFor } from './caps.js'
+import { parseDeepLink } from './lib/deepLink.js'
 import { T } from './constants.js'
 import { Input, Btn, ToastProvider } from './components/ui.jsx'
 
@@ -102,13 +106,22 @@ function Inner() {
     else go(fallback || { view: 'orders' })
   }, [go])
 
-  // Start at the dashboard on login or session restore, with a fresh history.
+  // Start on the user's home screen on login or session restore, with a fresh history: the dashboard,
+  // or for the master admin of the standalone product the company directory.
   useEffect(() => {
     if (!user?.id) return
-    hist.current = { stack: [{ ...BLANK }], idx: 0 }
+    const home = { ...BLANK, view: homeViewFor(user) }
+    hist.current = { stack: [home], idx: 0 }
     window.history.replaceState({ nav: 0 }, '')
-    apply({ ...BLANK })
-  }, [user?.id, apply])
+    apply(home)
+    // A link from an email or message can name a screen (#order=..., #view=orders). Open it once and
+    // drop the hash, so reloading does not reopen it and the address stays clean.
+    const link = parseDeepLink(window.location.hash)
+    if (link) {
+      window.history.replaceState({ nav: 0 }, '', window.location.pathname + window.location.search)
+      go(link.view === 'order_detail' ? { view: 'order_detail', selOid: link.orderId } : { view: link.view })
+    }
+  }, [user?.id, apply, go])
 
   // Browser Back / Forward move along the same stack.
   useEffect(() => {
@@ -133,6 +146,7 @@ function Inner() {
 
   if (user.mustChangePw) return <ForceChangePassword />
 
+  const caps = capsFor(user)
   const navTo = (v, params) => go({
     view: v,
     ordersStatus: params?.status ?? null,
@@ -158,6 +172,8 @@ function Inner() {
     // signed-in user, and hides the controls that role cannot use (see caps.js).
     if (view === 'dashboard') return <AdminDashboard onNavigate={navTo} onOpen={openOrder} />
     if (view === 'kriyaa') return <KriyaaPage />
+    if (view === 'viewer' && caps.seeViewerHome) return <ViewerHome />
+    if (view === 'company' && caps.seeCompanyPage) return <CompanyPage />
     if (view === 'orders') return <AdminOrders key={`o:${ordersMo || 'all'}`} onOpen={openOrder} initialStatus={ordersStatus} initialMo={ordersMo} onSubmitReq={user.role === 'buyer' ? () => navTo('submit_req') : undefined} />
     if (view === 'order_detail' && selOid) return <AdminOrderDetail orderId={selOid} initialMid={selMid} onBack={() => goBack({ view: 'orders', ordersMo: orders?.find(o => o.id === selOid)?.masterOrderId || '__none__' })} />
     if (view === 'documents') return <AdminDocuments />
@@ -166,7 +182,7 @@ function Inner() {
     if (user.role === 'admin') {
       if (view === 'review') return <ReviewQueuePage />
       if (view === 'audit') return <AdminAuditLog />
-      if (view === 'users' && user.adminType === 'master') return <UserSetup />
+      if (view === 'users' && caps.seeUserSetup) return <UserSetup />
     }
     return <div style={{ textAlign: 'center', padding: '60px', color: T.textLight }}>Page not found</div>
   }

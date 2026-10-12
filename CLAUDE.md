@@ -53,11 +53,13 @@ backend/src/
   middleware/auth.js  # requireAuth / requireAdmin / requireMaster / sanitizeBody
   middleware/asyncErrors.js # forwards rejected async handlers to the error handler
   models/             # User, Order, Document, Notification, AuditLog, Ribbon, MasterOrder,
-                       # ActionItem, DroppedRecord, InboundMessage
+                       # ActionItem, DroppedRecord, InboundMessage,
+                       # Organization, Partnership, Counter (standalone product, see below)
   routes/             # auth, viewAs, orders, documents, users, notifications, audit, ribbons,
                        # masterOrders, signup, actionItems, assistant (Kriyaa), voice, inbound,
-                       # review, floor, dropped
-  lib/                # email, stageMath, notify, redact, dropRecord, sarvam, ai/, inbound/
+                       # review, floor, dropped, orgs, partners
+  lib/                # email, stageMath, notify, redact, dropRecord, sarvam, ai/, inbound/,
+                       # platform, authz, orgs, session, orderCreate, counters, migrate
 frontend/src/
   App.jsx             # top-level view router (hand-rolled, no react-router)
   context.jsx         # AppProvider — single global data/actions store
@@ -66,9 +68,11 @@ frontend/src/
   components/ui.jsx   # shared UI primitives (Btn, Modal, Card, DocCard/PDF viewer, etc.)
   constants.js        # T theme object (design tokens), STATUS_FLOW, DEFAULT_STAGE_NAMES
   pages/admin/...      # the screens ALL roles use (Dashboard, Orders, Order detail, Documents, ...)
-  pages/shared/...     # Reports, Action Items
+  pages/shared/...     # Reports, Action Items, CompanyPage (standalone: team, partners, privacy switch)
+  pages/master/...     # ViewerHome: the master admin's company directory (standalone)
   pages/buyer/BuyerSubmitReq.jsx  # customer-only 'Submit Requirement'
   caps.js              # what each role may do in the shared screens (mirrors the server rules)
+  nav.js               # the sidebar as data, built from caps
 docs/SCHEMA.md         # MongoDB schema reference (kept in sync with models/)
 docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
 ```
@@ -178,6 +182,60 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   "Deploy to Production" button does not mean "push the current build live" — it starts
   first-time setup of a brand-new environment, a real one-way infrastructure/billing change.
   Don't click it expecting a routine promote.
+
+## Standalone product, organizations and tenant isolation
+
+The same codebase also serves a standalone product: brands and manufacturers transact directly and
+Tradio's master admin is a viewer. The only fork is the `PLATFORM_MODE` env var (`tradio`, the default,
+or `standalone`; read at call time by `lib/platform.js`). Unset, every behaviour below is the Tradio
+portal exactly as before. On Catalyst AppSail it is set in the console (app-config.json holds no env),
+and switching a database to standalone leaves every manufacturer not Tradio-enabled until the master
+admin enables them in User Setup.
+
+- **Party id versus actor id.** `requireAuth` sets `req.user.id` to the *party*: the organization's
+  owner account, which is what orders, assignments, documents and stage owners reference, so every
+  existing `req.user.id` comparison works for a whole team unchanged. `req.user.actorId` is the
+  *person*. Use the actor for sign-in, the JWT claim, password changes, rate-limit keys (`userKey`) and
+  audit attribution; the AuditLog hook swaps `byUser` to the actor itself. `publicUser()` in
+  `lib/session.js` is the only shape sent to the browser (party `id`, `actorId`, org flags,
+  `platformMode`). Never put `req.user.id` where a person is meant.
+- **Organizations.** `Organization` (brand or manufacturer; `tradioEnabled`, `tradioCanView`),
+  `Partnership` (brand and manufacturer connected; the only way to create orders between them) and
+  `Counter` (atomic numbering). Orgs are created lazily by `ensureOrgForUser` and by startup migrations
+  (`lib/migrate.js`). Teammates are `User`s with `orgId` and `orgRole: member`; they share the company
+  code, which is why `users.code` is no longer unique.
+- **One authorization module, `lib/authz.js`.** Every route that writes an order carries a guard from
+  it (`orderWriteGuard`, `requireOrderOwner`, `requirePlanEditor`, `requireAssigner`,
+  `requireMasterOrderOwner`, `canCreateOrders`), and `tests/routeGuards.test.js` fails if a write route
+  has none. Standalone rules: a brand or manufacturer edits what its own company created; a brand
+  assigns manufacturers it is connected with; a manufacturer runs the plan of its own split; Tradio
+  staff act only for manufacturers that are active, `tradioEnabled` and `tradioCanView`. Privacy filters
+  (`adminOrderVisibility`, `adminDocVisibility`, `privateScopeIds`) hide companies that opted out.
+- **Server-numbered IDs.** The browser sends `id: 'auto'` and the server numbers the order or master
+  order (`lib/counters.js`), so two people creating at once never clash. `createdBy` and
+  `createdByRole` always come from the session (`lib/orderCreate.js` strips anything the client sends).
+  **Deploy order matters:** an older backend would store the literal id `auto`, so deploy the backend
+  (`catalyst deploy --only appsail`) before the frontend that sends it, in every environment.
+- **View as.** Master admin only, in `routes/viewAs.js` and `middleware/auth.js`. Standalone: read-only
+  (`VIEW_ONLY` 403 on any write outside a short allowlist) unless started with `act` for a
+  Tradio-enabled manufacturer, re-checked on every request; a company with `tradioCanView: false`
+  refuses (`VIEW_BLOCKED`) and only its owner can change that (`POST /api/orgs/me/privacy`).
+- **Frontend mirrors, the server decides.** `caps.js` has role-level caps (`capsFor`) and per-order
+  questions (`orderCaps`, `canEditMasterOrder`, `canEditPlan`, `orderOwner`). Role-level write caps that
+  depend on who created an order or which split it is are deliberately admin-only there, so a call site
+  that forgets to ask the per-order helper fails closed. A brand or manufacturer never receives a user
+  list: choices for customers, manufacturers and step owners come from `/api/partners` (`usePartners`)
+  and from the order's own parties.
+- **Kriyaa** has agentic order tools (`list_master_orders`, `list_partners`, `create_master_order`,
+  `create_order`); the creating ones need a human confirmation the server can see (`userConfirmed`).
+- **Tenant isolation is tested, not assumed.** `tests/tenantIsolation.test.js` runs a cross-company
+  matrix in both modes (two brands, two manufacturers). Every new resource must be added to it before
+  its phase counts as done. Write each new route's scoping with one helper per resource, never a bare
+  model read.
+- **Run it locally.** `npm run dev:local` (backend) starts an ephemeral in-memory mongod, seeds a
+  standalone environment and blanks the email key, so nothing touches Atlas and no email is sent. It
+  uses the same seed logins as `npm run seed:sandbox` (never run that against the shared sandbox DB
+  casually: it wipes it).
 
 ## Domain model essentials
 - **Order** (`backend/src/models/Order.js`) uses a custom string `_id`

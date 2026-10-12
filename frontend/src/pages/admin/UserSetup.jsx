@@ -3,6 +3,8 @@ import { Crown, Check, AlertTriangle, Plus, Search, KeyRound, Pencil, Users, Cir
 import { T, getToday } from '../../constants.js'
 import { Modal, Input, Select, Btn, Card, Alert, EmptyState, FlexRow, PageHeader, RoleBadge, Mono, LoadingScreen, FileUpload, useToast, fileUploadPayload } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
+import { capsFor } from '../../caps.js'
+import { CompaniesAdmin } from './CompaniesAdmin.jsx'
 
 function fmtDate(d) {
   if (!d) return '—'
@@ -13,8 +15,12 @@ function fmtDate(d) {
 }
 
 export function UserSetup() {
-  const { users, loading, createUser, updateUser, toggleUser, resetUserPw, uploadDoc } = useApp()
+  const { users, loading, createUser, updateUser, toggleUser, resetUserPw, uploadDoc, currentUser } = useApp()
   const toast = useToast()
+  // The standalone product is run company by company, so its master admin starts on Companies and
+  // keeps the people list one tab away (admins, password resets). The Tradio portal shows people only.
+  const standalone = capsFor(currentUser).standalone
+  const [section, setSection] = useState(standalone ? 'companies' : 'people')
   const [tab, setTab] = useState('all')
   // Deactivate and Reset password are one click away from locking someone out, so they ask first.
   const [confirmAction, setConfirmAction] = useState(null) // { kind: 'deactivate' | 'reset', user }
@@ -149,6 +155,28 @@ export function UserSetup() {
     { id: 'admins', l: `Admins (${counts.admins})` },
   ]
 
+  const sectionTabs = standalone && (
+    <div role="tablist" aria-label="User Setup sections" style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+      {[['companies', 'Companies'], ['people', 'People']].map(([id, label]) => (
+        <button key={id} type="button" role="tab" aria-selected={section === id} onClick={() => setSection(id)}
+          style={{ fontSize: 13, fontWeight: 700, padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', border: `1px solid ${section === id ? T.primary : T.border}`, background: section === id ? T.primaryLight : T.surface, color: section === id ? T.primaryDark : T.textMuted }}>
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+  const masterSubtitle = <span style={{ color: T.master, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Crown size={13} /> Master Admin exclusive: {standalone ? 'manage companies and accounts' : 'manage all platform accounts'}</span>
+
+  if (standalone && section === 'companies') {
+    return (
+      <div>
+        <PageHeader title="User Setup" subtitle={masterSubtitle} />
+        {sectionTabs}
+        <CompaniesAdmin />
+      </div>
+    )
+  }
+
   return (
     <div>
       {confirmAction && (
@@ -246,9 +274,10 @@ export function UserSetup() {
       )}
       <PageHeader
         title="User Setup"
-        subtitle={<span style={{ color: T.master, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Crown size={13} /> Master Admin exclusive — manage all platform accounts</span>}
+        subtitle={masterSubtitle}
         action={<Btn onClick={() => setShowC(true)} icon={<Plus size={13} />}>Create User</Btn>}
       />
+      {sectionTabs}
       <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${T.border}`, marginBottom: 14 }}>
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}

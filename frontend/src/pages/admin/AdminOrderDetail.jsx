@@ -10,7 +10,9 @@ import {
 import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, DateOrNA, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { normalizeCsvDate } from '../../csvDates.js'
-import { capsFor, canWriteStage, canSetAssignmentStatus } from '../../caps.js'
+import { capsFor, canWriteStage, canSetAssignmentStatus, canEditPlan, orderCaps } from '../../caps.js'
+import { usePartners } from '../../lib/usePartners.js'
+import { OwnerChip } from '../../components/OwnerChip.jsx'
 import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
@@ -32,9 +34,12 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
     addStageItem, updateStageItem, removeStageItem, addAssignment, reassignAssignment, insertStage, bulkUpdateStages } = useApp()
   const toast = useToast()
-  const isMaster = currentUser?.adminType === 'master'
-  // Same screen for every role; this decides which controls each one gets.
+  // Same screen for every role; this decides which controls each one gets. `caps` is the role's
+  // standing; what a user may do to THIS order or THIS split is asked per order (orderCaps) and
+  // per split (canEditPlan) below, because in the standalone product it depends on who created it.
   const caps = capsFor(currentUser)
+  // The manufacturers a brand may assign this style to: only the ones it is connected with.
+  const { partners } = usePartners(caps.standalone && caps.isBuyer)
 
   const [showEdit, setShowEdit] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
@@ -245,9 +250,18 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   if (loading) return <LoadingScreen />
   if (!order) return null
 
+  const oc = orderCaps(currentUser, order)
+
   // Buyers can own approval steps, so the order's own buyer is a valid choice too. Without it a
   // buyer-owned stage showed as "Unassigned" and saving the dialog would have cleared the owner.
-  const responsibleUsers = users.filter(u => u.isActive && (u.role === 'admin' || u.role === 'manufacturer' || (u.role === 'buyer' && String(u.id) === String(order.buyerId))))
+  // A brand or manufacturer never sees another company's user list, so for them the choices are
+  // the companies on this order, which is also all the server accepts.
+  const responsibleUsers = caps.isAdmin
+    ? users.filter(u => u.isActive && (u.role === 'admin' || u.role === 'manufacturer' || (u.role === 'buyer' && String(u.id) === String(order.buyerId))))
+    : [
+        { id: String(order.buyerId), name: order.buyerCompany, company: order.buyerCompany, role: 'buyer' },
+        ...(order.assignments || []).map(a => ({ id: String(a.mid), name: a.mfrCompany, company: a.mfrCompany, role: 'manufacturer' })),
+      ]
 
   const effectiveMid = selectedMid || (order.assignments?.length === 1 ? String(order.assignments[0]?.mid) : null)
   const selectedAsgn = order.assignments?.find(a => String(a.mid) === effectiveMid) || null
@@ -634,7 +648,9 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     return 'Processing'
   }
 
-  const mfrUsers = users.filter(u => u.role === 'manufacturer' && u.isActive)
+  const mfrUsers = caps.isAdmin
+    ? users.filter(u => u.role === 'manufacturer' && u.isActive)
+    : partners.filter(p => p.role === 'manufacturer')
   const refDocLabels = { measurements: 'Measurements', tech_pack: 'Tech Pack', pattern: 'Patterns / DXF', lab_dip: 'Lab Dip Receipts', test_report: 'Test Reports (FPT/GPT)' }
 
   const uploadRefDoc = async (type) => {
@@ -675,7 +691,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     const heroImgUrl = order.imageDataUrl || order.imageUrl
     const checklist = [
       {
-        key: 'image', label: 'Product Image', uploaded: !!heroImgUrl, canUpload: caps.uploadProductPhoto,
+        key: 'image', label: 'Product Image', uploaded: !!heroImgUrl, canUpload: oc.uploadPhoto,
         preview: heroImgUrl ? <img src={heroImgUrl} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover' }} /> : null,
         file: heroPhotoFile, err: heroPhotoErr, uploading: heroPhotoUploading,
         onFile: f => { setHeroPhotoFile(f); setHeroPhotoErr('') }, onErr: setHeroPhotoErr, onUpload: uploadHeroPhoto,
@@ -699,12 +715,13 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
         {/* ── Page header: identity + actions ── */}
         <FlexRow style={{ flexWrap: 'wrap' }} gap={10}>
           <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
+          <OwnerChip order={order} user={currentUser} />
           <div style={{ flex: 1 }} />
           {!unassigned && order.assignments?.length > 1 && (
             <Btn variant="secondary" size="sm" onClick={() => setSelectedMid(null)} icon={<ArrowLeftRight size={13} />}>All splits</Btn>
           )}
-          {caps.editOrders && <Btn variant="secondary" size="sm" onClick={() => setShowEdit(true)} icon={<Pencil size={13} />}>Edit Style</Btn>}
-          {caps.deleteOrders && (
+          {oc.edit && <Btn variant="secondary" size="sm" onClick={() => setShowEdit(true)} icon={<Pencil size={13} />}>Edit Style</Btn>}
+          {oc.remove && (
             <button
               onClick={() => setShowDelete(true)}
               style={{ padding: '7px 14px', fontSize: 12, fontWeight: 700, borderRadius: 8, border: `1px solid ${T.dangerBorder}`, background: T.dangerBg, color: T.danger, cursor: 'pointer', fontFamily: 'inherit' }}
@@ -721,9 +738,9 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
             {/* Photo + tear line */}
             <div style={{ display: 'flex', flexShrink: 0 }}>
               <div style={{ width: 128, padding: 18, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-                <div onClick={caps.editOrders ? () => setShowEdit(true) : undefined} role={caps.editOrders ? 'button' : undefined} tabIndex={caps.editOrders ? 0 : undefined} onKeyDown={caps.editOrders ? activateOnKey(() => setShowEdit(true)) : undefined}
-                  title={caps.editOrders ? 'Change photo' : undefined}
-                  style={{ width: 92, height: 92, borderRadius: 6, overflow: 'hidden', background: '#f8fafc', border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: caps.editOrders ? 'pointer' : 'default' }}>
+                <div onClick={oc.edit ? () => setShowEdit(true) : undefined} role={oc.edit ? 'button' : undefined} tabIndex={oc.edit ? 0 : undefined} onKeyDown={oc.edit ? activateOnKey(() => setShowEdit(true)) : undefined}
+                  title={oc.edit ? 'Change photo' : undefined}
+                  style={{ width: 92, height: 92, borderRadius: 6, overflow: 'hidden', background: '#f8fafc', border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: oc.edit ? 'pointer' : 'default' }}>
                   {heroImgUrl ? (
                     <img src={heroImgUrl} alt={order.product} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : (
@@ -912,14 +929,14 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
 
         {renderSummary({ unassigned: true })}
 
-        {!caps.assignManufacturers && (
+        {!oc.assign && (
           <div style={{ marginTop: 16 }}>
             <Card><SectionLabel>Manufacturer</SectionLabel>
-              <div style={{ fontSize: 12, color: T.textMuted, marginTop: 6 }}>No manufacturer has been assigned to this style yet. Production starts once Tradio assigns one.</div>
+              <div style={{ fontSize: 12, color: T.textMuted, marginTop: 6 }}>No manufacturer has been assigned to this style yet. Production starts once {caps.standalone ? 'the brand' : 'Tradio'} assigns one.</div>
             </Card>
           </div>
         )}
-        {caps.assignManufacturers && <div style={{ marginTop: 16 }}>
+        {oc.assign && <div style={{ marginTop: 16 }}>
           <Card>
             <SectionLabel>Add Manufacturer</SectionLabel>
             <div style={{ fontSize: 12, color: T.textMuted, margin: '6px 0 12px' }}>
@@ -958,7 +975,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
       <div>
         <FlexRow style={{ marginBottom: 20 }} gap={12}>
           <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
-          <ProductThumb order={order} size="lg" onClick={caps.editOrders ? () => setShowEdit(true) : undefined} />
+          <ProductThumb order={order} size="lg" onClick={oc.edit ? () => setShowEdit(true) : undefined} />
           <div style={{ flex: 1 }}>
             <FlexRow gap={10}>
               <Mono style={{ fontSize: 15 }}>{order.id}</Mono>
@@ -1435,11 +1452,11 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                         {caps.overrideStage && (
                           <Btn size="sm" variant="outline" onClick={() => openStageOverride(a.mid)} icon={<ShieldAlert size={12} />}>Override</Btn>
                         )}
-                        {caps.editPlan && <Btn size="sm" variant="secondary" onClick={() => openEtaAdjust(a.mid)} icon={<ClipboardEdit size={12} />}>Bulk Edit</Btn>}
-                        {caps.assignManufacturers && a.status !== 'Delivered' && (
+                        {canEditPlan(currentUser, a) && <Btn size="sm" variant="secondary" onClick={() => openEtaAdjust(a.mid)} icon={<ClipboardEdit size={12} />}>Bulk Edit</Btn>}
+                        {oc.assign && a.status !== 'Delivered' && (
                           <Btn size="sm" variant="secondary" onClick={() => { setReassignMid(a.mid); setReassignTo(''); setReassignQty(String(a.qty || '')) }} icon={<ArrowLeftRight size={12} />}>Change Mfr</Btn>
                         )}
-                        {caps.editPlan && <Btn size="sm" variant="secondary" onClick={() => setTnaCsvOpen(p => ({ ...p, [a.mid]: !p[a.mid] }))} icon={<FileSpreadsheet size={12} />}>Upload CSV</Btn>}
+                        {canEditPlan(currentUser, a) && <Btn size="sm" variant="secondary" onClick={() => setTnaCsvOpen(p => ({ ...p, [a.mid]: !p[a.mid] }))} icon={<FileSpreadsheet size={12} />}>Upload CSV</Btn>}
                       </FlexRow>
                     </div>
 
@@ -1502,9 +1519,9 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                       {stages.length > 0 && <StageTimeline stages={stages} />}
 
                       {stages.length === 0 && (
-                        !caps.editPlan ? (
+                        !canEditPlan(currentUser, a) ? (
                           <div style={{ background: '#f8fafc', border: `1px dashed ${T.border}`, borderRadius: 10, padding: '14px 16px', marginBottom: 14, fontSize: 12, color: T.textMuted }}>
-                            No TNA yet. The production plan is set up by your Tradio coordinator.
+                            {caps.standalone ? 'No production plan yet. The manufacturer sets it up.' : 'No TNA yet. The production plan is set up by your Tradio coordinator.'}
                           </div>
                         ) :
                         <div style={{ background: '#f8fafc', border: `1px dashed ${T.border}`, borderRadius: 10, padding: '14px 16px', marginBottom: 14 }}>
