@@ -7,6 +7,7 @@ import {
   stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber, getToday, planProgress,
   PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor,
 } from '../../constants.js'
+import { stageNameForDoc } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, DateOrNA, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { BomTab } from '../bom/BomTab.jsx'
@@ -804,20 +805,32 @@ export function AdminOrderDetail({ orderId, initialMid, onBack, onNavigate }) {
                           )}
                         </div>
                       ) : item.uploaded && item.doc ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                          {(item.docs || [item.doc]).map(d => {
-                            // A document uploaded on a step says which step, so the two places read as one record.
-                            const step = d.stageIndex != null
-                              ? order.assignments.find(a => String(a.mid) === String(d.mfrId))?.stages?.[d.stageIndex]?.name
-                              : null
-                            return (
-                              <div key={d.id}>
-                                {step && <div style={{ fontSize: 10, fontWeight: 700, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>From step: {step}</div>}
-                                <DocCard doc={d} users={users} onGetData={getDocData} />
-                              </div>
-                            )
-                          })}
-                        </div>
+                        (() => {
+                          // One heading per step, the documents under it: the step is said once, not on every card.
+                          const groups = []
+                          for (const d of (item.docs || [item.doc])) {
+                            const step = d.stageIndex != null ? stageNameForDoc(orders, d) : null
+                            const key = d.stageIndex != null ? `s${d.stageIndex}` : 'product'
+                            let g = groups.find(x => x.key === key)
+                            if (!g) groups.push(g = { key, index: d.stageIndex ?? -1, label: step || (d.stageIndex != null ? `Step ${d.stageIndex + 1}` : 'Uploaded to the product'), docs: [] })
+                            g.docs.push(d)
+                          }
+                          groups.sort((a, b) => a.index - b.index)
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                              {groups.map(g => (
+                                <div key={g.key}>
+                                  <FlexRow gap={8} style={{ marginBottom: 6 }}>
+                                    <span style={{ fontSize: 11, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{g.label}</span>
+                                    <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, background: '#f1f5f9', border: `1px solid ${T.border}`, borderRadius: 10, padding: '0 7px', lineHeight: '18px' }}>{g.docs.length}</span>
+                                    <div style={{ flex: 1, height: 1, background: T.border }} />
+                                  </FlexRow>
+                                  {g.docs.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} stageName={g.label} compact />)}
+                                </div>
+                              ))}
+                            </div>
+                          )
+                        })()
                       ) : !item.canUpload ? (
                         <div style={{ fontSize: 12, color: T.textMuted, padding: '4px 2px' }}>Not uploaded yet. {caps.isMfr ? 'The customer or Tradio uploads this.' : ''}</div>
                       ) : (
