@@ -583,7 +583,7 @@ export async function validateAndCreateOrder({ id, buyerId, product, styleNumber
         mfrId: a.mid, qty: a.qty, status: 'Processing',
         sub: a.sub || `M${i + 1}`, note: '',
         // A deferred plan starts with just the mandatory Delivery step; the schedule is built afterwards.
-        stages: deferPlan ? (phase === 'development' ? makeDevelopmentStages(new Date().toISOString().slice(0, 10)) : [makeDeliveryStage(new Date(delivery).toISOString().slice(0, 10))]) : stages.map((name, si) => {
+        stages: deferPlan ? (phase === 'development' ? makeDevelopmentStages(getToday()) : [makeDeliveryStage(new Date(delivery).toISOString().slice(0, 10))]) : stages.map((name, si) => {
           const kind = stageKindsResolved[si]
           // A milestone or checklist stage has no meaningful garment count, so it
           // defaults to a target of 1 rather than the assignment quantity — the
@@ -852,7 +852,7 @@ router.post('/:orderId/assignments', requireAuth, requireAssigner, updateLimiter
       // in Sampling & Development starts with the standard development plan instead, and no Delivery step yet.
       { $push: { assignments: { mfrId, qty: aqty, status: 'Processing', sub: nextSub, note: '', stages: existing.phase === 'development'
         // No Delivery step until the style moves to production and gets a delivery date.
-        ? makeDevelopmentStages(new Date().toISOString().slice(0, 10))
+        ? makeDevelopmentStages(getToday())
         : [makeDeliveryStage(new Date(existing.delivery).toISOString().slice(0, 10))] } } },
       { new: true }
     ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
@@ -2560,7 +2560,11 @@ router.post('/:id', requireAuth, requireOrderOwner, updateLimiter, async (req, r
       }
     }
 
-    if (delivery !== undefined) {
+    if (delivery === null || delivery === '') {
+      // Only a style in Sampling & Development may be without a delivery date (new Date(null) would be 1 Jan 1970).
+      if ((updates.phase || existing.phase) !== 'development') return res.status(400).json({ error: 'A style in production needs a delivery date' })
+      updates.delivery = null
+    } else if (delivery !== undefined) {
       const d = new Date(delivery)
       if (isNaN(d.getTime())) return res.status(400).json({ error: 'Invalid delivery date' })
       // Same baselineEta/eta convention as stages: capture the OLD delivery as
@@ -2584,6 +2588,17 @@ router.post('/:id', requireAuth, requireOrderOwner, updateLimiter, async (req, r
       const when = updates.delivery || existing.delivery
       if (!when) return res.status(400).json({ error: 'Set a delivery date to move this style to production' })
       promoteDeliveryISO = new Date(when).toISOString().slice(0, 10)
+    }
+    // Moving a style back to Sampling & Development: its plans lose the Delivery step and the style its delivery date
+    // (unless this same edit sets one), as for any style being developed. A style with a delivered split stays in
+    // production, since that delivery really happened.
+    let demote = false
+    if ((existing.phase || 'production') === 'production' && updates.phase === 'development') {
+      const delivered = (existing.assignments || []).some(a => a.status === 'Delivered'
+        || (a.stages || []).some(st => st.isDelivery && deriveStageStatus(st) === 'done'))
+      if (delivered) return res.status(400).json({ error: 'A style with a delivered split stays in production' })
+      demote = true
+      if (delivery === undefined) updates.delivery = null
     }
 
     if (colourways !== undefined) {
@@ -2660,17 +2675,21 @@ router.post('/:id', requireAuth, requireOrderOwner, updateLimiter, async (req, r
 
     if (!order) return res.status(404).json({ error: 'Order not found' })
 
+    let reshaped = false
     if (promoteDeliveryISO) {
-      let added = false
-      for (let ai = 0; ai < (order.assignments || []).length; ai++) {
-        if ((order.assignments[ai].stages || []).some(st => st.isDelivery)) continue
-        await Order.updateOne({ _id: orderId }, { $push: { [`assignments.${ai}.stages`]: makeDeliveryStage(promoteDeliveryISO) } })
-        added = true
-      }
-      if (added) {
-        const fresh = await Order.findById(orderId).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
-        if (fresh) Object.assign(order, fresh)
-      }
+      const push = {}
+      ;(order.assignments || []).forEach((a, ai) => {
+        if (!(a.stages || []).some(st => st.isDelivery)) push[`assignments.${ai}.stages`] = makeDeliveryStage(promoteDeliveryISO)
+      })
+      if (Object.keys(push).length) { await Order.updateOne({ _id: orderId }, { $push: push }); reshaped = true }
+    }
+    if (demote && (order.assignments || []).some(a => (a.stages || []).some(st => st.isDelivery))) {
+      await Order.updateOne({ _id: orderId }, { $pull: { 'assignments.$[].stages': { isDelivery: true } } })
+      reshaped = true
+    }
+    if (reshaped) {
+      const fresh = await Order.findById(orderId).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+      if (fresh) Object.assign(order, fresh)
     }
 
     const changedFields = Object.keys(updates).join(', ')

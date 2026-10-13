@@ -123,3 +123,48 @@ describe('a style in sampling and development has no delivery date and no Delive
     assert.equal(String(stages[stages.length - 1].startDate).slice(0, 10), '2026-12-20')
   })
 })
+
+describe('moving a style back to sampling and development', () => {
+  async function prod() {
+    const master = await makeMaster()
+    const buyer = await makeBuyer()
+    const mfr = await makeMfr()
+    await as(master).post('/api/orders', { id: 'BK-001', buyerId: String(buyer._id), product: 'Back Hoodie', category: 'HOODIE', season: 'FW26', totalQty: 100, delivery: '2026-12-31' })
+    await as(master).post('/api/orders/BK-001/assignments', { mfrId: String(mfr._id), qty: 100 })
+    return { master }
+  }
+
+  test('loses its Delivery step and its delivery date, and gets both back on the way to production', async () => {
+    const { master } = await prod()
+    const back = await as(master).post('/api/orders/BK-001', { phase: 'development' })
+    assert.equal(back.status, 200, JSON.stringify(back.body))
+    let o = await Order.findById('BK-001').lean()
+    assert.equal(o.phase, 'development')
+    assert.equal(o.delivery, null)
+    assert.ok(!o.assignments[0].stages.some(s => s.isDelivery))
+    assert.equal((await as(master).post('/api/orders/BK-001', { phase: 'production' })).status, 400)
+    assert.equal((await as(master).post('/api/orders/BK-001', { phase: 'production', delivery: '2027-01-15' })).status, 200)
+    o = await Order.findById('BK-001').lean()
+    assert.equal(o.assignments[0].stages.filter(s => s.isDelivery).length, 1)
+  })
+
+  test('a style with a delivered split stays in production', async () => {
+    const { master } = await prod()
+    await Order.updateOne({ _id: 'BK-001' }, { $set: { 'assignments.0.status': 'Delivered' } })
+    assert.equal((await as(master).post('/api/orders/BK-001', { phase: 'development' })).status, 400)
+    assert.equal((await Order.findById('BK-001').lean()).phase, 'production')
+  })
+})
+
+describe('an empty delivery date', () => {
+  test('is refused in production and clears the date in development, never 1 Jan 1970', async () => {
+    const master = await makeMaster()
+    const buyer = await makeBuyer()
+    await as(master).post('/api/orders', { id: 'NL-001', buyerId: String(buyer._id), product: 'P', category: 'HOODIE', season: 'FW26', totalQty: 10, delivery: '2026-12-31' })
+    assert.equal((await as(master).post('/api/orders/NL-001', { delivery: null })).status, 400)
+    assert.equal(new Date((await Order.findById('NL-001').lean()).delivery).toISOString().slice(0, 10), '2026-12-31')
+    await as(master).post('/api/orders', { id: 'NL-002', buyerId: String(buyer._id), product: 'P', category: 'HOODIE', season: 'FW26', totalQty: 10, delivery: '2026-12-31', phase: 'development' })
+    assert.equal((await as(master).post('/api/orders/NL-002', { delivery: null })).status, 200)
+    assert.equal((await Order.findById('NL-002').lean()).delivery, null)
+  })
+})
