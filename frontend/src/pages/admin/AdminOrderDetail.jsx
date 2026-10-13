@@ -7,6 +7,7 @@ import {
   stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber, getToday, planProgress,
   PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor,
 } from '../../constants.js'
+import { PromoteModal } from '../../components/PromoteModal.jsx'
 import { stageNameForDoc, PO_INVOICE_DOC_TYPES, deliveryDocsOf } from '../../constants.js'
 import { swatchHex } from '../../colours.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, DateOrNA, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey } from '../../components/ui.jsx'
@@ -39,6 +40,8 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   const caps = capsFor(currentUser)
 
   const [showEdit, setShowEdit] = useState(false)
+  const [promoteOpen, setPromoteOpen] = useState(false)
+  const [promoting, setPromoting] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
 
   const [tab, setTab] = useState('production')
@@ -755,10 +758,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
             <Btn variant="secondary" size="sm" onClick={() => setSelectedMid(null)} icon={<ArrowLeftRight size={13} />}>All splits</Btn>
           )}
           {caps.editOrders && order.phase === 'development' && currentUser.role !== 'manufacturer' && (
-            <Btn size="sm" onClick={async () => {
-              try { await editOrder(order.id, { phase: 'production' }); toast('Moved to production', 'success') }
-              catch (e) { toast(typeof e === 'string' ? e : (e?.message || 'Could not move the style'), 'error') }
-            }} icon={<ArrowRight size={13} />}>Move to production</Btn>
+            <Btn size="sm" onClick={() => setPromoteOpen(true)} icon={<ArrowRight size={13} />}>Move to production</Btn>
           )}
           {caps.editOrders && <Btn variant="secondary" size="sm" onClick={() => setShowEdit(true)} icon={<Pencil size={13} />}>Edit Style</Btn>}
           {caps.deleteOrders && (
@@ -993,6 +993,15 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   if ((order.assignments?.length || 0) === 0) {
     return (
       <div>
+        {promoteOpen && (
+          <PromoteModal count={1} needsDate={!order.delivery} busy={promoting} onClose={() => setPromoteOpen(false)}
+            onConfirm={async date => {
+              setPromoting(true)
+              try { await editOrder(order.id, { phase: 'production', ...(order.delivery ? {} : { delivery: date }) }); toast('Moved to production', 'success'); setPromoteOpen(false) }
+              catch (e) { toast(typeof e === 'string' ? e : (e?.message || 'Could not move the style'), 'error') }
+              finally { setPromoting(false) }
+            }} />
+        )}
         {showEdit && (
           <EditOrderModal order={order} onClose={() => setShowEdit(false)}
             onSave={async (id, data) => { await editOrder(id, data); toast(`Style ${id} updated`, 'success'); setShowEdit(false) }} />

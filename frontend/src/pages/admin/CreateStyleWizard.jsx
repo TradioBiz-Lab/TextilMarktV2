@@ -78,7 +78,7 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
   const step1Valid = masterOrderId && styles.every(s =>
     s.product.trim() && s.styleNumber.trim() &&
     (s.category && s.category !== '__custom__' ? true : s.customCategory.trim()) &&
-    s.totalQty && Number(s.totalQty) > 0 && s.delivery
+    s.totalQty && Number(s.totalQty) > 0 && (s.phase === 'development' || s.delivery)
   )
 
   const submit = async () => {
@@ -101,7 +101,7 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
         const created = await createOrder({
           id, buyerId: mo.buyerId, product: s.product.trim(), styleNumber: s.styleNumber.trim(),
           category, season: mo.season || undefined, masterOrderId,
-          totalQty: Math.floor(Number(s.totalQty)), delivery: s.delivery, phase: s.phase,
+          totalQty: Math.floor(Number(s.totalQty)), ...(s.phase === 'production' && s.delivery ? { delivery: s.delivery } : {}), phase: s.phase,
           createdAt: getToday(),
           colourways, fabricDetails, ecommerceLink: s.ecommerceLink.trim(),
           imageDataUrl: photoPayload.dataUrl || null, imageUrl: photoPayload.externalUrl || null,
@@ -194,7 +194,6 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
                       </div>
                       <Input label="Quantity *" type="number" value={s.totalQty} onChange={e => updateStyle(s._key, { totalQty: e.target.value })} placeholder="5000" />
                     </div>
-                    <Input label="Expected Delivery *" type="date" value={s.delivery} onChange={e => updateStyle(s._key, { delivery: e.target.value })} />
 
                     {mo && (s.product || s.styleNumber) && (
                       <div style={{ fontSize: 11, color: T.textLight, fontFamily: "'JetBrains Mono',monospace" }}>
@@ -204,6 +203,8 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
                     <Select label="Stage" value={s.phase} onChange={e => updateStyle(s._key, { phase: e.target.value })}>
                       {PHASES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                     </Select>
+                    {/* A style still in Sampling & Development has no delivery date; it is asked for on the way to production. */}
+                    {s.phase === 'production' && <Input label="Expected Delivery *" type="date" value={s.delivery} onChange={e => updateStyle(s._key, { delivery: e.target.value })} />}
                   </div>
                 )
               })}

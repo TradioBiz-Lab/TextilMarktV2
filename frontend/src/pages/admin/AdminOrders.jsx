@@ -9,6 +9,7 @@ import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input,
 import { useApp } from '../../context.jsx'
 import { capsFor } from '../../caps.js'
 import { ordersApi } from '../../api.js'
+import { PromoteModal } from '../../components/PromoteModal.jsx'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
 import { EditMasterOrderModal } from './EditMasterOrderModal.jsx'
@@ -50,6 +51,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, initialPhase, on
   const [promoteOpen, setPromoteOpen] = useState(false)
   const [picked, setPicked] = useState(() => new Set())
   const [moving, setMoving] = useState(false)
+  const [askDate, setAskDate] = useState(false)
   const phaseCount = Object.fromEntries(PHASES.map(([v]) => [v, orders.filter(o => phaseOf(o) === v).length]))
   const [sortCol, setSortCol] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
@@ -331,20 +333,22 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, initialPhase, on
           return next
         })
         const chosen = ready.filter(o => picked.has(o.id))
-        const move = async () => {
+        const move = async date => {
           setMoving(true)
           let ok = 0
           try {
-            for (const o of chosen) { await editOrder(o.id, { phase: 'production' }); ok++ }
+            for (const o of chosen) { await editOrder(o.id, { phase: 'production', ...(o.delivery ? {} : { delivery: date }) }); ok++ }
             toast(`${ok} ${ok === 1 ? 'style' : 'styles'} moved to production`, 'success')
-            setPicked(new Set()); setPromoteOpen(false)
+            setPicked(new Set()); setPromoteOpen(false); setAskDate(false)
           } catch (e) {
             toast(`${ok} moved, then stopped: ${typeof e === 'string' ? e : (e?.message || 'error')}`, 'error')
             setPicked(prev => { const next = new Set(prev); chosen.slice(0, ok).forEach(o => next.delete(o.id)); return next })
+            setAskDate(false)
           } finally { setMoving(false) }
         }
         return (
           <div style={{ marginBottom: 14 }}>
+            {askDate && <PromoteModal count={chosen.length} needsDate={chosen.some(o => !o.delivery)} busy={moving} onClose={() => setAskDate(false)} onConfirm={move} />}
             <Btn variant="secondary" size="sm" onClick={() => setPromoteOpen(v => !v)} icon={<ArrowRight size={13} />}>
               {promoteOpen ? 'Close' : 'Move styles to production'}
             </Btn>
@@ -372,7 +376,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, initialPhase, on
                   })}
                 </div>
                 <div style={{ marginTop: 12 }}>
-                  <Btn size="sm" disabled={chosen.length === 0 || moving} onClick={move}>
+                  <Btn size="sm" disabled={chosen.length === 0 || moving} onClick={() => setAskDate(true)}>
                     {moving ? 'Moving…' : chosen.length ? `Move ${chosen.length} to production` : 'Move to production'}
                   </Btn>
                 </div>

@@ -52,7 +52,7 @@ describe('style phase', () => {
 })
 
 describe('the standard plan for a style in sampling and development', () => {
-  test('a manufacturer added to a development style gets the development steps, then Delivery', async () => {
+  test('a manufacturer added to a development style gets the development steps and no Delivery step', async () => {
     const master = await makeMaster()
     const buyer = await makeBuyer()
     const mfr = await makeMfr()
@@ -61,14 +61,14 @@ describe('the standard plan for a style in sampling and development', () => {
     const added = await as(master).post('/api/orders/DV-001/assignments', { mfrId: String(mfr._id), qty: 100 })
     assert.equal(added.status, 201, JSON.stringify(added.body))
     const stages = (await Order.findById('DV-001').lean()).assignments[0].stages
-    assert.deepEqual(stages.map(s => s.name), ['Request Received', 'Manufacturer Matching', 'Proto/Fit Sample', 'Fit Sample Shared', 'Fit Sample Approved', 'Pricing', 'Ready for Production', 'Delivery'])
+    assert.deepEqual(stages.map(s => s.name), ['Request Received', 'Manufacturer Matching', 'Proto/Fit Sample', 'Fit Sample Shared', 'Fit Sample Approved', 'Pricing', 'Ready for Production'])
     assert.ok(stages.every(s => s.kind === 'milestone'))
     // Matching books 4 days, the proto / fit sample 5, and each step starts where the last one ends.
     const day = iso => Date.parse(`${String(iso).slice(0, 10)}T00:00:00Z`) / 86400000
     assert.equal(day(stages[1].baselineEta) - day(stages[1].startDate), 4)
     assert.equal(day(stages[2].baselineEta) - day(stages[2].startDate), 5)
     assert.equal(String(stages[2].startDate).slice(0, 10), String(stages[1].baselineEta).slice(0, 10))
-    assert.equal(stages[7].isDelivery, true)
+    assert.ok(!stages.some(s => s.isDelivery))
   })
 
   test('a production style still starts with only Delivery', async () => {
@@ -78,5 +78,48 @@ describe('the standard plan for a style in sampling and development', () => {
     await as(master).post('/api/orders', { id: 'PR-001', buyerId: String(buyer._id), product: 'Prod Hoodie', category: 'HOODIE', season: 'FW26', totalQty: 100, delivery: '2026-12-31' })
     await as(master).post('/api/orders/PR-001/assignments', { mfrId: String(mfr._id), qty: 100 })
     assert.deepEqual((await Order.findById('PR-001').lean()).assignments[0].stages.map(s => s.name), ['Delivery'])
+  })
+})
+
+describe('a style in sampling and development has no delivery date and no Delivery step', () => {
+  async function dev() {
+    const master = await makeMaster()
+    const buyer = await makeBuyer()
+    const mfr = await makeMfr()
+    const made = await as(master).post('/api/orders', { id: 'ND-001', buyerId: String(buyer._id), product: 'No-date Hoodie', category: 'HOODIE', season: 'FW26', totalQty: 100, phase: 'development' })
+    assert.equal(made.status, 201, JSON.stringify(made.body))
+    return { master, mfr, made }
+  }
+
+  test('it can be created without a delivery date; production still needs one', async () => {
+    const { master, made } = await dev()
+    assert.equal(made.body.delivery, null)
+    const bad = await as(master).post('/api/orders', { id: 'ND-002', buyerId: String(made.body.buyerId), product: 'Prod', category: 'HOODIE', season: 'FW26', totalQty: 10 })
+    assert.equal(bad.status, 400)
+  })
+
+  test('adding a manufacturer gives the development steps and no Delivery step', async () => {
+    const { master, mfr } = await dev()
+    const added = await as(master).post('/api/orders/ND-001/assignments', { mfrId: String(mfr._id), qty: 100 })
+    assert.equal(added.status, 201, JSON.stringify(added.body))
+    const names = (await Order.findById('ND-001').lean()).assignments[0].stages.map(s => s.name)
+    assert.ok(!names.includes('Delivery'))
+    assert.equal(names[0], 'Request Received')
+  })
+
+  test('moving it to production needs a date, then adds the Delivery step', async () => {
+    const { master, mfr } = await dev()
+    await as(master).post('/api/orders/ND-001/assignments', { mfrId: String(mfr._id), qty: 100 })
+    const refused = await as(master).post('/api/orders/ND-001', { phase: 'production' })
+    assert.equal(refused.status, 400)
+    assert.equal((await Order.findById('ND-001').lean()).phase, 'development')
+    const ok = await as(master).post('/api/orders/ND-001', { phase: 'production', delivery: '2026-12-20' })
+    assert.equal(ok.status, 200, JSON.stringify(ok.body))
+    const o = await Order.findById('ND-001').lean()
+    assert.equal(o.phase, 'production')
+    const stages = o.assignments[0].stages
+    assert.equal(stages[stages.length - 1].name, 'Delivery')
+    assert.equal(stages[stages.length - 1].isDelivery, true)
+    assert.equal(String(stages[stages.length - 1].startDate).slice(0, 10), '2026-12-20')
   })
 })

@@ -314,8 +314,9 @@ export const kindForCustomerOwner = stage => (stageKindOf(stage) === 'quantity' 
 export const deliveryStatus = (order, asgn) => {
   const stages = asgn?.stages || []
   const step = stages.find(s => s.isDelivery)
-  const delivered = asgn?.status === 'Delivered'
-    || (step ? isStageDone(step) : stages.length > 0 && stages.every(isStageDone))
+  // A style still in Sampling & Development has no Delivery step; finishing its development steps is not delivery.
+  const delivered = order?.phase !== 'development' && (asgn?.status === 'Delivered'
+    || (step ? isStageDone(step) : stages.length > 0 && stages.every(isStageDone)))
   const actualEnd = delivered && step?.actualEnd && step.actualEnd !== 'NA' ? step.actualEnd : null
   // Quantity actually delivered against what was ordered for this split. `diff` is negative when short.
   const ordered = asgn?.qty ?? null
