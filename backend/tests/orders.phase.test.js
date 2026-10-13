@@ -61,7 +61,7 @@ describe('the standard plan for a style in sampling and development', () => {
     const added = await as(master).post('/api/orders/DV-001/assignments', { mfrId: String(mfr._id), qty: 100 })
     assert.equal(added.status, 201, JSON.stringify(added.body))
     const stages = (await Order.findById('DV-001').lean()).assignments[0].stages
-    assert.deepEqual(stages.map(s => s.name), ['Request Received', 'Manufacturer Matching', 'Proto/Fit Sample', 'Fit Sample Shared', 'Fit Sample Approved', 'Pricing', 'Ready for Production'])
+    assert.deepEqual(stages.map(s => s.name), ['Request Received', 'Manufacturer Matching', 'Proto/Fit Sample', 'Fit Sample Shared', 'Fit Sample Approved', 'Pricing Approved', 'Ready for Production'])
     assert.ok(stages.every(s => s.kind === 'milestone'))
     // Matching books 4 days, the proto / fit sample 5, and each step starts where the last one ends.
     const day = iso => Date.parse(`${String(iso).slice(0, 10)}T00:00:00Z`) / 86400000
