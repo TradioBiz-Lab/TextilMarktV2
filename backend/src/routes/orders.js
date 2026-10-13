@@ -279,7 +279,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 // and creates it if valid. Centralizes rules (including the B1 required-end-date
 // check) so both call sites can't drift out of sync. Returns the raw created
 // Mongoose doc on success (not populated/enriched — that's caller-specific).
-async function validateAndCreateOrder({ id, buyerId, product, styleNumber, category, season, phase, totalQty, delivery, createdAt, masterOrderId, assignments: asgns, stageEtas, stageStartDates, stageNames: customStages, stageResponsibleIds, stageDescriptions, stageTotalUnits, stageKinds, colourways, fabricDetails, callout, imageDataUrl, imageUrl, ecommerceLink }) {
+export async function validateAndCreateOrder({ id, buyerId, product, styleNumber, category, season, phase, totalQty, delivery, createdAt, masterOrderId, assignments: asgns, stageEtas, stageStartDates, stageNames: customStages, stageResponsibleIds, stageDescriptions, stageTotalUnits, stageKinds, colourways, fabricDetails, callout, imageDataUrl, imageUrl, ecommerceLink }) {
   if (!id || !buyerId || !product || !totalQty || !delivery)
     return { ok: false, error: 'Missing required fields' }
   if (typeof id !== 'string' || typeof product !== 'string')
