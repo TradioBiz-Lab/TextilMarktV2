@@ -749,6 +749,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
         {/* ── Page header: identity + actions ── */}
         <FlexRow style={{ flexWrap: 'wrap' }} gap={10}>
           <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
+          {order.phase === 'development' && <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 10, background: '#ede9fe', color: '#5b21b6', border: '1px solid #c4b5fd' }}>Sampling &amp; Development</span>}
           <div style={{ flex: 1 }} />
           {!unassigned && order.assignments?.length > 1 && (
             <Btn variant="secondary" size="sm" onClick={() => setSelectedMid(null)} icon={<ArrowLeftRight size={13} />}>All splits</Btn>

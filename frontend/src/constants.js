@@ -326,6 +326,12 @@ export const deliveryStatus = (order, asgn) => {
   }
 }
 
+/** A style is either still in sampling and development or in production; styles from before the field are production. */
+export const PHASES = [['production', 'Production'], ['development', 'Sampling & Development']]
+export const phaseOf = o => (o?.phase === 'development' ? 'development' : 'production')
+export const productionOrders = orders => (orders || []).filter(o => phaseOf(o) === 'production')
+export const developmentOrders = orders => (orders || []).filter(o => phaseOf(o) === 'development')
+
 /**
  * Production headline numbers for the admin dashboard. A product is a piece: delivered pieces use the
  * quantity actually delivered when it was recorded, else the ordered one. A style is an order, delivered
@@ -333,7 +339,7 @@ export const deliveryStatus = (order, asgn) => {
  */
 export const productionMetrics = orders => {
   const m = { productsDelivered: 0, productsInProduction: 0, stylesDelivered: 0, stylesInProduction: 0 }
-  for (const o of orders || []) {
+  for (const o of productionOrders(orders)) {
     const splits = o.assignments || []
     if (!splits.length) continue
     let all = true

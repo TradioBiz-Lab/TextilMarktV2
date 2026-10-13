@@ -18,6 +18,7 @@ import { notify, notifyOrderChange } from '../lib/notify.js'
 
 // Categories are now free-text — no validation needed
 const VALID_SEASONS    = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
+const ORDER_PHASES    = ['development', 'production']
 const MAX_PRODUCT_PHOTO_SIZE = 1024 * 1024 // 1MB raw — reference thumbnail, not full-res
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 // Email triggers for orders are intentionally suppressed — order activity is portal-notifications only
@@ -131,7 +132,7 @@ const enrichOrder = (o, viewerMfrId = null) => {
   id: o._id, masterOrderId: o.masterOrderId || null,
   buyerId: buyer ? buyer._id.toString() : (o.buyerId?.toString?.() ?? o.buyerId),
   buyerCompany: buyer?.company ?? null, buyerName: buyer?.name ?? null, buyerCode: buyer?.code ?? null,
-  product: o.product, styleNumber: o.styleNumber || '', category: o.category,
+  product: o.product, styleNumber: o.styleNumber || '', category: o.category, phase: o.phase || 'production',
   imageDataUrl: o.imageDataUrl || null, imageUrl: o.imageUrl || null,
   season: o.season, totalQty: o.totalQty, delivery: o.delivery, createdAt: o.createdAt,
   baselineDelivery: o.baselineDelivery || null,
@@ -278,7 +279,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 // and creates it if valid. Centralizes rules (including the B1 required-end-date
 // check) so both call sites can't drift out of sync. Returns the raw created
 // Mongoose doc on success (not populated/enriched — that's caller-specific).
-async function validateAndCreateOrder({ id, buyerId, product, styleNumber, category, season, totalQty, delivery, createdAt, masterOrderId, assignments: asgns, stageEtas, stageStartDates, stageNames: customStages, stageResponsibleIds, stageDescriptions, stageTotalUnits, stageKinds, colourways, fabricDetails, callout, imageDataUrl, imageUrl, ecommerceLink }) {
+async function validateAndCreateOrder({ id, buyerId, product, styleNumber, category, season, phase, totalQty, delivery, createdAt, masterOrderId, assignments: asgns, stageEtas, stageStartDates, stageNames: customStages, stageResponsibleIds, stageDescriptions, stageTotalUnits, stageKinds, colourways, fabricDetails, callout, imageDataUrl, imageUrl, ecommerceLink }) {
   if (!id || !buyerId || !product || !totalQty || !delivery)
     return { ok: false, error: 'Missing required fields' }
   if (typeof id !== 'string' || typeof product !== 'string')
@@ -290,6 +291,8 @@ async function validateAndCreateOrder({ id, buyerId, product, styleNumber, categ
     return { ok: false, error: 'Total quantity must be a positive whole number' }
   if (category != null && typeof category !== 'string')
     return { ok: false, error: 'Invalid category' }
+  if (phase != null && !ORDER_PHASES.includes(phase))
+    return { ok: false, error: 'Invalid phase' }
   for (const [label, v] of [['stageEtas', stageEtas], ['stageStartDates', stageStartDates], ['stageNames', customStages],
     ['stageResponsibleIds', stageResponsibleIds], ['stageDescriptions', stageDescriptions], ['stageTotalUnits', stageTotalUnits], ['stageKinds', stageKinds]]) {
     if (v != null && !Array.isArray(v)) return { ok: false, error: `${label} must be a list` }
@@ -529,7 +532,7 @@ async function validateAndCreateOrder({ id, buyerId, product, styleNumber, categ
 
   try {
     const created = await Order.create({
-      _id: id, buyerId, product, styleNumber: styleNumber ? styleNumber.trim() : '', category, season, totalQty, masterOrderId: masterOrderId || null,
+      _id: id, buyerId, product, styleNumber: styleNumber ? styleNumber.trim() : '', category, season, phase: phase || 'production', totalQty, masterOrderId: masterOrderId || null,
       imageDataUrl: imageDataUrl || null, imageUrl: imageUrl ? imageUrl.trim() : null,
       delivery: new Date(delivery),
       baselineDelivery: new Date(delivery),
@@ -2346,7 +2349,7 @@ router.post('/materials/bulk', requireAuth, requireAdmin, materialsBulkLimiter, 
 // PATCH /api/orders/:id — edit order top-level fields (admin only)
 router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
   try {
-    const { product, styleNumber, category, season, totalQty, delivery, imageDataUrl, imageUrl, colourways, fabricDetails, callout, ecommerceLink } = req.body
+    const { product, styleNumber, category, season, phase, totalQty, delivery, imageDataUrl, imageUrl, colourways, fabricDetails, callout, ecommerceLink } = req.body
     const orderId = req.params.id
 
     const existing = await Order.findById(orderId).lean()
@@ -2376,6 +2379,12 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
     if (category !== undefined) {
       if (typeof category === 'string' && category.length > 50) return res.status(400).json({ error: 'Category too long' })
       updates.category = category
+    }
+
+    if (phase !== undefined) {
+      if (req.user.role === 'manufacturer') return res.status(403).json({ error: 'Only the customer or Tradio can move a style between sampling and production' })
+      if (!ORDER_PHASES.includes(phase)) return res.status(400).json({ error: `Invalid phase. Must be one of: ${ORDER_PHASES.join(', ')}` })
+      updates.phase = phase
     }
 
     if (season !== undefined) {

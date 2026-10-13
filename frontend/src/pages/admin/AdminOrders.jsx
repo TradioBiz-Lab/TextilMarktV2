@@ -3,7 +3,7 @@ import { Plus, List, LayoutGrid, Search, Folder, Package, Check, Ban, AlertTrian
 import {
   T, SEASONS, ORDER_STATUSES,
   isStageDone, stageIsOverdue, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct, fmtStageDate, effectiveEta,
-  CELL_STATE, cellState, buildMatrixSpine, withBuyerPrefix, getToday
+  CELL_STATE, cellState, buildMatrixSpine, withBuyerPrefix, getToday, PHASES, phaseOf
 } from '../../constants.js'
 import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, FileUpload, LoadingScreen, useToast, fileUploadPayload, ProductThumb, Modal, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -44,6 +44,9 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
   const [q, setQ] = useState('')
   const [showSugg, setShowSugg] = useState(false)
   const [sfilt, setSfilt] = useState(initialStatus || 'All')
+  // Styles still being sampled and developed are kept apart from the ones in production.
+  const [phase, setPhase] = useState('production')
+  const phaseCount = Object.fromEntries(PHASES.map(([v]) => [v, orders.filter(o => phaseOf(o) === v).length]))
   const [sortCol, setSortCol] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
   // Groups start collapsed — an admin managing many master orders shouldn't have to
@@ -106,7 +109,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
   const filtered = orders.filter(o => {
     const qm = !q || (o.id.toLowerCase().includes(q.toLowerCase()) || o.product.toLowerCase().includes(q.toLowerCase()))
     const sm = sfilt === 'All' || (o.assignments || []).some(a => a.status === sfilt)
-    return qm && sm
+    return qm && sm && phaseOf(o) === phase
   }).sort((a, b) => {
     if (!sortCol) return 0
     const dir = sortDir === 'asc' ? 1 : -1
@@ -308,6 +311,17 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
       {/* List = one row per order, for day-to-day management. Matrix = styles
           across the top, TNA steps down the side, for "where does the whole
           book stand" at a glance — the shape of the Summary TNA sheet. */}
+      <FlexRow gap={6} style={{ marginBottom: 10 }}>
+        {PHASES.map(([id, label]) => (
+          <button key={id} onClick={() => setPhase(id)} aria-pressed={phase === id}
+            style={{ fontSize: 13, fontWeight: 800, padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
+              border: `1px solid ${phase === id ? T.primary : T.border}`,
+              background: phase === id ? T.primary : T.surface,
+              color: phase === id ? '#fff' : T.text }}>
+            {label} <span style={{ opacity: 0.8, fontWeight: 700 }}>({phaseCount[id]})</span>
+          </button>
+        ))}
+      </FlexRow>
       <FlexRow gap={6} style={{ marginBottom: 14 }}>
         {[['list', 'List', List], ['matrix', 'Matrix', LayoutGrid]].map(([id, label, Icon]) => (
           <button key={id} onClick={() => setView(id)}
@@ -480,7 +494,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
                 })
                 return [spacerRow, headerRow, ...rows].filter(Boolean)
               })}
-              {filtered.length === 0 && <tr><td colSpan={8}><EmptyState icon={<Package size={26} color={T.textLight} />} title="No orders" desc={caps.createOrders ? "Create your first order above" : "Orders will appear here once they are placed"} /></td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={8}><EmptyState icon={<Package size={26} color={T.textLight} />} title={phase === 'development' ? 'Nothing in Sampling & Development' : 'No orders'} desc={phase === 'development' ? 'Styles still being sampled show up here.' : caps.createOrders ? "Create your first order above" : "Orders will appear here once they are placed"} /></td></tr>}
             </tbody>
           </table>
         </div>
@@ -493,7 +507,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
           // is a glanceable summary of exactly that.
           <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-            {groupedOrders.length === 0 && <EmptyState icon={<Package size={26} color={T.textLight} />} title="No orders" desc={caps.createOrders ? "Create your first order above" : "Orders will appear here once they are placed"} />}
+            {groupedOrders.length === 0 && <EmptyState icon={<Package size={26} color={T.textLight} />} title={phase === 'development' ? 'Nothing in Sampling & Development' : 'No orders'} desc={phase === 'development' ? 'Styles still being sampled show up here.' : caps.createOrders ? "Create your first order above" : "Orders will appear here once they are placed"} />}
 
             {groupedOrders.map(g => {
               // Earliest delivery first — the style due soonest is the one that

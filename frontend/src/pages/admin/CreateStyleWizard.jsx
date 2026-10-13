@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { X, Plus, Trash2, ChevronLeft, ChevronRight, AlertTriangle } from '../../icons.jsx'
-import { T, CATEGORIES, PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, getToday } from '../../constants.js'
+import { T, PHASES, CATEGORIES, PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, getToday } from '../../constants.js'
 import { swatchHex, normalisePantone, PANTONE_HINT, PANTONE_PLACEHOLDER } from '../../colours.js'
 import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -11,7 +11,7 @@ const newStyle = () => ({
   product: '', styleNumber: '', category: '', customCategory: '',
   colourways: [{ _key: _styleKeySeq++, name: '', code: '', hex: '' }],
   fabrics: [{ _key: _styleKeySeq++, name: '', composition: '', gsm: '', supplier: '' }],
-  totalQty: '', delivery: '',
+  totalQty: '', delivery: '', phase: 'production',
   // Step 3 — all optional
   photoFile: null, photoErr: '',
   measurementsFile: null, measurementsErr: '',
@@ -101,7 +101,7 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
         const created = await createOrder({
           id, buyerId: mo.buyerId, product: s.product.trim(), styleNumber: s.styleNumber.trim(),
           category, season: mo.season || undefined, masterOrderId,
-          totalQty: Math.floor(Number(s.totalQty)), delivery: s.delivery,
+          totalQty: Math.floor(Number(s.totalQty)), delivery: s.delivery, phase: s.phase,
           createdAt: getToday(),
           colourways, fabricDetails, ecommerceLink: s.ecommerceLink.trim(),
           imageDataUrl: photoPayload.dataUrl || null, imageUrl: photoPayload.externalUrl || null,
@@ -201,6 +201,9 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
                         ID preview: {genStyleId(orders, mo.buyerCode, catForId, mo.season || 'XX')}
                       </div>
                     )}
+                    <Select label="Stage" value={s.phase} onChange={e => updateStyle(s._key, { phase: e.target.value })}>
+                      {PHASES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </Select>
                   </div>
                 )
               })}
