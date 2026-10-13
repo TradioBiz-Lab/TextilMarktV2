@@ -1,5 +1,5 @@
 import { describe, test, expect, vi } from 'vitest'
-import { deliveryStatus, productionMetrics } from '../constants.js'
+import { deliveryStatus, productionMetrics, productionOrders, developmentOrders } from '../constants.js'
 import { rowCallout } from '../dashboardSummary.js'
 
 const done = (name, over = {}) => ({ name, kind: 'milestone', status: 'done', unitsDone: 1, totalUnits: 1, ...over })
@@ -100,5 +100,18 @@ describe('productionMetrics', () => {
   ]
   test('counts pieces and styles', () => {
     expect(productionMetrics(orders)).toEqual({ productsDelivered: 146, productsInProduction: 100, stylesDelivered: 1, stylesInProduction: 2 })
+  })
+})
+
+describe('phase', () => {
+  test('styles in sampling are kept out of production numbers; old styles are production', () => {
+    const fin = [{ isDelivery: true, kind: 'milestone', status: 'done' }]
+    const orders = [
+      { id: 'A', assignments: [{ qty: 10, stages: fin }] },
+      { id: 'B', phase: 'development', assignments: [{ qty: 99, stages: fin }] },
+    ]
+    expect(productionOrders(orders).map(o => o.id)).toEqual(['A'])
+    expect(developmentOrders(orders).map(o => o.id)).toEqual(['B'])
+    expect(productionMetrics(orders).productsDelivered).toBe(10)
   })
 })

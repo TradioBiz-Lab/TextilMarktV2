@@ -250,6 +250,9 @@ const orderSchema = new mongoose.Schema({
   styleNumber: { type: String, default: '', trim: true, maxlength: 60 },
   category: { type: String, trim: true },  // free-text (not enum-restricted)
   season:   { type: String, enum: SEASONS },
+  // Where the style is in its life: still being sampled and developed, or in production. Orders from before
+  // this field are production.
+  phase:    { type: String, enum: ['development', 'production'], default: 'production' },
   totalQty: { type: Number, required: true, min: 1 },
   delivery: { type: Date, required: true },
   // Frozen original delivery promise — same baselineEta/eta pattern as

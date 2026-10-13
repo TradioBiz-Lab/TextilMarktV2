@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { DashboardSummary } from '../../components/DashboardSummary.jsx'
 import { capsFor } from '../../caps.js'
 import { ShoppingBag, Factory, Package, Siren, Target, Check, Shirt, Layers, ClipboardList, Megaphone, ChevronRight } from '../../icons.jsx'
-import { T, ST, productionMetrics, isExpiringSoon, isExpired, getToday, dayNumber, effectiveEta, withBuyerPrefix } from '../../constants.js'
+import { T, ST, productionMetrics, productionOrders, developmentOrders, isExpiringSoon, isExpired, getToday, dayNumber, effectiveEta, withBuyerPrefix } from '../../constants.js'
 import { StatCard, Card, Grid, EmptyState, Mono, PageHeader, Badge, Btn, FlexRow, Modal, Select, Textarea, Input, Alert, LoadingScreen, DocCard } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
@@ -71,7 +71,7 @@ function SectionHeader({ icon, label, count, open, onToggle }) {
 }
 
 export function AdminDashboard({ onNavigate, onOpen }) {
-  const { orders, users, docs, masterOrders, actionItems, currentUser, loading, getDocData, listAllRibbons, createRibbon, updateRibbon, removeRibbon } = useApp()
+  const { orders: allOrders, users, docs, masterOrders, actionItems, currentUser, loading, getDocData, listAllRibbons, createRibbon, updateRibbon, removeRibbon } = useApp()
   // The two sections that answer "what needs me today" open by default — a
   // dashboard that opens as four shut drawers makes the reader work to see
   // state it already knows. Requests/ribbons stay collapsed: they're reference,
@@ -79,6 +79,9 @@ export function AdminDashboard({ onNavigate, onOpen }) {
   // ReportingPage already uses.
   // One dashboard for every role; caps decides which sections each sees (see caps.js).
   const caps = capsFor(currentUser)
+  // Everything on the dashboard is about styles in production; the ones still being sampled are counted on their own.
+  const orders = productionOrders(allOrders)
+  const inDevelopment = developmentOrders(allOrders).length
   const [openSections, setOpenSections] = useState({ orders: !!caps.isBuyer, actions: false, requests: false, alerts: false, ribbons: false })
   const toggleSection = id => setOpenSections(p => ({ ...p, [id]: !p[id] }))
 
@@ -274,6 +277,11 @@ export function AdminDashboard({ onNavigate, onOpen }) {
           <StatCard label="Styles Delivered" value={prod.stylesDelivered} icon={<Shirt size={19} color={T.success} />} bg={T.successBg} />
           <StatCard label="Styles in Production" value={prod.stylesInProduction} icon={<Layers size={19} color="#92400e" />} bg="#fef9c3" />
         </Grid>
+      )}
+      {inDevelopment > 0 && (
+        <div style={{ marginBottom: 22, fontSize: 12.5, fontWeight: 600, color: T.textMuted }}>
+          {inDevelopment} {inDevelopment === 1 ? 'style is' : 'styles are'} still in Sampling &amp; Development. Find {inDevelopment === 1 ? 'it' : 'them'} on the Orders page.
+        </div>
       )}
 
       <DashboardSummary />

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { Sparkles, RefreshCw } from '../icons.jsx'
 import { useApp } from '../context.jsx'
 import { generateSummary } from '../dashboardSummary.js'
-import { T, getToday } from '../constants.js'
+import { T, getToday, productionOrders } from '../constants.js'
 
 // **bold** segments in a summary line render as emphasis.
 const renderLine = text => text.split('**').map((part, i) => i % 2 ? <strong key={i} style={{ color: T.text }}>{part}</strong> : part)
@@ -27,7 +27,7 @@ export function DashboardSummary() {
   const run = useCallback(async () => {
     if (!user) return
     setBusy(true)
-    try { setSummary(await generateSummary({ role: user.role, user, orders, actionItems })) }
+    try { setSummary(await generateSummary({ role: user.role, user, orders: productionOrders(orders), actionItems })) }
     catch { setSummary(null) }
     finally { setBusy(false) }
   }, [user, orders, actionItems, today])

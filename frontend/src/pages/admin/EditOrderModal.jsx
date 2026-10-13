@@ -1,18 +1,23 @@
 import { useState } from 'react'
 import { AlertTriangle, X, Plus } from '../../icons.jsx'
-import { T, SEASONS, CATEGORIES, resolveNamedColor } from '../../constants.js'
+import { T, PHASES, phaseOf, SEASONS, CATEGORIES, resolveNamedColor } from '../../constants.js'
 import { swatchHex, normalisePantone, PANTONE_HINT, PANTONE_PLACEHOLDER } from '../../colours.js'
+import { useApp } from '../../context.jsx'
 import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload, ProductThumb } from '../../components/ui.jsx'
 
 let _cwKeySeq = 1
 let _fabKeySeq = 1
 
 export function EditOrderModal({ order, onClose, onSave }) {
+  const { currentUser } = useApp()
+  // The customer and Tradio decide when a style leaves sampling; the factory does not.
+  const mayMovePhase = currentUser?.role !== 'manufacturer'
   const [f, setF] = useState({
     product: order.product || '',
     styleNumber: order.styleNumber || '',
     category: order.category || '',
     season: order.season || '',
+    phase: phaseOf(order),
     totalQty: order.totalQty != null ? String(order.totalQty) : '',
     delivery: order.delivery ? new Date(order.delivery).toISOString().slice(0, 10) : '',
     ecommerceLink: order.ecommerceLink || '',
@@ -56,6 +61,7 @@ export function EditOrderModal({ order, onClose, onSave }) {
       styleNumber: f.styleNumber.trim(),
       category: f.category || undefined,
       season: f.season || undefined,
+      ...(mayMovePhase && f.phase !== phaseOf(order) ? { phase: f.phase } : {}),
       totalQty: qty,
       delivery: f.delivery,
       colourways: colourways.filter(c => c.name.trim()).map(c => ({ name: c.name.trim(), code: c.code.trim(), hex: c.hex.trim() })),
@@ -141,6 +147,11 @@ export function EditOrderModal({ order, onClose, onSave }) {
               <option value="">— Select —</option>
               {SEASONS.map(s => <option key={s}>{s}</option>)}
             </Select>
+            {mayMovePhase && (
+              <Select label="Stage" value={f.phase} onChange={set('phase')}>
+                {PHASES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </Select>
+            )}
           </div>
 
           <div className="form-grid-2" style={{ gap: 12 }}>
