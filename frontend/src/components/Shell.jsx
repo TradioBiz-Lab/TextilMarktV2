@@ -99,7 +99,7 @@ export function Shell({ view, setView, children, onOpenOrder, onOpenLink }) {
       />
 
       {/* ── Sidebar ── */}
-      <aside className={`shell-sidebar${sidebarOpen ? ' open' : ''}${sidebarCollapsed ? ' collapsed' : ''}`} style={{ background: T.sidebarGradient, display: 'flex', flexDirection: 'column' }}>
+      <aside className={`shell-sidebar${sidebarOpen ? ' open' : ''}${sidebarCollapsed ? ' collapsed' : ''}`} onClick={() => { if (sidebarCollapsed) setSidebarCollapsed(false) }} style={{ background: T.sidebarGradient, display: 'flex', flexDirection: 'column' }}>
         {/* Brand first, portal second: the logo lockup (just the mark when collapsed), then which portal this is. */}
         <div style={{ padding: sidebarCollapsed ? '16px 8px 14px' : '18px 16px 16px', borderBottom: `1px solid ${T.sidebarBorder}` }}>
           {sidebarCollapsed
