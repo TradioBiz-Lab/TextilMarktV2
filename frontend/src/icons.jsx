@@ -32,6 +32,7 @@ import {
   EyeSlash as P_EyeSlash,
   Factory as P_Factory,
   FileText as P_FileText,
+  Receipt as P_Receipt,
   FileXls as P_FileXls,
   Flask as P_Flask,
   FolderSimple as P_FolderSimple,
@@ -179,6 +180,7 @@ export const EyeOff = make(P_EyeSlash, 'EyeOff')
 export const Factory = make(P_Factory, 'Factory')
 export const FileSpreadsheet = make(P_FileXls, 'FileSpreadsheet')
 export const FileText = make(P_FileText, 'FileText')
+export const Receipt = make(P_Receipt, 'Receipt')
 export const FlaskConical = make(P_Flask, 'FlaskConical')
 export const Folder = make(P_FolderSimple, 'Folder')
 export const Hexagon = make(P_Hexagon, 'Hexagon')
