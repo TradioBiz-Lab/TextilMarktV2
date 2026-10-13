@@ -79,7 +79,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
   // ReportingPage already uses.
   // One dashboard for every role; caps decides which sections each sees (see caps.js).
   const caps = capsFor(currentUser)
-  const [openSections, setOpenSections] = useState({ orders: false, actions: false, requests: false, alerts: false, ribbons: false })
+  const [openSections, setOpenSections] = useState({ orders: !!caps.isBuyer, actions: false, requests: false, alerts: false, ribbons: false })
   const toggleSection = id => setOpenSections(p => ({ ...p, [id]: !p[id] }))
 
   // ── Ribbon management state ──

@@ -23,14 +23,17 @@ export function navSections(user) {
 
   // Every role gets the same six tabs, in the same order. Admins get three extra management tabs;
   // what each tab shows is scoped to the signed-in user's own data.
+  // A customer reads the plan first: Reports sits right under the Dashboard and Orders is called Order TnA.
+  const reports = { id: 'reports', icon: 'BarChart3', label: 'Reports' }
   const main = [
     { id: 'dashboard', icon: 'Home', label: 'Dashboard' },
+    ...(caps.isBuyer ? [reports] : []),
     { id: 'action_items', icon: 'ListChecks', label: 'Action Items' },
     { id: 'kriyaa', icon: 'Bot', label: 'Kriyaa' },
-    { id: 'orders', icon: 'Package', label: 'Orders' },
+    { id: 'orders', icon: 'Package', label: caps.isBuyer ? 'Order TnA' : 'Orders' },
     ...(caps.seeReviewQueue ? [{ id: 'review', icon: 'Inbox', label: 'Review Queue' }] : []),
     { id: 'documents', icon: 'Folder', label: 'Documents' },
-    { id: 'reports', icon: 'BarChart3', label: 'Reports' },
+    ...(caps.isBuyer ? [] : [reports]),
     ...(caps.seeAudit ? [{ id: 'audit', icon: 'History', label: 'Audit Log' }] : []),
     ...(caps.seeUserSetup ? [{ id: 'users', icon: 'Users', label: 'User Setup' }] : []),
   ]

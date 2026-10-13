@@ -6,10 +6,17 @@ const S = { platformMode: 'standalone' }
 
 describe('the sidebar', () => {
   test('the Tradio portal is exactly as before: six tabs for everyone, three more for admins, user setup for the master', () => {
-    expect(ids({ role: 'buyer' })).toEqual(['dashboard', 'action_items', 'kriyaa', 'orders', 'documents', 'reports'])
+    expect(ids({ role: 'buyer' })).toEqual(['dashboard', 'reports', 'action_items', 'kriyaa', 'orders', 'documents'])
     expect(ids({ role: 'manufacturer' })).toEqual(['dashboard', 'action_items', 'kriyaa', 'orders', 'documents', 'reports'])
     expect(ids({ role: 'admin', adminType: 'user' })).toEqual(['dashboard', 'action_items', 'kriyaa', 'orders', 'review', 'documents', 'reports', 'audit'])
     expect(ids({ role: 'admin', adminType: 'master' })).toEqual(['dashboard', 'action_items', 'kriyaa', 'orders', 'review', 'documents', 'reports', 'audit', 'users'])
+  })
+
+  test('a customer sees Reports second and Orders as Order TnA; everyone else keeps Orders', () => {
+    const label = (u, id) => navSections(u).flatMap(s => s.items).find(i => i.id === id).label
+    expect(label({ role: 'buyer' }, 'orders')).toBe('Order TnA')
+    expect(label({ role: 'manufacturer' }, 'orders')).toBe('Orders')
+    expect(label({ role: 'admin', adminType: 'user' }, 'orders')).toBe('Orders')
   })
 
   test('standalone: the master admin lands on companies, with only what a viewer needs', () => {
