@@ -149,6 +149,7 @@ export function EditOrderModal({ order, onClose, onSave }) {
               value={f.totalQty}
               onChange={set('totalQty')}
               placeholder="5000"
+              hint={(order.assignments || []).length === 1 ? 'Also updates the manufacturer quantity and every step target. Finished steps stay finished.' : undefined}
             />
             <Input
               label="Expected Delivery *"

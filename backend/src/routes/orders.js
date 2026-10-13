@@ -2397,16 +2397,25 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
       if (qty !== currentSum && asgns.length > 0) {
         if (asgns.length === 1) {
           updates['assignments.0.qty'] = qty
-          // Stage targets that were defaulted to the assignment qty follow it.
-          // Only quantity-kind stages, never a milestone/checklist target, and
-          // never below what's already been completed.
+          // Stage targets that were defaulted to the assignment qty follow it, so the
+          // new quantity shows everywhere. Only quantity-kind stages, never a
+          // milestone/checklist target.
+          //  - A stage that was already DONE stays done, at the new quantity (units
+          //    and target both move, the completion date is kept): correcting the
+          //    order quantity must not reopen steps that really finished.
+          //  - A stage still in progress keeps the units done so far, and never has
+          //    a target below them.
           ;(asgns[0].stages || []).forEach((s, i) => {
             if (stageKindOf(s) !== 'quantity') return
             if ((s.totalUnits ?? 0) !== currentSum) return  // deliberately overridden — leave it
+            if (deriveStageStatus(s) === 'done') {
+              updates[`assignments.0.stages.${i}.totalUnits`] = qty
+              updates[`assignments.0.stages.${i}.unitsDone`] = qty
+              updates[`assignments.0.stages.${i}.status`] = 'done'
+              return
+            }
             const nextTotal = Math.max(qty, s.unitsDone || 0)
             updates[`assignments.0.stages.${i}.totalUnits`] = nextTotal
-            // A done stage whose target just grew is no longer complete: keep status
-            // and units in step (and clear the completion stamp).
             const r = reconcileForTotal(s, nextTotal)
             updates[`assignments.0.stages.${i}.status`] = r.status
             updates[`assignments.0.stages.${i}.unitsDone`] = r.unitsDone
