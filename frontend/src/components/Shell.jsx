@@ -93,7 +93,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
     : user?.role === 'buyer' ? 'Buyer Portal' : 'Manufacturer Portal'
 
   const roleColor = user?.role === 'admin'
-    ? (user?.adminType === 'master' ? T.master : T.primary)
+    ? (user?.adminType === 'master' ? '#DDD6FE' : T.primary)
     : user?.role === 'buyer' ? '#7dd3fc' : '#c2410c'
 
   const handleNav = id => {
