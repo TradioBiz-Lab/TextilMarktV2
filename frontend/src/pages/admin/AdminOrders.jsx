@@ -46,6 +46,10 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
   const [sfilt, setSfilt] = useState(initialStatus || 'All')
   // Styles still being sampled and developed are kept apart from the ones in production.
   const [phase, setPhase] = useState('production')
+  // Moving styles out of Sampling & Development: tick the ones that are ready and move them in one go.
+  const [promoteOpen, setPromoteOpen] = useState(false)
+  const [picked, setPicked] = useState(() => new Set())
+  const [moving, setMoving] = useState(false)
   const phaseCount = Object.fromEntries(PHASES.map(([v]) => [v, orders.filter(o => phaseOf(o) === v).length]))
   const [sortCol, setSortCol] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
@@ -315,20 +319,82 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
         {PHASES.map(([id, label]) => (
           <button key={id} onClick={() => setPhase(id)} aria-pressed={phase === id}
             style={{ fontSize: 13, fontWeight: 800, padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
-              border: `1px solid ${phase === id ? T.primary : T.border}`,
-              background: phase === id ? T.primary : T.surface,
+              border: `1px solid ${phase === id ? T.primaryDeep : T.border}`,
+              background: phase === id ? T.primaryDeep : T.surface,
               color: phase === id ? '#fff' : T.text }}>
             {label} <span style={{ opacity: 0.8, fontWeight: 700 }}>({phaseCount[id]})</span>
           </button>
         ))}
       </FlexRow>
+      {phase === 'development' && currentUser.role !== 'manufacturer' && (() => {
+        const ready = filtered.filter(() => caps.editOrders)
+        if (ready.length === 0) return null
+        const byMo = new Map()
+        ready.forEach(o => { const k = o.masterOrderId || '__none__'; if (!byMo.has(k)) byMo.set(k, []); byMo.get(k).push(o) })
+        const toggle = ids => setPicked(prev => {
+          const next = new Set(prev)
+          const all = ids.every(id => next.has(id))
+          ids.forEach(id => (all ? next.delete(id) : next.add(id)))
+          return next
+        })
+        const chosen = ready.filter(o => picked.has(o.id))
+        const move = async () => {
+          setMoving(true)
+          let ok = 0
+          try {
+            for (const o of chosen) { await editOrder(o.id, { phase: 'production' }); ok++ }
+            toast(`${ok} ${ok === 1 ? 'style' : 'styles'} moved to production`, 'success')
+            setPicked(new Set()); setPromoteOpen(false)
+          } catch (e) {
+            toast(`${ok} moved, then stopped: ${typeof e === 'string' ? e : (e?.message || 'error')}`, 'error')
+            setPicked(prev => { const next = new Set(prev); chosen.slice(0, ok).forEach(o => next.delete(o.id)); return next })
+          } finally { setMoving(false) }
+        }
+        return (
+          <div style={{ marginBottom: 14 }}>
+            <Btn variant="secondary" size="sm" onClick={() => setPromoteOpen(v => !v)} icon={<ArrowRight size={13} />}>
+              {promoteOpen ? 'Close' : 'Move styles to production'}
+            </Btn>
+            {promoteOpen && (
+              <Card style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', marginBottom: 8 }}>Tick the styles that are ready for production</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {[...byMo.entries()].map(([k, list]) => {
+                    const ids = list.map(o => o.id)
+                    const label = groupDisplayLabel({ mo: masterOrders.find(m => m.id === k) || null, moId: k, orders: list })
+                    return (
+                      <div key={k}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={ids.every(id => picked.has(id))} onChange={() => toggle(ids)} style={{ accentColor: T.primaryDeep }} />
+                          {label}
+                        </label>
+                        {list.map(o => (
+                          <label key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0 5px 24px', fontSize: 13, color: T.text, cursor: 'pointer' }}>
+                            <input type="checkbox" checked={picked.has(o.id)} onChange={() => toggle([o.id])} style={{ accentColor: T.primaryDeep }} />
+                            <span>{o.product}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
+                <div style={{ marginTop: 12 }}>
+                  <Btn size="sm" disabled={chosen.length === 0 || moving} onClick={move}>
+                    {moving ? 'Moving…' : chosen.length ? `Move ${chosen.length} to production` : 'Move to production'}
+                  </Btn>
+                </div>
+              </Card>
+            )}
+          </div>
+        )
+      })()}
       <FlexRow gap={6} style={{ marginBottom: 14 }}>
         {[['list', 'List', List], ['matrix', 'Matrix', LayoutGrid]].map(([id, label, Icon]) => (
           <button key={id} onClick={() => setView(id)}
             style={{ fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
-              border: `1px solid ${view === id ? T.primary : T.border}`,
+              border: `1px solid ${view === id ? T.primaryDeep : T.border}`,
               background: view === id ? T.primaryLight : T.surface,
-              color: view === id ? T.primaryDark : T.textMuted,
+              color: view === id ? T.primaryDeep : T.textMuted,
               display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <Icon size={13} /> {label}
           </button>

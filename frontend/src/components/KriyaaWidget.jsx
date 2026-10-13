@@ -76,7 +76,7 @@ export function KriyaaWidget() {
               <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
                 <div style={{
                   maxWidth: '85%', padding: '9px 12px', borderRadius: 11,
-                  background: m.role === 'user' ? T.primary : (m.isError ? T.dangerBg : T.bg),
+                  background: m.role === 'user' ? T.primaryDeep : (m.isError ? T.dangerBg : T.bg),
                   color: m.role === 'user' ? '#fff' : (m.isError ? T.danger : T.text),
                   border: m.role === 'user' ? 'none' : `1px solid ${m.isError ? T.dangerBorder : T.border}`,
                   fontSize: 12.5, lineHeight: 1.5, whiteSpace: 'pre-wrap',
@@ -152,7 +152,7 @@ export function KriyaaWidget() {
         style={{
           position: 'fixed', bottom: 24, right: 24, zIndex: 500,
           width: 52, height: 52, borderRadius: '50%', border: 'none', cursor: 'pointer',
-          background: T.primary, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: T.primaryDeep, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
           boxShadow: '0 6px 20px rgba(194,65,12,0.35)',
         }}>
         {open ? <X size={22} /> : <Bot size={24} />}
