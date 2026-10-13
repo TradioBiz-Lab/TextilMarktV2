@@ -96,9 +96,11 @@ export function Shell({ view, setView, children, onOpenOrder }) {
     ? (user?.adminType === 'master' ? '#DDD6FE' : T.primary)
     : user?.role === 'buyer' ? '#7dd3fc' : '#c2410c'
 
-  // Clicking anywhere on the page folds the sidebar to icons, so the work gets the width. The drawer on a phone
-  // is left alone: it already closes itself.
-  const collapseOnPageClick = () => {
+  // Clicking empty space on the page folds the sidebar to icons, so the work gets the width. A click on a control or a
+  // row does its own job and leaves the layout alone. The drawer on a phone already closes itself.
+  const INTERACTIVE = 'button, a, input, select, textarea, label, summary, tr, th, td, [role="button"], [role="tab"], [role="menuitem"], [role="dialog"], [contenteditable="true"]'
+  const collapseOnPageClick = e => {
+    if (e.target.closest?.(INTERACTIVE)) return
     if (window.matchMedia('(min-width: 769px)').matches) setSidebarCollapsed(true)
   }
 
