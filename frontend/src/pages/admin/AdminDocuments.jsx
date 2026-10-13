@@ -5,7 +5,10 @@ import { Modal, Select, Input, Btn, Card, Alert, EmptyState, FlexRow, PageHeader
 import { useApp } from '../../context.jsx'
 import { capsFor } from '../../caps.js'
 
-const CERT_TYPES = ['compliance_cert', 'factory_audit', 'chemical_cert', 'environmental_cert', 'insurance']
+// This page holds the factory-level files only: who a manufacturer is, and the proof it is compliant. Everything
+// about a style (tech packs, POs, test reports, evidence) lives on the style itself.
+const FACTORY_TYPES = ['mfr_profile', 'compliance_cert', 'factory_audit']
+const CERT_TYPES = ['compliance_cert', 'factory_audit']
 
 const fmtDate = d => {
   if (!d) return '—'
@@ -19,19 +22,16 @@ export function AdminDocuments() {
   // Same repository for every role; what each may upload follows the server's rules (caps.js).
   const caps = capsFor(currentUser)
   const defaultIssuer = caps.isAdmin ? 'Tradio' : (currentUser?.company || '')
-  // A customer cannot upload compliance certificates or manufacturer profiles; a factory
-  // does not upload customer orders or RFQs. Admins can upload anything.
-  const uploadTypes = caps.isBuyer ? DOC_TYPES.filter(t => !CERT_TYPES.includes(t.v) && t.v !== 'mfr_profile')
-    : caps.isMfr ? DOC_TYPES.filter(t => !['buyer_order', 'RFQ'].includes(t.v)) : DOC_TYPES
+  // Admins upload any of the three for any manufacturer; a factory uploads its own. A customer only reads.
+  const uploadTypes = DOC_TYPES.filter(t => FACTORY_TYPES.includes(t.v))
   const [show, setShow] = useState(false)
   const [filt, setFilt] = useState('all')
   const [certTab, setCertTab] = useState('all')
-  const [phase, setPhase] = useState('production')
   const [mode, setMode] = useState('docs') // 'docs' | 'certs'
   // Every folder starts closed, like the Orders page; a click opens it.
   const [openGroups, setOpenGroups] = useState(() => new Set())
   const toggleGroup = id => setOpenGroups(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
-  const [uf, setUf] = useState({ type: 'PO', name: '', issuer: defaultIssuer, issueDate: getToday(), expiryDate: '', orderId: '', mfrId: null, buyerId: '' })
+  const [uf, setUf] = useState({ type: 'mfr_profile', name: '', issuer: defaultIssuer, issueDate: getToday(), expiryDate: '', orderId: '', mfrId: null, buyerId: '' })
   const [fileData, setFileData] = useState(null)
   const [fileErr, setFileErr] = useState('')
   const [saving, setSaving] = useState(false)
@@ -39,7 +39,7 @@ export function AdminDocuments() {
   const mfrUsers = users.filter(u => u.role === 'manufacturer')
   const buyerUsers = users.filter(u => u.role === 'buyer')
   const active = docs.filter(d => d.isActive !== false)
-  const nonStageDocs = active.filter(d => d.stageIndex == null)
+  const nonStageDocs = active.filter(d => FACTORY_TYPES.includes(d.type))
   const show2 = filt === 'all' ? nonStageDocs : nonStageDocs.filter(d => d.type === filt)
 
   // Certificate tracking data (US-DOC-04)
@@ -62,7 +62,7 @@ export function AdminDocuments() {
 
   const certFiltered = certData[certTab] || certData.all
 
-  const reset = () => { setUf({ type: 'PO', name: '', issuer: defaultIssuer, issueDate: getToday(), expiryDate: '', orderId: '', mfrId: null, buyerId: '' }); setFileData(null); setFileErr('') }
+  const reset = () => { setUf({ type: 'mfr_profile', name: '', issuer: defaultIssuer, issueDate: getToday(), expiryDate: '', orderId: '', mfrId: null, buyerId: '' }); setFileData(null); setFileErr('') }
 
   const submit = async () => {
     if (!fileData) { setFileErr('Please select a file.'); return }
@@ -79,10 +79,10 @@ export function AdminDocuments() {
   }
 
   const filterBtns = [
-    { v: 'all', l: `All (${nonStageDocs.length})` }, { v: 'PO', l: 'Purchase Orders' }, ...(nonStageDocs.some(d => d.type === 'invoice') ? [{ v: 'invoice', l: 'Invoices' }] : []), { v: 'buyer_order', l: 'Buyer Orders' },
-    { v: 'tech_pack', l: 'Tech Packs' }, { v: 'cost_sheet', l: 'Cost Sheets' },
-    { v: 'compliance_cert', l: 'Compliance' }, { v: 'factory_audit', l: 'Audit Reports' },
-    { v: 'mfr_profile', l: 'Mfr Profiles', Icon: Factory },
+    { v: 'all', l: `All (${nonStageDocs.length})` },
+    { v: 'mfr_profile', l: 'Manufacturer Profiles', Icon: Factory },
+    { v: 'compliance_cert', l: 'Compliance' },
+    { v: 'factory_audit', l: 'Audit Reports' },
   ]
 
   const certTabs = [
@@ -119,12 +119,9 @@ export function AdminDocuments() {
         const filteredOrders = isBuyerOrder && uf.buyerId && caps.isAdmin
           ? orders.filter(o => String(o.buyerId) === String(uf.buyerId))
           : orders
-        const modalTitle = isMfrProfile ? 'Upload Manufacturer Profile' : isPO ? 'Upload Purchase Order' : isBuyerOrder ? 'Upload Buyer Order' : 'Upload Document'
+        const modalTitle = isMfrProfile ? 'Upload Manufacturer Profile' : uf.type === 'factory_audit' ? 'Upload Audit Report' : 'Upload Compliance Certificate'
         const modalSub = isMfrProfile ? 'PDF profile visible to all users working with this manufacturer' : isPO ? 'Link this PO to the manufacturer it belongs to' : isBuyerOrder ? 'Link this order to the buyer and their order' : 'Document will be automatically distributed to relevant parties'
-        const canSubmit = uf.name && fileData && !saving
-          && (isPO ? (caps.isAdmin ? !!uf.mfrId : true) : true)
-          && (isBuyerOrder ? ((caps.isAdmin ? !!uf.buyerId : true) && !!uf.orderId) : true)
-          && (isMfrProfile ? (caps.isAdmin ? !!uf.mfrId : true) : true)
+        const canSubmit = uf.name && fileData && !saving && (caps.isAdmin ? !!uf.mfrId : true)
         return (
         <Modal title={modalTitle} subtitle={modalSub} onClose={() => { setShow(false); reset() }} size="lg">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -173,20 +170,13 @@ export function AdminDocuments() {
                   <option value="">— Disabled —</option>
                 </Select>
               )}
-              {/* Generic docs: show both Order + Manufacturer as optional */}
-              {!isPO && !isBuyerOrder && !isMfrProfile && (
-                <Select label="Link to Order (optional)" value={uf.orderId} onChange={e => setUf({ ...uf, orderId: e.target.value })}>
-                  <option value="">— None —</option>
-                  {orders.map(o => <option key={o.id} value={o.id}>{o.id}</option>)}
-                </Select>
-              )}
               {caps.isAdmin && !isPO && !isBuyerOrder && (
                 <Select
-                  label={isMfrProfile ? 'Manufacturer *' : 'Link to Manufacturer (optional)'}
+                  label="Manufacturer *"
                   value={uf.mfrId || ''}
                   onChange={e => setUf({ ...uf, mfrId: e.target.value || null })}
                 >
-                  <option value="">— None —</option>
+                  <option value="">— Select Manufacturer —</option>
                   {mfrUsers.map(m => <option key={m.id} value={m.id}>{m.company}</option>)}
                 </Select>
               )}
@@ -207,11 +197,11 @@ export function AdminDocuments() {
         )
       })()}
 
-      <PageHeader title="Document Repository" subtitle={caps.isAdmin ? 'All documents across orders and manufacturers' : caps.isBuyer ? 'Your orders\' documents and your factories\' certificates' : 'Your orders\' documents and your own certificates'} action={<Btn onClick={() => setShow(true)} icon={<Paperclip size={13} />}>Upload Document</Btn>} />
+      <PageHeader title="Documents" subtitle={caps.isBuyer ? 'Your factories\' profiles, compliance certificates and audit reports' : 'Manufacturer profiles, compliance certificates and factory audit reports'} action={!caps.isBuyer && <Btn onClick={() => setShow(true)} icon={<Paperclip size={13} />}>Upload Document</Btn>} />
 
       {/* Mode toggle: Documents vs Certificate Tracker */}
       <div style={{ display: 'flex', gap: 0, borderBottom: `2px solid ${T.border}`, marginBottom: 16 }}>
-        {[{ id: 'docs', l: 'All Documents', Icon: Folder }, { id: 'certs', l: 'Certificate Tracker', Icon: Shield }].map(m => (
+        {[{ id: 'docs', l: 'Documents', Icon: Folder }, { id: 'certs', l: 'Certificate Tracker', Icon: Shield }].map(m => (
           <button key={m.id} onClick={() => setMode(m.id)}
             style={{ padding: '10px 22px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: mode === m.id ? T.primary : T.textMuted, borderBottom: `2px solid ${mode === m.id ? T.primary : 'transparent'}`, marginBottom: -2, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
             <m.Icon size={15} />{m.l}
@@ -230,105 +220,35 @@ export function AdminDocuments() {
             ))}
           </div>
           {(() => {
-            // Laid out exactly like the Orders page: the Production / Sampling & Development switch, then one folder
-            // per master order (newest first, "Other Orders" last), its styles inside, each style's documents inside that.
-            const buyerDocs = caps.isAdmin ? show2.filter(d => d.uploadedByRole === 'buyer') : []
-            const buyerDocIds = new Set(buyerDocs.map(d => d.id))
-            const remaining = show2.filter(d => !buyerDocIds.has(d.id))
-            const byOrder = new Map()
-            remaining.filter(d => d.orderId).forEach(d => { const k = String(d.orderId); if (!byOrder.has(k)) byOrder.set(k, []); byOrder.get(k).push(d) })
-            const phaseCount = Object.fromEntries(PHASES.map(([v]) => [v, orders.filter(o => phaseOf(o) === v).length]))
-            const phaseOrders = orders.filter(o => phaseOf(o) === phase)
-            const showAllStyles = filt === 'all'
-            const gmap = new Map()
-            phaseOrders.forEach(o => {
-              const styleDocs = byOrder.get(String(o.id)) || []
-              if (!showAllStyles && styleDocs.length === 0) return
-              const k = o.masterOrderId || '__none__'
-              if (!gmap.has(k)) gmap.set(k, { moId: k, mo: k !== '__none__' ? masterOrders.find(m => m.id === k) || null : null, styles: [] })
-              gmap.get(k).styles.push({ order: o, docs: styleDocs })
-            })
-            const groups = [...gmap.values()]
-            groups.forEach(g => {
-              g.masterDocs = g.moId === '__none__' ? [] : remaining.filter(d => !d.orderId && d.masterOrderId === g.moId)
-              g.count = g.styles.reduce((n, x) => n + x.docs.length, 0) + g.masterDocs.length
-            })
-            groups.sort((a, b) => a.moId === '__none__' ? 1 : b.moId === '__none__' ? -1 : new Date(b.mo?.createdAt || 0) - new Date(a.mo?.createdAt || 0))
-            const placed = new Set(groups.flatMap(g => g.masterDocs.map(d => d.id)))
-            const general = remaining.filter(d => !d.orderId && !placed.has(d.id))
-            const groupLabel = g => withBuyerPrefix(g.mo?.orderName || (g.moId === '__none__' ? 'Other Orders' : g.moId), g.styles.map(x => x.order))
-            const head = { padding: '9px 14px', background: '#f1f5f9', cursor: 'pointer' }
-            const chip = n => <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, background: '#e2e8f0', padding: '1px 8px', borderRadius: 10 }}>{n}</span>
-            const folderHead = (id, icon, label, right) => {
-              const isOpen = openGroups.has(id)
-              return (
-                <FlexRow gap={10} onClick={() => toggleGroup(id)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => toggleGroup(id))} style={head}>
-                  <span style={{ color: T.textMuted, transform: isOpen ? 'none' : 'rotate(-90deg)', display: 'inline-flex' }}><ChevronDown size={13} /></span>
-                  <span style={{ fontSize: 13, fontWeight: 800, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}>{icon} {label}</span>
-                  <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8 }}>{right}</span>
-                </FlexRow>
-              )
-            }
-            const docList = list => (
-              <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6, borderTop: `1px solid ${T.border}` }}>
-                {list.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} />)}
-              </div>
-            )
+            // One folder per manufacturer, closed until opened, in the same look as the Orders page.
+            const byMfr = new Map()
+            show2.forEach(d => { const k = d.mfrId ? String(d.mfrId) : '__none__'; if (!byMfr.has(k)) byMfr.set(k, []); byMfr.get(k).push(d) })
+            const groups = [...byMfr.entries()].map(([k, list]) => ({
+              id: k, list,
+              label: k === '__none__' ? 'Not linked to a manufacturer' : (users.find(u => String(u.id) === k)?.company || list[0]?.uploadedByCompany || 'Manufacturer'),
+            })).sort((a, b) => a.id === '__none__' ? 1 : b.id === '__none__' ? -1 : a.label.localeCompare(b.label))
+            const typeCount = list => ['mfr_profile', 'compliance_cert', 'factory_audit']
+              .map(t => [DOC_TYPES.find(x => x.v === t)?.l || t, list.filter(d => d.type === t).length]).filter(([, n]) => n > 0)
             return (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <FlexRow gap={6}>
-                  {PHASES.map(([id, label]) => (
-                    <button key={id} onClick={() => setPhase(id)} aria-pressed={phase === id}
-                      style={{ fontSize: 13, fontWeight: 800, padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
-                        border: `1px solid ${phase === id ? T.primaryDeep : T.border}`, background: phase === id ? T.primaryDeep : T.surface, color: phase === id ? '#fff' : T.text }}>
-                      {label} <span style={{ opacity: 0.8, fontWeight: 700 }}>({phaseCount[id]})</span>
-                    </button>
-                  ))}
-                </FlexRow>
-
-                {/* Buyer Docs: requirement documents uploaded by buyers, for ops to sort into the right style. */}
-                {buyerDocs.length > 0 && (
-                  <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
-                    {folderHead('__buyer_docs__', <Inbox size={13} />, 'Buyer Docs', <><span style={{ fontSize: 11, color: T.textMuted }}>Requirement documents uploaded by buyers</span>{chip(buyerDocs.length)}</>)}
-                    {openGroups.has('__buyer_docs__') && docList(buyerDocs)}
-                  </div>
-                )}
-
-                {groups.map(g => (
-                  <div key={g.moId} style={{ border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
-                    {folderHead(g.moId, <Folder size={13} />, groupLabel(g), <>
-                      {g.mo?.season && <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', background: '#dbeafe', padding: '1px 7px', borderRadius: 4 }}>{g.mo.season}</span>}
-                      <span style={{ fontSize: 11, color: T.textMuted }}>{g.styles.length} style{g.styles.length !== 1 ? 's' : ''} · {g.count} document{g.count !== 1 ? 's' : ''}</span>
-                    </>)}
-                    {openGroups.has(g.moId) && (
-                      <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 8, borderTop: `1px solid ${T.border}` }}>
-                        {g.masterDocs.length > 0 && (
-                          <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, overflow: 'hidden' }}>
-                            {folderHead(`${g.moId}:master`, <Folder size={12} />, 'Master order documents', chip(g.masterDocs.length))}
-                            {openGroups.has(`${g.moId}:master`) && docList(g.masterDocs)}
-                          </div>
-                        )}
-                        {g.styles.map(({ order: o, docs: sDocs }) => (
-                          <div key={o.id} style={{ border: `1px solid ${T.border}`, borderRadius: 8, overflow: 'hidden' }}>
-                            {folderHead(`s:${o.id}`, <ProductThumb order={o} size="sm" />, <>{o.product}{o.styleNumber ? <span style={{ fontWeight: 600, color: T.textMuted }}> · {o.styleNumber}</span> : null}</>, chip(sDocs.length))}
-                            {openGroups.has(`s:${o.id}`) && (sDocs.length > 0 ? docList(sDocs) : <div style={{ padding: '10px 14px', fontSize: 12, color: T.textMuted, borderTop: `1px solid ${T.border}` }}>No documents yet.</div>)}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-
-                {/* General Documents: uploads that belong to no style or master order. */}
-                {general.length > 0 && (
-                  <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
-                    {folderHead('__general__', <Folder size={13} />, 'General Documents', chip(general.length))}
-                    {openGroups.has('__general__') && docList(general)}
-                  </div>
-                )}
-                {groups.length === 0 && general.length === 0 && buyerDocs.length === 0 && (
-                  <Card><EmptyState icon={<Folder size={26} color={T.textLight} />} title={phase === 'development' ? 'Nothing in Sampling & Development' : 'No documents'} desc={phase === 'development' ? 'Documents for styles still being sampled show up here.' : 'Upload your first document above'} /></Card>
-                )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {groups.map(g => {
+                  const isOpen = openGroups.has(g.id)
+                  return (
+                    <div key={g.id} style={{ border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
+                      <FlexRow gap={10} onClick={() => toggleGroup(g.id)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => toggleGroup(g.id))} style={{ padding: '9px 14px', background: '#f1f5f9', cursor: 'pointer' }}>
+                        <span style={{ color: T.textMuted, transform: isOpen ? 'none' : 'rotate(-90deg)', display: 'inline-flex' }}><ChevronDown size={13} /></span>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Factory size={13} /> {g.label}</span>
+                        <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{typeCount(g.list).map(([l, n]) => `${n} ${l.toLowerCase()}`).join(' · ')}</span>
+                      </FlexRow>
+                      {isOpen && (
+                        <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6, borderTop: `1px solid ${T.border}` }}>
+                          {g.list.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} />)}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+                {groups.length === 0 && <Card><EmptyState icon={<Folder size={26} color={T.textLight} />} title="No documents" desc={caps.isBuyer ? 'Your factories\' profiles and certificates will show up here' : 'Upload a manufacturer profile, compliance certificate or audit report'} /></Card>}
               </div>
             )
           })()}
