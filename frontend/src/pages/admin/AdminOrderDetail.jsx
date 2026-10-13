@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, Fragment } from 'react'
 import Papa from 'papaparse'
-import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight, Trash2 } from '../../icons.jsx'
+import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight, Trash2, ArrowRight } from '../../icons.jsx'
 import {
   T, ORDER_STATUSES, evidenceTypesFor, productDocForStep, DOC_ICONS, isSystemDoc,
   stageKindOf, kindForCustomerOwner, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
@@ -704,6 +704,12 @@ export function AdminOrderDetail({ orderId, initialMid, onBack, onNavigate }) {
           <div style={{ flex: 1 }} />
           {!unassigned && order.assignments?.length > 1 && (
             <Btn variant="secondary" size="sm" onClick={() => setSelectedMid(null)} icon={<ArrowLeftRight size={13} />}>All splits</Btn>
+          )}
+          {oc.edit && order.phase === 'development' && currentUser.role !== 'manufacturer' && (
+            <Btn size="sm" onClick={async () => {
+              try { await editOrder(order.id, { phase: 'production' }); toast('Moved to production', 'success') }
+              catch (e) { toast(typeof e === 'string' ? e : (e?.message || 'Could not move the style'), 'error') }
+            }} icon={<ArrowRight size={13} />}>Move to production</Btn>
           )}
           {oc.edit && <Btn variant="secondary" size="sm" onClick={() => setShowEdit(true)} icon={<Pencil size={13} />}>Edit Style</Btn>}
           {oc.remove && (
