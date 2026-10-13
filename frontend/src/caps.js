@@ -58,7 +58,7 @@ export function capsFor(user) {
     submitRequirement: w(isBuyer),
     manageCertificates: w(isMfr),
     // Admin-only surfaces
-    seeUsers: isAdmin, seeAudit: isAdmin, seeReviewQueue: isAdmin, seeRibbonsAdmin: isAdmin, seeBuyerRequests: isAdmin,
+    seeUsers: isAdmin, seeAudit: isAdmin, seeReviewQueue: false /* retired until the WhatsApp integration; set to isAdmin to bring it back */, seeRibbonsAdmin: isAdmin, seeBuyerRequests: isAdmin,
     seeUserSetup: isMaster,
     // The master admin's own session lands on the company directory instead of a dashboard.
     seeViewerHome: isMaster && standalone,
