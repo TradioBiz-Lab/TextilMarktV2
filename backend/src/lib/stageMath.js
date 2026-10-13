@@ -95,7 +95,7 @@ export const makeDeliveryStage = dateISO => ({
 // ── The standard plan for a style still in Sampling & Development ───────────
 // Short steps from the request landing to the style being ready to go into production. Matching a factory takes
 // 3-4 days and the proto / fit sample 4-5; the plan books the longer figure. Sharing the fit sample is given a day,
-// its approval three, and pricing two. Each step starts when the one before it ends. The mandatory Delivery step is
+// its approval three, and the pricing approval two. Each step starts when the one before it ends. The mandatory Delivery step is
 // added after them as usual.
 export const DEVELOPMENT_PLAN = Object.freeze([
   { name: 'Request Received', days: 0 },
@@ -103,7 +103,7 @@ export const DEVELOPMENT_PLAN = Object.freeze([
   { name: 'Proto/Fit Sample', days: 5 },
   { name: 'Fit Sample Shared', days: 1 },
   { name: 'Fit Sample Approved', days: 3 },
-  { name: 'Pricing', days: 2 },
+  { name: 'Pricing Approved', days: 2 },
   { name: 'Ready for Production', days: 0 },
 ])
 
