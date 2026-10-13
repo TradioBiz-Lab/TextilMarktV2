@@ -104,6 +104,17 @@ export const PRODUCT_DOC_BY_STEP = [
   { re: /lab\s*dip/i, type: 'lab_dip', label: 'Lab Dip Receipts', one: 'Lab Dip Receipt' },
   { re: /\b(fpt|gpt)\b/i, type: 'test_report', label: 'Test Reports (FPT/GPT)', one: 'Test Report' },
 ]
+// The step a stage document belongs to, by the order's own plan. A document links to a step by its position
+// in that order's TNA, so the name has to come from that plan: the 13-step standard list is only right for
+// orders built from it, and showed "Stage 13 - Delivery" on an FPT step of a 17-step plan.
+export const stageNameForDoc = (orders, doc) => {
+  if (doc?.stageIndex == null) return null
+  const o = (orders || []).find(x => String(x.id) === String(doc.orderId))
+  const asgns = o?.assignments || []
+  const a = asgns.find(x => String(x.mid) === String(doc.mfrId)) || (asgns.length === 1 ? asgns[0] : null)
+  return a?.stages?.[doc.stageIndex]?.name || null
+}
+
 export const productDocForStep = stageName => PRODUCT_DOC_BY_STEP.find(p => p.re.test(String(stageName || ''))) || null
 
 export const evidenceTypesFor = (stageIndex, stages) => {

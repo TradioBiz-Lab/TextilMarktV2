@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, createContext, useContext, is
 import { Folder, Link2, Package, Factory, Eye, Download, FileText, StickyNote, AlertTriangle, CheckCircle2, Info, X, Image as ImageIcon, Paperclip, Upload, ChevronLeft, ChevronRight, Crown, Check, Pencil, Trash2 } from '../icons.jsx'
 import { T, ST, DOC_TYPES, STAGE_DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired } from '../constants.js'
 import { useApp } from '../context.jsx'
+import { stageNameForDoc } from '../constants.js'
 import * as pdfjsLib from 'pdfjs-dist'
 import { CsvTable, XlsxTable, DxfPreview, AudioPlayer, Msg } from './fileViewers.jsx'
 // Imported as a Vite worker (not `?url`) so the build emits a plain .js chunk —
@@ -705,7 +706,7 @@ function DocEditModal({ doc, onClose, onSaved }) {
 }
 
 export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
-  const { currentUser, deleteDoc } = useApp()
+  const { currentUser, deleteDoc, orders } = useApp()
   const toast = useToast()
   const [showEdit, setShowEdit] = useState(false)
   const canManage = !!currentUser && (currentUser.role === 'admin' || String(doc.uploadedBy) === String(currentUser.id))
@@ -818,7 +819,8 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
   const hasExternal = !!doc.externalUrl
   const hasFile = hasExternal || doc.fileName || fileData?.dataUrl
   const isStageDoc = doc.stageIndex != null
-  const stageName = isStageDoc ? (stageNameProp || DEFAULT_STAGE_NAMES[doc.stageIndex] || `Stage ${doc.stageIndex + 1}`) : null
+  // The step's real name from the order's own plan; the standard 13-step list is never a fallback (it mislabels other plans).
+  const stageName = isStageDoc ? (stageNameProp || stageNameForDoc(orders, doc) || `Stage ${doc.stageIndex + 1}`) : null
   const mfr = doc.mfrId ? users?.find(u => String(u.id) === String(doc.mfrId)) : null
 
   // ── Inline document viewer modal ──
