@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { Factory, ClipboardList, CheckCircle2, AlertTriangle, XCircle, Paperclip, Shield, Folder, Inbox, FileText, ChevronRight, ChevronDown } from '../../icons.jsx'
 import { T, DOC_TYPES, DOC_ICONS, isExpiringSoon, isExpired , getToday, PHASES, phaseOf, withBuyerPrefix } from '../../constants.js'
 import { Modal, Select, Input, Btn, Card, Alert, EmptyState, FlexRow, PageHeader, DocCard, FileUpload, StatCard, LoadingScreen, useToast, fileUploadPayload, Grid, ProductThumb, activateOnKey } from '../../components/ui.jsx'
@@ -8,7 +8,6 @@ import { capsFor } from '../../caps.js'
 // This page holds the factory-level files only: who a manufacturer is, and the proof it is compliant. Everything
 // about a style (tech packs, POs, test reports, evidence) lives on the style itself.
 const FACTORY_TYPES = ['mfr_profile', 'compliance_cert', 'factory_audit']
-const CERT_TYPES = ['compliance_cert', 'factory_audit']
 
 const fmtDate = d => {
   if (!d) return '—'
@@ -26,8 +25,6 @@ export function AdminDocuments() {
   const uploadTypes = DOC_TYPES.filter(t => FACTORY_TYPES.includes(t.v))
   const [show, setShow] = useState(false)
   const [filt, setFilt] = useState('all')
-  const [certTab, setCertTab] = useState('all')
-  const [mode, setMode] = useState('docs') // 'docs' | 'certs'
   // Every folder starts closed, like the Orders page; a click opens it.
   const [openGroups, setOpenGroups] = useState(() => new Set())
   const toggleGroup = id => setOpenGroups(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -41,26 +38,6 @@ export function AdminDocuments() {
   const active = docs.filter(d => d.isActive !== false)
   const nonStageDocs = active.filter(d => FACTORY_TYPES.includes(d.type))
   const show2 = filt === 'all' ? nonStageDocs : nonStageDocs.filter(d => d.type === filt)
-
-  // Certificate tracking data (US-DOC-04)
-  const certData = useMemo(() => {
-    const certs = active.filter(d => CERT_TYPES.includes(d.type) && d.expiryDate)
-    const expired = certs.filter(d => isExpired(d.expiryDate))
-    const expiring = certs.filter(d => isExpiringSoon(d.expiryDate) && !isExpired(d.expiryDate))
-    const valid = certs.filter(d => !isExpired(d.expiryDate) && !isExpiringSoon(d.expiryDate))
-
-    // Sort by urgency: expired first (most recently expired last), then expiring (soonest first), then active (soonest first)
-    const sortByExpiry = (a, b) => new Date(a.expiryDate) - new Date(b.expiryDate)
-
-    return {
-      all: [...expired.sort(sortByExpiry), ...expiring.sort(sortByExpiry), ...valid.sort(sortByExpiry)],
-      expired: expired.sort(sortByExpiry),
-      expiring: expiring.sort(sortByExpiry),
-      active: valid.sort(sortByExpiry),
-    }
-  }, [active])
-
-  const certFiltered = certData[certTab] || certData.all
 
   const reset = () => { setUf({ type: 'mfr_profile', name: '', issuer: defaultIssuer, issueDate: getToday(), expiryDate: '', orderId: '', mfrId: null, buyerId: '' }); setFileData(null); setFileErr('') }
 
@@ -84,28 +61,6 @@ export function AdminDocuments() {
     { v: 'compliance_cert', l: 'Compliance' },
     { v: 'factory_audit', l: 'Audit Reports' },
   ]
-
-  const certTabs = [
-    { id: 'all', l: `All (${certData.all.length})`, Icon: ClipboardList },
-    { id: 'active', l: `Active (${certData.active.length})`, Icon: CheckCircle2 },
-    { id: 'expiring', l: `Expiring (${certData.expiring.length})`, Icon: AlertTriangle },
-    { id: 'expired', l: `Expired (${certData.expired.length})`, Icon: XCircle },
-  ]
-
-  const getMfrName = (mfrId, doc) => {
-    if (!mfrId) return '—'
-    const u = users.find(usr => String(usr.id) === String(mfrId))
-    return u ? u.company : (doc?.uploadedByCompany || '—')
-  }
-
-  const daysUntilExpiry = d => {
-    if (!d) return null
-    const today = new Date(); today.setHours(0, 0, 0, 0)
-    const exp = new Date(d); exp.setHours(0, 0, 0, 0)
-    return Math.ceil((exp - today) / 86400000)
-  }
-
-  const certTypeName = type => DOC_TYPES.find(d => d.v === type)?.l || type
 
   // Hooks above must run on every render, so the loading gate sits after them.
   if (loading) return <LoadingScreen />
@@ -199,17 +154,7 @@ export function AdminDocuments() {
 
       <PageHeader title="Documents" subtitle={caps.isBuyer ? 'Your factories\' profiles, compliance certificates and audit reports' : 'Manufacturer profiles, compliance certificates and audit reports, and customer requests'} action={!caps.isBuyer && <Btn onClick={() => setShow(true)} icon={<Paperclip size={13} />}>Upload Document</Btn>} />
 
-      {/* Mode toggle: Documents vs Certificate Tracker */}
-      <div style={{ display: 'flex', gap: 0, borderBottom: `2px solid ${T.border}`, marginBottom: 16 }}>
-        {[{ id: 'docs', l: 'Documents', Icon: Folder }, { id: 'certs', l: 'Certificate Tracker', Icon: Shield }].map(m => (
-          <button key={m.id} onClick={() => setMode(m.id)}
-            style={{ padding: '10px 22px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: mode === m.id ? T.primary : T.textMuted, borderBottom: `2px solid ${mode === m.id ? T.primary : 'transparent'}`, marginBottom: -2, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-            <m.Icon size={15} />{m.l}
-          </button>
-        ))}
-      </div>
-
-      {mode === 'docs' && (
+      {(
         <>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
             {filterBtns.map(fb => (
@@ -273,88 +218,6 @@ export function AdminDocuments() {
               </div>
             )
           })()}
-        </>
-      )}
-
-      {mode === 'certs' && (
-        <>
-          {/* Summary stats */}
-          <Grid cols={4} gap={12} style={{ marginBottom: 18 }}>
-            <StatCard label="Total Certificates" value={certData.all.length} icon={<ClipboardList size={20} color={T.info} />} bg={T.infoBg} />
-            <StatCard label="Active" value={certData.active.length} icon={<CheckCircle2 size={20} color={T.success} />} bg={T.successBg} />
-            <StatCard label="Expiring (30d)" value={certData.expiring.length} icon={<AlertTriangle size={20} color={T.warning} />} bg={T.warningBg} />
-            <StatCard label="Expired" value={certData.expired.length} icon={<XCircle size={20} color={T.danger} />} bg={T.dangerBg} />
-          </Grid>
-
-          {(certData.expiring.length > 0 || certData.expired.length > 0) && (
-            <div style={{ marginBottom: 14 }}>
-              {certData.expired.length > 0 && <Alert type="danger">{certData.expired.length} certificate{certData.expired.length > 1 ? 's have' : ' has'} expired. Immediate renewal required.</Alert>}
-              {certData.expiring.length > 0 && <Alert type="warning">{certData.expiring.length} certificate{certData.expiring.length > 1 ? 's are' : ' is'} expiring within 30 days. Chase renewals now.</Alert>}
-            </div>
-          )}
-
-          {/* Certificate filter tabs */}
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-            {certTabs.map(ct => (
-              <button key={ct.id} onClick={() => setCertTab(ct.id)}
-                style={{ padding: '6px 16px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer', background: certTab === ct.id ? (ct.id === 'expired' ? T.dangerBg : ct.id === 'expiring' ? T.warningBg : ct.id === 'active' ? T.successBg : T.primary) : T.surface, color: certTab === ct.id ? (ct.id === 'expired' ? T.danger : ct.id === 'expiring' ? T.warning : ct.id === 'active' ? T.success : '#fff') : T.textMuted, border: certTab === ct.id ? 'none' : `1px solid ${T.border}`, fontFamily: 'inherit' }}>
-                <ct.Icon size={12} /> {ct.l}
-              </button>
-            ))}
-          </div>
-
-          {/* Certificate table */}
-          <Card pad={false}>
-            <div className="table-scroll">
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
-                <thead>
-                  <tr style={{ background: '#f8fafc' }}>
-                    {['Status', 'Certificate', 'Type', 'Manufacturer', 'Issuer', 'Expiry Date', 'Days Left'].map(h => (
-                      <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.07em', whiteSpace: 'nowrap' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {certFiltered.map(cert => {
-                    const days = daysUntilExpiry(cert.expiryDate)
-                    const expired = isExpired(cert.expiryDate)
-                    const expiring = isExpiringSoon(cert.expiryDate) && !expired
-                    const statusBg = expired ? T.dangerBg : expiring ? T.warningBg : T.successBg
-                    const statusColor = expired ? T.danger : expiring ? T.warning : T.success
-                    const StatusIcon = expired ? XCircle : expiring ? AlertTriangle : CheckCircle2
-                    const statusLabel = expired ? 'Expired' : expiring ? 'Expiring' : 'Active'
-                    const CertIcon = DOC_ICONS[cert.type] || FileText
-
-                    return (
-                      <tr key={cert.id} style={{ borderTop: `1px solid ${T.border}` }}>
-                        <td style={{ padding: '10px 16px' }}>
-                          <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: statusBg, color: statusColor, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                            <StatusIcon size={11} /> {statusLabel}
-                          </span>
-                        </td>
-                        <td style={{ padding: '10px 16px' }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: T.text, display: 'flex', alignItems: 'center', gap: 6 }}><CertIcon size={13} /> {cert.name}</div>
-                          <div style={{ fontSize: 10, color: T.textLight }}>Uploaded {fmtDate(cert.uploadedAt)}</div>
-                        </td>
-                        <td style={{ padding: '10px 16px', fontSize: 12, color: T.textMuted }}>{certTypeName(cert.type)}</td>
-                        <td style={{ padding: '10px 16px', fontSize: 12, color: T.textMuted, fontWeight: 600 }}>{getMfrName(cert.mfrId, cert)}</td>
-                        <td style={{ padding: '10px 16px', fontSize: 12, color: T.textMuted }}>{cert.issuer || '—'}</td>
-                        <td style={{ padding: '10px 16px', fontSize: 12, color: expired ? T.danger : expiring ? T.warning : T.text, fontWeight: 600 }}>{fmtDate(cert.expiryDate)}</td>
-                        <td style={{ padding: '10px 16px' }}>
-                          <span style={{ fontSize: 13, fontWeight: 800, color: statusColor }}>
-                            {expired ? `${Math.abs(days)}d overdue` : `${days}d`}
-                          </span>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                  {certFiltered.length === 0 && (
-                    <tr><td colSpan={7}><EmptyState icon={<Shield size={26} color={T.textLight} />} title="No certificates found" desc={certTab === 'all' ? 'Upload compliance certificates to track them here' : `No ${certTab} certificates`} /></td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </Card>
         </>
       )}
     </div>
