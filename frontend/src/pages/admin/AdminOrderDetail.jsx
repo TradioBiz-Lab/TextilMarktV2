@@ -141,6 +141,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
   const [heroPhotoFile, setHeroPhotoFile] = useState(null)
   const [heroPhotoErr, setHeroPhotoErr] = useState('')
   const [heroPhotoUploading, setHeroPhotoUploading] = useState(false)
+  const [openFolders, setOpenFolders] = useState({}) // PO and Invoice / Delivery documents: folded away until opened
   const [expandedDocKey, setExpandedDocKey] = useState(null) // which pending checklist row is open for upload
 
   // ── Manual TNA builder — one stage at a time, for an assignment that has
@@ -913,37 +914,55 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
             const dAsgn = order.assignments?.find(a => String(a.mid) === effectiveMid) || null
             const deliveryIdx = dAsgn ? (dAsgn.stages || []).findIndex(st => st.isDelivery) : -1
             const mayUploadDelivery = caps.uploadDeliveryDocs && deliveryIdx >= 0 && (!caps.isMfr || String(dAsgn.mid) === String(currentUser.id))
-            const folder = (title, hint, docsIn, action, empty) => (
-              <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, background: T.surface, minWidth: 0 }}>
-                <FlexRow justify="space-between" style={{ padding: '10px 12px', borderBottom: `1px solid ${T.border}` }}>
-                  <FlexRow gap={8}>
-                    <span style={{ fontSize: 12, fontWeight: 800, color: T.text }}>{title}</span>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, background: '#f1f5f9', border: `1px solid ${T.border}`, borderRadius: 10, padding: '0 7px', lineHeight: '18px' }}>{docsIn.length}</span>
-                  </FlexRow>
-                  {action}
-                </FlexRow>
-                <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {docsIn.length === 0
-                    ? <div style={{ fontSize: 12, color: T.textMuted, padding: '6px 4px' }}>{empty}</div>
-                    : docsIn.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} compact />)}
-                  {hint && <div style={{ fontSize: 11, color: T.textLight, padding: '2px 4px' }}>{hint}</div>}
+            // A folder is folded away until opened: the header says what is inside, the Upload button stays in reach.
+            const folder = (key, title, look, summary, docsIn, action, empty, hint) => {
+              const open = !!openFolders[key]
+              const toggle = () => setOpenFolders(p => ({ ...p, [key]: !p[key] }))
+              return (
+                <div style={{ border: `1px solid ${look.border}`, borderTop: `3px solid ${look.accent}`, borderRadius: 10, background: T.surface, minWidth: 0, overflow: 'hidden' }}>
+                  <div role="button" tabIndex={0} aria-expanded={open} onClick={toggle} onKeyDown={activateOnKey(toggle)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 12px', cursor: 'pointer', background: look.tint }}>
+                    <ChevronRight size={15} color={look.deep} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }} />
+                    <span style={{ fontSize: 13, fontWeight: 800, color: look.deep, whiteSpace: 'nowrap' }}>{title}</span>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: look.deep, background: '#fff', border: `1px solid ${look.border}`, borderRadius: 10, padding: '0 8px', lineHeight: '19px' }}>{docsIn.length}</span>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 600, color: '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{open ? '' : summary}</span>
+                    {action && <span onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>{action}</span>}
+                  </div>
+                  {open && (
+                    <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 6, borderTop: `1px solid ${look.border}` }}>
+                      {docsIn.length === 0
+                        ? <div style={{ fontSize: 12, fontWeight: 600, color: '#334155', padding: '6px 4px' }}>{empty}</div>
+                        : docsIn.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} compact />)}
+                      {hint && <div style={{ fontSize: 11, color: '#475569', padding: '2px 4px' }}>{hint}</div>}
+                    </div>
+                  )}
                 </div>
-              </div>
-            )
+              )
+            }
+            const WARM = { accent: '#ea580c', deep: '#9a3412', tint: '#fff4e8', border: '#fdba74' }
+            const COOL = { accent: '#2563eb', deep: '#1e3a8a', tint: '#eaf1ff', border: '#93c5fd' }
+            const countBy = (list, label) => {
+              const by = {}
+              for (const d of list) { const l = label(d); by[l] = (by[l] || 0) + 1 }
+              return Object.entries(by).map(([l, n]) => `${n} ${l}${n > 1 ? 's' : ''}`).join(' · ')
+            }
             return (
               <div style={{ borderTop: `1px solid ${T.border}`, marginTop: 10, paddingTop: 12 }}>
                 <div className="grid-responsive-2" style={{ gap: 12, alignItems: 'start' }}>
                   {caps.seePoInvoice && folder(
-                    'PO and Invoice', null, poDocs,
-                    caps.uploadPoInvoice && <Btn size="sm" variant="ghost" onClick={() => openDocUpload('PO')} icon={<Paperclip size={12} />}>Upload</Btn>,
+                    'po', 'PO and Invoice', WARM,
+                    poDocs.length ? countBy(poDocs, d => (d.type === 'invoice' ? 'invoice' : 'purchase order')) : 'Nothing yet',
+                    poDocs,
+                    caps.uploadPoInvoice && <Btn size="sm" variant="secondary" onClick={() => openDocUpload('PO')} icon={<Paperclip size={12} />}>Upload</Btn>,
                     'No purchase order or invoice yet.',
                   )}
                   {(order.assignments?.length || 0) > 0 && folder(
-                    'Delivery documents',
-                    !mayUploadDelivery && caps.uploadDeliveryDocs && deliveryIdx < 0 ? 'Open one manufacturer split to add delivery documents.' : null,
+                    'delivery', 'Delivery documents', COOL,
+                    deliveryDocs.length ? countBy(deliveryDocs, () => 'document') : 'Nothing yet',
                     deliveryDocs,
-                    mayUploadDelivery && <Btn size="sm" variant="ghost" onClick={() => openStageDocUpload(effectiveMid, deliveryIdx)} icon={<Paperclip size={12} />}>Upload</Btn>,
+                    mayUploadDelivery && <Btn size="sm" variant="secondary" onClick={() => openStageDocUpload(effectiveMid, deliveryIdx)} icon={<Paperclip size={12} />}>Upload</Btn>,
                     'No delivery documents yet. Packing lists and carton stickers go here.',
+                    !mayUploadDelivery && caps.uploadDeliveryDocs && deliveryIdx < 0 ? 'Open one manufacturer split to add delivery documents.' : null,
                   )}
                 </div>
                 {otherDocs.length > 0 && (

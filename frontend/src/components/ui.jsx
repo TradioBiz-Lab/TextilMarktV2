@@ -826,6 +826,14 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp, compa
   // The step's real name from the order's own plan; the standard 13-step list is never a fallback (it mislabels other plans).
   const stageName = isStageDoc ? (stageNameProp || stageNameForDoc(orders, doc) || `Stage ${doc.stageIndex + 1}`) : null
   const mfr = doc.mfrId ? users?.find(u => String(u.id) === String(doc.mfrId)) : null
+  // Inside a folder (compact) the card takes the folder's deeper colour, drops what the folder already says, and puts its
+  // buttons on their own row so a narrow column never squeezes the name down to "Invoice NBCB-000…".
+  const tone = !compact ? null
+    : ['PO', 'buyer_order', 'invoice'].includes(doc.type) ? { accent: '#ea580c', title: '#7c2d12', bg: '#ffedd5', fg: '#9a3412', bd: '#fdba74', tile: '#fff1e0' }
+    : doc.type === 'dispatch_docs' ? { accent: '#2563eb', title: '#1e3a8a', bg: '#dbeafe', fg: '#1e3a8a', bd: '#93c5fd', tile: '#e8f0ff' }
+    : { accent: '#475569', title: '#0f172a', bg: '#e2e8f0', fg: '#1e293b', bd: '#cbd5e1', tile: '#f1f5f9' }
+  const metaColor = compact ? '#334155' : T.textLight
+  const actionRow = compact ? { flex: '1 1 100%', paddingLeft: 46, flexWrap: 'wrap' } : { flexShrink: 0 }
 
   // ── Inline document viewer modal ──
   const viewer = (viewerBlob || viewerLoading) && (
@@ -868,7 +876,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp, compa
       <>
         {viewer}
         {editModal}
-        <div style={{ background: T.surface, borderRadius: 10, border: `1px solid ${T.border}`, marginBottom: 8, overflow: 'hidden' }}>
+        <div style={{ background: T.surface, borderRadius: 10, border: `1px solid ${T.border}`, ...(tone ? { borderLeft: `4px solid ${tone.accent}` } : {}), marginBottom: 8, overflow: 'hidden' }}>
           {!compact && (<>
           {/* Stage header bar */}
           <div style={{ background: '#f0f7ff', borderBottom: `1px solid #dbeafe`, padding: '6px 14px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -881,24 +889,24 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp, compa
           </div>
           </>)}
           {/* Doc body */}
-          <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 34, height: 34, borderRadius: T.radius.sm, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              {hasNotes && !hasFile ? <StickyNote size={16} color="#1d4ed8" /> : <DocIcon size={16} color="#1d4ed8" />}
+          <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: compact ? 'wrap' : 'nowrap' }}>
+            <div style={{ width: 34, height: 34, borderRadius: T.radius.sm, background: tone ? tone.tile : '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              {hasNotes && !hasFile ? <StickyNote size={16} color={tone ? tone.fg : '#1d4ed8'} /> : <DocIcon size={16} color={tone ? tone.fg : '#1d4ed8'} />}
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.name}</div>
+            <div style={{ flex: compact ? '1 1 160px' : 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: tone ? tone.title : T.text, ...(compact ? { wordBreak: 'break-word' } : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }) }}>{doc.name}</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 4 }}>
-                <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', whiteSpace: 'nowrap' }}>{typLabel}</span>
-                <span style={{ fontSize: 11, color: T.textLight, whiteSpace: 'nowrap' }}>{fmtShort(doc.issueDate || doc.uploadedAt)}</span>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10, background: tone ? tone.bg : '#eff6ff', color: tone ? tone.fg : '#1d4ed8', border: `1px solid ${tone ? tone.bd : '#bfdbfe'}`, whiteSpace: 'nowrap' }}>{typLabel}</span>
+                <span style={{ fontSize: 11, color: metaColor, fontWeight: compact ? 600 : 400, whiteSpace: 'nowrap' }}>{fmtShort(doc.issueDate || doc.uploadedAt)}</span>
                 {uploaderName && (
-                  <span style={{ fontSize: 11, color: T.textLight }}>
+                  <span style={{ fontSize: 11, color: metaColor, fontWeight: compact ? 600 : 400 }}>
                     · {uploaderName}
                     {uploaderTag && <span style={{ marginLeft: 5, fontSize: 10, fontWeight: 700, color: T.textMuted, background: '#f1f5f9', border: `1px solid ${T.border}`, padding: '1px 6px', borderRadius: 6 }}>{uploaderTag}</span>}
                   </span>
                 )}
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', ...actionRow }}>
               {hasFile ? (
                 <>
                   <Btn size="sm" variant="secondary" onClick={openFile} disabled={fetching} icon={hasExternal ? <Link2 size={13} /> : <Eye size={13} />}>{hasExternal ? 'Open Link' : 'View'}</Btn>
@@ -929,18 +937,18 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp, compa
     <>
       {viewer}
       {editModal}
-      <div style={{ background: T.surface, borderRadius: 10, border: `1px solid ${exp || expd ? T.warningBorder : T.border}`, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
-        <div style={{ width: 38, height: 38, borderRadius: T.radius.sm, background: T.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><DocIcon size={17} color={T.primaryDark} /></div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div onClick={hasFile ? openFile : undefined} role={hasFile ? 'button' : undefined} tabIndex={hasFile ? 0 : undefined} onKeyDown={hasFile ? activateOnKey(openFile) : undefined} style={{ fontSize: 13, fontWeight: 700, color: hasFile ? T.primary : T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: hasFile ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 5 }} title={hasFile ? (hasExternal ? 'Click to open link' : 'Click to view') : undefined}>{doc.name}{hasExternal && <Link2 size={11} style={{ opacity: 0.7, flexShrink: 0 }} />}</div>
+      <div style={{ background: T.surface, borderRadius: 10, border: `1px solid ${exp || expd ? T.warningBorder : T.border}`, ...(tone ? { borderLeft: `4px solid ${tone.accent}` } : {}), padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
+        <div style={{ width: 38, height: 38, borderRadius: T.radius.sm, background: tone ? tone.tile : T.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><DocIcon size={17} color={tone ? tone.fg : T.primaryDark} /></div>
+        <div style={{ flex: compact ? '1 1 160px' : 1, minWidth: 0 }}>
+          <div onClick={hasFile ? openFile : undefined} role={hasFile ? 'button' : undefined} tabIndex={hasFile ? 0 : undefined} onKeyDown={hasFile ? activateOnKey(openFile) : undefined} style={{ fontSize: 13, fontWeight: 700, color: tone ? tone.title : (hasFile ? T.primary : T.text), ...(compact ? { wordBreak: 'break-word' } : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }), cursor: hasFile ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 5 }} title={hasFile ? (hasExternal ? 'Click to open link' : 'Click to view') : undefined}>{doc.name}{hasExternal && <Link2 size={11} style={{ opacity: 0.7, flexShrink: 0 }} />}</div>
           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center', marginTop: 5 }}>
-            <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10, background: '#f1f5f9', color: T.textMuted, border: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>{typLabel}</span>
-            {doc.orderId && <span style={{ fontSize: 11, color: T.primary, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Package size={11} /> {doc.orderId}</span>}
-            {!doc.orderId && doc.masterOrderId && <span title="Attached to the whole master order" style={{ fontSize: 11, color: T.primary, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Folder size={11} /> {doc.masterOrderId}</span>}
-            {mfr && <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Factory size={11} /> {mfr.company}</span>}
-            <span style={{ fontSize: 11, color: T.textLight, whiteSpace: 'nowrap' }}>{fmtShort(doc.issueDate || doc.uploadedAt)}</span>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10, background: tone ? tone.bg : '#f1f5f9', color: tone ? tone.fg : T.textMuted, border: `1px solid ${tone ? tone.bd : T.border}`, whiteSpace: 'nowrap' }}>{typLabel}</span>
+            {!compact && doc.orderId && <span style={{ fontSize: 11, color: T.primary, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Package size={11} /> {doc.orderId}</span>}
+            {!compact && !doc.orderId && doc.masterOrderId && <span title="Attached to the whole master order" style={{ fontSize: 11, color: T.primary, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Folder size={11} /> {doc.masterOrderId}</span>}
+            {!compact && mfr && <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Factory size={11} /> {mfr.company}</span>}
+            <span style={{ fontSize: 11, color: metaColor, fontWeight: compact ? 600 : 400, whiteSpace: 'nowrap' }}>{fmtShort(doc.issueDate || doc.uploadedAt)}</span>
             {uploaderName && (
-              <span style={{ fontSize: 11, color: T.textLight }}>
+              <span style={{ fontSize: 11, color: metaColor, fontWeight: compact ? 600 : 400 }}>
                 · {uploaderName}
                 {uploaderTag && <span style={{ marginLeft: 5, fontSize: 10, fontWeight: 700, color: T.textMuted, background: '#f1f5f9', border: `1px solid ${T.border}`, padding: '1px 6px', borderRadius: 6 }}>{uploaderTag}</span>}
               </span>
@@ -956,7 +964,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp, compa
             <div style={{ fontSize: 10, color: T.textLight }}>Exp: {fmtShort(doc.expiryDate)}</div>
           </div>
         )}
-        <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', ...actionRow }}>
           {hasFile ? (
             <>
               <Btn size="sm" variant="secondary" onClick={openFile} disabled={fetching} icon={hasExternal ? <Link2 size={13} /> : <Eye size={13} />}>{hasExternal ? 'Open Link' : 'View'}</Btn>
