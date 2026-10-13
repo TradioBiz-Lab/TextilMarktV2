@@ -252,33 +252,39 @@ export function AdminDashboard({ onNavigate, onOpen }) {
         </Modal>
       )}
 
-      {/* ── Stat Cards ── every card opens the list behind its number ── */}
-      <Grid cols={4} style={{ marginBottom: 22 }}>
-        {caps.isAdmin ? (
-          <>
-            <StatCard label="Active Buyers" value={buyers.length} icon={<Building2 size={19} color="#1d4ed8" />} bg="#dbeafe" onClick={caps.seeUserSetup ? () => onNavigate && onNavigate('users') : undefined} hint="Open User Setup" />
-            <StatCard label="Manufacturers" value={mfrs.length} icon={<Factory size={19} color="#92400e" />} bg="#fef9c3" onClick={caps.seeUserSetup ? () => onNavigate && onNavigate('users') : undefined} hint="Open User Setup" />
-          </>
-        ) : (
-          <>
-            {/* The other side of the relationship: a customer's factories, a factory's customers. */}
-            <StatCard label={caps.isBuyer ? 'Factories' : 'Customers'} value={counterparties} icon={caps.isBuyer ? <Factory size={19} color="#92400e" /> : <Building2 size={19} color="#1d4ed8" />} bg={caps.isBuyer ? '#fef9c3' : '#dbeafe'} />
-            <StatCard label="Delivered" value={allTxns.filter(t => t.status === 'Delivered').length} icon={<Truck size={19} color={T.success} />} bg={T.successBg} onClick={() => onNavigate && onNavigate('reports')} hint="Open Reports" />
-          </>
-        )}
-        <StatCard label="Total Styles" value={allOrders.length} icon={<Shirt size={19} color={T.primaryDeep} />} bg={T.primaryLight} onClick={() => onNavigate && onNavigate('orders')} hint="Open Orders" />
-        <StatCard label="Active Alerts" value={delayed.length + expDocs.length} icon={<Siren size={19} color={T.danger} />} bg={T.dangerBg}
-          onClick={() => { setOpenSections(p => ({ ...p, alerts: true })); setTimeout(() => document.getElementById('dash-alerts')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50) }} hint="Show the alerts" />
-      </Grid>
-
-      {caps.isAdmin && (
-        <Grid cols={4} style={{ marginBottom: 22 }}>
-          <StatCard label="Products Delivered" value={prod.productsDelivered.toLocaleString()} icon={<Truck size={19} color={T.success} />} bg={T.successBg} onClick={() => onNavigate && onNavigate('reports')} hint="Open Reports" />
-          <StatCard label="Products in Production" value={prod.productsInProduction.toLocaleString()} icon={<Package size={19} color="#92400e" />} bg="#fef9c3" onClick={() => onNavigate && onNavigate('orders')} hint="Open Orders" />
-          <StatCard label="Styles in Pre-production" value={inDevelopment} icon={<FlaskConical size={19} color="#5b21b6" />} bg="#ede9fe" onClick={() => onNavigate && onNavigate('orders', { phase: 'development' })} hint="Open Sampling & Development" />
-          <StatCard label="Styles in Production" value={prod.stylesInProduction} icon={<Scissors size={19} color="#92400e" />} bg="#fef9c3" onClick={() => onNavigate && onNavigate('orders')} hint="Open Orders" />
-        </Grid>
-      )}
+      {/* ── Stat cards ── grouped under a heading, each tile named by its status; every tile opens the list behind it ── */}
+      {(() => {
+        const go = (view, params) => () => onNavigate && onNavigate(view, params)
+        const openUsers = caps.seeUserSetup ? go('users') : undefined
+        const group = (title, tiles) => (
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 2px 8px' }}>{title}</div>
+            <Grid cols={tiles.length} gap={12}>{tiles}</Grid>
+          </div>
+        )
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18, marginBottom: 22 }}>
+            {group('Styles', [
+              <StatCard key="total" label="Total" value={allOrders.length} icon={<Shirt size={19} color={T.primaryDeep} />} bg={T.primaryLight} onClick={go('orders')} hint="Open Orders" />,
+              <StatCard key="deliv" label="Delivered" value={prod.stylesDelivered} icon={<Truck size={19} color={T.success} />} bg={T.successBg} onClick={go('reports')} hint="Open Reports" />,
+              <StatCard key="prod" label="In production" value={prod.stylesInProduction} icon={<Scissors size={19} color="#92400e" />} bg="#fef9c3" onClick={go('orders')} hint="Open Orders" />,
+              <StatCard key="pre" label="In pre-production" value={inDevelopment} icon={<FlaskConical size={19} color="#5b21b6" />} bg="#ede9fe" onClick={go('orders', { phase: 'development' })} hint="Open Sampling & Development" />,
+            ])}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18 }}>
+              {caps.isAdmin && group('Products (pieces)', [
+                <StatCard key="pdeliv" label="Delivered" value={prod.productsDelivered.toLocaleString()} icon={<Truck size={19} color={T.success} />} bg={T.successBg} onClick={go('reports')} hint="Open Reports" />,
+                <StatCard key="pprod" label="In production" value={prod.productsInProduction.toLocaleString()} icon={<Package size={19} color="#92400e" />} bg="#fef9c3" onClick={go('orders')} hint="Open Orders" />,
+              ])}
+              {group(caps.isAdmin ? 'Network' : (caps.isBuyer ? 'Your factories' : 'Your customers'), caps.isAdmin ? [
+                <StatCard key="buyers" label="Customers" value={buyers.length} icon={<Building2 size={19} color="#1d4ed8" />} bg="#dbeafe" onClick={openUsers} hint="Open User Setup" />,
+                <StatCard key="mfrs" label="Manufacturers" value={mfrs.length} icon={<Factory size={19} color="#92400e" />} bg="#fef9c3" onClick={openUsers} hint="Open User Setup" />,
+              ] : [
+                <StatCard key="cp" label={caps.isBuyer ? 'Factories' : 'Customers'} value={counterparties} icon={caps.isBuyer ? <Factory size={19} color="#92400e" /> : <Building2 size={19} color="#1d4ed8" />} bg={caps.isBuyer ? '#fef9c3' : '#dbeafe'} />,
+              ])}
+            </div>
+          </div>
+        )
+      })()}
 
       <DashboardSummary />
 

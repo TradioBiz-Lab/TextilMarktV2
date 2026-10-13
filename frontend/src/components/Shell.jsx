@@ -171,6 +171,7 @@ export function Shell({ view, setView, children, onOpenOrder, onOpenLink }) {
             </button>
             {/* Desktop shows the logo in the sidebar; this copy appears only when the sidebar is a hidden drawer (see .header-logo). */}
             <div className="header-logo"><Logo size={28} /></div>
+            <div id="shell-title" className="header-title" />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ position: 'relative' }}>
