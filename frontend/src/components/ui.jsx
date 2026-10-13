@@ -705,7 +705,11 @@ function DocEditModal({ doc, onClose, onSaved }) {
   )
 }
 
-export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
+// Types the main lists have no label for, so a chip never shows a raw code like test_report.
+const READABLE_DOC_TYPE = { test_report: 'Test report', lab_dip: 'Lab dip', measurements: 'Measurements', pattern: 'Pattern', floor_evidence: 'Evidence', dispatch_docs: 'Delivery document' }
+
+// compact: for a list already grouped under its step heading, so the card drops the stage / order / manufacturer bar it would only repeat.
+export function DocCard({ doc, users, onGetData, stageName: stageNameProp, compact = false }) {
   const { currentUser, deleteDoc, orders } = useApp()
   const toast = useToast()
   const [showEdit, setShowEdit] = useState(false)
@@ -740,7 +744,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
     : null
   const exp = isExpiringSoon(doc.expiryDate), expd = isExpired(doc.expiryDate)
   const DocIcon = DOC_ICONS[doc.type] || FileText
-  const typLabel = DOC_TYPES.find(d => d.v === doc.type)?.l || STAGE_DOC_TYPES.find(d => d.v === doc.type)?.l || doc.type
+  const typLabel = DOC_TYPES.find(d => d.v === doc.type)?.l || STAGE_DOC_TYPES.find(d => d.v === doc.type)?.l || READABLE_DOC_TYPE[doc.type] || String(doc.type || '').replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())
   const [fileData, setFileData] = useState(null)
   const [fetching, setFetching] = useState(false)
   const [viewerBlob, setViewerBlob] = useState(null) // { url, mimeType, revoke }
@@ -865,6 +869,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
         {viewer}
         {editModal}
         <div style={{ background: T.surface, borderRadius: 10, border: `1px solid ${T.border}`, marginBottom: 8, overflow: 'hidden' }}>
+          {!compact && (<>
           {/* Stage header bar */}
           <div style={{ background: '#f0f7ff', borderBottom: `1px solid #dbeafe`, padding: '6px 14px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 10, fontWeight: 800, background: '#1d4ed8', color: '#fff', padding: '2px 8px', borderRadius: 6, letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
@@ -874,6 +879,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp }) {
             {!doc.orderId && doc.masterOrderId && <span title="Attached to the whole master order" style={{ fontSize: 11, color: T.primary, fontWeight: 700, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Folder size={11} /> {doc.masterOrderId}</span>}
             {mfr && <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Factory size={11} /> {mfr.company}</span>}
           </div>
+          </>)}
           {/* Doc body */}
           <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ width: 34, height: 34, borderRadius: T.radius.sm, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
