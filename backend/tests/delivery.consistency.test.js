@@ -133,14 +133,44 @@ describe('changing a target keeps the mirror intact', () => {
     assert.equal(s.unitsDone, 100)
   })
 
-  test('raising the order quantity reopens a finished quantity stage', async () => {
+  // Product decision (Oct 2026): correcting the order quantity changes it everywhere, and steps that
+  // really finished stay finished. It used to reopen them as "100 of 140", which on a live order flipped
+  // fourteen completed steps to in progress at once.
+  test('raising the order quantity keeps a finished quantity stage finished, at the new quantity', async () => {
     const { api, base, read } = await arrange()
     assert.equal((await api.post(`${base}/stages/0`, { status: 'done' })).status, 200)
+    const before = (await read()).stages[0]
     const edit = await api.post(`/api/orders/${ORDER_ID}`, { totalQty: 140 })
     assert.equal(edit.status, 200, JSON.stringify(edit.body))
     const s = (await read()).stages[0]
     assert.equal(s.totalUnits, 140)
-    assert.equal(s.status, 'in_progress')
-    assert.equal(s.unitsDone, 100)
+    assert.equal(s.unitsDone, 140, 'units follow the new quantity')
+    assert.equal(s.status, 'done')
+    assert.equal(s.actualEnd, before.actualEnd, 'the completion date is kept')
+  })
+
+  test('lowering the order quantity keeps a finished stage finished too', async () => {
+    const { api, base, read } = await arrange()
+    assert.equal((await api.post(`${base}/stages/0`, { status: 'done' })).status, 200)
+    assert.equal((await api.post(`/api/orders/${ORDER_ID}`, { totalQty: 60 })).status, 200)
+    const s = (await read()).stages[0]
+    assert.deepEqual([s.totalUnits, s.unitsDone, s.status], [60, 60, 'done'])
+  })
+
+  test('a stage still in progress keeps its units while its target follows', async () => {
+    const { api, base, read } = await arrange()
+    assert.equal((await api.post(`${base}/stages/0`, { unitsDone: 40 })).status, 200)
+    assert.equal((await api.post(`/api/orders/${ORDER_ID}`, { totalQty: 140 })).status, 200)
+    const s = (await read()).stages[0]
+    assert.deepEqual([s.totalUnits, s.unitsDone, s.status], [140, 40, 'in_progress'])
+  })
+
+  test('a finished stage with its own target is left alone', async () => {
+    const { api, base, read } = await arrange()
+    assert.equal((await api.post(`${base}/stages/0/eta`, { totalUnits: 3 })).status, 200)
+    assert.equal((await api.post(`${base}/stages/0`, { status: 'done' })).status, 200)
+    assert.equal((await api.post(`/api/orders/${ORDER_ID}`, { totalQty: 140 })).status, 200)
+    const s = (await read()).stages[0]
+    assert.deepEqual([s.totalUnits, s.unitsDone, s.status], [3, 3, 'done'])
   })
 })
