@@ -33,7 +33,7 @@ export function capsFor(user) {
     submitRequirement: isBuyer,
     manageCertificates: isMfr,
     // Admin-only surfaces
-    seeUsers: isAdmin, seeAudit: isAdmin, seeReviewQueue: isAdmin, seeRibbonsAdmin: isAdmin, seeBuyerRequests: isAdmin,
+    seeUsers: isAdmin, seeAudit: isAdmin, seeReviewQueue: false /* retired until the WhatsApp integration; set to isAdmin to bring it back */, seeRibbonsAdmin: isAdmin, seeBuyerRequests: isAdmin,
   }
 }
 

@@ -2,6 +2,7 @@ import { ViewAsPicker } from './ViewAsPicker.jsx'  // sandbox-only, remove with 
 import { useState, useEffect } from 'react'
 import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot, Hexagon, Inbox } from '../icons.jsx'
 import { T } from '../constants.js'
+import { capsFor } from '../caps.js'
 import { Btn, RibbonBanner } from './ui.jsx'
 import { NotifPanel } from './NotifPanel.jsx'
 import { KriyaaWidget } from './KriyaaWidget.jsx'
@@ -80,7 +81,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
     { id: 'action_items', icon: ListChecks, label: 'Action Items' },
     { id: 'kriyaa', icon: Bot, label: 'Kriyaa' },
     { id: 'orders', icon: Package, label: isCustomer ? 'Order TnA' : 'Orders' },
-    ...(user.role === 'admin' ? [{ id: 'review', icon: Inbox, label: 'Review Queue' }] : []),
+    ...(capsFor(user).seeReviewQueue ? [{ id: 'review', icon: Inbox, label: 'Review Queue' }] : []),
     { id: 'documents', icon: Folder, label: 'Documents' },
     ...(isCustomer ? [] : [reportsTab]),
     ...(user.role === 'admin' ? [{ id: 'audit', icon: History, label: 'Audit Log' }] : []),
