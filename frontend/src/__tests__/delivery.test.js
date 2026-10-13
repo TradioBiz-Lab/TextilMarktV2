@@ -115,3 +115,11 @@ describe('phase', () => {
     expect(productionMetrics(orders).productsDelivered).toBe(10)
   })
 })
+
+describe('a style in sampling and development', () => {
+  test('is never delivered, even when every development step is done', () => {
+    const steps = [{ name: 'Request Received', kind: 'milestone', status: 'done', unitsDone: 1, totalUnits: 1 }, { name: 'Ready for Production', kind: 'milestone', status: 'done', unitsDone: 1, totalUnits: 1 }]
+    expect(deliveryStatus({ phase: 'development', delivery: null }, { stages: steps }).delivered).toBe(false)
+    expect(deliveryStatus({ phase: 'production', delivery: null }, { stages: steps }).delivered).toBe(true)   // old plans with no Delivery step
+  })
+})

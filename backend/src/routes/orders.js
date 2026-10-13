@@ -305,7 +305,8 @@ export async function validateAndCreateOrder({ id, buyerId, product, styleNumber
   // id 'auto' asks the server to number the order (a brand or manufacturer never picks its own;
   // see lib/counters.js). Anything else is the ID the caller chose, validated below.
   const autoId = id === 'auto'
-  if ((!autoId && !id) || !buyerId || !product || !totalQty || !delivery)
+  // A style in Sampling & Development has no delivery date yet; it is set when the style moves to production.
+  if ((!autoId && !id) || !buyerId || !product || !totalQty || (!delivery && phase !== 'development'))
     return { ok: false, error: 'Missing required fields' }
   if ((!autoId && typeof id !== 'string') || typeof product !== 'string')
     return { ok: false, error: 'Invalid input types' }
@@ -330,8 +331,8 @@ export async function validateAndCreateOrder({ id, buyerId, product, styleNumber
     return { ok: false, error: 'Category too long' }
   if (season && !VALID_SEASONS.includes(season))
     return { ok: false, error: `Invalid season. Must be one of: ${VALID_SEASONS.join(', ')}` }
-  const deliveryDate = new Date(delivery)
-  if (isNaN(deliveryDate.getTime()))
+  const deliveryDate = delivery ? new Date(delivery) : null
+  if (deliveryDate && isNaN(deliveryDate.getTime()))
     return { ok: false, error: 'Invalid delivery date' }
   // Manufacturer assignment is optional at creation — a style can be created
   // "unassigned" (see the creation wizard) and get its manufacturer + TNA
@@ -339,6 +340,8 @@ export async function validateAndCreateOrder({ id, buyerId, product, styleNumber
   // legacy single-order form and CSV bulk-upload path), they're validated in
   // full exactly as before.
   const hasAssignments = Array.isArray(asgns) && asgns.length > 0
+  if (hasAssignments && !deliveryDate)
+    return { ok: false, error: 'Add the manufacturer after creating the style: a style in Sampling & Development has no delivery date, and a plan with manufacturers needs one' }
   if (ecommerceLink !== undefined && ecommerceLink !== null) {
     if (typeof ecommerceLink !== 'string') return { ok: false, error: 'E-commerce link must be text' }
     if (ecommerceLink.trim().length > 2000) return { ok: false, error: 'E-commerce link too long' }
@@ -569,8 +572,8 @@ export async function validateAndCreateOrder({ id, buyerId, product, styleNumber
       _id: orderId, createdBy: createdBy || null, createdByRole: createdByRole || null,
       buyerId, product, styleNumber: styleNumber ? styleNumber.trim() : '', category, season, phase: phase || 'production', totalQty, masterOrderId: masterOrderId || null,
       imageDataUrl: imageDataUrl || null, imageUrl: imageUrl ? imageUrl.trim() : null,
-      delivery: new Date(delivery),
-      baselineDelivery: new Date(delivery),
+      delivery: deliveryDate,
+      baselineDelivery: deliveryDate,
       colourways: colourwaysResolved,
       fabricDetails: fabricDetailsResolved,
       ecommerceLink: normalizeLink(ecommerceLink),
@@ -580,7 +583,7 @@ export async function validateAndCreateOrder({ id, buyerId, product, styleNumber
         mfrId: a.mid, qty: a.qty, status: 'Processing',
         sub: a.sub || `M${i + 1}`, note: '',
         // A deferred plan starts with just the mandatory Delivery step; the schedule is built afterwards.
-        stages: deferPlan ? [...(phase === 'development' ? makeDevelopmentStages(new Date().toISOString().slice(0, 10)) : []), makeDeliveryStage(new Date(delivery).toISOString().slice(0, 10))] : stages.map((name, si) => {
+        stages: deferPlan ? (phase === 'development' ? makeDevelopmentStages(new Date().toISOString().slice(0, 10)) : [makeDeliveryStage(new Date(delivery).toISOString().slice(0, 10))]) : stages.map((name, si) => {
           const kind = stageKindsResolved[si]
           // A milestone or checklist stage has no meaningful garment count, so it
           // defaults to a target of 1 rather than the assignment quantity — the
@@ -846,11 +849,11 @@ router.post('/:orderId/assignments', requireAuth, requireAssigner, updateLimiter
     const order = await Order.findByIdAndUpdate(
       orderId,
       // Starts with just the mandatory Delivery step; the TNA builder adds the rest in front of it. A style still
-      // in Sampling & Development starts with the standard development plan in front of Delivery instead.
-      { $push: { assignments: { mfrId, qty: aqty, status: 'Processing', sub: nextSub, note: '', stages: [
-        ...(existing.phase === 'development' ? makeDevelopmentStages(new Date().toISOString().slice(0, 10)) : []),
-        makeDeliveryStage(new Date(existing.delivery).toISOString().slice(0, 10)),
-      ] } } },
+      // in Sampling & Development starts with the standard development plan instead, and no Delivery step yet.
+      { $push: { assignments: { mfrId, qty: aqty, status: 'Processing', sub: nextSub, note: '', stages: existing.phase === 'development'
+        // No Delivery step until the style moves to production and gets a delivery date.
+        ? makeDevelopmentStages(new Date().toISOString().slice(0, 10))
+        : [makeDeliveryStage(new Date(existing.delivery).toISOString().slice(0, 10))] } } },
       { new: true }
     ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
 
@@ -2568,8 +2571,19 @@ router.post('/:id', requireAuth, requireOrderOwner, updateLimiter, async (req, r
       // a genuinely new one, gets it backfilled here; after that it's frozen.
       if (!existing.baselineDelivery && existing.delivery && d.getTime() !== new Date(existing.delivery).getTime()) {
         updates.baselineDelivery = existing.delivery
+      } else if (!existing.baselineDelivery && !existing.delivery) {
+        updates.baselineDelivery = d   // the first date a style in Sampling & Development is given is its original promise
       }
       updates.delivery = d
+    }
+
+    // Moving a style out of Sampling & Development needs a delivery date, and its plans then end in the mandatory
+    // Delivery step they did not have while it was being developed.
+    let promoteDeliveryISO = null
+    if (existing.phase === 'development' && updates.phase === 'production') {
+      const when = updates.delivery || existing.delivery
+      if (!when) return res.status(400).json({ error: 'Set a delivery date to move this style to production' })
+      promoteDeliveryISO = new Date(when).toISOString().slice(0, 10)
     }
 
     if (colourways !== undefined) {
@@ -2645,6 +2659,19 @@ router.post('/:id', requireAuth, requireOrderOwner, updateLimiter, async (req, r
     ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
 
     if (!order) return res.status(404).json({ error: 'Order not found' })
+
+    if (promoteDeliveryISO) {
+      let added = false
+      for (let ai = 0; ai < (order.assignments || []).length; ai++) {
+        if ((order.assignments[ai].stages || []).some(st => st.isDelivery)) continue
+        await Order.updateOne({ _id: orderId }, { $push: { [`assignments.${ai}.stages`]: makeDeliveryStage(promoteDeliveryISO) } })
+        added = true
+      }
+      if (added) {
+        const fresh = await Order.findById(orderId).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+        if (fresh) Object.assign(order, fresh)
+      }
+    }
 
     const changedFields = Object.keys(updates).join(', ')
     await AuditLog.create({

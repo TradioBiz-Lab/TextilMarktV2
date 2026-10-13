@@ -54,7 +54,7 @@ export function EditOrderModal({ order, onClose, onSave }) {
     if (!f.product.trim()) { setErr('Product name is required'); return }
     const qty = parseInt(f.totalQty, 10)
     if (isNaN(qty) || qty < 1) { setErr('Total quantity must be a positive number'); return }
-    if (!f.delivery) { setErr('Delivery date is required'); return }
+    if (!f.delivery && f.phase !== 'development') { setErr('A delivery date is needed once a style is in production'); return }
 
     const payload = {
       product: f.product.trim(),
@@ -63,7 +63,7 @@ export function EditOrderModal({ order, onClose, onSave }) {
       season: f.season || undefined,
       ...(mayMovePhase && f.phase !== phaseOf(order) ? { phase: f.phase } : {}),
       totalQty: qty,
-      delivery: f.delivery,
+      ...(f.delivery ? { delivery: f.delivery } : {}),
       colourways: colourways.filter(c => c.name.trim()).map(c => ({ name: c.name.trim(), code: c.code.trim(), hex: c.hex.trim() })),
       fabricDetails: fabrics.filter(fb => fb.name.trim()).map(fb => ({ name: fb.name.trim(), composition: fb.composition.trim(), gsm: fb.gsm.trim(), supplier: fb.supplier.trim() })),
       ecommerceLink: f.ecommerceLink.trim(),
@@ -164,7 +164,7 @@ export function EditOrderModal({ order, onClose, onSave }) {
               hint={(order.assignments || []).length === 1 ? 'Also updates the manufacturer quantity and every step target. Finished steps stay finished.' : undefined}
             />
             <Input
-              label="Expected Delivery *"
+              label={f.phase === 'development' ? 'Expected Delivery' : 'Expected Delivery *'}
               type="date"
               value={f.delivery}
               onChange={set('delivery')}
