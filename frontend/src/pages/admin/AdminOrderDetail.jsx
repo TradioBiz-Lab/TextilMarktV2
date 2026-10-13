@@ -721,13 +721,13 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                   <div role="button" tabIndex={0} aria-expanded={open} onClick={toggle} onKeyDown={activateOnKey(toggle)}
                     style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 14px', minHeight: 56, cursor: 'pointer' }}>
                     <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap' }}>{title}</span>
-                    <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 600, color: '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{open ? '' : summary}</span>
-                    {action && <span onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>{action}</span>}
+                    <span style={{ flex: 1 }} />
                     {docChip(filed, filed ? `${docsIn.length} filed` : 'Pending')}
                     <ChevronRight size={14} color="#475569" style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }} />
                   </div>
                   {open && (
                     <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 6, borderTop: `1px solid ${T.border}` }}>
+                      {action && <div>{action}</div>}
                       {docsIn.length === 0
                         ? <div style={{ fontSize: 12, fontWeight: 600, color: '#334155', padding: '6px 4px' }}>{empty}</div>
                         : docsIn.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} compact />)}
