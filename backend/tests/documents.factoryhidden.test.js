@@ -44,7 +44,7 @@ describe('what a factory can see', () => {
 
   test('and it cannot open them directly either', async () => {
     const { mfr, ids } = await arrange()
-    for (const k of ['po', 'invoice', 'buyerOrder']) assert.equal((await as(mfr).get(`/api/documents/${ids[k]}/data`)).status, 404, k)
+    for (const k of ['po', 'invoice', 'buyerOrder']) assert.equal((await as(mfr).get(`/api/documents/${ids[k]}/data`)).status, 403, k)
     assert.equal((await as(mfr).get(`/api/documents/${ids.packing}/data`)).status, 200)
   })
 
