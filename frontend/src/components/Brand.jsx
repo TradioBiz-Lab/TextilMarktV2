@@ -6,7 +6,7 @@ import { T } from '../constants.js'
 // brand from.
 export { BRAND_NAVY, BRAND_ORANGE, MARK_SIZE, MARK_GEOMETRY, MARK_SVG, markSvg } from '../brandMark.js'
 
-const FONT = "'Inter Variable', 'Inter', system-ui, sans-serif"
+const FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Inter Variable', 'Inter', 'Segoe UI', system-ui, sans-serif"
 
 /**
  * The Tradio T: a navy tile with an orange T made of two bars. Same drawing as the website icon.
