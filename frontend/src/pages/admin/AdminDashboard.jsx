@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { DashboardSummary } from '../../components/DashboardSummary.jsx'
 import { capsFor } from '../../caps.js'
-import { ShoppingBag, Factory, Package, Siren, Target, Check, Shirt, Layers, ClipboardList, Megaphone, ChevronRight } from '../../icons.jsx'
+import { ShoppingBag, Factory, Package, Siren, Target, Check, Shirt, Layers, ClipboardList, Megaphone, ChevronRight, Building2, Truck, FlaskConical, Scissors } from '../../icons.jsx'
 import { T, ST, productionMetrics, productionOrders, developmentOrders, isExpiringSoon, isExpired, getToday, dayNumber, effectiveEta, withBuyerPrefix } from '../../constants.js'
 import { StatCard, Card, Grid, EmptyState, Mono, PageHeader, Badge, Btn, FlexRow, Modal, Select, Textarea, Input, Alert, LoadingScreen, DocCard } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -252,30 +252,31 @@ export function AdminDashboard({ onNavigate, onOpen }) {
         </Modal>
       )}
 
-      {/* ── Stat Cards ── */}
+      {/* ── Stat Cards ── every card opens the list behind its number ── */}
       <Grid cols={4} style={{ marginBottom: 22 }}>
         {caps.isAdmin ? (
           <>
-            <StatCard label="Active Buyers" value={buyers.length} icon={<ShoppingBag size={19} color="#1d4ed8" />} bg="#dbeafe" />
-            <StatCard label="Manufacturers" value={mfrs.length} icon={<Factory size={19} color="#92400e" />} bg="#fef9c3" />
+            <StatCard label="Active Buyers" value={buyers.length} icon={<Building2 size={19} color="#1d4ed8" />} bg="#dbeafe" onClick={caps.seeUserSetup ? () => onNavigate && onNavigate('users') : undefined} hint="Open User Setup" />
+            <StatCard label="Manufacturers" value={mfrs.length} icon={<Factory size={19} color="#92400e" />} bg="#fef9c3" onClick={caps.seeUserSetup ? () => onNavigate && onNavigate('users') : undefined} hint="Open User Setup" />
           </>
         ) : (
           <>
             {/* The other side of the relationship: a customer's factories, a factory's customers. */}
-            <StatCard label={caps.isBuyer ? 'Factories' : 'Customers'} value={counterparties} icon={caps.isBuyer ? <Factory size={19} color="#92400e" /> : <ShoppingBag size={19} color="#1d4ed8" />} bg={caps.isBuyer ? '#fef9c3' : '#dbeafe'} />
-            <StatCard label="Delivered" value={allTxns.filter(t => t.status === 'Delivered').length} icon={<Check size={19} color={T.success} strokeWidth={2.5} />} bg={T.successBg} />
+            <StatCard label={caps.isBuyer ? 'Factories' : 'Customers'} value={counterparties} icon={caps.isBuyer ? <Factory size={19} color="#92400e" /> : <Building2 size={19} color="#1d4ed8" />} bg={caps.isBuyer ? '#fef9c3' : '#dbeafe'} />
+            <StatCard label="Delivered" value={allTxns.filter(t => t.status === 'Delivered').length} icon={<Truck size={19} color={T.success} />} bg={T.successBg} onClick={() => onNavigate && onNavigate('reports')} hint="Open Reports" />
           </>
         )}
-        <StatCard label="Total Orders" value={allTxns.length} icon={<Package size={19} color={T.primaryDark} />} bg={T.primaryLight} />
-        <StatCard label="Active Alerts" value={delayed.length + expDocs.length} icon={<Siren size={19} color={T.danger} />} bg={T.dangerBg} />
+        <StatCard label="Total Styles" value={allOrders.length} icon={<Shirt size={19} color={T.primaryDeep} />} bg={T.primaryLight} onClick={() => onNavigate && onNavigate('orders')} hint="Open Orders" />
+        <StatCard label="Active Alerts" value={delayed.length + expDocs.length} icon={<Siren size={19} color={T.danger} />} bg={T.dangerBg}
+          onClick={() => { setOpenSections(p => ({ ...p, alerts: true })); setTimeout(() => document.getElementById('dash-alerts')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50) }} hint="Show the alerts" />
       </Grid>
 
       {caps.isAdmin && (
         <Grid cols={4} style={{ marginBottom: 22 }}>
-          <StatCard label="Products Delivered" value={prod.productsDelivered.toLocaleString()} icon={<Check size={19} color={T.success} strokeWidth={2.5} />} bg={T.successBg} />
-          <StatCard label="Products in Production" value={prod.productsInProduction.toLocaleString()} icon={<Factory size={19} color="#92400e" />} bg="#fef9c3" />
-          <StatCard label="Styles in Pre-production" value={inDevelopment} icon={<Shirt size={19} color="#5b21b6" />} bg="#ede9fe" />
-          <StatCard label="Styles in Production" value={prod.stylesInProduction} icon={<Layers size={19} color="#92400e" />} bg="#fef9c3" />
+          <StatCard label="Products Delivered" value={prod.productsDelivered.toLocaleString()} icon={<Truck size={19} color={T.success} />} bg={T.successBg} onClick={() => onNavigate && onNavigate('reports')} hint="Open Reports" />
+          <StatCard label="Products in Production" value={prod.productsInProduction.toLocaleString()} icon={<Package size={19} color="#92400e" />} bg="#fef9c3" onClick={() => onNavigate && onNavigate('orders')} hint="Open Orders" />
+          <StatCard label="Styles in Pre-production" value={inDevelopment} icon={<FlaskConical size={19} color="#5b21b6" />} bg="#ede9fe" onClick={() => onNavigate && onNavigate('orders', { phase: 'development' })} hint="Open Sampling & Development" />
+          <StatCard label="Styles in Production" value={prod.stylesInProduction} icon={<Scissors size={19} color="#92400e" />} bg="#fef9c3" onClick={() => onNavigate && onNavigate('orders')} hint="Open Orders" />
         </Grid>
       )}
 
@@ -373,6 +374,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
       </>)}
 
       {/* ── Active Alerts ── */}
+      <div id="dash-alerts" />
       <Card pad={false} style={{ marginBottom: 14 }}>
         <SectionHeader icon={<Siren size={15} />} label="Alerts" count={delayed.length + expDocs.length} open={openSections.alerts} onToggle={() => toggleSection('alerts')} />
         {openSections.alerts && (

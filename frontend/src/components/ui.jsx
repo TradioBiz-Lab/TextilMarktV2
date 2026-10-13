@@ -487,11 +487,14 @@ export function Tabs({ tabs, active, onChange }) {
 // hairline outline; this only applies to icons from our own set (they accept `weight`).
 const duotone = (icon, size) => (isValidElement(icon) && typeof icon.type !== 'string' ? cloneElement(icon, { weight: 'duotone', ...(size ? { size } : {}) }) : icon)
 
-export function StatCard({ label, value, icon, bg, trend }) {
+export function StatCard({ label, value, icon, bg, trend, onClick, hint }) {
+  const [hov, setHov] = useState(false)
   return (
     // height:100% so every card in a grid row matches the tallest, rather than
     // each shrink-wrapping its own label and leaving a ragged row edge.
-    <div style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.border}`, padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 14, height: '100%' }}>
+    <div
+      {...(onClick ? { role: 'button', tabIndex: 0, onClick, onKeyDown: activateOnKey(onClick), title: hint, onMouseEnter: () => setHov(true), onMouseLeave: () => setHov(false) } : {})}
+      style={{ background: T.surface, borderRadius: 12, border: `1px solid ${onClick && hov ? T.primaryDeep : T.border}`, padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 14, height: '100%', cursor: onClick ? 'pointer' : 'default', boxShadow: onClick && hov ? '0 2px 10px rgba(15,23,42,0.08)' : 'none', transition: 'border-color 0.12s, box-shadow 0.12s' }}>
       <div style={{ width: 46, height: 46, borderRadius: 12, background: bg || T.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>{duotone(icon, 24)}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 26, fontWeight: 800, color: T.text, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>{value}</div>

@@ -92,6 +92,7 @@ function Inner() {
   const [selOid, setSelOid] = useState(null)
   const [selMid, setSelMid] = useState(null)
   const [ordersStatus, setOrdersStatus] = useState(null)
+  const [ordersPhase, setOrdersPhase] = useState(null)   // 'production' | 'development' to open the Orders page on
   const [ordersMo, setOrdersMo] = useState(null)     // master order to open on the Orders page
   const [reportsMo, setReportsMo] = useState(null)   // master order to open on the Reports page
   const [selPo, setSelPo] = useState(null)           // purchase order open (or being edited) on the purchasing screens
@@ -105,10 +106,10 @@ function Inner() {
   // you came from. Before leaving a list for an order, that list's snapshot is stamped with the
   // order's master order, so coming back re-opens (and scrolls to) the group you were in.
   const hist = useRef({ stack: [], idx: -1 })
-  const BLANK = { view: 'dashboard', selOid: null, selMid: null, ordersStatus: null, ordersMo: null, reportsMo: null, selPo: null, selSupplier: null, selCost: null, selGrn: null }
+  const BLANK = { view: 'dashboard', selOid: null, selMid: null, ordersStatus: null, ordersMo: null, ordersPhase: null, reportsMo: null, selPo: null, selSupplier: null, selCost: null, selGrn: null }
   const apply = useCallback(s => {
     setView(s.view); setSelOid(s.selOid); setSelMid(s.selMid)
-    setOrdersStatus(s.ordersStatus); setOrdersMo(s.ordersMo); setReportsMo(s.reportsMo)
+    setOrdersStatus(s.ordersStatus); setOrdersMo(s.ordersMo); setOrdersPhase(s.ordersPhase ?? null); setReportsMo(s.reportsMo)
     setSelPo(s.selPo ?? null); setSelSupplier(s.selSupplier ?? null); setSelCost(s.selCost ?? null); setSelGrn(s.selGrn ?? null)
   }, [])
   const go = useCallback(next => {
@@ -178,6 +179,7 @@ function Inner() {
   const navTo = (v, params) => go({
     view: v,
     ordersStatus: params?.status ?? null,
+    ordersPhase: v === 'orders' ? (params?.phase ?? null) : null,
     ordersMo: v === 'orders' ? (params?.mo ?? null) : null,
     reportsMo: v === 'reports' ? (params?.mo ?? null) : null,
     selPo: params?.po ?? null,
@@ -245,7 +247,7 @@ function Inner() {
     }
     if (view === 'viewer' && caps.seeViewerHome) return <ViewerHome />
     if (view === 'company' && caps.seeCompanyPage) return <CompanyPage />
-    if (view === 'orders') return <AdminOrders key={`o:${ordersMo || 'all'}`} onOpen={openOrder} initialStatus={ordersStatus} initialMo={ordersMo} onSubmitReq={user.role === 'buyer' ? () => navTo('submit_req') : undefined} />
+    if (view === 'orders') return <AdminOrders key={`o:${ordersMo || 'all'}:${ordersPhase || ''}`} onOpen={openOrder} initialStatus={ordersStatus} initialMo={ordersMo} initialPhase={ordersPhase} onSubmitReq={user.role === 'buyer' ? () => navTo('submit_req') : undefined} />
     if (view === 'order_detail' && selOid) return <AdminOrderDetail orderId={selOid} initialMid={selMid} onNavigate={navTo} onBack={() => goBack({ view: 'orders', ordersMo: orders?.find(o => o.id === selOid)?.masterOrderId || '__none__' })} />
     if (view === 'documents') return <AdminDocuments />
     if (view === 'reports') return <ReportingPage key={`r:${reportsMo || 'all'}`} onOpen={openOrder} initialMo={reportsMo} />
