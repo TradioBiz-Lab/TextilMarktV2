@@ -96,6 +96,12 @@ export function Shell({ view, setView, children, onOpenOrder }) {
     ? (user?.adminType === 'master' ? '#DDD6FE' : T.primary)
     : user?.role === 'buyer' ? '#7dd3fc' : '#c2410c'
 
+  // Clicking anywhere on the page folds the sidebar to icons, so the work gets the width. The drawer on a phone
+  // is left alone: it already closes itself.
+  const collapseOnPageClick = () => {
+    if (window.matchMedia('(min-width: 769px)').matches) setSidebarCollapsed(true)
+  }
+
   const handleNav = id => {
     setView(id)
     setSidebarOpen(false)
@@ -162,7 +168,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
       </aside>
 
       {/* ── Main area ── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
+      <div onClick={collapseOnPageClick} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
 
         {/* Header */}
         <header className="shell-header" style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, height: 54, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, position: 'relative', zIndex: 300 }}>
