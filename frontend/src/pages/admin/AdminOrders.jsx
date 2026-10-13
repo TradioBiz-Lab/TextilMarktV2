@@ -36,7 +36,7 @@ function groupDisplayLabel(g) {
   return withBuyerPrefix(base, g.orders)
 }
 
-export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
+export function AdminOrders({ onOpen, initialStatus, initialMo, initialPhase, onSubmitReq }) {
   const { orders, users, loading, createOrder, uploadDoc, masterOrders, createMasterOrder, editOrder, deleteOrder, currentUser } = useApp()
   // One Orders page for every role; caps decides which actions each sees (see caps.js).
   const caps = capsFor(currentUser)
@@ -45,7 +45,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
   const [showSugg, setShowSugg] = useState(false)
   const [sfilt, setSfilt] = useState(initialStatus || 'All')
   // Styles still being sampled and developed are kept apart from the ones in production.
-  const [phase, setPhase] = useState('production')
+  const [phase, setPhase] = useState(initialPhase || 'production')
   // Moving styles out of Sampling & Development: tick the ones that are ready and move them in one go.
   const [promoteOpen, setPromoteOpen] = useState(false)
   const [picked, setPicked] = useState(() => new Set())
