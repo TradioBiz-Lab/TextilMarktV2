@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { X, Plus, Trash2, ChevronLeft, ChevronRight, AlertTriangle } from '../../icons.jsx'
 import { T, CATEGORIES, PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, getToday } from '../../constants.js'
+import { swatchHex, normalisePantone, PANTONE_HINT, PANTONE_PLACEHOLDER } from '../../colours.js'
 import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
@@ -225,20 +226,25 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
                     </FlexRow>
                     {s.colourways.map(c => (
                       <div key={c._key} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-                        <input type="color" value={c.hex || resolveNamedColor(c.name) || '#cbd5e1'} onChange={e => updateColourway(s._key, c._key, { hex: e.target.value })}
-                          title="Swatch colour (approximate)"
+                        <input type="color" value={swatchHex(c, resolveNamedColor)} onChange={e => updateColourway(s._key, c._key, { hex: e.target.value })}
+                          title="Swatch colour: matched from the name, click to change"
                           style={{ width: 32, height: 32, padding: 0, border: `1px solid ${T.border}`, borderRadius: 6, cursor: 'pointer', flexShrink: 0 }} />
                         <input value={c.name} onChange={e => updateColourway(s._key, c._key, { name: e.target.value })}
                           placeholder="Colour (e.g. Peacot)"
                           style={{ flex: 2, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
-                        <input value={c.code} onChange={e => updateColourway(s._key, c._key, { code: e.target.value })}
-                          placeholder="Pantone TPX/TCX (optional)"
-                          style={{ flex: 1, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
+                        <input value={c.code} maxLength={40} onChange={e => updateColourway(s._key, c._key, { code: e.target.value })}
+                          onBlur={() => updateColourway(s._key, c._key, { code: normalisePantone(c.code).value })}
+                          placeholder={PANTONE_PLACEHOLDER} title={PANTONE_HINT} aria-label="Pantone reference"
+                          style={{ flex: 1, border: `1px solid ${normalisePantone(c.code).valid ? T.border : T.warning}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
                         {s.colourways.length > 1 && (
                           <button onClick={() => removeColourway(s._key, c._key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textLight, display: 'flex', alignItems: 'center' }}><X size={13} /></button>
                         )}
                       </div>
                     ))}
+                    <div style={{ fontSize: 11, color: T.textLight, marginTop: 4 }}>{PANTONE_HINT}</div>
+                    {s.colourways.some(c => !normalisePantone(c.code).valid) && (
+                      <div style={{ fontSize: 11, color: T.warning, marginTop: 3 }}>A Pantone reference looks like 19-4052 TCX. Anything else is kept as typed.</div>
+                    )}
                   </div>
 
                   <div>

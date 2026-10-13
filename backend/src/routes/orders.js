@@ -2457,7 +2457,9 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
         if (next.some(x => x.name.toLowerCase() === name.toLowerCase())) continue
         const hex = (typeof c === 'object' && c?.hex ? String(c.hex).trim() : '')
         if (hex && !/^#[0-9a-fA-F]{6}$/.test(hex)) return res.status(400).json({ error: `Invalid swatch colour for "${name}" — must be a hex colour like #2C3E50` })
-        next.push({ name, code: (typeof c === 'object' && c?.code ? String(c.code).trim() : ''), hex })
+        const code = (typeof c === 'object' && c?.code ? String(c.code).trim() : '')
+        if (code.length > 40) return res.status(400).json({ error: `Pantone reference too long for "${name}" (max 40 characters)` })
+        next.push({ name, code, hex })
       }
       if (next.length > 40) return res.status(400).json({ error: 'Too many colourways (max 40)' })
       updates.colourways = next

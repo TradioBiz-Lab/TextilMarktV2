@@ -934,3 +934,15 @@ describe('landmine: buyer carve-out is narrow', () => {
     assert.equal((await buyerApi.post(`${base}/stages/bulk`, { stages: [{ index: 1, status: 'done' }] })).status, 403)
   })
 })
+
+describe('colourway Pantone reference', () => {
+  test('is saved as typed, and a reference over 40 characters is refused', async () => {
+    const { api, readOrder } = await arrange()
+    const ok = await api.post(`/api/orders/${ORDER_ID}`, { colourways: [{ name: 'Navy', code: '19-4052 TCX' }, { name: 'Olive', code: '' }] })
+    assert.equal(ok.status, 200, JSON.stringify(ok.body))
+    assert.deepEqual((await readOrder()).colourways.map(c => [c.name, c.code]), [['Navy', '19-4052 TCX'], ['Olive', '']])
+    const long = await api.post(`/api/orders/${ORDER_ID}`, { colourways: [{ name: 'Navy', code: 'x'.repeat(41) }] })
+    assert.equal(long.status, 400)
+    assert.match(long.body.error, /Pantone reference too long/)
+  })
+})
