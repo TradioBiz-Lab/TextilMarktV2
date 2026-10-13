@@ -1,5 +1,8 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+// One typeface on every device, self-hosted: Inter with its optical-size axis (text cut at small sizes, display cut as
+// headings grow), the nearest open match to SF Pro.
+import '@fontsource-variable/inter/opsz.css'
 import App from './App.jsx'
 import './index.css'
 
