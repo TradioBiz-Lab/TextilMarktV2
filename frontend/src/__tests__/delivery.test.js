@@ -1,5 +1,5 @@
 import { describe, test, expect, vi } from 'vitest'
-import { deliveryStatus } from '../constants.js'
+import { deliveryStatus, productionMetrics } from '../constants.js'
 import { rowCallout } from '../dashboardSummary.js'
 
 const done = (name, over = {}) => ({ name, kind: 'milestone', status: 'done', unitsDone: 1, totalUnits: 1, ...over })
@@ -86,5 +86,19 @@ describe('rowCallout for a delayed split', () => {
   test('states the new expected delivery date when the plan now runs past the promise', () => {
     const pushed = { ...deliveryStep, eta: '2026-10-28' }
     at(() => expect(rowCallout(row([late(), pushed]))).toMatch(/Now expected 28 Oct, 7 days past the 21 Oct delivery date\./))
+  })
+})
+
+describe('productionMetrics', () => {
+  const fin = [{ isDelivery: true, kind: 'milestone', status: 'done' }]
+  const wip = [{ isDelivery: true, kind: 'milestone', status: 'pending' }]
+  const orders = [
+    { id: 'A', assignments: [{ qty: 100, deliveredQty: 96, stages: fin }] },
+    { id: 'B', assignments: [{ qty: 50, stages: fin }, { qty: 70, stages: wip }] },
+    { id: 'C', assignments: [{ qty: 30, stages: wip }] },
+    { id: 'D', assignments: [] },
+  ]
+  test('counts pieces and styles', () => {
+    expect(productionMetrics(orders)).toEqual({ productsDelivered: 146, productsInProduction: 100, stylesDelivered: 1, stylesInProduction: 2 })
   })
 })

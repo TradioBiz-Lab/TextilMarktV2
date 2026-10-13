@@ -342,6 +342,26 @@ export const deliveryStatus = (order, asgn) => {
   }
 }
 
+/**
+ * Production headline numbers for the admin dashboard. A product is a piece: delivered pieces use the
+ * quantity actually delivered when it was recorded, else the ordered one. A style is an order, delivered
+ * once every manufacturer split on it is. Orders with no manufacturer yet are not in production.
+ */
+export const productionMetrics = orders => {
+  const m = { productsDelivered: 0, productsInProduction: 0, stylesDelivered: 0, stylesInProduction: 0 }
+  for (const o of orders || []) {
+    const splits = o.assignments || []
+    if (!splits.length) continue
+    let all = true
+    for (const a of splits) {
+      if (deliveryStatus(o, a).delivered) m.productsDelivered += a.deliveredQty ?? a.qty ?? 0
+      else { all = false; m.productsInProduction += a.qty ?? 0 }
+    }
+    if (all) m.stylesDelivered++; else m.stylesInProduction++
+  }
+  return m
+}
+
 /** Percent complete, by kind. Checklists count items, not units. */
 export const stagePct = s => {
   if (stageKindOf(s) === 'checklist' && (s?.itemsTotal || 0) > 0)
