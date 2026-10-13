@@ -92,6 +92,35 @@ export const makeDeliveryStage = dateISO => ({
   isDelivery: true, updates: [], materials: [], items: [], actualEnd: null,
 })
 
+// ── The standard plan for a style still in Sampling & Development ───────────
+// Five short steps from the request landing to the style being ready to go into production. Matching a factory
+// takes 3-4 days and the proto / fit sample 4-5; the plan books the longer figure, and pricing is given two days.
+// Each step starts when the one before it ends. The mandatory Delivery step is added after them as usual.
+export const DEVELOPMENT_PLAN = Object.freeze([
+  { name: 'Request Received', days: 0 },
+  { name: 'Manufacturer Matching', days: 4 },
+  { name: 'Proto/Fit Sample', days: 5 },
+  { name: 'Pricing', days: 2 },
+  { name: 'Ready for Production', days: 0 },
+])
+
+const addDays = (iso, n) => { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
+
+/** The development plan's steps as fresh, not-started milestones, the first one starting on `startISO` ('YYYY-MM-DD'). */
+export function makeDevelopmentStages(startISO) {
+  let cursor = startISO
+  return DEVELOPMENT_PLAN.map(({ name, days }) => {
+    const startDate = cursor
+    cursor = addDays(cursor, days)
+    return {
+      name, unitsDone: 0, totalUnits: 1, startDate, eta: null, baselineEta: cursor,
+      note: '', description: '', responsibleId: null,
+      kind: 'milestone', status: 'not_started', blocked: false, blockedReason: '',
+      isDelivery: false, updates: [], materials: [], items: [], actualEnd: null,
+    }
+  })
+}
+
 /**
  * The split's new status after its Delivery step was written, or null to leave
  * it alone. Done means Delivered; anything else only matters when the split was
