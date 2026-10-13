@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { DashboardSummary } from '../../components/DashboardSummary.jsx'
 import { capsFor } from '../../caps.js'
-import { ShoppingBag, Factory, Package, Siren, Target, Check, ClipboardList, Megaphone, ChevronRight } from '../../icons.jsx'
-import { T, ST, isExpiringSoon, isExpired, getToday, dayNumber, effectiveEta, withBuyerPrefix } from '../../constants.js'
+import { ShoppingBag, Factory, Package, Siren, Target, Check, Shirt, Layers, ClipboardList, Megaphone, ChevronRight } from '../../icons.jsx'
+import { T, ST, productionMetrics, isExpiringSoon, isExpired, getToday, dayNumber, effectiveEta, withBuyerPrefix } from '../../constants.js'
 import { StatCard, Card, Grid, EmptyState, Mono, PageHeader, Badge, Btn, FlexRow, Modal, Select, Textarea, Input, Alert, LoadingScreen, DocCard } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
@@ -119,6 +119,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
     ? (o.assignments || []).map(a => ({ orderId: o.id, sub: a.sub, status: a.status }))
     : [{ orderId: o.id, sub: null, status: 'Processing' }]
   )
+  const prod = productionMetrics(orders)
   const ordersByMO = buildOrdersByMasterOrder(orders, masterOrders)
 
   const myOpenItems = (actionItems || []).filter(a => a.status === 'open' && String(a.assigneeId) === String(currentUser?.id)).map(a => ({ ...a, _kind: 'item' }))
@@ -265,6 +266,15 @@ export function AdminDashboard({ onNavigate, onOpen }) {
         <StatCard label="Total Orders" value={allTxns.length} icon={<Package size={19} color={T.primaryDark} />} bg={T.primaryLight} />
         <StatCard label="Active Alerts" value={delayed.length + expDocs.length} icon={<Siren size={19} color={T.danger} />} bg={T.dangerBg} />
       </Grid>
+
+      {caps.isAdmin && (
+        <Grid cols={4} style={{ marginBottom: 22 }}>
+          <StatCard label="Products Delivered" value={prod.productsDelivered.toLocaleString()} icon={<Check size={19} color={T.success} strokeWidth={2.5} />} bg={T.successBg} />
+          <StatCard label="Products in Production" value={prod.productsInProduction.toLocaleString()} icon={<Factory size={19} color="#92400e" />} bg="#fef9c3" />
+          <StatCard label="Styles Delivered" value={prod.stylesDelivered} icon={<Shirt size={19} color={T.success} />} bg={T.successBg} />
+          <StatCard label="Styles in Production" value={prod.stylesInProduction} icon={<Layers size={19} color="#92400e" />} bg="#fef9c3" />
+        </Grid>
+      )}
 
       <DashboardSummary />
 
