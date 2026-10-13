@@ -718,14 +718,19 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp, compa
   const [showEdit, setShowEdit] = useState(false)
   const canManage = !!currentUser && (currentUser.role === 'admin' || String(doc.uploadedBy) === String(currentUser.id))
 
-  const handleDelete = async (e) => {
-    e.stopPropagation()
-    if (!window.confirm(`Delete "${doc.name}"? This cannot be undone.`)) return
+  // An in-page confirmation, not the browser's popup: embedded browsers and some settings swallow window.confirm,
+  // which made the Delete button look dead.
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const handleDelete = e => { e.stopPropagation(); setConfirmDelete(true) }
+  const doDelete = async () => {
+    setDeleting(true)
     try {
       await deleteDoc(doc.id)
       toast('Document deleted', 'success')
     } catch (err) {
       toast(err?.message || 'Failed to delete document', 'error')
+      setDeleting(false); setConfirmDelete(false)
     }
   }
 
@@ -735,7 +740,22 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp, compa
       <Btn size="sm" variant="danger" icon={<Trash2 size={12} />} onClick={handleDelete}>Delete</Btn>
     </>
   )
-  const editModal = showEdit && <DocEditModal doc={doc} onClose={() => setShowEdit(false)} />
+  const editModal = (
+    <>
+      {showEdit && <DocEditModal doc={doc} onClose={() => setShowEdit(false)} />}
+      {confirmDelete && (
+        <Modal title="Delete this document?" subtitle={doc.name} onClose={() => { if (!deleting) setConfirmDelete(false) }} size="sm">
+          <div onClick={e => e.stopPropagation()}>
+            <p style={{ fontSize: 13, color: T.textMuted, margin: '0 0 16px' }}>This removes the document from every list. It cannot be undone from here.</p>
+            <FlexRow justify="flex-end" gap={8}>
+              <Btn variant="secondary" disabled={deleting} onClick={() => setConfirmDelete(false)}>Cancel</Btn>
+              <Btn variant="danger" disabled={deleting} icon={<Trash2 size={13} />} onClick={doDelete}>{deleting ? 'Deleting…' : 'Delete'}</Btn>
+            </FlexRow>
+          </div>
+        </Modal>
+      )}
+    </>
+  )
 
   // Prefer server-populated name; fall back to local user lookup for admin context
   const localUploader = users?.find(u => u.id === doc.uploadedBy)
