@@ -1130,24 +1130,25 @@ export function StageTimeline({ stages = [] }) {
 }
 
 export function PageHeader({ title, subtitle, action }) {
-  // On a desktop screen the title lives in the top bar (the shell's #shell-title slot; the subtitle is its tooltip), so the page
-  // starts with its content. On a phone the top bar holds the menu and logo, so the title stays in the page.
-  const [slot, setSlot] = useState(null)
+  // On a desktop screen the title lives in the top bar (the shell's #shell-title slot; the subtitle is its tooltip) and
+  // the page's buttons sit beside the bell (#shell-actions), so the page starts with its content. On a phone the top bar
+  // holds the menu and logo, so the title and buttons stay in the page.
+  const [slots, setSlots] = useState(null)
   useEffect(() => {
     const q = window.matchMedia('(min-width: 769px)')
-    const sync = () => setSlot(q.matches ? document.getElementById('shell-title') : null)
+    const sync = () => setSlots(q.matches ? { title: document.getElementById('shell-title'), actions: document.getElementById('shell-actions') } : null)
     sync()
     q.addEventListener('change', sync)
     return () => q.removeEventListener('change', sync)
   }, [])
-  if (slot) {
+  if (slots?.title && slots?.actions) {
     return (
       <>
         {createPortal(
           <h1 title={typeof subtitle === 'string' ? subtitle : undefined} style={{ fontSize: 20, fontWeight: 800, color: T.text, margin: 0, letterSpacing: '-0.02em', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</h1>,
-          slot,
+          slots.title,
         )}
-        {action && <div className="page-header" style={{ justifyContent: 'flex-end' }}>{action}</div>}
+        {action && createPortal(action, slots.actions)}
       </>
     )
   }
