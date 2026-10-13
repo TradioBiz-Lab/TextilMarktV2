@@ -8,6 +8,7 @@ import {
   PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor,
 } from '../../constants.js'
 import { stageNameForDoc, PO_INVOICE_DOC_TYPES, deliveryDocsOf } from '../../constants.js'
+import { swatchHex } from '../../colours.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, DateOrNA, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { BomTab } from '../bom/BomTab.jsx'
@@ -730,7 +731,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack, onNavigate }) {
                   <FlexRow gap={8} style={{ flexWrap: 'wrap' }}>
                     {order.colourways.map(c => (
                       <span key={c.name} style={{ display: 'inline-flex', alignItems: 'stretch', fontSize: 12, fontWeight: 700, color: T.text, background: '#fff', border: `1px solid ${T.border}`, borderRadius: 6, overflow: 'hidden' }}>
-                        <span style={{ width: 8, background: c.hex || resolveNamedColor(c.name) || '#cbd5e1', flexShrink: 0 }} />
+                        <span style={{ width: 8, background: swatchHex(c, resolveNamedColor), flexShrink: 0 }} />
                         <span style={{ padding: '5px 10px' }}>
                           {c.name}{c.code ? <span style={{ color: T.textLight, fontWeight: 500 }}> · {c.code}</span> : ''}
                         </span>
