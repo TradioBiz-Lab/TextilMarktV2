@@ -13,7 +13,7 @@ import {
   DEFAULT_STAGE_NAMES, ORDER_STATUS_VALUES, STAGE_KINDS, STAGE_STATUS_VALUES,
   stageKindOf, deriveStageStatus, mirroredUnits, reconcileForTotal, stageEtaVarianceDays, deriveActualEnd, deliveryVarianceDays,
 } from '../models/Order.js'
-import { dayNumber, getToday, effectiveEta, DELIVERY_STEP_NAME, isDeliveryName, deliveryStageIndex, makeDeliveryStage, statusAfterDeliveryStep } from '../lib/stageMath.js'
+import { dayNumber, getToday, effectiveEta, DELIVERY_STEP_NAME, isDeliveryName, deliveryStageIndex, makeDeliveryStage, makeDevelopmentStages, statusAfterDeliveryStep } from '../lib/stageMath.js'
 import { notify, notifyOrderChange } from '../lib/notify.js'
 
 // Categories are now free-text — no validation needed
@@ -780,8 +780,12 @@ router.post('/:orderId/assignments', requireAuth, requireAdmin, updateLimiter, a
 
     const order = await Order.findByIdAndUpdate(
       orderId,
-      // Starts with just the mandatory Delivery step; the TNA builder adds the rest in front of it.
-      { $push: { assignments: { mfrId, qty: aqty, status: 'Processing', sub: nextSub, note: '', stages: [makeDeliveryStage(new Date(existing.delivery).toISOString().slice(0, 10))] } } },
+      // Starts with just the mandatory Delivery step; the TNA builder adds the rest in front of it. A style still
+      // in Sampling & Development starts with the standard development plan in front of Delivery instead.
+      { $push: { assignments: { mfrId, qty: aqty, status: 'Processing', sub: nextSub, note: '', stages: [
+        ...(existing.phase === 'development' ? makeDevelopmentStages(new Date().toISOString().slice(0, 10)) : []),
+        makeDeliveryStage(new Date(existing.delivery).toISOString().slice(0, 10)),
+      ] } } },
       { new: true }
     ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
 
