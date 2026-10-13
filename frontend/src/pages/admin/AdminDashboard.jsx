@@ -274,14 +274,9 @@ export function AdminDashboard({ onNavigate, onOpen }) {
         <Grid cols={4} style={{ marginBottom: 22 }}>
           <StatCard label="Products Delivered" value={prod.productsDelivered.toLocaleString()} icon={<Check size={19} color={T.success} strokeWidth={2.5} />} bg={T.successBg} />
           <StatCard label="Products in Production" value={prod.productsInProduction.toLocaleString()} icon={<Factory size={19} color="#92400e" />} bg="#fef9c3" />
-          <StatCard label="Styles Delivered" value={prod.stylesDelivered} icon={<Shirt size={19} color={T.success} />} bg={T.successBg} />
+          <StatCard label="Styles in Pre-production" value={inDevelopment} icon={<Shirt size={19} color="#5b21b6" />} bg="#ede9fe" />
           <StatCard label="Styles in Production" value={prod.stylesInProduction} icon={<Layers size={19} color="#92400e" />} bg="#fef9c3" />
         </Grid>
-      )}
-      {inDevelopment > 0 && (
-        <div style={{ marginBottom: 22, fontSize: 12.5, fontWeight: 600, color: T.textMuted }}>
-          {inDevelopment} {inDevelopment === 1 ? 'style is' : 'styles are'} still in Sampling &amp; Development. Find {inDevelopment === 1 ? 'it' : 'them'} on the Orders page.
-        </div>
       )}
 
       <DashboardSummary />
