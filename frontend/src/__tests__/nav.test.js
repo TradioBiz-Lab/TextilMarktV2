@@ -26,7 +26,7 @@ describe('the sidebar', () => {
   test('standalone: other admins keep the working tabs; companies gain their Company page', () => {
     expect(ids({ ...S, role: 'admin', adminType: 'user' })).toEqual(['dashboard', 'action_items', 'kriyaa', 'orders', 'review', 'documents', 'reports', 'audit'])
     expect(ids({ ...S, role: 'manufacturer', orgRole: 'owner' })).toEqual(['dashboard', 'action_items', 'kriyaa', 'orders', 'documents', 'reports', 'shopping_list', 'suppliers', 'purchase_orders', 'inventory', 'costing', 'company'])
-    expect(ids({ ...S, role: 'buyer', orgRole: 'owner' })).toEqual(['dashboard', 'action_items', 'kriyaa', 'orders', 'documents', 'reports', 'costing', 'company'])
+    expect(ids({ ...S, role: 'buyer', orgRole: 'owner' })).toEqual(['dashboard', 'reports', 'action_items', 'kriyaa', 'orders', 'documents', 'costing', 'company'])
   })
 
   test('standalone: a manufacturer buys and costs, so it gets Purchasing and Commercial sections; a brand only reviews cost sheets', () => {
