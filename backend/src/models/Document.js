@@ -2,6 +2,8 @@ import mongoose from 'mongoose'
 
 const DOC_TYPES = [
   'PO', 'buyer_order', 'tech_pack', 'cost_sheet', 'RFQ', 'terms',
+  // Tradio's invoice to the customer. Commercial: a factory never sees it (see HIDDEN_FROM_FACTORIES in routes/documents.js).
+  'invoice',
   'compliance_cert', 'factory_audit', 'chemical_cert',
   'environmental_cert', 'insurance',
   // Style-level reference documents (creation wizard's Documents step)

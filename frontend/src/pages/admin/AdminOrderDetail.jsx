@@ -7,7 +7,7 @@ import {
   stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber, getToday, planProgress,
   PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor,
 } from '../../constants.js'
-import { stageNameForDoc } from '../../constants.js'
+import { stageNameForDoc, PO_INVOICE_DOC_TYPES, deliveryDocsOf } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, DateOrNA, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { normalizeCsvDate } from '../../csvDates.js'
@@ -621,12 +621,14 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
     } finally { setSaving(false) }
   }
 
+  // A factory is never offered a PO or an invoice, and only Tradio issues invoices (the server enforces both).
   const orderDocTypes = [
-    { v: 'PO', l: 'Purchase Order' }, { v: 'buyer_order', l: 'Buyer Order' },
+    { v: 'PO', l: 'Purchase Order' }, { v: 'invoice', l: 'Invoice' }, { v: 'buyer_order', l: 'Buyer Order' },
     { v: 'tech_pack', l: 'Tech Pack' },
     { v: 'cost_sheet', l: 'Cost Sheet' }, { v: 'RFQ', l: 'RFQ' },
     { v: 'terms', l: 'Terms & Conditions' },
-  ]
+  ].filter(t => caps.seePoInvoice || !PO_INVOICE_DOC_TYPES.includes(t.v)).filter(t => t.v !== 'invoice' || caps.uploadInvoices)
+  const openDocUpload = type => { resetUpload(); setUf(u => ({ ...u, type })); setShowUp(true) }
 
   const overallStatus = () => {
     if (order.assignments.some(a => a.status === 'Delayed')) return 'Delayed'
@@ -899,20 +901,59 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
             })}
           </div>
 
-          {/* Anything uploaded via "Upload Document" that isn't one of the four
-              checklist types (PO, cost sheet, RFQ, terms, buyer order, …) —
-              folded in here instead of a separate tab. */}
+          {/* Two folders side by side: PO and Invoice (Tradio and the customer only) and Delivery documents (packing lists
+              and the like, which the factory that ships also sees). Anything else uploaded to the order sits below. */}
           {(() => {
-            const otherDocs = orderDocs.filter(d => d.stageIndex == null && !Object.keys(refDocLabels).includes(d.type))
+            const refTypes = Object.keys(refDocLabels)
+            const poDocs = orderDocs.filter(d => d.stageIndex == null && PO_INVOICE_DOC_TYPES.includes(d.type))
+            const deliveryDocs = deliveryDocsOf(orders, orderDocs)
+            const otherDocs = orderDocs.filter(d => d.stageIndex == null && !refTypes.includes(d.type) && !PO_INVOICE_DOC_TYPES.includes(d.type) && d.type !== 'dispatch_docs')
+            // Delivery papers are filed on the Delivery step of the split they ship, so uploading needs one split.
+            const dAsgn = order.assignments?.find(a => String(a.mid) === effectiveMid) || null
+            const deliveryIdx = dAsgn ? (dAsgn.stages || []).findIndex(st => st.isDelivery) : -1
+            const mayUploadDelivery = caps.uploadDeliveryDocs && deliveryIdx >= 0 && (!caps.isMfr || String(dAsgn.mid) === String(currentUser.id))
+            const folder = (title, hint, docsIn, action, empty) => (
+              <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, background: T.surface, minWidth: 0 }}>
+                <FlexRow justify="space-between" style={{ padding: '10px 12px', borderBottom: `1px solid ${T.border}` }}>
+                  <FlexRow gap={8}>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: T.text }}>{title}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, background: '#f1f5f9', border: `1px solid ${T.border}`, borderRadius: 10, padding: '0 7px', lineHeight: '18px' }}>{docsIn.length}</span>
+                  </FlexRow>
+                  {action}
+                </FlexRow>
+                <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {docsIn.length === 0
+                    ? <div style={{ fontSize: 12, color: T.textMuted, padding: '6px 4px' }}>{empty}</div>
+                    : docsIn.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} compact />)}
+                  {hint && <div style={{ fontSize: 11, color: T.textLight, padding: '2px 4px' }}>{hint}</div>}
+                </div>
+              </div>
+            )
             return (
               <div style={{ borderTop: `1px solid ${T.border}`, marginTop: 10, paddingTop: 12 }}>
-                <FlexRow justify="space-between">
-                  <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Other Documents</span>
-                  <Btn size="sm" variant="ghost" onClick={() => setShowUp(true)} icon={<Paperclip size={12} />}>Upload</Btn>
-                </FlexRow>
+                <div className="grid-responsive-2" style={{ gap: 12, alignItems: 'start' }}>
+                  {caps.seePoInvoice && folder(
+                    'PO and Invoice', null, poDocs,
+                    caps.uploadPoInvoice && <Btn size="sm" variant="ghost" onClick={() => openDocUpload('PO')} icon={<Paperclip size={12} />}>Upload</Btn>,
+                    'No purchase order or invoice yet.',
+                  )}
+                  {(order.assignments?.length || 0) > 0 && folder(
+                    'Delivery documents',
+                    !mayUploadDelivery && caps.uploadDeliveryDocs && deliveryIdx < 0 ? 'Open one manufacturer split to add delivery documents.' : null,
+                    deliveryDocs,
+                    mayUploadDelivery && <Btn size="sm" variant="ghost" onClick={() => openStageDocUpload(effectiveMid, deliveryIdx)} icon={<Paperclip size={12} />}>Upload</Btn>,
+                    'No delivery documents yet. Packing lists and carton stickers go here.',
+                  )}
+                </div>
                 {otherDocs.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
-                    {otherDocs.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} />)}
+                  <div style={{ marginTop: 12 }}>
+                    <FlexRow justify="space-between">
+                      <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Other Documents</span>
+                      <Btn size="sm" variant="ghost" onClick={() => openDocUpload(orderDocTypes.find(t => !PO_INVOICE_DOC_TYPES.includes(t.v))?.v || 'tech_pack')} icon={<Paperclip size={12} />}>Upload</Btn>
+                    </FlexRow>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
+                      {otherDocs.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} />)}
+                    </div>
                   </div>
                 )}
               </div>

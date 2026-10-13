@@ -17,8 +17,13 @@ describe('evidence on lab dip and test steps is also the product document', () =
   })
 
   test('other steps keep the generic type, so nothing else changes', () => {
-    for (const n of ['Greige Fabric (Inhouse)', 'Dyeing Start', 'PP +Fit Sample Sent', 'PP Approval', 'Inspection', 'Delivery'])
+    for (const n of ['Greige Fabric (Inhouse)', 'Dyeing Start', 'PP +Fit Sample Sent', 'PP Approval', 'Inspection'])
       expect(typeAt(cocoblu, n)[0].v).toBe('floor_evidence')
+  })
+
+  test('the Delivery step takes delivery documents', () => {
+    expect(typeAt(cocoblu, 'Delivery')).toEqual([expect.objectContaining({ v: 'dispatch_docs', l: 'Delivery document' })])
+    expect(typeAt(plan(DEFAULT_STAGE_NAMES), 'Delivery')[0].v).toBe('dispatch_docs')
   })
 
   test('the standard plan\'s Lab Dip Approval step files as a lab dip too, its other steps are untouched', () => {
