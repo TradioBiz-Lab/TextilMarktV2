@@ -50,6 +50,11 @@ export function capsFor(user) {
     uploadStageEvidence: w(isAdmin || isMfr),
     uploadProductPhoto: w(isAdmin),
     uploadReferenceDocs: w(isAdmin || isBuyer || (standalone && isMfr)),   // tech pack, measurements, pattern, lab dip
+    // The customer's PO and Tradio's invoice: Tradio and the customer only, never a factory (server rule; standalone differs).
+    seePoInvoice: standalone || !isMfr,
+    uploadPoInvoice: w(isAdmin || isBuyer),          // the customer uploads its PO; only Tradio issues invoices (uploadInvoices)
+    uploadInvoices: w(isAdmin),
+    uploadDeliveryDocs: w(isAdmin || isMfr),          // packing lists, carton stickers: Tradio and the factory that ships
     submitRequirement: w(isBuyer),
     manageCertificates: w(isMfr),
     // Admin-only surfaces

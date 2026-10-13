@@ -46,6 +46,7 @@ export const REPORT_STATUSES = ['In Progress', 'On Track', 'Delayed']
 
 export const DOC_TYPES = [
   { v: 'PO', l: 'Purchase Order' },
+  { v: 'invoice', l: 'Invoice' },
   { v: 'buyer_order', l: 'Buyer Order' },
   { v: 'tech_pack', l: 'Tech Pack' },
   { v: 'cost_sheet', l: 'Cost Sheet' },
@@ -109,17 +110,32 @@ const GENERIC_EVIDENCE_TYPE = STAGE_DOC_TYPES.find(d => d.v === 'floor_evidence'
 export const PRODUCT_DOC_BY_STEP = [
   { re: /lab\s*dip/i, type: 'lab_dip', label: 'Lab Dip Receipts', one: 'Lab Dip Receipt' },
   { re: /\b(fpt|gpt)\b/i, type: 'test_report', label: 'Test Reports (FPT/GPT)', one: 'Test Report' },
+  // Packing lists, carton stickers and the like: the Delivery step's papers are the order's Delivery documents.
+  { re: /^\s*delivery\s*$/i, type: 'dispatch_docs', label: 'Delivery documents', one: 'Delivery document' },
 ]
 // The step a stage document belongs to, by the order's own plan. A document links to a step by its position
 // in that order's TNA, so the name has to come from that plan: the 13-step standard list is only right for
 // orders built from it, and showed "Stage 13 - Delivery" on an FPT step of a 17-step plan.
-export const stageNameForDoc = (orders, doc) => {
+export const stageForDoc = (orders, doc) => {
   if (doc?.stageIndex == null) return null
   const o = (orders || []).find(x => String(x.id) === String(doc.orderId))
   const asgns = o?.assignments || []
   const a = asgns.find(x => String(x.mid) === String(doc.mfrId)) || (asgns.length === 1 ? asgns[0] : null)
-  return a?.stages?.[doc.stageIndex]?.name || null
+  return a?.stages?.[doc.stageIndex] || null
 }
+export const stageNameForDoc = (orders, doc) => stageForDoc(orders, doc)?.name || null
+
+// The customer's purchase order and Tradio's invoice. Commercial: factories never see them (the server enforces it too).
+export const PO_INVOICE_DOC_TYPES = ['PO', 'buyer_order', 'invoice']
+
+// An order's Delivery documents: delivery paperwork attached to the order or to its Delivery step. A delivery document
+// that was filed against some other step by mistake is not listed here.
+export const deliveryDocsOf = (orders, docs) => (docs || []).filter(d => {
+  if (d.type !== 'dispatch_docs') return false
+  if (d.stageIndex == null) return true
+  const s = stageForDoc(orders, d)
+  return !!s && (!!s.isDelivery || /^\s*delivery\s*$/i.test(s.name || ''))
+})
 
 export const productDocForStep = stageName => PRODUCT_DOC_BY_STEP.find(p => p.re.test(String(stageName || ''))) || null
 
@@ -132,7 +148,7 @@ export const evidenceTypesFor = (stageIndex, stages) => {
 
 // Values are Lucide icon COMPONENTS, not emoji — render as <DOC_ICONS[type] size={..}/>.
 export const DOC_ICONS = {
-  PO: ClipboardList, buyer_order: ShoppingCart, tech_pack: Ruler, cost_sheet: Wallet, RFQ: Mail, terms: FileText,
+  PO: ClipboardList, invoice: Receipt, buyer_order: ShoppingCart, tech_pack: Ruler, cost_sheet: Wallet, RFQ: Mail, terms: FileText,
   compliance_cert: ShieldCheck, factory_audit: Search, chemical_cert: FlaskConical,
   environmental_cert: Leaf, insurance: ShieldPlus,
   // Stage evidence docs

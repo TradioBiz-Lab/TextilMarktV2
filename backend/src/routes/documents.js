@@ -21,6 +21,10 @@ const uploadLimiter = rateLimit({
 })
 
 const CERT_TYPES = ['compliance_cert', 'factory_audit', 'chemical_cert', 'environmental_cert', 'insurance']
+// What the customer pays Tradio, and what Tradio charges, is not a factory's business: in the Tradio portal a factory
+// never lists, opens or uploads a customer's purchase order or Tradio's invoice. (Standalone, where factories and
+// brands deal directly, keeps its own rules.)
+const HIDDEN_FROM_FACTORIES = ['PO', 'buyer_order', 'invoice']
 const ALLOWED_MIME = [
   'application/pdf', 'image/jpeg', 'image/png', 'image/jpg',
   // Pattern files (DXF) — there is no registered MIME type for DXF, so
@@ -108,6 +112,9 @@ async function assertDocAccess(user, { orderId, mfrId, type, masterOrderId }) {
     // Buyers may not set mfrId — that would let them attach docs to a manufacturer they chose
     if (mfrId)
       throw Object.assign(new Error('Buyers cannot upload documents on behalf of a manufacturer'), { status: 403 })
+    // An invoice is Tradio's to issue
+    if (type === 'invoice')
+      throw Object.assign(new Error('Only Tradio can upload invoices'), { status: 403 })
     // Buyers may not upload compliance certificates — those belong to manufacturers
     if (CERT_TYPES.includes(type))
       throw Object.assign(new Error('Buyers cannot upload compliance certificates'), { status: 403 })
@@ -118,6 +125,8 @@ async function assertDocAccess(user, { orderId, mfrId, type, masterOrderId }) {
     }
   }
   if (user.role === 'manufacturer') {
+    if (!isStandalone() && HIDDEN_FROM_FACTORIES.includes(type))
+      throw Object.assign(new Error('Only Tradio and the customer handle purchase orders and invoices'), { status: 403 })
     if (mfrId && String(mfrId) !== String(user.id))
       throw Object.assign(new Error('You can only upload documents for yourself'), { status: 403 })
     // An order document may only go on an order this manufacturer is assigned to.
@@ -197,6 +206,8 @@ router.get('/', requireAuth, async (req, res) => {
         isActive: true,
         // Own docs, plus general order docs (no mfrId). Never a competing
         // manufacturer's docs on a shared order: GET /:id/data denies those too.
+        // Never a purchase order or an invoice (HIDDEN_FROM_FACTORIES).
+        ...(!isStandalone() ? { type: { $nin: HIDDEN_FROM_FACTORIES } } : {}),
         $or: [{ mfrId: req.user.id }, { orderId: { $in: orderIds }, mfrId: null }],
       }).sort({ createdAt: -1 })).lean()
     }
@@ -359,6 +370,7 @@ router.get('/:id/data', requireAuth, async (req, res) => {
     }
 
     if (req.user.role === 'manufacturer') {
+      if (!isStandalone() && HIDDEN_FROM_FACTORIES.includes(doc.type)) return res.status(404).json({ error: 'Document not found' })
       // Manufacturer can access: (A) docs they own (mfrId === their ID)
       // or (B) general order docs (no mfrId) on orders they're assigned to
       // NOT docs uploaded by a competing manufacturer on the same split order
