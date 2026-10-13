@@ -1,13 +1,13 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body, #root { height: 100%; overflow: hidden; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Inter Variable', 'Inter', 'Segoe UI', system-ui, sans-serif; text-rendering: optimizeLegibility; font-optical-sizing: auto; background: #F8FAFC; color: #0f172a; -webkit-font-smoothing: antialiased; }
+body { font-family: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; text-rendering: optimizeLegibility; font-optical-sizing: auto; background: #F8FAFC; color: #0f172a; -webkit-font-smoothing: antialiased; }
 /* Numerals that line up in columns: quantities, prices, dates, ids. Inter's tabular figures. */
 .num { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-input, select, textarea, button { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Inter Variable', 'Inter', 'Segoe UI', system-ui, sans-serif; }
+input, select, textarea, button { font-family: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; }
 input:focus, select:focus, textarea:focus { outline: none; box-shadow: 0 0 0 3px rgba(249,115,22,0.15); border-color: #f97316 !important; }
 /* Buttons/links/custom controls get NO focus indicator without this — the
    button:focus reset below had nothing put back in its place, so every

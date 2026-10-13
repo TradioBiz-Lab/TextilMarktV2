@@ -2,7 +2,8 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 // Self-hosted fonts (bundled into dist, no Google Fonts request): Inter as one variable font for
 // every weight, and JetBrains Mono at weight 500 only, which is the only weight the app asks for.
-import '@fontsource-variable/inter'
+// Inter with its optical-size axis: the text cut at small sizes, the display cut as headings grow, close to SF Pro.
+import '@fontsource-variable/inter/opsz.css'
 import '@fontsource/jetbrains-mono/500.css'
 import App from './App.jsx'
 import './index.css'
