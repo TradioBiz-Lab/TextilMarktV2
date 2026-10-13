@@ -370,7 +370,7 @@ router.get('/:id/data', requireAuth, async (req, res) => {
     }
 
     if (req.user.role === 'manufacturer') {
-      if (!isStandalone() && HIDDEN_FROM_FACTORIES.includes(doc.type)) return res.status(404).json({ error: 'Document not found' })
+      if (!isStandalone() && HIDDEN_FROM_FACTORIES.includes(doc.type)) return res.status(403).json({ error: 'Access denied' })
       // Manufacturer can access: (A) docs they own (mfrId === their ID)
       // or (B) general order docs (no mfrId) on orders they're assigned to
       // NOT docs uploaded by a competing manufacturer on the same split order
