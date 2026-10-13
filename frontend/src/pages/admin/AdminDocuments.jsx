@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
-import { Factory, ClipboardList, CheckCircle2, AlertTriangle, XCircle, Paperclip, Shield, Folder, Inbox, FileText, ChevronRight } from '../../icons.jsx'
-import { T, DOC_TYPES, DOC_ICONS, isExpiringSoon, isExpired , getToday } from '../../constants.js'
-import { Modal, Select, Input, Btn, Card, Alert, EmptyState, FlexRow, PageHeader, DocCard, FileUpload, StatCard, LoadingScreen, useToast, fileUploadPayload, Grid } from '../../components/ui.jsx'
+import { Factory, ClipboardList, CheckCircle2, AlertTriangle, XCircle, Paperclip, Shield, Folder, Inbox, FileText, ChevronRight, ChevronDown } from '../../icons.jsx'
+import { T, DOC_TYPES, DOC_ICONS, isExpiringSoon, isExpired , getToday, PHASES, phaseOf, withBuyerPrefix } from '../../constants.js'
+import { Modal, Select, Input, Btn, Card, Alert, EmptyState, FlexRow, PageHeader, DocCard, FileUpload, StatCard, LoadingScreen, useToast, fileUploadPayload, Grid, ProductThumb, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { capsFor } from '../../caps.js'
 
@@ -14,7 +14,7 @@ const fmtDate = d => {
 }
 
 export function AdminDocuments() {
-  const { docs, orders, users, loading, uploadDoc, getDocData, currentUser } = useApp()
+  const { docs, orders, users, loading, uploadDoc, getDocData, currentUser, masterOrders } = useApp()
   const toast = useToast()
   // Same repository for every role; what each may upload follows the server's rules (caps.js).
   const caps = capsFor(currentUser)
@@ -26,12 +26,10 @@ export function AdminDocuments() {
   const [show, setShow] = useState(false)
   const [filt, setFilt] = useState('all')
   const [certTab, setCertTab] = useState('all')
+  const [phase, setPhase] = useState('production')
   const [mode, setMode] = useState('docs') // 'docs' | 'certs'
-  // Buyer Docs is a single, always-relevant triage queue (not one group per
-  // order), so — unlike the per-order groups below it — opening it by default
-  // never scales badly with account size. Order groups and General Documents
-  // stay collapsed on purpose: real accounts can have many orders.
-  const [openGroups, setOpenGroups] = useState(new Set(['__buyer_docs__']))
+  // Every folder starts closed, like the Orders page; a click opens it.
+  const [openGroups, setOpenGroups] = useState(() => new Set())
   const toggleGroup = id => setOpenGroups(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   const [uf, setUf] = useState({ type: 'PO', name: '', issuer: defaultIssuer, issueDate: getToday(), expiryDate: '', orderId: '', mfrId: null, buyerId: '' })
   const [fileData, setFileData] = useState(null)
@@ -231,85 +229,109 @@ export function AdminDocuments() {
               </button>
             ))}
           </div>
-          {filt === 'all' ? (() => {
-            // Buyer Docs = docs uploaded by a buyer user (Submit Requirement etc.).
-            // Ops/admin reviews these here and extracts relevant ones to specific order folders.
+          {(() => {
+            // Laid out exactly like the Orders page: the Production / Sampling & Development switch, then one folder
+            // per master order (newest first, "Other Orders" last), its styles inside, each style's documents inside that.
             const buyerDocs = caps.isAdmin ? show2.filter(d => d.uploadedByRole === 'buyer') : []
             const buyerDocIds = new Set(buyerDocs.map(d => d.id))
             const remaining = show2.filter(d => !buyerDocIds.has(d.id))
-            const withOrder = remaining.filter(d => d.orderId)
-            const noOrder = remaining.filter(d => !d.orderId)
-            const grouped = orders.map(o => ({ order: o, docs: withOrder.filter(d => String(d.orderId) === String(o.id)) })).filter(g => g.docs.length > 0)
-            return (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {/* Buyer Docs — all buyer-submitted requirement docs (RFQ/Tech Pack/PO) */}
-                {buyerDocs.length > 0 && (() => {
-                  const isOpen = openGroups.has('__buyer_docs__')
-                  return (
-                    <div style={{ border: `1px solid ${isOpen ? T.primary + '44' : T.border}`, borderRadius: 12, overflow: 'hidden', transition: 'border-color 0.15s' }}>
-                      <button onClick={() => toggleGroup('__buyer_docs__')} style={{ width: '100%', padding: '11px 16px', background: isOpen ? T.primaryLight : '#fff7ed', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'inherit', transition: 'background 0.15s' }}>
-                        <span style={{ color: isOpen ? T.primary : T.textMuted, transition: 'transform 0.15s', display: 'inline-flex', transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}><ChevronRight size={13} /></span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Inbox size={13} /> Buyer Docs</span>
-                        <span style={{ fontSize: 10, color: T.textMuted, fontWeight: 600 }}>Requirement documents uploaded by buyers</span>
-                        <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: '#9a3412', background: '#fed7aa', padding: '1px 8px', borderRadius: 10 }}>{buyerDocs.length}</span>
-                      </button>
-                      {isOpen && (
-                        <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6, borderTop: `1px solid ${T.border}` }}>
-                          {buyerDocs.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} />)}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })()}
-
-                {/* General Documents (admin/mfr uploads with no order) */}
-                {noOrder.length > 0 && (() => {
-                  const isOpen = openGroups.has('__general__')
-                  return (
-                    <div style={{ border: `1px solid ${T.border}`, borderRadius: 12, overflow: 'hidden' }}>
-                      <button onClick={() => toggleGroup('__general__')} style={{ width: '100%', padding: '11px 16px', background: '#f8fafc', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'inherit' }}>
-                        <span style={{ color: isOpen ? T.primary : T.textMuted, transition: 'transform 0.15s', display: 'inline-flex', transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}><ChevronRight size={13} /></span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Folder size={13} /> General Documents</span>
-                        <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: T.textMuted, background: '#e2e8f0', padding: '1px 8px', borderRadius: 10 }}>{noOrder.length}</span>
-                      </button>
-                      {isOpen && (
-                        <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6, borderTop: `1px solid ${T.border}` }}>
-                          {noOrder.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} />)}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })()}
-
-                {/* Order groups — collapsed by default */}
-                {grouped.map(({ order: o, docs: oDocs }) => {
-                  const isOpen = openGroups.has(o.id)
-                  return (
-                    <div key={o.id} style={{ border: `1px solid ${isOpen ? T.primary + '44' : T.border}`, borderRadius: 12, overflow: 'hidden', transition: 'border-color 0.15s' }}>
-                      <button onClick={() => toggleGroup(o.id)} style={{ width: '100%', padding: '11px 16px', background: isOpen ? T.primaryLight : '#f8fafc', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'inherit', transition: 'background 0.15s' }}>
-                        <span style={{ color: isOpen ? T.primary : T.textMuted, transition: 'transform 0.15s', display: 'inline-flex', transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}><ChevronRight size={13} /></span>
-                        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, fontWeight: 800, color: T.primary }}>{o.id}</span>
-                        <span style={{ fontSize: 12, color: T.text, fontWeight: 600 }}>{o.product}</span>
-                        {o.season && <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', background: '#dbeafe', padding: '1px 6px', borderRadius: 4 }}>{o.season}</span>}
-                        <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: T.textMuted, background: '#e2e8f0', padding: '1px 8px', borderRadius: 10 }}>{oDocs.length}</span>
-                      </button>
-                      {isOpen && (
-                        <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6, borderTop: `1px solid ${T.border}` }}>
-                          {oDocs.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} />)}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-                {show2.length === 0 && <Card><EmptyState icon={<Folder size={26} color={T.textLight} />} title="No documents" desc="Upload your first document above" /></Card>}
+            const byOrder = new Map()
+            remaining.filter(d => d.orderId).forEach(d => { const k = String(d.orderId); if (!byOrder.has(k)) byOrder.set(k, []); byOrder.get(k).push(d) })
+            const phaseCount = Object.fromEntries(PHASES.map(([v]) => [v, orders.filter(o => phaseOf(o) === v).length]))
+            const phaseOrders = orders.filter(o => phaseOf(o) === phase)
+            const showAllStyles = filt === 'all'
+            const gmap = new Map()
+            phaseOrders.forEach(o => {
+              const styleDocs = byOrder.get(String(o.id)) || []
+              if (!showAllStyles && styleDocs.length === 0) return
+              const k = o.masterOrderId || '__none__'
+              if (!gmap.has(k)) gmap.set(k, { moId: k, mo: k !== '__none__' ? masterOrders.find(m => m.id === k) || null : null, styles: [] })
+              gmap.get(k).styles.push({ order: o, docs: styleDocs })
+            })
+            const groups = [...gmap.values()]
+            groups.forEach(g => {
+              g.masterDocs = g.moId === '__none__' ? [] : remaining.filter(d => !d.orderId && d.masterOrderId === g.moId)
+              g.count = g.styles.reduce((n, x) => n + x.docs.length, 0) + g.masterDocs.length
+            })
+            groups.sort((a, b) => a.moId === '__none__' ? 1 : b.moId === '__none__' ? -1 : new Date(b.mo?.createdAt || 0) - new Date(a.mo?.createdAt || 0))
+            const placed = new Set(groups.flatMap(g => g.masterDocs.map(d => d.id)))
+            const general = remaining.filter(d => !d.orderId && !placed.has(d.id))
+            const groupLabel = g => withBuyerPrefix(g.mo?.orderName || (g.moId === '__none__' ? 'Other Orders' : g.moId), g.styles.map(x => x.order))
+            const head = { padding: '9px 14px', background: '#f1f5f9', cursor: 'pointer' }
+            const chip = n => <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, background: '#e2e8f0', padding: '1px 8px', borderRadius: 10 }}>{n}</span>
+            const folderHead = (id, icon, label, right) => {
+              const isOpen = openGroups.has(id)
+              return (
+                <FlexRow gap={10} onClick={() => toggleGroup(id)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => toggleGroup(id))} style={head}>
+                  <span style={{ color: T.textMuted, transform: isOpen ? 'none' : 'rotate(-90deg)', display: 'inline-flex' }}><ChevronDown size={13} /></span>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}>{icon} {label}</span>
+                  <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8 }}>{right}</span>
+                </FlexRow>
+              )
+            }
+            const docList = list => (
+              <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6, borderTop: `1px solid ${T.border}` }}>
+                {list.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} />)}
               </div>
             )
-          })() : (
-            <>
-              {show2.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} />)}
-              {show2.length === 0 && <Card><EmptyState icon={<Folder size={26} color={T.textLight} />} title="No documents" desc="Upload your first document above" /></Card>}
-            </>
-          )}
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <FlexRow gap={6}>
+                  {PHASES.map(([id, label]) => (
+                    <button key={id} onClick={() => setPhase(id)} aria-pressed={phase === id}
+                      style={{ fontSize: 13, fontWeight: 800, padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
+                        border: `1px solid ${phase === id ? T.primaryDeep : T.border}`, background: phase === id ? T.primaryDeep : T.surface, color: phase === id ? '#fff' : T.text }}>
+                      {label} <span style={{ opacity: 0.8, fontWeight: 700 }}>({phaseCount[id]})</span>
+                    </button>
+                  ))}
+                </FlexRow>
+
+                {/* Buyer Docs: requirement documents uploaded by buyers, for ops to sort into the right style. */}
+                {buyerDocs.length > 0 && (
+                  <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
+                    {folderHead('__buyer_docs__', <Inbox size={13} />, 'Buyer Docs', <><span style={{ fontSize: 11, color: T.textMuted }}>Requirement documents uploaded by buyers</span>{chip(buyerDocs.length)}</>)}
+                    {openGroups.has('__buyer_docs__') && docList(buyerDocs)}
+                  </div>
+                )}
+
+                {groups.map(g => (
+                  <div key={g.moId} style={{ border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
+                    {folderHead(g.moId, <Folder size={13} />, groupLabel(g), <>
+                      {g.mo?.season && <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', background: '#dbeafe', padding: '1px 7px', borderRadius: 4 }}>{g.mo.season}</span>}
+                      <span style={{ fontSize: 11, color: T.textMuted }}>{g.styles.length} style{g.styles.length !== 1 ? 's' : ''} · {g.count} document{g.count !== 1 ? 's' : ''}</span>
+                    </>)}
+                    {openGroups.has(g.moId) && (
+                      <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 8, borderTop: `1px solid ${T.border}` }}>
+                        {g.masterDocs.length > 0 && (
+                          <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                            {folderHead(`${g.moId}:master`, <Folder size={12} />, 'Master order documents', chip(g.masterDocs.length))}
+                            {openGroups.has(`${g.moId}:master`) && docList(g.masterDocs)}
+                          </div>
+                        )}
+                        {g.styles.map(({ order: o, docs: sDocs }) => (
+                          <div key={o.id} style={{ border: `1px solid ${T.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                            {folderHead(`s:${o.id}`, <ProductThumb order={o} size="sm" />, <>{o.product}{o.styleNumber ? <span style={{ fontWeight: 600, color: T.textMuted }}> · {o.styleNumber}</span> : null}</>, chip(sDocs.length))}
+                            {openGroups.has(`s:${o.id}`) && (sDocs.length > 0 ? docList(sDocs) : <div style={{ padding: '10px 14px', fontSize: 12, color: T.textMuted, borderTop: `1px solid ${T.border}` }}>No documents yet.</div>)}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {/* General Documents: uploads that belong to no style or master order. */}
+                {general.length > 0 && (
+                  <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
+                    {folderHead('__general__', <Folder size={13} />, 'General Documents', chip(general.length))}
+                    {openGroups.has('__general__') && docList(general)}
+                  </div>
+                )}
+                {groups.length === 0 && general.length === 0 && buyerDocs.length === 0 && (
+                  <Card><EmptyState icon={<Folder size={26} color={T.textLight} />} title={phase === 'development' ? 'Nothing in Sampling & Development' : 'No documents'} desc={phase === 'development' ? 'Documents for styles still being sampled show up here.' : 'Upload your first document above'} /></Card>
+                )}
+              </div>
+            )
+          })()}
         </>
       )}
 

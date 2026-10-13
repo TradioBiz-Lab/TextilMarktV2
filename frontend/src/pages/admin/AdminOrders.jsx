@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, List, LayoutGrid, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, ChevronUp, ArrowRight, X, Pencil } from '../../icons.jsx'
+import { Plus, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, ChevronUp, ArrowRight, X, Pencil } from '../../icons.jsx'
 import {
   T, SEASONS, ORDER_STATUSES,
   isStageDone, stageIsOverdue, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct, fmtStageDate, effectiveEta,
@@ -63,10 +63,6 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
     return next
   })
 
-  // List vs Matrix (styles across, TNA steps down). Both read the SAME
-  // expandedGroups Set, keyed by master-order id — so a group left open in one
-  // view stays open switching to the other; only the rendering changes.
-  const [view, setView] = useState('matrix')
   // Native `title` tooltips are slow to appear (~1s browser delay) and easy to
   // miss entirely — a custom one shows the instant the cursor lands, following
   // the mouse so it never gets clipped by the scrolling matrix container.
@@ -312,9 +308,6 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
           </FlexRow>
         ) : (caps.submitRequirement && onSubmitReq ? <Btn onClick={onSubmitReq} icon={<Plus size={13} />}>Submit Requirement</Btn> : null)} />
 
-      {/* List = one row per order, for day-to-day management. Matrix = styles
-          across the top, TNA steps down the side, for "where does the whole
-          book stand" at a glance — the shape of the Summary TNA sheet. */}
       <FlexRow gap={6} style={{ marginBottom: 10 }}>
         {PHASES.map(([id, label]) => (
           <button key={id} onClick={() => setPhase(id)} aria-pressed={phase === id}
@@ -388,18 +381,6 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
           </div>
         )
       })()}
-      <FlexRow gap={6} style={{ marginBottom: 14 }}>
-        {[['list', 'List', List], ['matrix', 'Matrix', LayoutGrid]].map(([id, label, Icon]) => (
-          <button key={id} onClick={() => setView(id)}
-            style={{ fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
-              border: `1px solid ${view === id ? T.primaryDeep : T.border}`,
-              background: view === id ? T.primaryLight : T.surface,
-              color: view === id ? T.primaryDeep : T.textMuted,
-              display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <Icon size={13} /> {label}
-          </button>
-        ))}
-      </FlexRow>
 
       <Card pad={false}>
         <div style={{ padding: '14px 18px', borderBottom: `1px solid ${T.border}`, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -447,130 +428,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
             {ORDER_STATUSES.map(s => <option key={s}>{s}</option>)}
           </select>
         </div>
-        {view === 'list' && (
-        <div className="table-scroll">
-          {/* 8 columns at minWidth 700 left ~87px each, so "Slim Fit Jeans" and
-              "H&M Sourcing" wrapped to two lines and every row grew taller than
-              its thumbnail. The wrapper already scrolls horizontally — giving the
-              table its natural width is what that scroll is for. */}
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 920 }}>
-            <thead>
-              <tr style={{ background: '#f8fafc' }}>
-                {[
-                  { key: 'id', label: 'Order ID' },
-                  { key: 'product', label: 'Product' },
-                  { key: 'buyer', label: 'Buyer', sortable: true },
-                  { key: 'manufacturer', label: 'Manufacturer(s)', sortable: true },
-                  { key: 'qty', label: 'Qty' },
-                  { key: 'status', label: 'Status' },
-                  { key: 'delivery', label: 'Delivery', sortable: true },
-                  { key: 'action', label: '' },
-                ].map(h => (
-                  <th key={h.key} onClick={h.sortable ? () => toggleSort(h.key) : undefined} role={h.sortable ? 'button' : undefined} tabIndex={h.sortable ? 0 : undefined} onKeyDown={h.sortable ? activateOnKey(() => toggleSort(h.key)) : undefined}
-                    style={{ padding: '10px 16px', textAlign: 'left', fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.07em', whiteSpace: 'nowrap', cursor: h.sortable ? 'pointer' : 'default', userSelect: h.sortable ? 'none' : undefined }}>
-                    {h.sortable ? (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 6, background: sortCol === h.key ? T.primaryLight : '#f1f5f9', color: sortCol === h.key ? T.primaryDark : T.textMuted, border: `1px solid ${sortCol === h.key ? '#fed7aa' : T.border}`, transition: 'all 0.15s' }}>
-                        {h.label}
-                        <span style={{ display: 'inline-flex', flexDirection: 'column', lineHeight: 0, gap: 0, marginLeft: -2 }}>
-                          <ChevronUp size={11} color={sortCol === h.key && sortDir === 'asc' ? T.primaryDark : '#cbd5e1'} style={{ marginBottom: -3 }} />
-                          <ChevronDown size={11} color={sortCol === h.key && sortDir === 'desc' ? T.primaryDark : '#cbd5e1'} />
-                        </span>
-                      </span>
-                    ) : h.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {groupedOrders.flatMap((g, gi) => {
-                const collapsed = !expandedGroups.has(g.moId)
-                const groupLabel = groupDisplayLabel(g)
-                const spacerRow = gi > 0 ? (
-                  <tr key={`sp-${g.moId}`} aria-hidden="true"><td colSpan={8} style={{ padding: 0, height: 12, border: 'none', background: T.bg }} /></tr>
-                ) : null
-                const headerRow = (
-                  <tr key={`h-${g.moId}`} id={`mo-group-${g.moId}`} onClick={() => toggleGroup(g.moId)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => toggleGroup(g.moId))} style={{ cursor: 'pointer', background: '#f1f5f9' }}>
-                    <td colSpan={8} style={{ padding: '10px 16px' }}>
-                      <FlexRow gap={10}>
-                        <span style={{ color: T.textMuted, transition: 'transform 0.15s', transform: collapsed ? 'rotate(-90deg)' : 'none', display: 'inline-flex' }}><ChevronDown size={13} /></span>
-                        <span style={{ fontSize: 13, fontWeight: 800, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Folder size={13} /> {groupLabel}</span>
-                        {g.mo?.season && <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', background: '#dbeafe', padding: '2px 7px', borderRadius: 4 }}>{g.mo.season}</span>}
-                        <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{g.orders.length} order{g.orders.length !== 1 ? 's' : ''}</span>
-                        {caps.editOrders && g.mo && (
-                          <button onClick={e => { e.stopPropagation(); setEditMo(g.mo) }} title="Edit master order" aria-label={`Edit master order ${groupLabel}`}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.textMuted, cursor: 'pointer', fontFamily: 'inherit' }}>
-                            <Pencil size={11} /> Edit
-                          </button>
-                        )}
-                      </FlexRow>
-                    </td>
-                  </tr>
-                )
-                if (collapsed) return [spacerRow, headerRow].filter(Boolean)
-                const rows = g.orders.flatMap(o => {
-                  const visibleAsgns = sfilt === 'All'
-                    ? (o.assignments.length > 0 ? o.assignments : [null])
-                    : o.assignments.filter(a => a.status === sfilt)
-                  return visibleAsgns.map((a, ai) => (
-                    <tr key={`${o.id}-${ai}`}
-                      style={{ borderTop: `1px solid ${T.border}`, cursor: 'pointer' }}
-                      onClick={() => onOpen(o.id, a?.mid)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => onOpen(o.id, a?.mid))}
-                      onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <td style={{ padding: '11px 16px' }}>
-                        <Mono style={{ fontSize: 11 }}>{o.id}{a ? `-${a.sub}` : ''}</Mono>
-                      </td>
-                      <td style={{ padding: '11px 16px', fontWeight: 600, color: T.text, fontSize: 13 }}>
-                        <FlexRow gap={10}><ProductThumb order={o} size="sm" onClick={caps.editOrders ? (e => { e.stopPropagation(); setEditTarget(o) }) : undefined} />{o.product}</FlexRow>
-                      </td>
-                      <td style={{ padding: '11px 16px', color: T.textMuted, fontSize: 13 }}>{o.buyerCompany || '—'}</td>
-                      <td style={{ padding: '11px 16px' }}>
-                        {a ? (
-                          <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{a.mfrCompany || '—'}</span>
-                        ) : <span style={{ fontSize: 11, fontWeight: 800, color: T.textLight, letterSpacing: '0.04em' }}>TBD</span>}
-                      </td>
-                      <td style={{ padding: '11px 16px', color: T.textMuted, fontSize: 13 }}>{a ? a.qty?.toLocaleString() : o.totalQty?.toLocaleString()}</td>
-                      <td style={{ padding: '11px 16px' }}>{a ? <Badge status={a.status} /> : <span style={{ fontSize: 11, fontWeight: 800, color: T.textLight, letterSpacing: '0.04em' }}>TBD</span>}</td>
-                      <td style={{ padding: '11px 16px', color: T.textMuted, fontSize: 13 }}>
-                        <FlexRow gap={5}>
-                          {fmtDate(o.delivery)}
-                          {typeof o.deliveryVarianceDays === 'number' && o.deliveryVarianceDays !== 0 && (
-                            <span
-                              title={`Originally promised ${fmtDate(o.baselineDelivery)}`}
-                              style={{ fontSize: 10, fontWeight: 800, color: o.deliveryVarianceDays > 0 ? T.danger : T.success }}
-                            >
-                              {o.deliveryVarianceDays > 0 ? '+' : ''}{o.deliveryVarianceDays}d
-                            </span>
-                          )}
-                        </FlexRow>
-                      </td>
-                      <td style={{ padding: '11px 16px' }}>
-                        <FlexRow gap={6}>
-                          <Btn size="sm" onClick={(e) => { e.stopPropagation(); onOpen(o.id, a?.mid) }}>{caps.isAdmin ? 'Manage' : 'Open'} <ArrowRight size={12} style={{ marginLeft: -2 }} /></Btn>
-                          {caps.editOrders && <Btn size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); setEditTarget(o) }}>Edit</Btn>}
-                          {caps.deleteOrders && <button
-                            onClick={(e) => { e.stopPropagation(); setDeleteTarget(o) }}
-                            style={{ padding: '4px 10px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: `1px solid ${T.dangerBorder}`, background: T.dangerBg, color: T.danger, cursor: 'pointer', fontFamily: 'inherit' }}
-                          >Drop</button>}
-                        </FlexRow>
-                      </td>
-                    </tr>
-                  ))
-                })
-                return [spacerRow, headerRow, ...rows].filter(Boolean)
-              })}
-              {filtered.length === 0 && <tr><td colSpan={8}><EmptyState icon={<Package size={26} color={T.textLight} />} title={phase === 'development' ? 'Nothing in Sampling & Development' : 'No orders'} desc={phase === 'development' ? 'Styles still being sampled show up here.' : caps.createOrders ? "Create your first order above" : "Orders will appear here once they are placed"} /></td></tr>}
-            </tbody>
-          </table>
-        </div>
-        )}
-
-        {view === 'matrix' && (
-          // No standalone legend here — it's the one thing List doesn't have,
-          // so it made switching views feel like landing on a different page.
-          // Each cell's state is still named in its hover tooltip; the color
-          // is a glanceable summary of exactly that.
+        {/* Styles across the top, TNA steps down the side. Each cell's state is named in its hover tooltip. */}
           <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
             {groupedOrders.length === 0 && <EmptyState icon={<Package size={26} color={T.textLight} />} title={phase === 'development' ? 'Nothing in Sampling & Development' : 'No orders'} desc={phase === 'development' ? 'Styles still being sampled show up here.' : caps.createOrders ? "Create your first order above" : "Orders will appear here once they are placed"} />}
@@ -712,7 +570,6 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, onSubmitReq }) {
               )
             })}
           </div>
-        )}
       </Card>
 
       {/* Custom matrix-cell tooltip — position: fixed so it's never clipped by
