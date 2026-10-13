@@ -119,7 +119,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
       />
 
       {/* ── Sidebar ── */}
-      <aside className={`shell-sidebar${sidebarOpen ? ' open' : ''}${sidebarCollapsed ? ' collapsed' : ''}`} style={{ background: T.sidebarGradient, display: 'flex', flexDirection: 'column' }}>
+      <aside className={`shell-sidebar${sidebarOpen ? ' open' : ''}${sidebarCollapsed ? ' collapsed' : ''}`} onClick={() => { if (sidebarCollapsed) setSidebarCollapsed(false) }} style={{ background: T.sidebarGradient, display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: sidebarCollapsed ? '20px 8px 16px' : '20px 16px 16px', borderBottom: `1px solid ${T.sidebarBorder}` }}>
           {sidebarCollapsed
             ? <div style={{ display: 'flex', justifyContent: 'center', color: roleColor }}><Hexagon size={18} strokeWidth={2.5} /></div>
