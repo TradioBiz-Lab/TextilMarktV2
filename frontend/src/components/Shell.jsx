@@ -1,3 +1,4 @@
+import { Logo } from './Brand.jsx'
 import { ViewAsPicker } from './ViewAsPicker.jsx'  // sandbox-only, remove with the feature
 import { useState, useEffect } from 'react'
 import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot, Hexagon, Inbox } from '../icons.jsx'
@@ -49,21 +50,6 @@ function NetworkBanner() {
 }
 
 
-function Logo() {
-  return (
-    <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 1 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', lineHeight: 1 }}>
-        <span style={{ fontSize: 17, fontWeight: 800, color: '#003B73', letterSpacing: '-0.02em', fontFamily: 'inherit' }}>Textil</span>
-        <span style={{ fontSize: 17, fontWeight: 800, color: '#C2410C', letterSpacing: '-0.02em', fontFamily: 'inherit' }}>Markt</span>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
-        <div style={{ width: 14, height: 1.5, background: '#C2410C', borderRadius: 1 }} />
-        <span style={{ fontSize: 7, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase' }}>by Tradio</span>
-      </div>
-    </div>
-  )
-}
-
 export function Shell({ view, setView, children, onOpenOrder }) {
   const { currentUser: user, logout, unread, ribbons } = useApp()
   const [notifOpen, setNotifOpen] = useState(false)
@@ -92,9 +78,10 @@ export function Shell({ view, setView, children, onOpenOrder }) {
     ? (user?.adminType === 'master' ? 'Master Admin' : 'Admin Portal')
     : user?.role === 'buyer' ? 'Buyer Portal' : 'Manufacturer Portal'
 
-  const roleColor = user?.role === 'admin'
-    ? (user?.adminType === 'master' ? '#DDD6FE' : T.primary)
-    : user?.role === 'buyer' ? '#7dd3fc' : '#c2410c'
+  const ROLE_DOT = { master: '#A78BFA', admin: T.primary, buyer: '#7DD3FC', manufacturer: '#FDBA74' }
+  const roleDot = user?.role === 'admin'
+    ? (user?.adminType === 'master' ? ROLE_DOT.master : ROLE_DOT.admin)
+    : user?.role === 'buyer' ? ROLE_DOT.buyer : ROLE_DOT.manufacturer
 
   // Clicking empty space on the page folds the sidebar to icons, so the work gets the width. A click on a control or a
   // row does its own job and leaves the layout alone. The drawer on a phone already closes itself.
@@ -120,11 +107,16 @@ export function Shell({ view, setView, children, onOpenOrder }) {
 
       {/* ── Sidebar ── */}
       <aside className={`shell-sidebar${sidebarOpen ? ' open' : ''}${sidebarCollapsed ? ' collapsed' : ''}`} onClick={() => { if (sidebarCollapsed) setSidebarCollapsed(false) }} style={{ background: T.sidebarGradient, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: sidebarCollapsed ? '20px 8px 16px' : '20px 16px 16px', borderBottom: `1px solid ${T.sidebarBorder}` }}>
+        {/* Brand first, portal second: the logo lockup (just the mark when collapsed), then which portal this is. */}
+        <div style={{ padding: sidebarCollapsed ? '16px 8px 14px' : '18px 16px 16px', borderBottom: `1px solid ${T.sidebarBorder}` }}>
           {sidebarCollapsed
-            ? <div style={{ display: 'flex', justifyContent: 'center', color: roleColor }}><Hexagon size={18} strokeWidth={2.5} /></div>
+            ? <div title={roleLabel} style={{ display: 'flex', justifyContent: 'center' }}><Logo variant="compact" onDark size={32} /></div>
             : <>
-                <div style={{ fontSize: roleLabel.length > 14 ? 13 : 20, fontWeight: 800, color: roleColor, textTransform: 'uppercase', letterSpacing: roleLabel.length > 14 ? '0.03em' : '0.06em', textAlign: 'center', lineHeight: 1.2, whiteSpace: 'nowrap' }}>{roleLabel}</div>
+                <div style={{ display: 'flex' }}><Logo onDark size={36} /></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}>
+                  <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: roleDot, flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.78)', textTransform: 'uppercase', letterSpacing: '0.09em', whiteSpace: 'nowrap' }}>{roleLabel}</span>
+                </div>
                 <ViewAsPicker />
               </>
           }
@@ -179,7 +171,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
             <button className="hamburger-btn" onClick={() => setSidebarOpen(true)}>
               <Menu size={20} />
             </button>
-            <Logo />
+            <div className="header-logo"><Logo size={28} /></div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ position: 'relative' }}>

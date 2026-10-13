@@ -178,8 +178,8 @@ export const T = {
   warning: '#C2410C', warningBg: '#FFF7ED', warningBorder: '#FDBA74',
   info: '#002B5B', infoBg: '#E6F0FF', infoBorder: '#93c5fd',
   master: '#7c3aed', masterBg: '#ede9fe',
-  sidebar: '#003B73', sidebarBorder: 'rgba(255,255,255,0.1)',
-  sidebarGradient: 'linear-gradient(180deg, #0a4f8a 0%, #003B73 50%, #001c38 100%)',
+  sidebar: '#1D2D50', sidebarBorder: 'rgba(255,255,255,0.1)',
+  sidebarGradient: 'linear-gradient(180deg, #22355E 0%, #1D2D50 40%, #131D34 100%)',
   heroGradient: 'linear-gradient(135deg, #0a4f8a 0%, #003B73 55%, #002347 100%)',
   // Type scale. 916 inline fontSize declarations across 24 distinct values (some
   // under 11px) existed with no shared scale before this — new/touched call sites

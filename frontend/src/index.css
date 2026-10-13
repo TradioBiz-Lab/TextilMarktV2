@@ -58,6 +58,8 @@ table { border-collapse: collapse; width: 100%; }
 
 /* Hamburger hidden on desktop */
 .hamburger-btn { display: none; }
+/* The sidebar carries the logo on desktop; the header shows it only once the sidebar is a hidden drawer. */
+.header-logo { display: none; }
 
 /* Header user details - visible on desktop */
 .header-user-info { display: flex; }
@@ -168,6 +170,8 @@ table { border-collapse: collapse; width: 100%; }
 
 /* ── Mobile (≤768px) ── */
 @media (max-width: 768px) {
+  /* Header logo comes back with the hamburger. */
+  .header-logo { display: flex; align-items: center; }
   /* Sidebar becomes slide-out drawer */
   .shell-sidebar {
     position: fixed;
@@ -280,4 +284,10 @@ table { border-collapse: collapse; width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) {
   .kriyaa-eye { animation: none; }
+}
+
+/* On very narrow phones (under 360px) the header logo drops its name and keeps the mark, so the
+   bell and Sign out still fit. .brand-text sets its display inline, hence !important. */
+@media (max-width: 359.98px) {
+  .header-logo .brand-text { display: none !important; }
 }
