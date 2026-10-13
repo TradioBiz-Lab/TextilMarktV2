@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useCallback, createContext, useContext, isValidElement, cloneElement } from 'react'
-import { createPortal } from 'react-dom'
 import { Folder, Link2, Package, Factory, Eye, Download, FileText, StickyNote, AlertTriangle, CheckCircle2, Info, X, Image as ImageIcon, Paperclip, Upload, ChevronLeft, ChevronRight, Crown, Check, Pencil, Trash2 } from '../icons.jsx'
 import { T, ST, DOC_TYPES, STAGE_DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired } from '../constants.js'
 import { useApp } from '../context.jsx'
@@ -1130,28 +1129,6 @@ export function StageTimeline({ stages = [] }) {
 }
 
 export function PageHeader({ title, subtitle, action }) {
-  // On a desktop screen the title lives in the top bar (the shell's #shell-title slot; the subtitle is its tooltip) and
-  // the page's buttons sit beside the bell (#shell-actions), so the page starts with its content. On a phone the top bar
-  // holds the menu and logo, so the title and buttons stay in the page.
-  const [slots, setSlots] = useState(null)
-  useEffect(() => {
-    const q = window.matchMedia('(min-width: 769px)')
-    const sync = () => setSlots(q.matches ? { title: document.getElementById('shell-title'), actions: document.getElementById('shell-actions') } : null)
-    sync()
-    q.addEventListener('change', sync)
-    return () => q.removeEventListener('change', sync)
-  }, [])
-  if (slots?.title && slots?.actions) {
-    return (
-      <>
-        {createPortal(
-          <h1 title={typeof subtitle === 'string' ? subtitle : undefined} style={{ fontSize: 20, fontWeight: 800, color: T.text, margin: 0, letterSpacing: '-0.02em', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</h1>,
-          slots.title,
-        )}
-        {action && createPortal(action, slots.actions)}
-      </>
-    )
-  }
   return (
     <div className="page-header">
       <div>

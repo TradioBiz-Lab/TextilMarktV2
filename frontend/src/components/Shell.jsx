@@ -172,10 +172,8 @@ export function Shell({ view, setView, children, onOpenOrder }) {
               <Menu size={20} />
             </button>
             <div className="header-logo"><Logo size={28} /></div>
-            <div id="shell-title" className="header-title" />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div id="shell-actions" className="header-actions" />
             <div style={{ position: 'relative' }}>
               <button data-notif-toggle onClick={() => setNotifOpen(p => !p)}
                 style={{ background: '#f8fafc', border: `1px solid ${T.border}`, borderRadius: 9, width: 36, height: 36, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Bell size={18} color={T.textMuted} /></button>

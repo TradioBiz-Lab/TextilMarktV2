@@ -60,12 +60,6 @@ table { border-collapse: collapse; width: 100%; }
 .hamburger-btn { display: none; }
 /* The sidebar carries the logo on desktop; the header shows it only once the sidebar is a hidden drawer. */
 .header-logo { display: none; }
-/* The page title (set by PageHeader) sits in the top bar on desktop; phones keep it in the page. */
-.header-title { display: none; min-width: 0; margin-left: 4px; }
-@media (min-width: 769px) { .header-title { display: block; } }
-.header-actions { display: none; align-items: center; gap: 8px; margin-right: 6px; }
-@media (min-width: 769px) { .header-actions { display: flex; } }
-.header-actions:empty { display: none !important; }
 
 /* Header user details - visible on desktop */
 .header-user-info { display: flex; }
