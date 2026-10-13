@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, createContext, useContext, isValidElement, cloneElement } from 'react'
+import { createPortal } from 'react-dom'
 import { Folder, Link2, Package, Factory, Eye, Download, FileText, StickyNote, AlertTriangle, CheckCircle2, Info, X, Image as ImageIcon, Paperclip, Upload, ChevronLeft, ChevronRight, Crown, Check, Pencil, Trash2 } from '../icons.jsx'
 import { T, ST, DOC_TYPES, STAGE_DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired } from '../constants.js'
 import { useApp } from '../context.jsx'
@@ -1129,6 +1130,30 @@ export function StageTimeline({ stages = [] }) {
 }
 
 export function PageHeader({ title, subtitle, action }) {
+  // On a desktop screen the title and subtitle live in the top bar (the shell's #shell-title slot), so the page
+  // starts with its content. On a phone the top bar holds the menu and logo, so the title stays in the page.
+  const [slot, setSlot] = useState(null)
+  useEffect(() => {
+    const q = window.matchMedia('(min-width: 769px)')
+    const sync = () => setSlot(q.matches ? document.getElementById('shell-title') : null)
+    sync()
+    q.addEventListener('change', sync)
+    return () => q.removeEventListener('change', sync)
+  }, [])
+  if (slot) {
+    return (
+      <>
+        {createPortal(
+          <div title={typeof subtitle === 'string' ? subtitle : undefined} style={{ minWidth: 0 }}>
+            <h1 style={{ fontSize: 18, fontWeight: 800, color: T.text, margin: 0, letterSpacing: '-0.02em', lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</h1>
+            {subtitle && <p style={{ fontSize: 12, color: T.textMuted, margin: '2px 0 0', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subtitle}</p>}
+          </div>,
+          slot,
+        )}
+        {action && <div className="page-header" style={{ justifyContent: 'flex-end' }}>{action}</div>}
+      </>
+    )
+  }
   return (
     <div className="page-header">
       <div>

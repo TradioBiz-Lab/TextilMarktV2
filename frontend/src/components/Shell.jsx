@@ -172,6 +172,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
               <Menu size={20} />
             </button>
             <div className="header-logo"><Logo size={28} /></div>
+            <div id="shell-title" className="header-title" />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ position: 'relative' }}>
