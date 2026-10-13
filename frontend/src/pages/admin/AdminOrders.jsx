@@ -53,8 +53,6 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, initialPhase, on
   const [moving, setMoving] = useState(false)
   const [askDate, setAskDate] = useState(false)
   const phaseCount = Object.fromEntries(PHASES.map(([v]) => [v, orders.filter(o => phaseOf(o) === v).length]))
-  const [sortCol, setSortCol] = useState(null)
-  const [sortDir, setSortDir] = useState('asc')
   // Groups start collapsed — an admin managing many master orders shouldn't have to
   // scroll past every line item of every group just to find one. Tracks which groups
   // have been explicitly expanded, rather than which are collapsed.
@@ -103,27 +101,10 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, initialPhase, on
 
   const buyerUsers = users.filter(u => u.role === 'buyer' && u.isActive)  // used in Master Order modal
 
-  const toggleSort = col => {
-    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    else { setSortCol(col); setSortDir('asc') }
-  }
-
   const filtered = orders.filter(o => {
     const qm = !q || (o.id.toLowerCase().includes(q.toLowerCase()) || o.product.toLowerCase().includes(q.toLowerCase()))
     const sm = sfilt === 'All' || (o.assignments || []).some(a => a.status === sfilt)
     return qm && sm && phaseOf(o) === phase
-  }).sort((a, b) => {
-    if (!sortCol) return 0
-    const dir = sortDir === 'asc' ? 1 : -1
-    if (sortCol === 'buyer') return dir * (a.buyerCompany || '').localeCompare(b.buyerCompany || '')
-    if (sortCol === 'manufacturer') {
-      const am = (a.assignments || []).map(x => x.mfrCompany).filter(Boolean).join(', ')
-      const bm = (b.assignments || []).map(x => x.mfrCompany).filter(Boolean).join(', ')
-      return dir * am.localeCompare(bm)
-    }
-    if (sortCol === 'status') return dir * orderStatus(a).localeCompare(orderStatus(b))
-    if (sortCol === 'delivery') return dir * (new Date(a.delivery) - new Date(b.delivery))
-    return 0
   })
 
   // Cluster orders under their Master Order (📁 grouping) — same pattern as the buyer
@@ -181,14 +162,6 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, initialPhase, on
   const resetMoForm = () => {
     setMo({ buyerId: '', orderName: '', season: 'SS26' })
     setMoFile(null); setMoFileErr(''); setMoErr('')
-  }
-
-  const orderStatus = (o) => {
-    if (o.assignments.some(a => a.status === 'Delayed')) return 'Delayed'
-    if (o.assignments.some(a => a.status === 'On Hold')) return 'On Hold'
-    // An unassigned style has no splits, and `every` on an empty list is true: it is not delivered.
-    if (o.assignments.length > 0 && o.assignments.every(a => a.status === 'Delivered')) return 'Delivered'
-    return 'Processing'
   }
 
   // Hooks above must run on every render, so the loading gate sits after them.
@@ -322,7 +295,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, initialPhase, on
         ))}
       </FlexRow>
       {phase === 'development' && currentUser.role !== 'manufacturer' && (() => {
-        const ready = filtered.filter(() => caps.editOrders)
+        const ready = caps.editOrders ? filtered : []
         if (ready.length === 0) return null
         const byMo = new Map()
         ready.forEach(o => { const k = o.masterOrderId || '__none__'; if (!byMo.has(k)) byMo.set(k, []); byMo.get(k).push(o) })

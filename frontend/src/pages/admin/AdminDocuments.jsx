@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Factory, ClipboardList, CheckCircle2, AlertTriangle, XCircle, Paperclip, Shield, Folder, Inbox, FileText, ChevronRight, ChevronDown } from '../../icons.jsx'
-import { T, DOC_TYPES, DOC_ICONS, isExpiringSoon, isExpired , getToday, PHASES, phaseOf, withBuyerPrefix } from '../../constants.js'
-import { Modal, Select, Input, Btn, Card, Alert, EmptyState, FlexRow, PageHeader, DocCard, FileUpload, StatCard, LoadingScreen, useToast, fileUploadPayload, Grid, ProductThumb, activateOnKey } from '../../components/ui.jsx'
+import { Factory, Paperclip, Folder, Inbox, ChevronDown } from '../../icons.jsx'
+import { T, DOC_TYPES, getToday } from '../../constants.js'
+import { Modal, Select, Input, Btn, Card, EmptyState, FlexRow, PageHeader, DocCard, FileUpload, LoadingScreen, useToast, fileUploadPayload, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { capsFor } from '../../caps.js'
 
@@ -9,14 +9,8 @@ import { capsFor } from '../../caps.js'
 // about a style (tech packs, POs, test reports, evidence) lives on the style itself.
 const FACTORY_TYPES = ['mfr_profile', 'compliance_cert', 'factory_audit']
 
-const fmtDate = d => {
-  if (!d) return '—'
-  const dt = new Date(d)
-  return `${String(dt.getDate()).padStart(2, '0')}-${String(dt.getMonth() + 1).padStart(2, '0')}-${dt.getFullYear()}`
-}
-
 export function AdminDocuments() {
-  const { docs, orders, users, loading, uploadDoc, getDocData, currentUser, masterOrders } = useApp()
+  const { docs, users, loading, uploadDoc, getDocData, currentUser } = useApp()
   const toast = useToast()
   // Same repository for every role; what each may upload follows the server's rules (caps.js).
   const caps = capsFor(currentUser)
@@ -28,18 +22,18 @@ export function AdminDocuments() {
   // Every folder starts closed, like the Orders page; a click opens it.
   const [openGroups, setOpenGroups] = useState(() => new Set())
   const toggleGroup = id => setOpenGroups(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
-  const [uf, setUf] = useState({ type: 'mfr_profile', name: '', issuer: defaultIssuer, issueDate: getToday(), expiryDate: '', orderId: '', mfrId: null, buyerId: '' })
+  const blankForm = () => ({ type: 'mfr_profile', name: '', issuer: defaultIssuer, issueDate: getToday(), expiryDate: '', mfrId: null })
+  const [uf, setUf] = useState(blankForm)
   const [fileData, setFileData] = useState(null)
   const [fileErr, setFileErr] = useState('')
   const [saving, setSaving] = useState(false)
 
   const mfrUsers = users.filter(u => u.role === 'manufacturer')
-  const buyerUsers = users.filter(u => u.role === 'buyer')
   const active = docs.filter(d => d.isActive !== false)
   const nonStageDocs = active.filter(d => FACTORY_TYPES.includes(d.type))
   const show2 = filt === 'all' ? nonStageDocs : nonStageDocs.filter(d => d.type === filt)
 
-  const reset = () => { setUf({ type: 'mfr_profile', name: '', issuer: defaultIssuer, issueDate: getToday(), expiryDate: '', orderId: '', mfrId: null, buyerId: '' }); setFileData(null); setFileErr('') }
+  const reset = () => { setUf(blankForm()); setFileData(null); setFileErr('') }
 
   const submit = async () => {
     if (!fileData) { setFileErr('Please select a file.'); return }
@@ -47,7 +41,7 @@ export function AdminDocuments() {
     try {
       // A factory always uploads as itself; a customer may never attach a factory (the server refuses it).
       const mfrId = caps.isMfr ? currentUser.id : caps.isBuyer ? null : (uf.mfrId || null)
-      await uploadDoc({ ...uf, expiryDate: uf.expiryDate || null, orderId: uf.orderId || null, mfrId, ...fileUploadPayload(fileData) })
+      await uploadDoc({ ...uf, expiryDate: uf.expiryDate || null, orderId: null, mfrId, ...fileUploadPayload(fileData) })
       toast('Document uploaded', 'success')
       setShow(false); reset()
     } catch {
@@ -68,28 +62,15 @@ export function AdminDocuments() {
   return (
     <div>
       {show && (() => {
-        const isPO = uf.type === 'PO'
-        const isBuyerOrder = uf.type === 'buyer_order'
         const isMfrProfile = uf.type === 'mfr_profile'
-        const filteredOrders = isBuyerOrder && uf.buyerId && caps.isAdmin
-          ? orders.filter(o => String(o.buyerId) === String(uf.buyerId))
-          : orders
         const modalTitle = isMfrProfile ? 'Upload Manufacturer Profile' : uf.type === 'factory_audit' ? 'Upload Audit Report' : 'Upload Compliance Certificate'
-        const modalSub = isMfrProfile ? 'PDF profile visible to all users working with this manufacturer' : isPO ? 'Link this PO to the manufacturer it belongs to' : isBuyerOrder ? 'Link this order to the buyer and their order' : 'Document will be automatically distributed to relevant parties'
+        const modalSub = isMfrProfile ? 'PDF profile visible to all users working with this manufacturer' : 'Document will be automatically distributed to relevant parties'
         const canSubmit = uf.name && fileData && !saving && (caps.isAdmin ? !!uf.mfrId : true)
         return (
         <Modal title={modalTitle} subtitle={modalSub} onClose={() => { setShow(false); reset() }} size="lg">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div className="form-grid-2">
-              <Select label="Document Type" value={uf.type} onChange={e => {
-                const t = e.target.value
-                setUf(prev => ({
-                  ...prev, type: t,
-                  mfrId: (t === 'buyer_order') ? null : prev.mfrId,
-                  orderId: (t === 'mfr_profile' || t === 'PO') ? '' : prev.orderId,
-                  buyerId: (t === 'buyer_order') ? prev.buyerId : '',
-                }))
-              }}>
+              <Select label="Document Type" value={uf.type} onChange={e => setUf({ ...uf, type: e.target.value })}>
                 {uploadTypes.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}
               </Select>
               <Input label="Document Name" value={uf.name} onChange={e => setUf({ ...uf, name: e.target.value })} placeholder="Document title" />
@@ -97,45 +78,14 @@ export function AdminDocuments() {
             {!isMfrProfile && (
               <Input label="Issuing Authority" value={uf.issuer} onChange={e => setUf({ ...uf, issuer: e.target.value })} />
             )}
-            <div className="form-grid-2">
-              {/* Buyer Order: show Buyer selector (compulsory) */}
-              {caps.isAdmin && isBuyerOrder && (
-                <Select label="Link to Buyer *" value={uf.buyerId} onChange={e => setUf({ ...uf, buyerId: e.target.value, orderId: '' })}>
-                  <option value="">— Select Buyer —</option>
-                  {buyerUsers.map(b => <option key={b.id} value={b.id}>{b.company} ({b.name})</option>)}
-                </Select>
-              )}
-              {/* Buyer Order: show Order selector (compulsory, filtered by buyer) */}
-              {isBuyerOrder && (
-                <Select label="Link to Order *" value={uf.orderId} onChange={e => setUf({ ...uf, orderId: e.target.value })} disabled={caps.isAdmin && !uf.buyerId} style={{ opacity: caps.isAdmin && !uf.buyerId ? 0.45 : 1 }}>
-                  <option value="">— Select Order —</option>
-                  {filteredOrders.map(o => <option key={o.id} value={o.id}>{o.id}</option>)}
-                </Select>
-              )}
-              {/* PO: show Manufacturer selector (compulsory) */}
-              {caps.isAdmin && isPO && (
-                <Select label="Link to Manufacturer *" value={uf.mfrId || ''} onChange={e => setUf({ ...uf, mfrId: e.target.value || null })}>
-                  <option value="">— Select Manufacturer —</option>
+            {caps.isAdmin && (
+              <div className="form-grid-2">
+                <Select label="Manufacturer *" value={uf.mfrId || ''} onChange={e => setUf({ ...uf, mfrId: e.target.value || null })}>
+                  <option value="">Select manufacturer</option>
                   {mfrUsers.map(m => <option key={m.id} value={m.id}>{m.company}</option>)}
                 </Select>
-              )}
-              {/* PO: Order disabled */}
-              {isPO && (
-                <Select label="Link to Order (N/A for POs)" value="" disabled style={{ opacity: 0.45 }}>
-                  <option value="">— Disabled —</option>
-                </Select>
-              )}
-              {caps.isAdmin && !isPO && !isBuyerOrder && (
-                <Select
-                  label="Manufacturer *"
-                  value={uf.mfrId || ''}
-                  onChange={e => setUf({ ...uf, mfrId: e.target.value || null })}
-                >
-                  <option value="">— Select Manufacturer —</option>
-                  {mfrUsers.map(m => <option key={m.id} value={m.id}>{m.company}</option>)}
-                </Select>
-              )}
-            </div>
+              </div>
+            )}
             {!isMfrProfile && (
               <div className="form-grid-2">
                 <Input label="Issue Date" type="date" value={uf.issueDate} onChange={e => setUf({ ...uf, issueDate: e.target.value })} />
@@ -172,7 +122,7 @@ export function AdminDocuments() {
               id: k, list,
               label: k === '__none__' ? 'Not linked to a manufacturer' : (users.find(u => String(u.id) === k)?.company || list[0]?.uploadedByCompany || 'Manufacturer'),
             })).sort((a, b) => a.id === '__none__' ? 1 : b.id === '__none__' ? -1 : a.label.localeCompare(b.label))
-            const typeCount = list => ['mfr_profile', 'compliance_cert', 'factory_audit']
+            const typeCount = list => FACTORY_TYPES
               .map(t => [DOC_TYPES.find(x => x.v === t)?.l || t, list.filter(d => d.type === t).length]).filter(([, n]) => n > 0)
             // Customer Requests: requirement documents (RFQ, tech pack, PO) uploaded by customers, for Tradio to sort
             // into the right style. Whatever type they are, they stay here until someone files them.

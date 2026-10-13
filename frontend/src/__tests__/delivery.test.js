@@ -96,10 +96,10 @@ describe('productionMetrics', () => {
     { id: 'A', assignments: [{ qty: 100, deliveredQty: 96, stages: fin }] },
     { id: 'B', assignments: [{ qty: 50, stages: fin }, { qty: 70, stages: wip }] },
     { id: 'C', assignments: [{ qty: 30, stages: wip }] },
-    { id: 'D', assignments: [] },
+    { id: 'D', totalQty: 40, assignments: [] },
   ]
-  test('counts pieces and styles', () => {
-    expect(productionMetrics(orders)).toEqual({ productsDelivered: 146, productsInProduction: 100, stylesDelivered: 1, stylesInProduction: 2 })
+  test('counts pieces and styles; a style waiting for its manufacturer is in production', () => {
+    expect(productionMetrics(orders)).toEqual({ productsDelivered: 146, productsInProduction: 140, stylesDelivered: 1, stylesInProduction: 3 })
   })
 })
 

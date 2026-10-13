@@ -5,10 +5,9 @@ import {
   T, ORDER_STATUSES, evidenceTypesFor, productDocForStep, DOC_ICONS,
   stageKindOf, kindForCustomerOwner, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
   stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber, getToday, planProgress,
-  PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor,
+  PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, stageNameForDoc, PO_INVOICE_DOC_TYPES, deliveryDocsOf,
 } from '../../constants.js'
 import { PromoteModal } from '../../components/PromoteModal.jsx'
-import { stageNameForDoc, PO_INVOICE_DOC_TYPES, deliveryDocsOf } from '../../constants.js'
 import { swatchHex } from '../../colours.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, DateOrNA, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -715,7 +714,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
             const mayUploadDelivery = caps.uploadDeliveryDocs && deliveryIdx >= 0 && (!caps.isMfr || String(dAsgn.mid) === String(currentUser.id))
             // A folder is a row like any other in this grid: same card, same height, same status chip, chevron last. It is
             // folded away until opened; the header says what is inside and the Upload button stays in reach.
-            const folder = (key, title, summary, docsIn, action, empty, hint) => {
+            const folder = (key, title, docsIn, action, empty, hint) => {
               const open = !!openFolders[key]
               const toggle = () => setOpenFolders(p => ({ ...p, [key]: !p[key] }))
               const filed = docsIn.length > 0
@@ -739,12 +738,6 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                   )}
                 </div>
               )
-            }
-            // The status every row in the grid shares: green once something is filed, amber while nothing is.
-                        const countBy = (list, label) => {
-              const by = {}
-              for (const d of list) { const l = label(d); by[l] = (by[l] || 0) + 1 }
-              return Object.entries(by).map(([l, n]) => `${n} ${l}${n > 1 ? 's' : ''}`).join(' · ')
             }
 
     return (
@@ -950,14 +943,12 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
                 documents (packing lists and the like, which the factory that ships also sees). */}
             {caps.seePoInvoice && folder(
               'po', 'PO and Invoice',
-              poDocs.length ? countBy(poDocs, d => (d.type === 'invoice' ? 'invoice' : 'purchase order')) : 'Nothing yet',
               poDocs,
               caps.uploadPoInvoice && <Btn size="sm" variant="secondary" onClick={() => openDocUpload('PO')} icon={<Paperclip size={12} />}>Upload</Btn>,
               'No purchase order or invoice yet.',
             )}
             {(order.assignments?.length || 0) > 0 && folder(
               'delivery', 'Delivery documents',
-              deliveryDocs.length ? countBy(deliveryDocs, () => 'document') : 'Nothing yet',
               deliveryDocs,
               mayUploadDelivery && <Btn size="sm" variant="secondary" onClick={() => openStageDocUpload(effectiveMid, deliveryIdx)} icon={<Paperclip size={12} />}>Upload</Btn>,
               'No delivery documents yet. Packing lists and carton stickers go here.',
@@ -990,18 +981,21 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
 
   // ── Unassigned style — no manufacturer/TNA yet. Same summary as the
   // assigned page, plus the one action that matters here.
+  // The Move to production button sits in the summary header, which both the unassigned and the assigned pages render.
+  const promoteModal = promoteOpen && (
+    <PromoteModal count={1} needsDate={!order.delivery} busy={promoting} onClose={() => setPromoteOpen(false)}
+      onConfirm={async date => {
+        setPromoting(true)
+        try { await editOrder(order.id, { phase: 'production', ...(order.delivery ? {} : { delivery: date }) }); toast('Moved to production', 'success'); setPromoteOpen(false) }
+        catch (e) { toast(typeof e === 'string' ? e : (e?.message || 'Could not move the style'), 'error') }
+        finally { setPromoting(false) }
+      }} />
+  )
+
   if ((order.assignments?.length || 0) === 0) {
     return (
       <div>
-        {promoteOpen && (
-          <PromoteModal count={1} needsDate={!order.delivery} busy={promoting} onClose={() => setPromoteOpen(false)}
-            onConfirm={async date => {
-              setPromoting(true)
-              try { await editOrder(order.id, { phase: 'production', ...(order.delivery ? {} : { delivery: date }) }); toast('Moved to production', 'success'); setPromoteOpen(false) }
-              catch (e) { toast(typeof e === 'string' ? e : (e?.message || 'Could not move the style'), 'error') }
-              finally { setPromoting(false) }
-            }} />
-        )}
+        {promoteModal}
         {showEdit && (
           <EditOrderModal order={order} onClose={() => setShowEdit(false)}
             onSave={async (id, data) => { await editOrder(id, data); toast(`Style ${id} updated`, 'success'); setShowEdit(false) }} />
@@ -1113,6 +1107,7 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
 
   return (
     <div>
+      {promoteModal}
       {/* ── Edit Order Modal ── */}
       {showEdit && (
         <EditOrderModal

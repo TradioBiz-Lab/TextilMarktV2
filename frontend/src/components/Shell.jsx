@@ -84,10 +84,15 @@ export function Shell({ view, setView, children, onOpenOrder }) {
     : user?.role === 'buyer' ? ROLE_DOT.buyer : ROLE_DOT.manufacturer
 
   // Clicking empty space on the page folds the sidebar to icons, so the work gets the width. A click on a control or a
-  // row does its own job and leaves the layout alone. The drawer on a phone already closes itself.
+  // row does its own job and leaves the layout alone, and so does any click inside a pop-up (every dialog, shared or
+  // hand-built, sits on a fixed full-screen layer). The drawer on a phone already closes itself.
   const INTERACTIVE = 'button, a, input, select, textarea, label, summary, tr, th, td, [role="button"], [role="tab"], [role="menuitem"], [role="dialog"], [contenteditable="true"]'
+  const inOverlay = (el, stop) => {
+    for (let n = el; n && n !== stop; n = n.parentElement) if (getComputedStyle(n).position === 'fixed') return true
+    return false
+  }
   const collapseOnPageClick = e => {
-    if (e.target.closest?.(INTERACTIVE)) return
+    if (e.target.closest?.(INTERACTIVE) || inOverlay(e.target, e.currentTarget)) return
     if (window.matchMedia('(min-width: 769px)').matches) setSidebarCollapsed(true)
   }
 
