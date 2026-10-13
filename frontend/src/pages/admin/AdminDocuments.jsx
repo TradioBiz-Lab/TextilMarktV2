@@ -197,7 +197,7 @@ export function AdminDocuments() {
         )
       })()}
 
-      <PageHeader title="Documents" subtitle={caps.isBuyer ? 'Your factories\' profiles, compliance certificates and audit reports' : 'Manufacturer profiles, compliance certificates and factory audit reports'} action={!caps.isBuyer && <Btn onClick={() => setShow(true)} icon={<Paperclip size={13} />}>Upload Document</Btn>} />
+      <PageHeader title="Documents" subtitle={caps.isBuyer ? 'Your factories\' profiles, compliance certificates and audit reports' : 'Manufacturer profiles, compliance certificates and audit reports, and customer requests'} action={!caps.isBuyer && <Btn onClick={() => setShow(true)} icon={<Paperclip size={13} />}>Upload Document</Btn>} />
 
       {/* Mode toggle: Documents vs Certificate Tracker */}
       <div style={{ display: 'flex', gap: 0, borderBottom: `2px solid ${T.border}`, marginBottom: 16 }}>
@@ -229,8 +229,29 @@ export function AdminDocuments() {
             })).sort((a, b) => a.id === '__none__' ? 1 : b.id === '__none__' ? -1 : a.label.localeCompare(b.label))
             const typeCount = list => ['mfr_profile', 'compliance_cert', 'factory_audit']
               .map(t => [DOC_TYPES.find(x => x.v === t)?.l || t, list.filter(d => d.type === t).length]).filter(([, n]) => n > 0)
+            // Customer Requests: requirement documents (RFQ, tech pack, PO) uploaded by customers, for Tradio to sort
+            // into the right style. Whatever type they are, they stay here until someone files them.
+            const customerDocs = caps.isAdmin && filt === 'all' ? active.filter(d => d.uploadedByRole === 'buyer' && !FACTORY_TYPES.includes(d.type)) : []
+            const requestsOpen = openGroups.has('__customer_requests__')
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {customerDocs.length > 0 && (
+                  <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
+                    <FlexRow gap={10} onClick={() => toggleGroup('__customer_requests__')} role="button" tabIndex={0} onKeyDown={activateOnKey(() => toggleGroup('__customer_requests__'))} style={{ padding: '9px 14px', background: '#f1f5f9', cursor: 'pointer' }}>
+                      <span style={{ color: T.textMuted, transform: requestsOpen ? 'none' : 'rotate(-90deg)', display: 'inline-flex' }}><ChevronDown size={13} /></span>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Inbox size={13} /> Customer Requests</span>
+                      <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        Requirement documents uploaded by customers
+                        <span style={{ fontWeight: 700, color: T.textMuted, background: '#e2e8f0', padding: '1px 8px', borderRadius: 10 }}>{customerDocs.length}</span>
+                      </span>
+                    </FlexRow>
+                    {requestsOpen && (
+                      <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6, borderTop: `1px solid ${T.border}` }}>
+                        {customerDocs.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} />)}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {groups.map(g => {
                   const isOpen = openGroups.has(g.id)
                   return (
@@ -248,7 +269,7 @@ export function AdminDocuments() {
                     </div>
                   )
                 })}
-                {groups.length === 0 && <Card><EmptyState icon={<Folder size={26} color={T.textLight} />} title="No documents" desc={caps.isBuyer ? 'Your factories\' profiles and certificates will show up here' : 'Upload a manufacturer profile, compliance certificate or audit report'} /></Card>}
+                {groups.length === 0 && customerDocs.length === 0 && <Card><EmptyState icon={<Folder size={26} color={T.textLight} />} title="No documents" desc={caps.isBuyer ? 'Your factories\' profiles and certificates will show up here' : 'Upload a manufacturer profile, compliance certificate or audit report'} /></Card>}
               </div>
             )
           })()}
