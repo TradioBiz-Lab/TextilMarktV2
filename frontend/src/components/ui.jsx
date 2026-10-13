@@ -1130,7 +1130,7 @@ export function StageTimeline({ stages = [] }) {
 }
 
 export function PageHeader({ title, subtitle, action }) {
-  // On a desktop screen the title and subtitle live in the top bar (the shell's #shell-title slot), so the page
+  // On a desktop screen the title lives in the top bar (the shell's #shell-title slot; the subtitle is its tooltip), so the page
   // starts with its content. On a phone the top bar holds the menu and logo, so the title stays in the page.
   const [slot, setSlot] = useState(null)
   useEffect(() => {
@@ -1144,10 +1144,7 @@ export function PageHeader({ title, subtitle, action }) {
     return (
       <>
         {createPortal(
-          <div title={typeof subtitle === 'string' ? subtitle : undefined} style={{ minWidth: 0 }}>
-            <h1 style={{ fontSize: 18, fontWeight: 800, color: T.text, margin: 0, letterSpacing: '-0.02em', lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</h1>
-            {subtitle && <p style={{ fontSize: 12, color: T.textMuted, margin: '2px 0 0', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subtitle}</p>}
-          </div>,
+          <h1 title={typeof subtitle === 'string' ? subtitle : undefined} style={{ fontSize: 20, fontWeight: 800, color: T.text, margin: 0, letterSpacing: '-0.02em', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</h1>,
           slot,
         )}
         {action && <div className="page-header" style={{ justifyContent: 'flex-end' }}>{action}</div>}
