@@ -682,8 +682,13 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
   // disappears or gets reshuffled depending on whether a manufacturer exists.
   const renderSummary = ({ unassigned }) => {
     const heroImgUrl = order.imageDataUrl || order.imageUrl
-    // Colourways photographed in their colour make the style's gallery, one slide each.
-    const gallery = (order.colourways || []).filter(c => c.image).map(c => ({ src: c.image, label: c.name, accent: swatchHex(c, resolveNamedColor) }))
+    // The style's gallery: the product photo first (whatever is uploaded as the product image), then each colourway
+    // photographed in its colour. A product photo that is also one of the colourway photos is shown once, as that colour.
+    const colourSlides = (order.colourways || []).filter(c => c.image).map(c => ({ src: c.image, label: c.name, accent: swatchHex(c, resolveNamedColor) }))
+    const productSlide = colourSlides.find(sl => sl.src === heroImgUrl)
+    const gallery = heroImgUrl
+      ? [productSlide || { src: heroImgUrl, label: 'Product photo' }, ...colourSlides.filter(sl => sl !== productSlide)]
+      : colourSlides
     const checklist = [
       {
         key: 'image', label: 'Product Image', uploaded: !!heroImgUrl, canUpload: caps.uploadProductPhoto,
