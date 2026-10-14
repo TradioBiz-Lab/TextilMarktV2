@@ -2492,7 +2492,7 @@ router.post('/materials/bulk', requireAuth, requireAdmin, materialsBulkLimiter, 
 // PATCH /api/orders/:id — edit order top-level fields (admin only)
 router.post('/:id', requireAuth, requireOrderOwner, updateLimiter, async (req, res) => {
   try {
-    const { product, styleNumber, category, season, phase, totalQty, delivery, imageDataUrl, imageUrl, colourways, photos, fabricDetails, callout, ecommerceLink } = req.body
+    const { product, styleNumber, category, season, phase, totalQty, delivery, imageDataUrl, imageUrl, colourways, photos, fabricDetails, callout, ecommerceLink, masterOrderId } = req.body
     const orderId = req.params.id
 
     const existing = await Order.findById(orderId).lean()
@@ -2522,6 +2522,15 @@ router.post('/:id', requireAuth, requireOrderOwner, updateLimiter, async (req, r
     if (category !== undefined) {
       if (typeof category === 'string' && category.length > 50) return res.status(400).json({ error: 'Category too long' })
       updates.category = category
+    }
+
+    // Moving a style to another master order: only one of the same customer's.
+    if (masterOrderId !== undefined) {
+      if (typeof masterOrderId !== 'string' || !masterOrderId.trim()) return res.status(400).json({ error: 'Pick the master order to move the style to' })
+      const target = await MasterOrder.findById(masterOrderId.trim(), 'buyerId').lean()
+      if (!target) return res.status(404).json({ error: 'Master order not found' })
+      if (String(target.buyerId) !== String(existing.buyerId)) return res.status(400).json({ error: "A style can only move to another of the same customer's master orders" })
+      if (String(target._id) !== String(existing.masterOrderId || '')) updates.masterOrderId = target._id
     }
 
     if (phase !== undefined) {

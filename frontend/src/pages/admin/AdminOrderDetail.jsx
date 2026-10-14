@@ -9,6 +9,8 @@ import {
 } from '../../constants.js'
 import { PromoteModal } from '../../components/PromoteModal.jsx'
 import { StyleGallery } from '../../components/StyleGallery.jsx'
+import { StyleStatusMenu } from '../../components/StyleStatusMenu.jsx'
+import { ProductPhotos } from '../../components/ProductPhotos.jsx'
 import { swatchHex } from '../../colours.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, DateOrNA, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -143,9 +145,6 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack, onNavi
   const [refDocFiles, setRefDocFiles] = useState({ measurements: null, tech_pack: null, pattern: null })
   const [refDocErrs, setRefDocErrs] = useState({})
   const [refDocUploading, setRefDocUploading] = useState(null) // which type is mid-upload
-  const [heroPhotoFile, setHeroPhotoFile] = useState(null)
-  const [heroPhotoErr, setHeroPhotoErr] = useState('')
-  const [heroPhotoUploading, setHeroPhotoUploading] = useState(false)
   const [openFolders, setOpenFolders] = useState({}) // PO and Invoice / Delivery documents: folded away until opened
   const [expandedDocKey, setExpandedDocKey] = useState(null) // which pending checklist row is open for upload
 
@@ -613,18 +612,6 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack, onNavi
     } finally { setRefDocUploading(null) }
   }
 
-  const uploadHeroPhoto = async () => {
-    if (!heroPhotoFile) return
-    setHeroPhotoUploading(true)
-    try {
-      const p = fileUploadPayload(heroPhotoFile)
-      await editOrder(order.id, { imageDataUrl: p.dataUrl || null, imageUrl: p.externalUrl || null })
-      setHeroPhotoFile(null)
-      toast('Product image updated', 'success')
-    } catch (e) {
-      toast(typeof e === 'string' ? e : (e?.message || 'Upload failed'), 'error')
-    } finally { setHeroPhotoUploading(false) }
-  }
 
   // ── Amazon-PDP-style summary: hero (image / facts / actions), a spec
   // table, and a documents checklist that always shows Pending vs Uploaded.
@@ -640,10 +627,8 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack, onNavi
       : heroImgUrl ? [{ src: heroImgUrl, colourway: '', label: order.product }] : []
     const checklist = [
       {
-        key: 'image', label: 'Product Image', uploaded: !!heroImgUrl, canUpload: oc.uploadPhoto,
+        key: 'image', label: gallery.length > 1 ? `Product Images (${gallery.length})` : 'Product Image', uploaded: !!heroImgUrl, canUpload: oc.uploadPhoto,
         preview: heroImgUrl ? <img src={heroImgUrl} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover' }} /> : null,
-        file: heroPhotoFile, err: heroPhotoErr, uploading: heroPhotoUploading,
-        onFile: f => { setHeroPhotoFile(f); setHeroPhotoErr('') }, onErr: setHeroPhotoErr, onUpload: uploadHeroPhoto,
       },
       ...Object.keys(refDocLabels).map(type => {
         const typeDocs = orderDocs.filter(d => d.type === type)
@@ -718,16 +703,12 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack, onNavi
           {!unassigned && order.assignments?.length > 1 && (
             <Btn variant="secondary" size="sm" onClick={() => setSelectedMid(null)} icon={<ArrowLeftRight size={13} />}>All splits</Btn>
           )}
-          {oc.edit && order.phase === 'development' && currentUser.role !== 'manufacturer' && (
-            <Btn size="sm" onClick={() => setPromoteOpen(true)} icon={<ArrowRight size={13} />}>Move to production</Btn>
-          )}
           {oc.edit && <Btn variant="secondary" size="sm" onClick={() => setShowEdit(true)} icon={<Pencil size={13} />}>Edit Style</Btn>}
-          {oc.remove && (
-            <button
-              onClick={() => setShowDelete(true)}
-              style={{ padding: '7px 14px', fontSize: 12, fontWeight: 700, borderRadius: 8, border: `1px solid ${T.dangerBorder}`, background: T.dangerBg, color: T.danger, cursor: 'pointer', fontFamily: 'inherit' }}
-            >Drop Style</button>
-          )}
+          {/* One place for where the style stands: status (every split at once), stage, and dropping it. */}
+          <StyleStatusMenu order={order}
+            canStatus={(order.assignments || []).length > 0 && order.assignments.every(a => canSetAssignmentStatus(currentUser, a))}
+            canStage={oc.edit && currentUser.role !== 'manufacturer'} canDrop={oc.remove}
+            onPromote={() => setPromoteOpen(true)} onDrop={() => setShowDelete(true)} />
         </FlexRow>
 
         {/* ── Style spec sheet — modelled on the paper swatch/trim card that
@@ -860,18 +841,9 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack, onNavi
                   </div>
                   {isOpen && (
                     <div style={{ padding: 12, borderTop: `1px solid ${T.border}` }}>
-                      {item.key === 'image' && item.uploaded ? (
-                        // The product photo lives on the order itself (not as a document), so show it here
-                        // rather than falling through to the empty-upload state.
-                        <div>
-                          <img src={heroImgUrl} alt={order.product} style={{ display: 'block', maxWidth: '100%', maxHeight: 360, borderRadius: 8, border: `1px solid ${T.border}` }} />
-                          {item.canUpload && (
-                            <div style={{ marginTop: 10 }}>
-                              <FileUpload {...item.uploadProps} file={item.file} onFile={item.onFile} error={item.err} onError={item.onErr} />
-                              {item.file && <Btn size="sm" style={{ marginTop: 6 }} disabled={item.uploading} onClick={item.onUpload}>{item.uploading ? 'Uploading…' : 'Replace photo'}</Btn>}
-                            </div>
-                          )}
-                        </div>
+                      {item.key === 'image' ? (
+                        // Every product photo, its colourway, and the upload (the gallery shows exactly these).
+                        <ProductPhotos order={order} canEdit={item.canUpload} />
                       ) : item.uploaded && item.doc ? (
                         (() => {
                           // One heading per step, the documents under it: the step is said once, not on every card.
@@ -1120,7 +1092,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack, onNavi
           <Alert type="warning" style={{ marginBottom: 14 }}>All admin overrides are permanently logged with your name and timestamp.</Alert>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <Select label="New Status" value={stStatus} onChange={e => setStStatus(e.target.value)}>
-              {ORDER_STATUSES.map(s => <option key={s}>{s}</option>)}
+              {ORDER_STATUSES.filter(s => s !== 'Delivered' || stStatus === 'Delivered').map(s => <option key={s}>{s}</option>)}
             </Select>
             <Textarea label="Reason for Override *" value={stNote} onChange={e => setStNote(e.target.value)} placeholder="Explain why this override is needed…" />
             <FlexRow justify="flex-end" gap={8}>
@@ -1491,7 +1463,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack, onNavi
                       </div>
                       <FlexRow gap={8}>
                         <Badge status={a.status} />
-                        {canSetAssignmentStatus(currentUser, a) && <Btn size="sm" variant="warning" onClick={() => openStatusOverride(a.mid, a.status)} icon={<Pencil size={12} />}>Status</Btn>}
+                        {canSetAssignmentStatus(currentUser, a) && order.assignments.length > 1 && <Btn size="sm" variant="warning" onClick={() => openStatusOverride(a.mid, a.status)} icon={<Pencil size={12} />}>Status</Btn>}
                         {caps.overrideStage && (
                           <Btn size="sm" variant="outline" onClick={() => openStageOverride(a.mid)} icon={<ShieldAlert size={12} />}>Override</Btn>
                         )}
