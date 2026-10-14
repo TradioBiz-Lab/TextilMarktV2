@@ -227,8 +227,13 @@ const colourwaySchema = new mongoose.Schema({
   // a Pantone TPX/TCX code (`code`) isn't renderable without a lookup
   // table, so this is a separate, admin-picked approximate hex colour.
   hex:  { type: String, default: '' },
-  // Optional photo of the style in this colour: an uploaded image (data URL, under 300KB) or an http(s) link.
-  image: { type: String, default: '' },
+}, { _id: false })
+
+// One product photo of the style: an uploaded image (data URL) or an http(s) link, optionally tied to the colourway
+// it shows. The first photo is the style's main photo (kept in imageDataUrl / imageUrl for every list's thumbnail).
+const stylePhotoSchema = new mongoose.Schema({
+  image:     { type: String, required: true },
+  colourway: { type: String, default: '' },
 }, { _id: false })
 
 // One fabric used on this style — a shirt might carry a shell fabric and a
@@ -263,6 +268,7 @@ const orderSchema = new mongoose.Schema({
   // revision (see the edit-order route), never backdated by hand.
   baselineDelivery: { type: Date, default: null },
   colourways: [colourwaySchema],
+  photos: [stylePhotoSchema],
   fabricDetails: [fabricSchema],
   ecommerceLink: { type: String, default: '', trim: true, maxlength: 2000 },
   // Order-level risk/escalation note — the "Callouts" column the team maintains
