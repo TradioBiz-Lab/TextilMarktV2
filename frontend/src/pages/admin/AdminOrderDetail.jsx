@@ -838,23 +838,20 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                 <div style={{ marginTop: 16 }}>
                   <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, fontWeight: 700, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 7 }}>Colourways</div>
                   <FlexRow gap={8} style={{ flexWrap: 'wrap' }}>
-                    {order.colourways.map(c => c.image ? (
-                      <button key={c.name} onClick={() => setGalleryIdx(Math.max(0, gallery.findIndex(p => p.label === c.name)))} title={`Show ${c.name} in the photos`}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 10, padding: 4, paddingRight: 12, fontSize: 12, fontWeight: 700, color: T.text, background: '#fff', border: `1px solid ${T.border}`, borderBottom: `3px solid ${swatchHex(c, resolveNamedColor)}`, borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
-                        <img src={c.image} alt={c.name} style={{ width: 52, height: 64, objectFit: 'cover', borderRadius: 5, background: '#f1f5f9', flexShrink: 0 }} />
-                        <span>
-                          {c.name}
-                          {c.code ? <span style={{ display: 'block', color: T.textLight, fontWeight: 500, fontSize: 11 }}>{c.code}</span> : null}
-                        </span>
-                      </button>
-                    ) : (
-                      <span key={c.name} style={{ display: 'inline-flex', alignItems: 'stretch', fontSize: 12, fontWeight: 700, color: T.text, background: '#fff', border: `1px solid ${T.border}`, borderRadius: 6, overflow: 'hidden' }}>
-                        <span style={{ width: 8, background: swatchHex(c, resolveNamedColor), flexShrink: 0 }} />
-                        <span style={{ padding: '5px 10px' }}>
-                          {c.name}{c.code ? <span style={{ color: T.textLight, fontWeight: 500 }}> · {c.code}</span> : ''}
-                        </span>
-                      </span>
-                    ))}
+                    {order.colourways.map(c => {
+                      // The colour swatch, as always; a colourway with a photo also brings its slide up in the gallery.
+                      const slide = c.image ? gallery.findIndex(p => p.label === c.name) : -1
+                      const Tag = slide >= 0 ? 'button' : 'span'
+                      return (
+                        <Tag key={c.name} {...(slide >= 0 ? { onClick: () => setGalleryIdx(slide), title: `Show ${c.name} in the photos` } : {})}
+                          style={{ display: 'inline-flex', alignItems: 'stretch', fontSize: 12, fontWeight: 700, color: T.text, background: '#fff', border: `1px solid ${slide >= 0 && slide === galleryIdx ? T.primaryDeep : T.border}`, borderRadius: 6, overflow: 'hidden', padding: 0, fontFamily: 'inherit', cursor: slide >= 0 ? 'pointer' : 'default' }}>
+                          <span style={{ width: 8, background: swatchHex(c, resolveNamedColor), flexShrink: 0 }} />
+                          <span style={{ padding: '5px 10px' }}>
+                            {c.name}{c.code ? <span style={{ color: T.textLight, fontWeight: 500 }}> · {c.code}</span> : ''}
+                          </span>
+                        </Tag>
+                      )
+                    })}
                   </FlexRow>
 
                 </div>
