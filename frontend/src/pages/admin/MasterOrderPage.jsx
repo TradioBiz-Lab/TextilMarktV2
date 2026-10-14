@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, ArrowRight, Folder, Package, Truck, Scissors, FlaskConical, PauseCircle, Trash2, Factory, Calendar, ChevronRight, Building2, BarChart3, LayoutGrid } from '../../icons.jsx'
+import { ArrowLeft, ArrowRight, Folder, Package, Truck, Scissors, FlaskConical, PauseCircle, Trash2, Factory, Calendar, ChevronRight, Building2, BarChart3, LayoutGrid, Pencil } from '../../icons.jsx'
 import { T, phaseOf, deliveryStatus, planProgress, styleOnHold, dayNumber, getToday, effectiveEta } from '../../constants.js'
 import { Btn, Card, FlexRow, Mono, ProductThumb, EmptyState, LoadingScreen } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
-import { capsFor } from '../../caps.js'
+import { capsFor, canEditMasterOrder } from '../../caps.js'
+import { EditMasterOrderModal } from './EditMasterOrderModal.jsx'
 import { masterOrdersApi } from '../../api.js'
 
 // The master order's own page: who it is for, how far along it is, and every style that was ever in it, the ones
@@ -154,6 +155,7 @@ export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
   // Tradio and the master order's customer see what was dropped; a factory only ever sees its own splits.
   const seesDropped = currentUser?.role === 'admin' || currentUser?.role === 'buyer'
   const [dropped, setDropped] = useState(null)
+  const [editing, setEditing] = useState(false)
   useEffect(() => {
     if (!seesDropped || !moId) return
     let live = true
@@ -208,11 +210,14 @@ export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
         @media (max-width: 640px) { .mo-style-progress { display: none; } }
       `}</style>
 
+      {/* Rename, re-season, drop styles from or delete the master order. Deleting it leaves the page on "not found". */}
+      {editing && <EditMasterOrderModal mo={mo} onClose={() => setEditing(false)} />}
       <FlexRow gap={8} style={{ flexWrap: 'wrap' }}>
         <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
         <div style={{ flex: 1 }} />
         <Btn variant="secondary" size="sm" onClick={() => onNavigate('orders', { mo: moId })} icon={<LayoutGrid size={13} />}>Open in TNA</Btn>
         <Btn variant="secondary" size="sm" onClick={() => onNavigate('reports', { mo: moId })} icon={<BarChart3 size={13} />}>Open in Reports</Btn>
+        {canEditMasterOrder(currentUser, mo) && <Btn size="sm" onClick={() => setEditing(true)} icon={<Pencil size={13} />}>Edit</Btn>}
       </FlexRow>
 
       {/* Hero: what the order is, for whom, and how much of it has shipped. */}

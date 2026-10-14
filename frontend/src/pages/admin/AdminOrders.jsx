@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, ChevronUp, ArrowRight, X, Pencil } from '../../icons.jsx'
+import { Plus, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, ChevronUp, ArrowRight, X } from '../../icons.jsx'
 import {
   T, SEASONS, ORDER_STATUSES,
   isStageDone, stageIsOverdue, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct, fmtStageDate, effectiveEta,
@@ -12,7 +12,6 @@ import { ordersApi } from '../../api.js'
 import { PromoteModal } from '../../components/PromoteModal.jsx'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
-import { EditMasterOrderModal } from './EditMasterOrderModal.jsx'
 import { QuickStageModal } from './QuickStageModal.jsx'
 import { CreateStyleWizard } from './CreateStyleWizard.jsx'
 
@@ -94,7 +93,6 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
   // ── Create Master Order state ──
   const [showMO, setShowMO] = useState(false)
   const [mo, setMo] = useState({ buyerId: '', orderName: '', season: 'SS26' })
-  const [editMo, setEditMo] = useState(null)   // the master order being edited
   const [moFile, setMoFile] = useState(null)
   const [moFileErr, setMoFileErr] = useState('')
   const [moErr, setMoErr] = useState('')
@@ -181,7 +179,6 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
           }}
         />
       )}
-      {editMo && <EditMasterOrderModal mo={editMo} onClose={() => setEditMo(null)} />}
       {deleteTarget && (
         <DeleteOrderModal
           order={deleteTarget}
@@ -448,12 +445,6 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
                         Details <ArrowRight size={11} />
                       </button>
                     )}
-                    {caps.editOrders && g.mo && (
-                          <button onClick={e => { e.stopPropagation(); setEditMo(g.mo) }} title="Edit master order" aria-label={`Edit master order ${groupLabel}`}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.textMuted, cursor: 'pointer', fontFamily: 'inherit' }}>
-                            <Pencil size={11} /> Edit
-                          </button>
-                        )}
                   </FlexRow>
 
                   {isOpen && entries.length === 0 && (

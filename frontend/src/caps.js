@@ -52,3 +52,8 @@ export function canSetAssignmentStatus(user, asgn) {
   if (user?.role === 'admin') return true
   return user?.role === 'manufacturer' && String(asgn?.mid) === String(user.id)
 }
+
+/** May this user edit or delete this master order (its name and season)? Tradio staff, as for orders. */
+export function canEditMasterOrder(user, mo) {
+  return !!mo && capsFor(user).editOrders
+}

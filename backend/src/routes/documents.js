@@ -592,8 +592,9 @@ router.post('/:id/delete', requireAuth, async (req, res) => {
     if (req.user.role !== 'admin' && !isOwner)
       return res.status(403).json({ error: 'You can only delete your own documents' })
 
-    doc.isActive = false
-    await doc.save()
+    // Only the flag changes. A save() would re-check every stored field against today's rules, and an old record
+    // (seed data, a type since renamed) that no longer passes them could then never be deleted.
+    await Document.updateOne({ _id: doc._id }, { $set: { isActive: false } })
 
     await AuditLog.create({
       byUser: req.user.id,
