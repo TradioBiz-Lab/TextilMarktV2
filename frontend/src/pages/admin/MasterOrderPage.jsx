@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, ArrowRight, Folder, Package, Truck, Scissors, FlaskConical, PauseCircle, Trash2, Factory, Calendar, ChevronRight, Building2, BarChart3, FileText, LayoutGrid } from '../../icons.jsx'
-import { T, phaseOf, deliveryStatus, planProgress, styleOnHold, dayNumber, getToday } from '../../constants.js'
-import { Btn, Card, FlexRow, Mono, ProductThumb, EmptyState, DocCard, LoadingScreen } from '../../components/ui.jsx'
+import { ArrowLeft, ArrowRight, Folder, Package, Truck, Scissors, FlaskConical, PauseCircle, Trash2, Factory, Calendar, ChevronRight, Building2, BarChart3, LayoutGrid } from '../../icons.jsx'
+import { T, phaseOf, deliveryStatus, planProgress, styleOnHold, dayNumber, getToday, effectiveEta } from '../../constants.js'
+import { Btn, Card, FlexRow, Mono, ProductThumb, EmptyState, LoadingScreen } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { capsFor } from '../../caps.js'
 import { masterOrdersApi } from '../../api.js'
@@ -25,6 +25,19 @@ const SECTIONS = [
   { id: 'dropped', label: 'Dropped', icon: Trash2, fg: '#991b1b', bg: '#fee2e2', bd: '#fca5a5' },
 ]
 const SECTION = Object.fromEntries(SECTIONS.map(s => [s.id, s]))
+
+// When a style is due, by its TNA: the Delivery step's current date, the latest across its splits. A style with no
+// Delivery step yet (no manufacturer, or still in development) falls back to the order's delivery date.
+const planDue = o => {
+  const dates = (o.assignments || []).map(a => effectiveEta((a.stages || []).find(st => st.isDelivery))).filter(Boolean).sort()
+  return dates.length ? dates[dates.length - 1] : (o.delivery || null)
+}
+// When a delivered style actually arrived: the last split's recorded delivery day, or null if none was recorded.
+const deliveredOn = o => {
+  const dates = (o.assignments || []).map(a => deliveryStatus(o, a)).filter(d => d.delivered && d.isActual).map(d => d.date).sort()
+  return dates.length ? dates[dates.length - 1] : null
+}
+const dayOf = d => (d ? dayNumber(typeof d === 'string' ? d : new Date(d).toISOString()) : null)
 
 const sectionOf = o => {
   if (styleOnHold(o)) return 'hold'
@@ -94,7 +107,9 @@ function StyleRow({ order, section, onOpen }) {
           <Mono style={{ fontSize: 11 }}>{order.id}</Mono>
           <span>{(order.totalQty || 0).toLocaleString('en-IN')} pcs</span>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Factory size={12} /> {factories.length ? factories.join(', ') : 'No manufacturer yet'}</span>
-          {order.delivery && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Calendar size={12} /> Due {fmtDate(order.delivery)}</span>}
+          {section === 'delivered'
+            ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#166534', fontWeight: 600 }}><Truck size={12} color="#166534" /> {deliveredOn(order) ? `Delivered on ${fmtDate(deliveredOn(order))}` : 'Delivered'}</span>
+            : planDue(order) && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Calendar size={12} /> Due {fmtDate(planDue(order))}</span>}
         </div>
       </div>
       {total > 0 && (
@@ -134,7 +149,7 @@ function DroppedRow({ r }) {
 }
 
 export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
-  const { orders, masterOrders, docs, users, currentUser, loading, getDocData } = useApp()
+  const { orders, masterOrders, users, currentUser, loading } = useApp()
   const caps = capsFor(currentUser)
   // Tradio and the master order's customer see what was dropped; a factory only ever sees its own splits.
   const seesDropped = currentUser?.role === 'admin' || currentUser?.role === 'buyer'
@@ -151,7 +166,8 @@ export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
   const grouped = useMemo(() => {
     const g = Object.fromEntries(SECTIONS.map(s => [s.id, []]))
     for (const o of styles) g[sectionOf(o)].push(o)
-    for (const k of Object.keys(g)) g[k].sort((a, b) => (a.delivery ? new Date(a.delivery) : Infinity) - (b.delivery ? new Date(b.delivery) : Infinity))
+    const key = (o, sec) => dayOf(sec === 'delivered' ? (deliveredOn(o) || planDue(o)) : planDue(o)) ?? Infinity
+    for (const k of Object.keys(g)) g[k].sort((a, b) => key(a, k) - key(b, k))
     return g
   }, [styles])
 
@@ -170,11 +186,11 @@ export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
   const deliveredPieces = styles.reduce((n, o) => n + (o.assignments || []).reduce((m, a) => m + (deliveryStatus(o, a).delivered ? (a.deliveredQty ?? a.qty ?? 0) : 0), 0), 0)
   const deliveredPct = pieces ? Math.min(100, Math.round((deliveredPieces / pieces) * 100)) : 0
   const factories = [...new Set(styles.flatMap(o => (o.assignments || []).map(a => a.mfrCompany)).filter(Boolean))]
-  const dates = styles.filter(o => phaseOf(o) === 'production' && o.delivery).map(o => o.delivery).sort((a, b) => new Date(a) - new Date(b))
+  // The delivery window runs over every style in production: the day it arrived if delivered, else its TNA date.
+  const dates = [...grouped.production, ...grouped.delivered].map(o => deliveredOn(o) || planDue(o)).filter(Boolean).sort((a, b) => dayOf(a) - dayOf(b))
   const today = dayNumber(getToday())
-  const next = grouped.production.filter(o => o.delivery && dayNumber(new Date(o.delivery).toISOString()) >= today)[0] || null
+  const next = grouped.production.find(o => planDue(o) && dayOf(planDue(o)) >= today) || null
   const creator = mo.createdByName || users?.find(u => String(u.id) === String(mo.createdBy))?.name || null
-  const moDocs = (docs || []).filter(d => d.isActive !== false && d.masterOrderId === moId && !d.orderId)
   const droppedRows = dropped || []
   const counts = { ...Object.fromEntries(SECTIONS.map(s => [s.id, grouped[s.id]?.length || 0])), dropped: droppedRows.length }
 
@@ -184,6 +200,9 @@ export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
         .mo-style-row { transition: border-color .12s, box-shadow .12s, transform .12s; }
         .mo-style-row:hover { border-color: ${T.primaryDeep}; box-shadow: 0 4px 14px rgba(15,23,42,.08); }
         .mo-style-row:focus-visible { outline: 2px solid ${T.primaryDeep}; outline-offset: 2px; }
+        .mo-tiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+        @media (max-width: 1200px) { .mo-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+        @media (max-width: 560px) { .mo-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
         .mo-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
         @media (max-width: 1100px) { .mo-layout { grid-template-columns: minmax(0, 1fr); } }
         @media (max-width: 640px) { .mo-style-progress { display: none; } }
@@ -224,7 +243,7 @@ export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
       </div>
 
       {/* Counts by where the styles stand. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+      <div className="mo-tiles">
         <Tile label="Styles" value={styles.length} sub={`${pieces.toLocaleString('en-IN')} pcs`} icon={Package} fg={T.primaryDeep} bg={T.primaryLight} />
         {SECTIONS.filter(s => s.id !== 'dropped' || seesDropped).map(s => (
           <Tile key={s.id} label={s.label} value={counts[s.id]} icon={s.icon} fg={s.fg} bg={s.bg} />
@@ -270,20 +289,10 @@ export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
             <InfoRow icon={Calendar} label="Delivery window">{dates.length ? (dates.length === 1 || fmtDate(dates[0]) === fmtDate(dates[dates.length - 1]) ? fmtDate(dates[0]) : `${fmtDate(dates[0])} to ${fmtDate(dates[dates.length - 1])}`) : 'No delivery dates yet'}</InfoRow>
             <InfoRow icon={Truck} label="Next delivery">
               {next
-                ? <button onClick={() => onOpen(next.id)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: T.primaryDeep, display: 'inline-flex', alignItems: 'center', gap: 4, textAlign: 'left' }}>{next.product}, {fmtDate(next.delivery)} <ArrowRight size={12} /></button>
+                ? <button onClick={() => onOpen(next.id)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: T.primaryDeep, display: 'inline-flex', alignItems: 'center', gap: 4, textAlign: 'left' }}>{next.product}, {fmtDate(planDue(next))} <ArrowRight size={12} /></button>
                 : 'Nothing due'}
             </InfoRow>
             <InfoRow icon={Package} label="Quantity">{pieces.toLocaleString('en-IN')} pcs across {styles.length} style{styles.length === 1 ? '' : 's'}</InfoRow>
-          </Card>
-          <Card>
-            <FlexRow gap={8} style={{ marginBottom: 10 }}>
-              <FileText size={15} color={T.textMuted} />
-              <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>Master order documents</span>
-              <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: T.textMuted }}>{moDocs.length}</span>
-            </FlexRow>
-            {moDocs.length === 0
-              ? <div style={{ fontSize: 12, color: T.textMuted }}>No documents on the master order itself. Each style keeps its own.</div>
-              : moDocs.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} compact />)}
           </Card>
         </div>
       </div>
