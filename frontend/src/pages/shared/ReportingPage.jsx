@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useRef } from 'react'
 import { CalendarClock, AlertTriangle, Package, Ban, CircleDot, CheckCircle2, Search, BarChart3, Folder, MessageCircle, Calendar, ChevronDown, ChevronRight, Play, Download, ArrowRight, Sparkles } from '../../icons.jsx'
 import {
   T, dayNumber, getToday, fmtN, effectiveEta, planProgress, deliveryStatus,
-  stageStatusOf, stageIsOverdue, isStageDone, inFlightStages, stageProgressLabel, stageVariance, productionOrders, developmentOrders,
+  stageStatusOf, stageIsOverdue, isStageDone, inFlightStages, stageProgressLabel, stageVariance, productionOrders, developmentOrders, styleOnHold,
 } from '../../constants.js'
 import { toCsvCell } from '../../csvCell.js'
 import { Btn, Card, EmptyState, FlexRow, Modal, Mono, LoadingScreen, PageHeader, ProductThumb, StatCard, activateOnKey } from '../../components/ui.jsx'
@@ -186,6 +186,7 @@ export function ReportingPage({ onOpen, initialMo }) {
   // The report is about styles in production; the ones still being sampled are left out and counted below the title.
   const orders = useMemo(() => productionOrders(allOrders), [allOrders])
   const inDevelopment = developmentOrders(allOrders).length
+  const onHold = orders.filter(styleOnHold).length
   const [q, setQ] = useState('')
   const [healthFilter, setHealthFilter] = useState('All')
   // Groups start collapsed; a search or filter opens them so results are never hidden.
@@ -198,7 +199,7 @@ export function ReportingPage({ onOpen, initialMo }) {
 
   // One row per order × manufacturer split, summarizing where it stands.
   const rows = useMemo(() => {
-    return (orders || []).flatMap(o => (o.assignments || []).map(a => {
+    return (orders || []).flatMap(o => (o.assignments || []).filter(a => a.status !== 'On Hold').map(a => {
       const stages = a.stages || []
       const { done: doneCount, pct } = planProgress(stages)
 
@@ -318,7 +319,7 @@ export function ReportingPage({ onOpen, initialMo }) {
     <div>
       <PageHeader
         title="Order Status"
-        subtitle={`Where every order stands right now: what's open, what's stuck, what's next${inDevelopment ? `. ${inDevelopment} ${inDevelopment === 1 ? 'style' : 'styles'} in Sampling & Development not included.` : ''}`}
+        subtitle={`Where every order stands right now: what's open, what's stuck, what's next${inDevelopment ? `. ${inDevelopment} ${inDevelopment === 1 ? 'style' : 'styles'} in Sampling & Development not included.` : ''}${onHold ? ` ${onHold} on hold not included.` : ''}`}
         action={(
           <FlexRow gap={8}>
             <Btn variant="secondary" icon={<Download size={16} />} onClick={exportExcel} disabled={filtered.length === 0 || exporting}>{exporting ? 'Preparing…' : 'Export to Excel'}</Btn>

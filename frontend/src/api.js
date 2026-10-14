@@ -178,6 +178,7 @@ export const masterOrdersApi = {
   create: data => api.post('/master-orders', data),
   update: (id, data) => api.post(`/master-orders/${id}`, data),
   delete: (id, reason) => api.post(`/master-orders/${id}/delete`, reason ? { reason } : {}),
+  dropped: id => api.get(`/master-orders/${id}/dropped`),
 }
 
 // Permanent record of dropped styles and master orders (admin only).

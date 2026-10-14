@@ -348,6 +348,8 @@ export const PHASES = [['production', 'Production'], ['development', 'Sampling &
 export const phaseOf = o => (o?.phase === 'development' ? 'development' : 'production')
 export const productionOrders = orders => (orders || []).filter(o => phaseOf(o) === 'production')
 export const developmentOrders = orders => (orders || []).filter(o => phaseOf(o) === 'development')
+/** A style is on hold when it has manufacturer splits and every one of them is On Hold. It leaves the TNA. */
+export const styleOnHold = o => (o?.assignments || []).length > 0 && o.assignments.every(a => a.status === 'On Hold')
 
 /**
  * Production headline numbers for the admin dashboard. A product is a piece: delivered pieces use the

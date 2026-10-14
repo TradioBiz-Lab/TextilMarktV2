@@ -3,7 +3,7 @@ import { Plus, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, 
 import {
   T, SEASONS, ORDER_STATUSES,
   isStageDone, stageIsOverdue, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct, fmtStageDate, effectiveEta,
-  CELL_STATE, cellState, buildMatrixSpine, withBuyerPrefix, getToday, PHASES, phaseOf
+  CELL_STATE, cellState, buildMatrixSpine, withBuyerPrefix, getToday, PHASES, phaseOf, styleOnHold
 } from '../../constants.js'
 import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, FileUpload, LoadingScreen, useToast, fileUploadPayload, ProductThumb, Modal, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -41,7 +41,7 @@ function groupDisplayLabel(g) {
   return withBuyerPrefix(base, source)
 }
 
-export function AdminOrders({ onOpen, initialStatus, initialMo, initialPhase, onSubmitReq }) {
+export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initialPhase, onSubmitReq }) {
   const { orders, users, loading, createOrder, uploadDoc, masterOrders, createMasterOrder, editOrder, deleteOrder, currentUser } = useApp()
   // One Orders page for every role; caps decides which actions each sees (see caps.js).
   const caps = capsFor(currentUser)
@@ -56,7 +56,8 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, initialPhase, on
   const [picked, setPicked] = useState(() => new Set())
   const [moving, setMoving] = useState(false)
   const [askDate, setAskDate] = useState(false)
-  const phaseCount = Object.fromEntries(PHASES.map(([v]) => [v, orders.filter(o => phaseOf(o) === v).length]))
+  // The TNA counts what it shows: a style on hold is listed on its master order's page instead.
+  const phaseCount = Object.fromEntries(PHASES.map(([v]) => [v, orders.filter(o => phaseOf(o) === v && !styleOnHold(o)).length]))
   // Groups start collapsed — an admin managing many master orders shouldn't have to
   // scroll past every line item of every group just to find one. Tracks which groups
   // have been explicitly expanded, rather than which are collapsed.
@@ -415,7 +416,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, initialPhase, on
           <select value={sfilt} onChange={e => setSfilt(e.target.value)}
             style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit' }}>
             <option value="All">All Statuses</option>
-            {ORDER_STATUSES.map(s => <option key={s}>{s}</option>)}
+            {ORDER_STATUSES.filter(s => s !== 'On Hold').map(s => <option key={s}>{s}</option>)}
           </select>
         </div>
         {/* Styles across the top, TNA steps down the side. Each cell's state is named in its hover tooltip. */}
@@ -430,7 +431,8 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, initialPhase, on
               // A style with no manufacturer yet still needs its own column —
               // asgn: null — so it isn't invisible in the matrix while TBD.
               const entries = g.orders.flatMap(o => (o.assignments || []).length > 0
-                ? o.assignments.map(a => ({ order: o, asgn: a }))
+                // A split on hold is not in the TNA; its master order's page still lists it.
+                ? o.assignments.filter(a => a.status !== 'On Hold').map(a => ({ order: o, asgn: a }))
                 : [{ order: o, asgn: null }])
                 .sort((x, y) => {
                   const dx = x.order.delivery ? new Date(x.order.delivery).getTime() : Infinity
@@ -439,6 +441,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, initialPhase, on
                 })
               const spine = entries.length ? buildMatrixSpine(entries) : []
               const groupLabel = groupDisplayLabel(g)
+              const held = g.orders.filter(styleOnHold).length
               const isOpen = expandedGroups.has(g.moId)
               return (
                 <div key={g.moId} style={{ border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
@@ -448,6 +451,15 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, initialPhase, on
                     <span style={{ fontSize: 13, fontWeight: 800, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Folder size={13} /> {groupLabel}</span>
                     {g.mo?.season && <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', background: '#dbeafe', padding: '1px 7px', borderRadius: 4 }}>{g.mo.season}</span>}
                     <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{entries.length} style{entries.length !== 1 ? 's' : ''} · {spine.length} steps</span>
+                    {held > 0 && (
+                      <span title="Styles on hold are not shown in the TNA. Open Details to see them." style={{ fontSize: 10, fontWeight: 800, color: '#475569', background: '#e2e8f0', padding: '1px 8px', borderRadius: 999, whiteSpace: 'nowrap' }}>{held} on hold</span>
+                    )}
+                    {g.mo && onOpenMo && (
+                      <button onClick={e => { e.stopPropagation(); onOpenMo(g.moId) }} title="Open the master order page" aria-label={`Open master order ${groupLabel}`}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: `1px solid ${T.primaryDeep}`, background: T.surface, color: T.primaryDeep, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        Details <ArrowRight size={11} />
+                      </button>
+                    )}
                     {canEditMasterOrder(currentUser, g.mo) && (
                           <button onClick={e => { e.stopPropagation(); setEditMo(g.mo) }} title="Edit master order" aria-label={`Edit master order ${groupLabel}`}
                             style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.textMuted, cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -458,7 +470,7 @@ export function AdminOrders({ onOpen, initialStatus, initialMo, initialPhase, on
 
                   {isOpen && entries.length === 0 && (
                     <div style={{ padding: '14px 16px', fontSize: 12, color: T.textMuted }}>
-                      No styles in this master order yet.{caps.createOrders ? ' Use Create Style to add the first one.' : ''}
+                      {held > 0 ? 'Every style in this master order is on hold. Open Details to see them.' : `No styles in this master order yet.${caps.createOrders ? ' Use Create Style to add the first one.' : ''}`}
                     </div>
                   )}
                   {isOpen && entries.length > 0 && (

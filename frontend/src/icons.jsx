@@ -69,6 +69,7 @@ import {
   Play as P_Play,
   Plus as P_Plus,
   Prohibit as P_Prohibit,
+  PauseCircle as P_PauseCircle,
   RadioButton as P_RadioButton,
   Receipt as P_Receipt,
   Ruler as P_Ruler,
@@ -146,6 +147,7 @@ export const ArrowLeftRight = make(P_ArrowsLeftRight, 'ArrowLeftRight')
 export const ArrowRight = make(P_ArrowRight, 'ArrowRight')
 export const AudioLines = make(P_Waveform, 'AudioLines')
 export const Ban = make(P_Prohibit, 'Ban')
+export const PauseCircle = make(P_PauseCircle, 'PauseCircle')
 export const BarChart3 = make(P_ChartBar, 'BarChart3')
 export const Barcode = make(P_Barcode, 'Barcode')
 export const Bell = make(P_Bell, 'Bell')

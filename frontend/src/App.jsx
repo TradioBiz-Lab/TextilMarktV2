@@ -7,6 +7,7 @@ import { BuyerSubmitReq } from './pages/buyer/BuyerSubmitReq.jsx'
 import { AdminDashboard } from './pages/admin/AdminDashboard.jsx'
 import { AdminOrders } from './pages/admin/AdminOrders.jsx'
 import { AdminOrderDetail } from './pages/admin/AdminOrderDetail.jsx'
+import { MasterOrderPage } from './pages/admin/MasterOrderPage.jsx'
 import { AdminDocuments } from './pages/admin/AdminDocuments.jsx'
 import { AdminAuditLog } from './pages/admin/AdminAuditLog.jsx'
 import { UserSetup } from './pages/admin/UserSetup.jsx'
@@ -95,6 +96,7 @@ function Inner() {
   const [ordersPhase, setOrdersPhase] = useState(null)   // 'production' | 'development' to open the Orders page on
   const [ordersMo, setOrdersMo] = useState(null)     // master order to open on the Orders page
   const [reportsMo, setReportsMo] = useState(null)   // master order to open on the Reports page
+  const [selMo, setSelMo] = useState(null)           // master order open on its own page
   const [selPo, setSelPo] = useState(null)           // purchase order open (or being edited) on the purchasing screens
   const [selSupplier, setSelSupplier] = useState(null) // supplier to open on the Suppliers page, or to start a new PO for
   const [selCost, setSelCost] = useState(null)       // cost sheet open on the costing screens
@@ -109,7 +111,7 @@ function Inner() {
   const BLANK = { view: 'dashboard', selOid: null, selMid: null, ordersStatus: null, ordersMo: null, ordersPhase: null, reportsMo: null, selPo: null, selSupplier: null, selCost: null, selGrn: null }
   const apply = useCallback(s => {
     setView(s.view); setSelOid(s.selOid); setSelMid(s.selMid)
-    setOrdersStatus(s.ordersStatus); setOrdersMo(s.ordersMo); setOrdersPhase(s.ordersPhase ?? null); setReportsMo(s.reportsMo)
+    setOrdersStatus(s.ordersStatus); setOrdersMo(s.ordersMo); setOrdersPhase(s.ordersPhase ?? null); setReportsMo(s.reportsMo); setSelMo(s.selMo ?? null)
     setSelPo(s.selPo ?? null); setSelSupplier(s.selSupplier ?? null); setSelCost(s.selCost ?? null); setSelGrn(s.selGrn ?? null)
   }, [])
   const go = useCallback(next => {
@@ -182,11 +184,13 @@ function Inner() {
     ordersPhase: v === 'orders' ? (params?.phase ?? null) : null,
     ordersMo: v === 'orders' ? (params?.mo ?? null) : null,
     reportsMo: v === 'reports' ? (params?.mo ?? null) : null,
+    selMo: v === 'master_order' ? (params?.mo ?? null) : null,
     selPo: params?.po ?? null,
     selSupplier: params?.supplier ?? null,
     selCost: params?.cost ?? null,
     selGrn: params?.grn ?? null,
   })
+  const openMo = id => navTo('master_order', { mo: id })
   const openOrder = (id, mid) => {
     // Remember which master order we are leaving from, so Back re-opens that group.
     const h = hist.current
@@ -247,8 +251,9 @@ function Inner() {
     }
     if (view === 'viewer' && caps.seeViewerHome) return <ViewerHome />
     if (view === 'company' && caps.seeCompanyPage) return <CompanyPage />
-    if (view === 'orders') return <AdminOrders key={`o:${ordersMo || 'all'}:${ordersPhase || ''}`} onOpen={openOrder} initialStatus={ordersStatus} initialMo={ordersMo} initialPhase={ordersPhase} onSubmitReq={user.role === 'buyer' ? () => navTo('submit_req') : undefined} />
-    if (view === 'order_detail' && selOid) return <AdminOrderDetail orderId={selOid} initialMid={selMid} onNavigate={navTo} onBack={() => goBack({ view: 'orders', ordersMo: orders?.find(o => o.id === selOid)?.masterOrderId || '__none__' })} />
+    if (view === 'orders') return <AdminOrders key={`o:${ordersMo || 'all'}:${ordersPhase || ''}`} onOpen={openOrder} onOpenMo={openMo} initialStatus={ordersStatus} initialMo={ordersMo} initialPhase={ordersPhase} onSubmitReq={user.role === 'buyer' ? () => navTo('submit_req') : undefined} />
+    if (view === 'master_order' && selMo) return <MasterOrderPage moId={selMo} onOpen={openOrder} onNavigate={navTo} onBack={() => goBack({ view: 'orders', ordersMo: selMo })} />
+    if (view === 'order_detail' && selOid) return <AdminOrderDetail orderId={selOid} initialMid={selMid} onOpenMo={openMo} onNavigate={navTo} onBack={() => goBack({ view: 'orders', ordersMo: orders?.find(o => o.id === selOid)?.masterOrderId || '__none__' })} />
     if (view === 'documents') return <AdminDocuments />
     if (view === 'reports') return <ReportingPage key={`r:${reportsMo || 'all'}`} onOpen={openOrder} initialMo={reportsMo} />
     if (user.role === 'buyer' && view === 'submit_req') return <BuyerSubmitReq />
