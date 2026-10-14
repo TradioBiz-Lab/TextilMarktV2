@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { AlertTriangle, X, Plus } from '../../icons.jsx'
+import { AlertTriangle, X, Plus, Camera } from '../../icons.jsx'
 import { T, PHASES, phaseOf, SEASONS, CATEGORIES, resolveNamedColor } from '../../constants.js'
-import { swatchHex, normalisePantone, PANTONE_HINT, PANTONE_PLACEHOLDER } from '../../colours.js'
+import { swatchHex, normalisePantone, PANTONE_HINT, PANTONE_PLACEHOLDER, colourwayPhotoFromFile } from '../../colours.js'
 import { useApp } from '../../context.jsx'
 import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload, ProductThumb } from '../../components/ui.jsx'
 
@@ -25,11 +25,15 @@ export function EditOrderModal({ order, onClose, onSave }) {
   })
   const [colourways, setColourways] = useState(
     (order.colourways || []).length > 0
-      ? order.colourways.map(c => ({ _key: _cwKeySeq++, name: c.name, code: c.code || '', hex: c.hex || '' }))
-      : [{ _key: _cwKeySeq++, name: '', code: '', hex: '' }]
+      ? order.colourways.map(c => ({ _key: _cwKeySeq++, name: c.name, code: c.code || '', hex: c.hex || '', image: c.image || '' }))
+      : [{ _key: _cwKeySeq++, name: '', code: '', hex: '', image: '' }]
   )
   const updateCw = (key, patch) => setColourways(p => p.map(c => c._key === key ? { ...c, ...patch } : c))
-  const addCw = () => setColourways(p => [...p, { _key: _cwKeySeq++, name: '', code: '', hex: '' }])
+  const addCw = () => setColourways(p => [...p, { _key: _cwKeySeq++, name: '', code: '', hex: '', image: '' }])
+  const pickCwPhoto = async (key, file) => {
+    try { const image = await colourwayPhotoFromFile(file); updateCw(key, { image }); setErr('') }
+    catch (e) { setErr(e.message) }
+  }
   const removeCw = key => setColourways(p => p.length > 1 ? p.filter(c => c._key !== key) : p)
 
   const [fabrics, setFabrics] = useState(
@@ -64,7 +68,7 @@ export function EditOrderModal({ order, onClose, onSave }) {
       ...(mayMovePhase && f.phase !== phaseOf(order) ? { phase: f.phase } : {}),
       totalQty: qty,
       ...(f.delivery ? { delivery: f.delivery } : {}),
-      colourways: colourways.filter(c => c.name.trim()).map(c => ({ name: c.name.trim(), code: c.code.trim(), hex: c.hex.trim() })),
+      colourways: colourways.filter(c => c.name.trim()).map(c => ({ name: c.name.trim(), code: c.code.trim(), hex: c.hex.trim(), image: c.image || '' })),
       fabricDetails: fabrics.filter(fb => fb.name.trim()).map(fb => ({ name: fb.name.trim(), composition: fb.composition.trim(), gsm: fb.gsm.trim(), supplier: fb.supplier.trim() })),
       ecommerceLink: f.ecommerceLink.trim(),
       callout: f.callout.trim(),
@@ -188,6 +192,17 @@ export function EditOrderModal({ order, onClose, onSave }) {
                   onBlur={() => updateCw(c._key, { code: normalisePantone(c.code).value })}
                   placeholder={PANTONE_PLACEHOLDER} title={PANTONE_HINT} aria-label="Pantone reference"
                   style={{ flex: 1, border: `1px solid ${normalisePantone(c.code).valid ? T.border : T.warning}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
+                {/* The style photographed in this colour (optional). */}
+                <label title={c.image ? 'Change the photo for this colour' : 'Add a photo of the style in this colour'}
+                  style={{ width: 32, height: 32, borderRadius: 6, border: `1px ${c.image ? 'solid' : 'dashed'} ${T.border}`, overflow: 'hidden', flexShrink: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc' }}>
+                  {c.image ? <img src={c.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Camera size={14} color={T.textLight} />}
+                  <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }}
+                    onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) pickCwPhoto(c._key, f) }} />
+                </label>
+                {c.image && (
+                  <button onClick={() => updateCw(c._key, { image: '' })} title="Remove this colour's photo"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textLight, fontSize: 11, fontWeight: 700, fontFamily: 'inherit', padding: 0 }}>Remove photo</button>
+                )}
                 {colourways.length > 1 && (
                   <button onClick={() => removeCw(c._key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textLight }} aria-label="Close"><X size={14} /></button>
                 )}

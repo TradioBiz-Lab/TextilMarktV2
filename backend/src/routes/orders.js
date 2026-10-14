@@ -29,6 +29,23 @@ import { unpartneredMfrs, ensurePartnership, partyIdByCode, ensureOrgsByPartyIds
 const VALID_SEASONS    = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
 const ORDER_PHASES    = ['development', 'production']
 const MAX_PRODUCT_PHOTO_SIZE = 1024 * 1024 // 1MB raw — reference thumbnail, not full-res
+const MAX_COLOURWAY_PHOTO_SIZE = 300 * 1024 // a photo per colourway rides on every order read, so it stays small
+
+/** A colourway's photo from a request: { image } ('' when absent or cleared) or { error }. */
+function colourwayImage(c, name) {
+  const v = c && typeof c === 'object' && typeof c.image === 'string' ? c.image.trim() : ''
+  if (!v) return { image: '' }
+  if (v.startsWith('data:')) {
+    const m = /^data:image\/(jpeg|jpg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(v)
+    if (!m) return { error: `Photo for "${name}" must be a JPEG, PNG or WebP image` }
+    if (m[2].length * 0.75 > MAX_COLOURWAY_PHOTO_SIZE) return { error: `Photo for "${name}" is too large (max 300KB)` }
+    return { image: v }
+  }
+  if (v.length > 2000) return { error: `Photo link for "${name}" is too long` }
+  try { const u = new URL(v); if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error() }
+  catch { return { error: `Photo for "${name}" must be an uploaded image or an http(s) link` } }
+  return { image: v }
+}
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 // Email triggers for orders are intentionally suppressed — order activity is portal-notifications only
 
@@ -148,7 +165,7 @@ const enrichOrder = (o, viewerMfrId = null, { hideSupply = false } = {}) => {
   season: o.season, totalQty: o.totalQty, delivery: o.delivery, createdAt: o.createdAt,
   baselineDelivery: o.baselineDelivery || null,
   deliveryVarianceDays: deliveryVarianceDays(o),
-  colourways: (o.colourways || []).map(c => ({ name: c.name, code: c.code || '', hex: c.hex || '' })),
+  colourways: (o.colourways || []).map(c => ({ name: c.name, code: c.code || '', hex: c.hex || '', image: c.image || '' })),
   fabricDetails: (o.fabricDetails || []).map(f => ({ name: f.name, composition: f.composition || '', gsm: f.gsm || '', supplier: f.supplier || '' })),
   ecommerceLink: o.ecommerceLink || '',
   callout: o.callout || '',
@@ -524,7 +541,9 @@ export async function validateAndCreateOrder({ id, buyerId, product, styleNumber
       if (colourwaysResolved.some(x => x.name.toLowerCase() === name.toLowerCase())) continue
       const hex = (typeof c === 'object' && c?.hex ? String(c.hex).trim() : '')
       if (hex && !/^#[0-9a-fA-F]{6}$/.test(hex)) return { ok: false, error: `Invalid swatch colour for "${name}" — must be a hex colour like #2C3E50` }
-      colourwaysResolved.push({ name, code: (typeof c === 'object' && c?.code ? String(c.code).trim() : ''), hex })
+      const photo = colourwayImage(c, name)
+      if (photo.error) return { ok: false, error: photo.error }
+      colourwaysResolved.push({ name, code: (typeof c === 'object' && c?.code ? String(c.code).trim() : ''), hex, image: photo.image })
     }
     if (colourwaysResolved.length > 40) return { ok: false, error: 'Too many colourways (max 40)' }
   }
@@ -2613,7 +2632,9 @@ router.post('/:id', requireAuth, requireOrderOwner, updateLimiter, async (req, r
         if (hex && !/^#[0-9a-fA-F]{6}$/.test(hex)) return res.status(400).json({ error: `Invalid swatch colour for "${name}" — must be a hex colour like #2C3E50` })
         const code = (typeof c === 'object' && c?.code ? String(c.code).trim() : '')
         if (code.length > 40) return res.status(400).json({ error: `Pantone reference too long for "${name}" (max 40 characters)` })
-        next.push({ name, code, hex })
+        const photo = colourwayImage(c, name)
+        if (photo.error) return res.status(400).json({ error: photo.error })
+        next.push({ name, code, hex, image: photo.image })
       }
       if (next.length > 40) return res.status(400).json({ error: 'Too many colourways (max 40)' })
       updates.colourways = next

@@ -230,6 +230,8 @@ const colourwaySchema = new mongoose.Schema({
   // a Pantone TPX/TCX code (`code`) isn't renderable without a lookup
   // table, so this is a separate, admin-picked approximate hex colour.
   hex:  { type: String, default: '' },
+  // Optional photo of the style in this colour: an uploaded image (data URL, under 300KB) or an http(s) link.
+  image: { type: String, default: '' },
 }, { _id: false })
 
 // One fabric used on this style — a shirt might carry a shell fabric and a
