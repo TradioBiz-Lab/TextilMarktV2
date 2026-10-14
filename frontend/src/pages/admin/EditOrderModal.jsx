@@ -1,12 +1,13 @@
 import { useState } from 'react'
-import { AlertTriangle, X, Plus, Camera } from '../../icons.jsx'
+import { AlertTriangle, X, Plus, Camera, ArrowLeft } from '../../icons.jsx'
 import { T, PHASES, phaseOf, SEASONS, CATEGORIES, resolveNamedColor } from '../../constants.js'
-import { swatchHex, normalisePantone, PANTONE_HINT, PANTONE_PLACEHOLDER, colourwayPhotoFromFile } from '../../colours.js'
+import { swatchHex, normalisePantone, PANTONE_HINT, PANTONE_PLACEHOLDER, photoFromFile } from '../../colours.js'
 import { useApp } from '../../context.jsx'
-import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload, ProductThumb } from '../../components/ui.jsx'
+import { Btn, FlexRow, Input, Select } from '../../components/ui.jsx'
 
 let _cwKeySeq = 1
 let _fabKeySeq = 1
+let _photoKeySeq = 1
 
 export function EditOrderModal({ order, onClose, onSave }) {
   const { currentUser } = useApp()
@@ -25,15 +26,31 @@ export function EditOrderModal({ order, onClose, onSave }) {
   })
   const [colourways, setColourways] = useState(
     (order.colourways || []).length > 0
-      ? order.colourways.map(c => ({ _key: _cwKeySeq++, name: c.name, code: c.code || '', hex: c.hex || '', image: c.image || '' }))
-      : [{ _key: _cwKeySeq++, name: '', code: '', hex: '', image: '' }]
+      ? order.colourways.map(c => ({ _key: _cwKeySeq++, name: c.name, code: c.code || '', hex: c.hex || '' }))
+      : [{ _key: _cwKeySeq++, name: '', code: '', hex: '' }]
   )
   const updateCw = (key, patch) => setColourways(p => p.map(c => c._key === key ? { ...c, ...patch } : c))
-  const addCw = () => setColourways(p => [...p, { _key: _cwKeySeq++, name: '', code: '', hex: '', image: '' }])
-  const pickCwPhoto = async (key, file) => {
-    try { const image = await colourwayPhotoFromFile(file); updateCw(key, { image }); setErr('') }
-    catch (e) { setErr(e.message) }
+  const addCw = () => setColourways(p => [...p, { _key: _cwKeySeq++, name: '', code: '', hex: '' }])
+
+  // Product photos, each tied to a colourway or to none; the first is the main photo. A style from before photos
+  // starts with its one product photo.
+  const initialPhotos = (order.photos || []).length > 0
+    ? order.photos.map(p => ({ image: p.image, colourway: p.colourway || '' }))
+    : (order.imageDataUrl || order.imageUrl) ? [{ image: order.imageDataUrl || order.imageUrl, colourway: '' }] : []
+  const [photos, setPhotos] = useState(() => initialPhotos.map(p => ({ ...p, _key: _photoKeySeq++ })))
+  const [addingPhotos, setAddingPhotos] = useState(false)
+  const addPhotos = async files => {
+    setAddingPhotos(true)
+    try {
+      const added = []
+      for (const file of files) added.push({ _key: _photoKeySeq++, image: await photoFromFile(file), colourway: '' })
+      setPhotos(p => [...p, ...added].slice(0, 12)); setErr('')
+    } catch (e) { setErr(e.message) } finally { setAddingPhotos(false) }
   }
+  const updatePhoto = (key, patch) => setPhotos(p => p.map(x => x._key === key ? { ...x, ...patch } : x))
+  const removePhoto = key => setPhotos(p => p.filter(x => x._key !== key))
+  const makeMain = key => setPhotos(p => [...p.filter(x => x._key === key), ...p.filter(x => x._key !== key)])
+  const colourNames = colourways.map(c => c.name.trim()).filter(Boolean)
   const removeCw = key => setColourways(p => p.length > 1 ? p.filter(c => c._key !== key) : p)
 
   const [fabrics, setFabrics] = useState(
@@ -44,10 +61,6 @@ export function EditOrderModal({ order, onClose, onSave }) {
   const updateFab = (key, patch) => setFabrics(p => p.map(f => f._key === key ? { ...f, ...patch } : f))
   const addFab = () => setFabrics(p => [...p, { _key: _fabKeySeq++, name: '', composition: '', gsm: '', supplier: '' }])
   const removeFab = key => setFabrics(p => p.length > 1 ? p.filter(f => f._key !== key) : p)
-  const hasExistingPhoto = !!(order.imageDataUrl || order.imageUrl)
-  const [photoFile, setPhotoFile] = useState(null)
-  const [photoErr, setPhotoErr] = useState('')
-  const [clearPhoto, setClearPhoto] = useState(false)
   const [err, setErr] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -68,19 +81,14 @@ export function EditOrderModal({ order, onClose, onSave }) {
       ...(mayMovePhase && f.phase !== phaseOf(order) ? { phase: f.phase } : {}),
       totalQty: qty,
       ...(f.delivery ? { delivery: f.delivery } : {}),
-      colourways: colourways.filter(c => c.name.trim()).map(c => ({ name: c.name.trim(), code: c.code.trim(), hex: c.hex.trim(), image: c.image || '' })),
+      colourways: colourways.filter(c => c.name.trim()).map(c => ({ name: c.name.trim(), code: c.code.trim(), hex: c.hex.trim() })),
       fabricDetails: fabrics.filter(fb => fb.name.trim()).map(fb => ({ name: fb.name.trim(), composition: fb.composition.trim(), gsm: fb.gsm.trim(), supplier: fb.supplier.trim() })),
       ecommerceLink: f.ecommerceLink.trim(),
       callout: f.callout.trim(),
     }
-    if (clearPhoto) {
-      payload.imageDataUrl = null
-      payload.imageUrl = null
-    } else if (photoFile) {
-      const p = fileUploadPayload(photoFile)
-      payload.imageDataUrl = p.dataUrl || null
-      payload.imageUrl = p.externalUrl || null
-    }
+    // Photos only travel when they changed (they are the heaviest part of a style).
+    const photosOut = photos.map(p => ({ image: p.image, colourway: colourNames.includes(p.colourway) ? p.colourway : '' }))
+    if (JSON.stringify(photosOut) !== JSON.stringify(initialPhotos)) payload.photos = photosOut
 
     setSaving(true)
     try {
@@ -124,15 +132,41 @@ export function EditOrderModal({ order, onClose, onSave }) {
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Product Photo (optional)</label>
-            {hasExistingPhoto && !photoFile && !clearPhoto ? (
-              <FlexRow gap={10}>
-                <ProductThumb order={order} size="sm" />
-                <Btn variant="secondary" size="sm" onClick={() => setClearPhoto(true)}>Remove photo</Btn>
-              </FlexRow>
+            <FlexRow justify="space-between" style={{ marginBottom: 6 }}>
+              <label style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Product Photos</label>
+              <label style={{ fontSize: 11, color: T.primary, fontWeight: 700, cursor: addingPhotos || photos.length >= 12 ? 'default' : 'pointer', opacity: photos.length >= 12 ? 0.5 : 1 }}>
+                <Camera size={11} style={{ verticalAlign: -1, marginRight: 3 }} />{addingPhotos ? 'Adding...' : 'Add photos'}
+                <input type="file" multiple accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} disabled={addingPhotos || photos.length >= 12}
+                  onChange={e => { const fs = [...(e.target.files || [])]; e.target.value = ''; if (fs.length) addPhotos(fs) }} />
+              </label>
+            </FlexRow>
+            {photos.length === 0 ? (
+              <div style={{ fontSize: 12, color: T.textMuted, border: `1px dashed ${T.border}`, borderRadius: 8, padding: '14px 12px', textAlign: 'center' }}>No photos yet. Add one or more, then pick the colourway each one shows.</div>
             ) : (
-              <FileUpload file={photoFile} onFile={f => { setPhotoFile(f); setPhotoErr(''); setClearPhoto(false) }} error={photoErr} onError={setPhotoErr} />
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
+                {photos.map((p, i) => (
+                  <div key={p._key} style={{ border: `1px solid ${i === 0 ? T.primaryDeep : T.border}`, borderRadius: 8, padding: 6, display: 'flex', flexDirection: 'column', gap: 6, background: '#fff' }}>
+                    <div style={{ position: 'relative', height: 120, borderRadius: 6, overflow: 'hidden', background: '#f8fafc' }}>
+                      <img src={p.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
+                      {i === 0 && <span style={{ position: 'absolute', left: 4, top: 4, fontSize: 9, fontWeight: 800, color: '#fff', background: T.primaryDeep, borderRadius: 4, padding: '1px 6px', letterSpacing: '0.04em' }}>MAIN</span>}
+                      <button onClick={() => removePhoto(p._key)} aria-label="Remove photo" title="Remove photo"
+                        style={{ position: 'absolute', right: 4, top: 4, width: 20, height: 20, borderRadius: '50%', border: 'none', background: 'rgba(15,23,42,0.6)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}><X size={11} color="#fff" /></button>
+                    </div>
+                    <select value={colourNames.includes(p.colourway) ? p.colourway : ''} onChange={e => updatePhoto(p._key, { colourway: e.target.value })} aria-label="Colourway shown in this photo"
+                      style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: '4px 6px', fontSize: 11, fontFamily: 'inherit', color: T.text, background: '#fff' }}>
+                      <option value="">No colourway</option>
+                      {colourNames.map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                    {i > 0 && (
+                      <button onClick={() => makeMain(p._key)} style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0, textAlign: 'left' }}>
+                        <ArrowLeft size={10} style={{ verticalAlign: -1, marginRight: 2 }} />Make main photo
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
+            <div style={{ fontSize: 11, color: T.textLight, marginTop: 5 }}>The main photo is the style's thumbnail everywhere. Tie a photo to a colourway and its swatch shows it.</div>
           </div>
 
           <div className="form-grid-2" style={{ gap: 12 }}>
@@ -192,17 +226,6 @@ export function EditOrderModal({ order, onClose, onSave }) {
                   onBlur={() => updateCw(c._key, { code: normalisePantone(c.code).value })}
                   placeholder={PANTONE_PLACEHOLDER} title={PANTONE_HINT} aria-label="Pantone reference"
                   style={{ flex: 1, border: `1px solid ${normalisePantone(c.code).valid ? T.border : T.warning}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
-                {/* The style photographed in this colour (optional). */}
-                <label title={c.image ? 'Change the photo for this colour' : 'Add a photo of the style in this colour'}
-                  style={{ width: 32, height: 32, borderRadius: 6, border: `1px ${c.image ? 'solid' : 'dashed'} ${T.border}`, overflow: 'hidden', flexShrink: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc' }}>
-                  {c.image ? <img src={c.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Camera size={14} color={T.textLight} />}
-                  <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }}
-                    onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) pickCwPhoto(c._key, f) }} />
-                </label>
-                {c.image && (
-                  <button onClick={() => updateCw(c._key, { image: '' })} title="Remove this colour's photo"
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textLight, fontSize: 11, fontWeight: 700, fontFamily: 'inherit', padding: 0 }}>Remove photo</button>
-                )}
                 {colourways.length > 1 && (
                   <button onClick={() => removeCw(c._key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textLight }} aria-label="Close"><X size={14} /></button>
                 )}

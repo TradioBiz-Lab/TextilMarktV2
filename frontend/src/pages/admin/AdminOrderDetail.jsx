@@ -632,13 +632,12 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack, onNavi
   // disappears or gets reshuffled depending on whether a manufacturer exists.
   const renderSummary = ({ unassigned }) => {
     const heroImgUrl = order.imageDataUrl || order.imageUrl
-    // The style's gallery: the product photo first (whatever is uploaded as the product image), then each colourway
-    // photographed in its colour. A product photo that is also one of the colourway photos is shown once, as that colour.
-    const colourSlides = (order.colourways || []).filter(c => c.image).map(c => ({ src: c.image, label: c.name, accent: swatchHex(c, resolveNamedColor) }))
-    const productSlide = colourSlides.find(sl => sl.src === heroImgUrl)
-    const gallery = heroImgUrl
-      ? [productSlide || { src: heroImgUrl, label: 'Product photo' }, ...colourSlides.filter(sl => sl !== productSlide)]
-      : colourSlides
+    // The style's gallery: every product photo, the main one first, each labelled with the colourway it shows. A style
+    // from before photos shows its one product photo.
+    const cwByName = Object.fromEntries((order.colourways || []).map(c => [c.name, c]))
+    const gallery = (order.photos || []).length > 0
+      ? order.photos.map(p => ({ src: p.image, colourway: p.colourway || '', label: p.colourway || order.product, accent: cwByName[p.colourway] ? swatchHex(cwByName[p.colourway], resolveNamedColor) : null }))
+      : heroImgUrl ? [{ src: heroImgUrl, colourway: '', label: order.product }] : []
     const checklist = [
       {
         key: 'image', label: 'Product Image', uploaded: !!heroImgUrl, canUpload: oc.uploadPhoto,
@@ -796,7 +795,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack, onNavi
                   <FlexRow gap={8} style={{ flexWrap: 'wrap' }}>
                     {order.colourways.map(c => {
                       // The colour swatch, as always; a colourway with a photo also brings its slide up in the gallery.
-                      const slide = c.image ? gallery.findIndex(p => p.label === c.name) : -1
+                      const slide = gallery.findIndex(p => p.colourway === c.name)
                       const Tag = slide >= 0 ? 'button' : 'span'
                       return (
                         <Tag key={c.name} {...(slide >= 0 ? { onClick: () => setGalleryIdx(slide), title: `Show ${c.name} in the photos` } : {})}

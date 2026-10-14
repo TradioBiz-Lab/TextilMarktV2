@@ -84,10 +84,10 @@ export function normalisePantone(input) {
 }
 
 /**
- * A colourway photo from a picked file: scaled so its longer side is at most 800px and saved as JPEG, which keeps it
- * well under the server's 300KB limit. Resolves to a data URL.
+ * A product photo from a picked file: scaled so its longer side is at most 1000px and saved as JPEG, which keeps it
+ * small enough to ride on every order read. Resolves to a data URL.
  */
-export function colourwayPhotoFromFile(file, maxSide = 800) {
+export function photoFromFile(file, maxSide = 1000) {
   return new Promise((resolve, reject) => {
     if (!file || !/^image\/(jpeg|png|webp)$/.test(file.type)) { reject(new Error('Pick a JPEG, PNG or WebP image')); return }
     const url = URL.createObjectURL(file)

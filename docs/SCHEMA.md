@@ -112,6 +112,10 @@ Uses a human-readable custom string `_id` for traceability.
   season        String            enum: ["SS26","FW26","SS27","FW27","SS28"]
   totalQty      Number            required, min: 1
   delivery      Date              required — target delivery date
+  photos        [{image, colourway}] max 12 - the style's product photos, in order. `image` is an
+                                  uploaded JPEG/PNG/WebP (data URL, under 1MB) or an http(s) link;
+                                  `colourway` is one of `colourways[].name` or "". The first photo is
+                                  the main one: writing `photos` also sets imageDataUrl / imageUrl.
   colourways    [{name, code}]    max 40 — the colours this style is made in. `code` optionally
                                   carries a Pantone TPX/TCX reference. Held at order level so
                                   per-colour stages (dyeing, lab dips, FPT/GPT) generate their
