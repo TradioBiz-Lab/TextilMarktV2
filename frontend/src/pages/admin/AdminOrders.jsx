@@ -11,7 +11,6 @@ import { capsFor } from '../../caps.js'
 import { ordersApi } from '../../api.js'
 import { PromoteModal } from '../../components/PromoteModal.jsx'
 import { EditOrderModal } from './EditOrderModal.jsx'
-import { DeleteOrderModal } from './DeleteOrderModal.jsx'
 import { QuickStageModal } from './QuickStageModal.jsx'
 import { CreateStyleWizard } from './CreateStyleWizard.jsx'
 
@@ -37,7 +36,7 @@ function groupDisplayLabel(g) {
 }
 
 export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initialPhase, onSubmitReq }) {
-  const { orders, users, loading, createOrder, uploadDoc, masterOrders, createMasterOrder, editOrder, deleteOrder, currentUser } = useApp()
+  const { orders, users, loading, createOrder, uploadDoc, masterOrders, createMasterOrder, editOrder, currentUser } = useApp()
   // One Orders page for every role; caps decides which actions each sees (see caps.js).
   const caps = capsFor(currentUser)
   const toast = useToast()
@@ -85,7 +84,6 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
 
   // ── Edit / Delete modal state ──
   const [editTarget, setEditTarget] = useState(null)
-  const [deleteTarget, setDeleteTarget] = useState(null)
 
   // ── Create Style wizard state ──
   const [showWizard, setShowWizard] = useState(false)
@@ -176,17 +174,6 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
             await editOrder(id, data)
             toast(`Order ${id} updated`, 'success')
             setEditTarget(null)
-          }}
-        />
-      )}
-      {deleteTarget && (
-        <DeleteOrderModal
-          order={deleteTarget}
-          onClose={() => setDeleteTarget(null)}
-          onConfirm={async (id, reason) => {
-            await deleteOrder(id, reason)
-            toast(`Style ${id} dropped`, 'success')
-            setDeleteTarget(null)
           }}
         />
       )}

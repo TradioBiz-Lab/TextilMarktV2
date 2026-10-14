@@ -1,17 +1,17 @@
 import { useState } from 'react'
 import { AlertTriangle } from '../../icons.jsx'
-import { T, SEASONS } from '../../constants.js'
+import { T, SEASONS, styleOnHold } from '../../constants.js'
 import { Btn, FlexRow, Input, Select, Mono, Modal, Textarea, useToast } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
 
 /**
- * Edit a master order: rename it, change its season, drop a style from it, or
- * (once it has no styles left) delete it. Dropping a style and deleting a master
+ * Edit a master order: rename it, change its season, manage its styles (take one off hold, move one to another
+ * master order of the same customer, drop one), or (once it has no styles left) delete it. Dropping a style and deleting a master
  * order both keep a permanent record, see DroppedRecord on the backend.
  */
 export function EditMasterOrderModal({ mo, onClose }) {
-  const { orders, updateMasterOrder, deleteOrder, deleteMasterOrder } = useApp()
+  const { orders, masterOrders, updateMasterOrder, deleteOrder, deleteMasterOrder, editOrder, updateAssignment } = useApp()
   const toast = useToast()
   const [name, setName] = useState(mo.orderName || '')
   const [season, setSeason] = useState(mo.season || '')
@@ -21,6 +21,21 @@ export function EditMasterOrderModal({ mo, onClose }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [deleteReason, setDeleteReason] = useState('')
   const [deleting, setDeleting] = useState(false)
+  const [busyId, setBusyId] = useState(null)   // the style a row action is running on
+  // Where a style can move: the same customer's other master orders.
+  const moveTargets = (masterOrders || []).filter(m => m.id !== mo.id && String(m.buyerId) === String(mo.buyerId))
+
+  const rowAction = async (o, run, done) => {
+    setErr(''); setBusyId(o.id)
+    try { await run(); toast(done, 'success') }
+    catch (e) { setErr(typeof e === 'string' ? e : (e?.message || 'Could not update the style')) }
+    finally { setBusyId(null) }
+  }
+  const unhold = o => rowAction(o, async () => {
+    for (const a of (o.assignments || []).filter(a => a.status === 'On Hold')) await updateAssignment(o.id, a.mid, 'Processing', 'Taken off hold from the master order')
+  }, `${o.product} is back in production`)
+  const moveTo = (o, targetId) => rowAction(o, () => editOrder(o.id, { masterOrderId: targetId }),
+    `${o.product} moved to ${moveTargets.find(m => m.id === targetId)?.orderName || targetId}`)
 
   // Read live from the store, so a style disappears from this list the moment it is dropped.
   const styles = (orders || []).filter(o => o.masterOrderId === mo.id)
@@ -77,15 +92,25 @@ export function EditMasterOrderModal({ mo, onClose }) {
                       <div style={{ fontSize: 13, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {o.product}{o.styleNumber ? ` (${o.styleNumber})` : ''}
                       </div>
-                      <div style={{ fontSize: 11, color: T.textMuted }}><Mono style={{ fontSize: 11 }}>{o.id}</Mono> · {o.totalQty?.toLocaleString()} pcs</div>
+                      <div style={{ fontSize: 11, color: T.textMuted }}><Mono style={{ fontSize: 11 }}>{o.id}</Mono> · {o.totalQty?.toLocaleString()} pcs
+                        {styleOnHold(o) && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: '#475569', background: '#e2e8f0', borderRadius: 999, padding: '1px 7px' }}>On hold</span>}
+                      </div>
                     </div>
-                    <Btn size="sm" variant="secondary" onClick={() => setDropTarget(o)}>Drop</Btn>
+                    {styleOnHold(o) && <Btn size="sm" variant="secondary" disabled={busyId === o.id} onClick={() => unhold(o)}>Unhold</Btn>}
+                    {moveTargets.length > 0 && (
+                      <select value="" disabled={busyId === o.id} onChange={e => e.target.value && moveTo(o, e.target.value)} aria-label={`Move ${o.product} to another master order`}
+                        style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: '5px 8px', fontSize: 12, fontWeight: 600, fontFamily: 'inherit', color: T.text, background: T.surface, maxWidth: 150 }}>
+                        <option value="">Move to...</option>
+                        {moveTargets.map(m => <option key={m.id} value={m.id}>{m.orderName}{m.season ? ` (${m.season})` : ''}</option>)}
+                      </select>
+                    )}
+                    <Btn size="sm" variant="secondary" disabled={busyId === o.id} onClick={() => setDropTarget(o)}>Drop</Btn>
                   </FlexRow>
                 ))}
               </div>
             )}
             <div style={{ fontSize: 11.5, color: T.textMuted, marginTop: 6, lineHeight: 1.5 }}>
-              Dropping a style removes it from every list. A full record of it is kept in the database.
+              Moving a style keeps everything on it. Dropping a style removes it from every list; a full record of it is kept.
             </div>
           </div>
 
