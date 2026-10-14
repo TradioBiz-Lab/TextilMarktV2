@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, Fragment } from 'react'
 import Papa from 'papaparse'
-import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight, Trash2, ArrowRight } from '../../icons.jsx'
+import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight, Trash2, ArrowRight, Folder } from '../../icons.jsx'
 import {
   T, ORDER_STATUSES, evidenceTypesFor, productDocForStep, DOC_ICONS,
   stageKindOf, kindForCustomerOwner, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
@@ -29,8 +29,8 @@ function fmtDate(d) {
 // Bulk Edit row: step, start, end, responsible, target qty, description, evidence, NA / Undo.
 const BULK_EDIT_COLS = '170px 168px 168px 150px 78px minmax(120px, 1fr) 30px 64px'
 
-export function AdminOrderDetail({ orderId, initialMid, onBack }) {
-  const { currentUser, orders, docs, users, loading, updateAssignment, updateStage, uploadDoc, getDocData, refreshOrders, editOrder, deleteOrder,
+export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
+  const { currentUser, orders, masterOrders, docs, users, loading, updateAssignment, updateStage, uploadDoc, getDocData, refreshOrders, editOrder, deleteOrder,
     addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
     addStageItem, updateStageItem, removeStageItem, addAssignment, reassignAssignment, insertStage, bulkUpdateStages } = useApp()
   const toast = useToast()
@@ -745,6 +745,15 @@ export function AdminOrderDetail({ orderId, initialMid, onBack }) {
         {/* ── Page header: identity + actions ── */}
         <FlexRow style={{ flexWrap: 'wrap' }} gap={10}>
           <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
+          {order.masterOrderId && onOpenMo && (() => {
+            const mo = (masterOrders || []).find(m => m.id === order.masterOrderId)
+            return (
+              <button onClick={() => onOpenMo(order.masterOrderId)} title="Open the master order page"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.primaryDeep, cursor: 'pointer', fontFamily: 'inherit' }}>
+                <Folder size={13} /> {mo?.orderName || order.masterOrderId} <ChevronRight size={12} />
+              </button>
+            )
+          })()}
           {order.phase === 'development' && <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 10, background: '#ede9fe', color: '#5b21b6', border: '1px solid #c4b5fd' }}>Sampling &amp; Development</span>}
           <div style={{ flex: 1 }} />
           {!unassigned && order.assignments?.length > 1 && (

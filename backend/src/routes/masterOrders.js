@@ -174,4 +174,31 @@ router.post('/:id/delete', requireAuth, requireAdmin, async (req, res) => {
   }
 })
 
+// GET /api/master-orders/:id/dropped - the styles dropped from this master order, newest first, so its page keeps
+// them on record. Tradio staff and the master order's own customer only: a factory never sees other splits.
+// The snapshot is large (stages, photo), so only what the page shows is read from it.
+router.get('/:id/dropped', requireAuth, async (req, res) => {
+  try {
+    const mo = await MasterOrder.findById(req.params.id).select('buyerId').lean()
+    if (!mo) return res.status(404).json({ error: 'Master order not found' })
+    const ownCustomer = req.user.role === 'buyer' && String(mo.buyerId) === String(req.user.id)
+    if (req.user.role !== 'admin' && !ownCustomer) return res.status(403).json({ error: 'Access denied' })
+    const rows = await DroppedRecord.find({ kind: 'style', masterOrderId: mo._id })
+      .select('refId label reason droppedByName droppedAt snapshot.product snapshot.styleNumber snapshot.totalQty snapshot.imageUrl snapshot.phase')
+      .sort({ droppedAt: -1 }).limit(500).lean()
+    res.json(rows.map(r => ({
+      id: String(r._id), refId: r.refId, label: r.label, reason: r.reason || '',
+      droppedByName: r.droppedByName || null, droppedAt: r.droppedAt,
+      style: {
+        product: r.snapshot?.product || null, styleNumber: r.snapshot?.styleNumber || '',
+        totalQty: r.snapshot?.totalQty ?? null, phase: r.snapshot?.phase || 'production',
+        imageUrl: typeof r.snapshot?.imageUrl === 'string' && /^https?:\/\//.test(r.snapshot.imageUrl) ? r.snapshot.imageUrl : null,
+      },
+    })))
+  } catch (err) {
+    console.error('[master-orders dropped]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
 export default router

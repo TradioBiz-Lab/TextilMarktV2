@@ -61,6 +61,7 @@ import {
   Play as P_Play,
   Plus as P_Plus,
   Prohibit as P_Prohibit,
+  PauseCircle as P_PauseCircle,
   RadioButton as P_RadioButton,
   Ruler as P_Ruler,
   Scissors as P_Scissors,
@@ -127,6 +128,7 @@ export const ArrowLeftRight = make(P_ArrowsLeftRight, 'ArrowLeftRight')
 export const ArrowRight = make(P_ArrowRight, 'ArrowRight')
 export const AudioLines = make(P_Waveform, 'AudioLines')
 export const Ban = make(P_Prohibit, 'Ban')
+export const PauseCircle = make(P_PauseCircle, 'PauseCircle')
 export const BarChart3 = make(P_ChartBar, 'BarChart3')
 export const Bell = make(P_Bell, 'Bell')
 // Kriyaa's mark: a robot head with two round eyes, ears and an antenna, deliberately with NO mouth.
