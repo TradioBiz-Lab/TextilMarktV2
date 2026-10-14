@@ -82,3 +82,27 @@ export function normalisePantone(input) {
   if (m) return { value: `${m[1]} ${m[2].toUpperCase()}`, valid: true }
   return { value: raw, valid: false }
 }
+
+/**
+ * A colourway photo from a picked file: scaled so its longer side is at most 800px and saved as JPEG, which keeps it
+ * well under the server's 300KB limit. Resolves to a data URL.
+ */
+export function colourwayPhotoFromFile(file, maxSide = 800) {
+  return new Promise((resolve, reject) => {
+    if (!file || !/^image\/(jpeg|png|webp)$/.test(file.type)) { reject(new Error('Pick a JPEG, PNG or WebP image')); return }
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      const scale = Math.min(1, maxSide / Math.max(img.width, img.height))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(img.width * scale); canvas.height = Math.round(img.height * scale)
+      const ctx = canvas.getContext('2d')
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      URL.revokeObjectURL(url)
+      resolve(canvas.toDataURL('image/jpeg', 0.82))
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That image could not be read')) }
+    img.src = url
+  })
+}

@@ -8,6 +8,7 @@ import {
   PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, stageNameForDoc, PO_INVOICE_DOC_TYPES, deliveryDocsOf,
 } from '../../constants.js'
 import { PromoteModal } from '../../components/PromoteModal.jsx'
+import { StyleGallery } from '../../components/StyleGallery.jsx'
 import { swatchHex } from '../../colours.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, DateOrNA, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -40,6 +41,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
 
   const [showEdit, setShowEdit] = useState(false)
   const [promoteOpen, setPromoteOpen] = useState(false)
+  const [galleryIdx, setGalleryIdx] = useState(0) // which colourway photo the style gallery shows
   const [promoting, setPromoting] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
 
@@ -680,6 +682,8 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
   // disappears or gets reshuffled depending on whether a manufacturer exists.
   const renderSummary = ({ unassigned }) => {
     const heroImgUrl = order.imageDataUrl || order.imageUrl
+    // Colourways photographed in their colour make the style's gallery, one slide each.
+    const gallery = (order.colourways || []).filter(c => c.image).map(c => ({ src: c.image, label: c.name, accent: swatchHex(c, resolveNamedColor) }))
     const checklist = [
       {
         key: 'image', label: 'Product Image', uploaded: !!heroImgUrl, canUpload: caps.uploadProductPhoto,
@@ -779,7 +783,8 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
           <div style={{ display: 'flex', flexWrap: 'wrap' }}>
             {/* Photo + tear line */}
             <div style={{ display: 'flex', flexShrink: 0 }}>
-              <div style={{ width: 128, padding: 18, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: gallery.length ? 'auto' : 128, padding: 18, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                {gallery.length > 0 ? <StyleGallery photos={gallery} index={galleryIdx} onIndex={setGalleryIdx} /> : (
                 <div onClick={caps.editOrders ? () => setShowEdit(true) : undefined} role={caps.editOrders ? 'button' : undefined} tabIndex={caps.editOrders ? 0 : undefined} onKeyDown={caps.editOrders ? activateOnKey(() => setShowEdit(true)) : undefined}
                   title={caps.editOrders ? 'Change photo' : undefined}
                   style={{ width: 92, height: 92, borderRadius: 6, overflow: 'hidden', background: '#f8fafc', border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: caps.editOrders ? 'pointer' : 'default' }}>
@@ -789,6 +794,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                     <ImageIcon size={22} color={T.textLight} />
                   )}
                 </div>
+                )}
                 {unassigned
                   ? <span style={{ fontSize: 10, fontWeight: 800, color: T.textLight, background: '#f1f5f9', padding: '2px 8px', borderRadius: 999, letterSpacing: '0.06em' }}>TBD</span>
                   : <Badge status={overallStatus()} />}
@@ -832,7 +838,16 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                 <div style={{ marginTop: 16 }}>
                   <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, fontWeight: 700, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 7 }}>Colourways</div>
                   <FlexRow gap={8} style={{ flexWrap: 'wrap' }}>
-                    {order.colourways.map(c => (
+                    {order.colourways.map(c => c.image ? (
+                      <button key={c.name} onClick={() => setGalleryIdx(Math.max(0, gallery.findIndex(p => p.label === c.name)))} title={`Show ${c.name} in the photos`}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 10, padding: 4, paddingRight: 12, fontSize: 12, fontWeight: 700, color: T.text, background: '#fff', border: `1px solid ${T.border}`, borderBottom: `3px solid ${swatchHex(c, resolveNamedColor)}`, borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+                        <img src={c.image} alt={c.name} style={{ width: 52, height: 64, objectFit: 'cover', borderRadius: 5, background: '#f1f5f9', flexShrink: 0 }} />
+                        <span>
+                          {c.name}
+                          {c.code ? <span style={{ display: 'block', color: T.textLight, fontWeight: 500, fontSize: 11 }}>{c.code}</span> : null}
+                        </span>
+                      </button>
+                    ) : (
                       <span key={c.name} style={{ display: 'inline-flex', alignItems: 'stretch', fontSize: 12, fontWeight: 700, color: T.text, background: '#fff', border: `1px solid ${T.border}`, borderRadius: 6, overflow: 'hidden' }}>
                         <span style={{ width: 8, background: swatchHex(c, resolveNamedColor), flexShrink: 0 }} />
                         <span style={{ padding: '5px 10px' }}>
@@ -841,6 +856,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                       </span>
                     ))}
                   </FlexRow>
+
                 </div>
               )}
 
