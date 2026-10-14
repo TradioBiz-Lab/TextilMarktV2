@@ -392,7 +392,10 @@ admin enables them in User Setup.
 - **Run it locally.** `npm run dev:local` (backend) starts an ephemeral in-memory mongod, seeds a
   standalone environment and blanks the email key, so nothing touches Atlas and no email is sent. It
   uses the same seed logins as `npm run seed:sandbox` (never run that against the shared sandbox DB
-  casually: it wipes it).
+  casually: it wipes it). It also loads the Aero Active demo range from `src/db/demo.js` when that sandbox-only file is
+  there (set `NO_AERO_DEMO=1` to skip): fourteen styles in four master orders with their Grok product photos, tech packs and
+  measurement sheets, for the brand `sourcing@aeroactive.demo` and the factories `unit@ncractive.demo` and
+  `unit@bangaloresports.demo` (the logins are printed when it loads). The hosted sandbox database already holds the same range.
 
 ## Domain model essentials
 - **Order** (`backend/src/models/Order.js`) uses a custom string `_id`

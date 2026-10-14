@@ -8,8 +8,13 @@
 // (which the hosted sandbox also uses) is never touched. Sign in with the seed accounts, e.g.
 // master@tradio.com, buyer@zara.com, mfr@tiruppur.com (see src/db/seed.js).
 //
-// Overrides: PLATFORM_MODE=tradio to see the Tradio portal; LOCAL_MONGO_PORT, PORT.
+// The Aero Active demo range (fourteen styles with their photos, tech packs and measurement sheets, for the
+// brand sourcing@aeroactive.demo and the factories unit@ncractive.demo and unit@bangaloresports.demo) is loaded
+// too, from src/db/demo.js, wherever that sandbox-only file exists (logins are printed when it loads).
+//
+// Overrides: PLATFORM_MODE=tradio to see the Tradio portal; NO_AERO_DEMO=1 to skip the Aero range; LOCAL_MONGO_PORT, PORT.
 import { spawn } from 'node:child_process'
+import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { MongoMemoryServer } from 'mongodb-memory-server'
@@ -40,6 +45,9 @@ const run = (file, label) => new Promise((resolve, reject) => {
 })
 
 await run('src/db/seed.js', 'seed')
+// The demo range upserts by fixed ids and needs an admin from the seed. The standalone startup migration then gives
+// its customer and factories their companies and connections when the API starts.
+if (!process.env.NO_AERO_DEMO && fs.existsSync(path.join(backendDir, 'src/db/demo.js'))) await run('src/db/demo.js', 'aero demo')
 console.log(`[dev-local] seeded. API on http://localhost:${env.PORT} in ${env.PLATFORM_MODE} mode (Ctrl-C to stop)`)
 
 const api = spawn(process.execPath, ['src/app.js'], { cwd: backendDir, env, stdio: 'inherit' })
