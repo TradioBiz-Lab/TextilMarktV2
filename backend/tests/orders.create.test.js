@@ -61,7 +61,7 @@ describe('POST /api/orders — creation rules', () => {
     assert.match(body.error, /must sum to total quantity/)
   })
 
-  test('a stage missing a start date is rejected', async () => {
+  test('a stage with no start date gets NA (screens work from end dates)', async () => {
     const { buyer, mfr, api } = await arrange()
     const { status, body } = await api.post('/api/orders', orderPayload({
       buyerId: buyer._id, mfrId: mfr._id,
@@ -69,8 +69,8 @@ describe('POST /api/orders — creation rules', () => {
       stageStartDates: ['2026-07-01', ''],
       stageEtas: ['2026-07-02', '2026-07-09'],
     }))
-    assert.equal(status, 400)
-    assert.equal(body.error, 'Stage "Beta" is missing a start date')
+    assert.equal(status, 201, JSON.stringify(body))
+    assert.equal(body.assignments[0].stages[1].startDate, 'NA')
   })
 
   test('a stage missing an end date is rejected', async () => {

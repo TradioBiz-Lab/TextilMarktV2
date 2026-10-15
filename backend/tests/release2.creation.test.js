@@ -107,6 +107,14 @@ describe('starting a plan', () => {
     assert.equal(String(st[1].responsibleId), String(mfrB._id))
   })
 
+  test('a step added without a start date gets NA; the end date is still needed', async () => {
+    const { admin, mfrB } = await arrange()
+    const base = `/api/orders/PB-001/assignments/${mfrB._id}/stages/insert`
+    assert.equal((await as(admin).post(base, { name: 'Cutting', eta: '2027-02-20' })).status, 200)
+    assert.equal((await planOf('PB-001'))[0].startDate, 'NA')
+    assert.equal((await as(admin).post(base, { name: 'Sewing' })).status, 400)
+  })
+
   test('only a style in the same master order can be copied, and a factory cannot start a plan', async () => {
     const { admin, buyer, mfrB } = await arrange()
     await as(admin).post('/api/orders', orderPayload({ id: 'PX-001', buyerId: buyer._id, mfrId: (await makeMfr())._id, delivery: '2027-03-30' }))

@@ -467,9 +467,10 @@ export async function validateAndCreateOrder({ id, buyerId, product, styleNumber
       // that caused a real missed-deadline incident (see docs/MIGRATION_PLAN.md context).
       // When both sides are real (non-'NA') dates, start must be on or before end.
       for (let i = 0; i < stages.length; i++) {
-        const startVal = startDates[i]
+        // A start date is optional (NA): screens work from end dates; one given feeds the timeline and Action Items.
+        const startVal = startDates[i] || 'NA'
+        startDates[i] = startVal
         const endVal = etas[i]
-        if (!startVal) return { ok: false, error: `Stage "${stages[i]}" is missing a start date` }
         if (startVal !== 'NA' && isNaN(new Date(startVal).getTime()))
           return { ok: false, error: `Stage "${stages[i]}" has an invalid start date` }
         if (!endVal) return { ok: false, error: `Stage "${stages[i]}" is missing an end date` }
@@ -1394,7 +1395,7 @@ router.post('/:orderId/assignments/:mfrId/stages/insert', requireAuth, requirePl
       return res.status(400).json({ error: 'Invalid manufacturer ID' })
     const mfrObjectId = new mongoose.Types.ObjectId(mfrId)
 
-    const { name, kind, totalUnits, startDate, eta, description, responsibleId, status, actualEnd } = req.body
+    const { name, kind, totalUnits, eta, description, responsibleId, status, actualEnd } = req.body
     if (!name?.trim()) return res.status(400).json({ error: 'Stage name is required' })
     if (kind !== undefined && kind !== null && !STAGE_KINDS.includes(kind))
       return res.status(400).json({ error: `Invalid kind - must be one of: ${STAGE_KINDS.join(', ')}` })
@@ -1408,6 +1409,8 @@ router.post('/:orderId/assignments/:mfrId/stages/insert', requireAuth, requirePl
       if (val !== 'NA' && isNaN(new Date(val).getTime())) return `Invalid ${label} - must be a date or "NA"`
       return null
     }
+    // No start date means NA (screens work from end dates); the end date is still required.
+    const startDate = req.body.startDate === undefined || req.body.startDate === null || req.body.startDate === '' ? 'NA' : req.body.startDate
     let dateErr = invalidDateMsg('start date', startDate)
     if (dateErr) return res.status(400).json({ error: dateErr })
     dateErr = invalidDateMsg('end date', eta)
