@@ -400,6 +400,18 @@ export function AppProvider({ children }) {
     return order
   }, [shiftStageDocs])
 
+  // Fill an empty plan from a sibling style or the customer's template; the steps go in front of Delivery.
+  const startPlan = useCallback(async (orderId, mfrId, data) => {
+    const before = ordersRef.current.find(o => o.id === orderId)?.assignments?.find(a => String(a.mid) === String(mfrId))?.stages || []
+    const order = await ordersApi.startPlan(orderId, mfrId, data)
+    setOrders(p => p.map(o => o.id === orderId ? order : o))
+    const after = order.assignments?.find(a => String(a.mid) === String(mfrId))?.stages || []
+    const at = before.findIndex(s => s.isDelivery) === -1 ? before.length : before.findIndex(s => s.isDelivery)
+    const added = after.length - before.length
+    if (added > 0) shiftStageDocs(orderId, mfrId, i => (i >= at ? i + added : i))
+    return order
+  }, [shiftStageDocs])
+
   const moveStage = useCallback(async (orderId, mfrId, stageIndex, direction) => {
     const order = await ordersApi.moveStage(orderId, mfrId, stageIndex, direction)
     setOrders(p => p.map(o => o.id === orderId ? order : o))
@@ -586,7 +598,7 @@ export function AppProvider({ children }) {
       login, logout,
       updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
       bulkUpdateStages, addStageItem, updateStageItem, removeStageItem,
-      updateAssignment, addAssignment, reassignAssignment, setDeliveredQty, insertStage, moveStage, uploadDoc, updateDoc, deleteDoc, createOrder, createMasterOrder, updateMasterOrder, deleteMasterOrder,
+      updateAssignment, addAssignment, reassignAssignment, setDeliveredQty, insertStage, moveStage, startPlan, uploadDoc, updateDoc, deleteDoc, createOrder, createMasterOrder, updateMasterOrder, deleteMasterOrder,
       editOrder, deleteOrder,
       createUser, updateUser, toggleUser, resetUserPw,
       markAllRead, markOneRead, getDocData, refreshAudit, loadMoreAudit,

@@ -157,6 +157,46 @@ export const DOC_ICONS = {
 
 export const CATEGORIES = ['TSHRT', 'JEANS', 'BEDSH', 'SHIRT', 'DRESS', 'JACKET', 'POLO', 'SHORTS', 'HOODIE']
 export const SEASONS = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
+/** A customer's own seasons (set in User Setup), or the standard list; the value already on a record stays listed. */
+export const seasonsFor = (buyer, current) => {
+  const list = buyer?.seasons?.length ? buyer.seasons : SEASONS
+  return current && !list.includes(current) ? [...list, current] : list
+}
+/** The step names the other styles in this style's master order use (so a new plan can match them). */
+export const siblingStepNames = (orders, order) => {
+  if (!order?.masterOrderId) return []
+  const names = new Set()
+  for (const o of orders || []) {
+    if (o.masterOrderId !== order.masterOrderId || o.id === order.id) continue
+    for (const a of o.assignments || []) for (const s of a.stages || []) if (!s.isDelivery && s.name) names.add(s.name)
+  }
+  return [...names]
+}
+const editDistance = (a, b) => {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)])
+  for (let j = 1; j <= b.length; j++) d[0][j] = j
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1))
+  return d[a.length][b.length]
+}
+/**
+ * A warning when a step name is not one the master order's other styles use, with the nearest one, since a spelling
+ * variant ("Lab dip appr.") becomes a separate row in the master order matrix. Null when it matches or there are none.
+ */
+export function stepNameWarning(name, siblingNames) {
+  const n = String(name || '').trim()
+  if (!n || !siblingNames?.length || siblingNames.some(s => s.toLowerCase() === n.toLowerCase())) return null
+  const key = s => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+  const near = siblingNames.map(s => ({ s, d: key(s) === key(n) ? 0 : editDistance(key(s), key(n)) })).sort((x, y) => x.d - y.d)[0]
+  return near && near.d <= Math.max(2, Math.round(key(n).length / 4))
+    ? `The other styles in this master order call it "${near.s}".`
+    : 'No other style in this master order has a step with this name.'
+}
+/** Another style in the same master order with this Customer Style ID (a warning only; the id may really repeat). */
+export const sameStyleIdIn = (orders, { masterOrderId, styleNumber, exceptId }) => {
+  const id = String(styleNumber || '').trim().toLowerCase()
+  return id && masterOrderId ? (orders || []).find(o => o.masterOrderId === masterOrderId && o.id !== exceptId && String(o.styleNumber || '').trim().toLowerCase() === id) || null : null
+}
 
 export const T = {
   bg: '#F8FAFC', surface: '#FFFFFF', border: '#e2e8f0', borderHover: '#CBD5E1',

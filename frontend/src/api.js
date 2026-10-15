@@ -113,6 +113,9 @@ export const ordersApi = {
   // responsibleId?, status?, actualEnd?} — index omitted appends to the end.
   insertStage: (orderId, mfrId, data) =>
     api.post(`/orders/${orderId}/assignments/${mfrId}/stages/insert`, data),
+  // Fill an empty plan: { from: 'style', fromOrderId } or { from: 'template', startDate }.
+  startPlan: (orderId, mfrId, data) =>
+    api.post(`/orders/${orderId}/assignments/${mfrId}/stages/start-plan`, data),
   // Move one step up or down the plan ('up' | 'down'); Delivery stays last.
   moveStage: (orderId, mfrId, stageIndex, direction) =>
     api.post(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}/move`, { direction }),
@@ -174,6 +177,12 @@ export const assistantApi = {
 export const voiceApi = {
   transcribe: (audioDataUrl) => api.post('/voice/transcribe', { audioDataUrl }, { timeout: 30000 }),
   speak: (text, languageCode) => api.post('/voice/speak', { text, languageCode }, { timeout: 30000 }),
+}
+
+// A customer's saved production plan (one per customer).
+export const planTemplatesApi = {
+  get: buyerId => api.get(`/plan-templates/${buyerId}`),
+  save: (buyerId, fromOrderId, fromMfrId) => api.post(`/plan-templates/${buyerId}`, { fromOrderId, fromMfrId }),
 }
 
 export const masterOrdersApi = {

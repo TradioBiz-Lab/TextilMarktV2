@@ -17,9 +17,11 @@ import { dayNumber, getToday, effectiveEta, DELIVERY_STEP_NAME, isDeliveryName, 
 import { notify, notifyOrderChange } from '../lib/notify.js'
 import { nextStyleId } from '../lib/ids.js'
 import { splitStatus } from '../lib/splitStatus.js'
+import { seasonError } from '../lib/seasons.js'
+import { planSteps, stagesFromSibling, stagesFromTemplate } from '../lib/planCopy.js'
+import { PlanTemplate } from '../models/PlanTemplate.js'
 
 // Categories are now free-text — no validation needed
-const VALID_SEASONS    = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
 const ORDER_PHASES    = ['development', 'production']
 const MAX_PRODUCT_PHOTO_SIZE = 1024 * 1024 // 1MB raw - reference thumbnail, not full-res
 const MAX_STYLE_PHOTOS = 12
@@ -318,14 +320,16 @@ router.get('/:id', requireAuth, async (req, res) => {
 // Mongoose doc on success (not populated/enriched — that's caller-specific).
 export async function validateAndCreateOrder({ id, buyerId, product, styleNumber, category, season, phase, totalQty, delivery, createdAt, masterOrderId, assignments: asgns, stageEtas, stageStartDates, stageNames: customStages, stageResponsibleIds, stageDescriptions, stageTotalUnits, stageKinds, colourways, fabricDetails, callout, imageDataUrl, imageUrl, ecommerceLink, photos }) {
   // No delivery date at creation: it is set when the style gets its manufacturer (or with a plan sent here).
-  if (!id || !buyerId || !product || !totalQty)
+  // A style in New Product Development may wait for its bulk quantity (unless a manufacturer split is made now).
+  const qtyLater = phase === 'development' && !(Array.isArray(asgns) && asgns.length) && (totalQty == null || totalQty === '')
+  if (!id || !buyerId || !product || (!totalQty && !qtyLater))
     return { ok: false, error: 'Missing required fields' }
   if (typeof id !== 'string' || typeof product !== 'string')
     return { ok: false, error: 'Invalid input types' }
   if (id.length > 100 || product.length > 300)
     return { ok: false, error: 'Input too long' }
   // Mongoose would throw a cast or validation error for these, which surfaced as a bare 500.
-  if (!Number.isInteger(Number(totalQty)) || Number(totalQty) < 1)
+  if (!qtyLater && (!Number.isInteger(Number(totalQty)) || Number(totalQty) < 1))
     return { ok: false, error: 'Total quantity must be a positive whole number' }
   if (category != null && typeof category !== 'string')
     return { ok: false, error: 'Invalid category' }
@@ -341,8 +345,9 @@ export async function validateAndCreateOrder({ id, buyerId, product, styleNumber
     return { ok: false, error: 'Style number too long' }
   if (category && typeof category === 'string' && category.length > 50)
     return { ok: false, error: 'Category too long' }
-  if (season && !VALID_SEASONS.includes(season))
-    return { ok: false, error: `Invalid season. Must be one of: ${VALID_SEASONS.join(', ')}` }
+  if (season != null && season !== '' && typeof season !== 'string') return { ok: false, error: 'Invalid season' }
+  const badSeason = await seasonError(buyerId, season)
+  if (badSeason) return { ok: false, error: badSeason }
   const deliveryDate = delivery ? new Date(delivery) : null
   if (deliveryDate && isNaN(deliveryDate.getTime()))
     return { ok: false, error: 'Invalid delivery date' }
@@ -1238,6 +1243,68 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimit
     await notifyNewOwners(orderId, req.user, newOwners)
 
     res.json({ ...enrichFor(order, req), updated: touched.length })
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/orders/:orderId/assignments/:mfrId/stages/start-plan - fill an empty plan in one go (admin only).
+// Body { from: 'style', fromOrderId, fromMfrId? } copies another style's plan in the same master order, on its dates;
+// { from: 'template', startDate } uses the customer's saved template, dated from startDate. The steps go in front of
+// the Delivery step, not started. Only an empty plan (nothing but Delivery) is filled, so nothing is ever doubled.
+router.post('/:orderId/assignments/:mfrId/stages/start-plan', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
+  try {
+    const { orderId, mfrId } = req.params
+    if (!mongoose.Types.ObjectId.isValid(mfrId)) return res.status(400).json({ error: 'Invalid manufacturer ID' })
+    const mfrObjectId = new mongoose.Types.ObjectId(mfrId)
+    const { from, fromOrderId, fromMfrId, startDate } = req.body || {}
+    if (from !== 'style' && from !== 'template') return res.status(400).json({ error: "from must be 'style' or 'template'" })
+
+    const order = await Order.findById(orderId).lean()
+    if (!order) return res.status(404).json({ error: 'Order not found' })
+    const asgn = (order.assignments || []).find(a => a.mfrId?.toString() === mfrId)
+    if (!asgn) return res.status(404).json({ error: 'Assignment not found' })
+    const stages = asgn.stages || []
+    if (planSteps(stages).length) return res.status(400).json({ error: 'This plan already has steps. Starting from a copy fills an empty plan only.' })
+
+    let fresh
+    let source
+    if (from === 'style') {
+      if (typeof fromOrderId !== 'string' || fromOrderId === orderId) return res.status(400).json({ error: 'Choose the style to copy from' })
+      const src = await Order.findById(fromOrderId).lean()
+      if (!src || !order.masterOrderId || src.masterOrderId !== order.masterOrderId)
+        return res.status(400).json({ error: 'Copy from a style in the same master order' })
+      const srcAsgn = (src.assignments || []).find(a => (fromMfrId ? a.mfrId?.toString() === String(fromMfrId) : planSteps(a.stages).length))
+      if (!srcAsgn || !planSteps(srcAsgn.stages).length) return res.status(400).json({ error: 'That style has no plan to copy yet' })
+      fresh = await stagesFromSibling(src, srcAsgn, { order, asgn })
+      source = `the plan of ${src.product} (${src._id})`
+    } else {
+      const tpl = await PlanTemplate.findOne({ buyerId: order.buyerId }).lean()
+      if (!tpl || !tpl.steps.length) return res.status(404).json({ error: 'This customer has no saved plan template yet' })
+      try { fresh = await stagesFromTemplate(tpl.steps, { order, asgn, startISO: startDate }) }
+      catch (e) { if (e.status === 400) return res.status(400).json({ error: e.message }); throw e }
+      source = `the customer's plan template, from ${startDate}`
+    }
+    if (stages.length + fresh.length > 50) return res.status(400).json({ error: 'That would take the plan past 50 steps' })
+
+    const deliveryAt = deliveryStageIndex(stages)
+    const index = deliveryAt === -1 ? stages.length : deliveryAt
+    const inserted = await Order.updateOne(
+      { _id: orderId, assignments: { $elemMatch: { mfrId: mfrObjectId, stages: { $size: stages.length } } } },
+      { $push: { 'assignments.$[asgn].stages': { $each: fresh, $position: index } }, $set: { 'assignments.$[asgn].updatedAt': new Date() } },
+      { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }] }
+    )
+    if (inserted.modifiedCount === 0) return res.status(409).json(STAGES_CHANGED)
+    // Documents on the Delivery step move down with it.
+    await repointStageDocs('document shift after plan start', orderId, mfrObjectId, { $gte: index }, i => i + fresh.length)
+
+    await AuditLog.create({ byUser: req.user.id, action: 'Plan Started', detail: `${orderId}: ${fresh.length} steps from ${source} by ${req.user.name}` })
+    const updated = await Order.findById(orderId)
+      .populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS)
+      .populate('assignments.stages.responsibleId', 'name company code role')
+      .populate('assignments.stages.updates.byUser', 'name').lean()
+    res.json(enrichFor(updated, req))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -2542,11 +2609,15 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
     }
 
     if (season !== undefined) {
-      if (!VALID_SEASONS.includes(season)) return res.status(400).json({ error: `Invalid season. Must be one of: ${VALID_SEASONS.join(', ')}` })
+      const badSeason = typeof season !== 'string' ? 'Invalid season' : await seasonError(existing.buyerId, season, existing.season)
+      if (badSeason) return res.status(400).json({ error: badSeason })
       updates.season = season
     }
 
-    if (totalQty !== undefined) {
+    // A style in New Product Development may have its quantity cleared (not known yet); one in production may not.
+    if ((totalQty === null || totalQty === '') && (updates.phase || existing.phase) === 'development' && !(existing.assignments || []).length) {
+      updates.totalQty = null
+    } else if (totalQty !== undefined) {
       const qty = parseInt(totalQty, 10)
       if (isNaN(qty) || qty < 1) return res.status(400).json({ error: 'Total quantity must be a positive number' })
       updates.totalQty = qty
@@ -2622,6 +2693,8 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
     // Delivery step they did not have while it was being developed.
     let promoteDeliveryISO = null
     const promoting = existing.phase === 'development' && updates.phase === 'production'
+    if (promoting && !(updates.totalQty ?? existing.totalQty))
+      return res.status(400).json({ error: 'Give the style its quantity before moving it to production' })
     if (promoting) {
       const when = updates.delivery || existing.delivery
       // Its manufacturers' plans gain a Delivery step on that date, or an undated one when there is no date yet.

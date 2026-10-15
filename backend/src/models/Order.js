@@ -13,7 +13,6 @@ export const ORDER_STATUS_VALUES = ['Processing', 'On Hold', 'Delayed', 'Deliver
 
 // Categories — stored as free-text; this list is only a frontend suggestion
 const CATEGORIES = ['TSHRT', 'JEANS', 'BEDSH', 'SHIRT', 'DRESS', 'JACKET', 'POLO', 'SHORTS', 'HOODIE']
-const SEASONS    = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
 
 // One update note in a stage's ticket-style progress thread.
 const stageUpdateSchema = new mongoose.Schema({
@@ -253,11 +252,13 @@ const orderSchema = new mongoose.Schema({
   product:  { type: String, required: true, trim: true },
   styleNumber: { type: String, default: '', trim: true, maxlength: 60 },
   category: { type: String, trim: true },  // free-text (not enum-restricted)
-  season:   { type: String, enum: SEASONS },
+  // The customer's own season code (lib/seasons.js checks it); no fixed list here.
+  season:   { type: String },
   // Where the style is in its life: still being sampled and developed, or in production. Orders from before
   // this field are production.
   phase:    { type: String, enum: ['development', 'production'], default: 'production' },
-  totalQty: { type: Number, required: true, min: 1 },
+  // A style in New Product Development may not know its bulk quantity yet; it needs one to move to production.
+  totalQty: { type: Number, min: 1, default: null, required: function () { return this.phase !== 'development' } },
   // A style still in New Product Development has no delivery date; one is set when it moves to production.
   delivery: { type: Date, default: null },
   // Frozen original delivery promise — same baselineEta/eta pattern as

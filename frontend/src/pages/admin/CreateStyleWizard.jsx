@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { X, Plus, Trash2, ChevronLeft, ChevronRight, AlertTriangle, Camera } from '../../icons.jsx'
-import { T, PHASES, CATEGORIES, PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, getToday, pastDateNote } from '../../constants.js'
+import { T, PHASES, CATEGORIES, PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, getToday, pastDateNote, sameStyleIdIn } from '../../constants.js'
 import { swatchHex, normalisePantone, PANTONE_HINT, PANTONE_PLACEHOLDER, photoFromFile } from '../../colours.js'
 import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload, useToast } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -12,7 +12,8 @@ const newStyle = () => ({
   colourways: [{ _key: _styleKeySeq++, name: '', code: '', hex: '' }],
   fabrics: [{ _key: _styleKeySeq++, name: '', composition: '', gsm: '', supplier: '' }],
   // Optional: the date the customer expects it. A plan's Delivery step is dated with it (or stays undated until given).
-  totalQty: '', delivery: '', phase: 'production',
+  // No default stage: New Product Development or Production is chosen for each style.
+  totalQty: '', delivery: '', phase: '',
   // Step 3, all optional. Product photos, each tied to one of the style's colourways or to none; the first is the main photo.
   photos: [], photoColour: '',
   measurementsFile: null, measurementsErr: '',
@@ -29,7 +30,7 @@ const STEPS = ['Master order & basic details', 'Colourways & fabric (optional)',
 // production stages (TNA) here at all — both are added later from the Style
 // Detail page once the style exists.
 export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, onCreated, onNewMasterOrder }) {
-  const { createOrder, uploadDoc } = useApp()
+  const { createOrder, uploadDoc, orders } = useApp()
   const toast = useToast()
   const [step, setStep] = useState(1)
   const [masterOrderId, setMasterOrderId] = useState(presetMasterOrderId || '')
@@ -69,7 +70,9 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
   const step1Valid = masterOrderId && styles.every(s =>
     s.product.trim() &&
     (s.category && s.category !== '__custom__' ? true : s.customCategory.trim()) &&
-    s.totalQty && Number.isInteger(Number(s.totalQty)) && Number(s.totalQty) > 0
+    !!s.phase &&
+    // A style in New Product Development may not know its bulk quantity yet; one in production needs it.
+    (s.phase === 'development' && !String(s.totalQty).trim() ? true : s.totalQty && Number.isInteger(Number(s.totalQty)) && Number(s.totalQty) > 0)
   )
 
   const submit = async () => {
@@ -89,7 +92,7 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
         const created = await createOrder({
           id: 'auto', buyerId: mo.buyerId, product: s.product.trim(), styleNumber: s.styleNumber.trim(),
           category, season: mo.season || undefined, masterOrderId,
-          totalQty: Math.floor(Number(s.totalQty)), ...(s.phase === 'production' && s.delivery ? { delivery: s.delivery } : {}), phase: s.phase,
+          ...(String(s.totalQty).trim() ? { totalQty: Math.floor(Number(s.totalQty)) } : {}), ...(s.phase === 'production' && s.delivery ? { delivery: s.delivery } : {}), phase: s.phase,
           createdAt: getToday(),
           colourways, fabricDetails, ecommerceLink: s.ecommerceLink.trim(),
           photos: s.photos.map(ph => ({ image: ph.image, colourway: colourways.some(c => c.name === ph.colourway) ? ph.colourway : '' })),
@@ -165,7 +168,13 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
                     </FlexRow>
                     <div className="form-grid-2" style={{ gap: 10 }}>
                       <Input label="Product Name *" value={s.product} onChange={e => updateStyle(s._key, { product: e.target.value })} placeholder="e.g. Classic T-Shirt" />
-                      <Input label="Customer Style ID" value={s.styleNumber} onChange={e => updateStyle(s._key, { styleNumber: e.target.value })} placeholder="The customer's own code, e.g. FLGCM16" maxLength={60} />
+                      <Input label="Customer Style ID" value={s.styleNumber} onChange={e => updateStyle(s._key, { styleNumber: e.target.value })} placeholder="The customer's own code, e.g. FLGCM16" maxLength={60}
+                        hint={(() => {
+                          // A warning only: the same id can really repeat (a re-order), but usually it is a typo.
+                          const dup = sameStyleIdIn(orders, { masterOrderId, styleNumber: s.styleNumber })
+                          const twin = styles.find(x => x._key !== s._key && s.styleNumber.trim() && x.styleNumber.trim().toLowerCase() === s.styleNumber.trim().toLowerCase())
+                          return dup ? `Also used by ${dup.product} in this master order.` : twin ? 'Another style in this form has the same id.' : undefined
+                        })()} />
                     </div>
                     <div className="form-grid-2" style={{ gap: 10 }}>
                       <div>
@@ -180,11 +189,12 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
                             style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 12px', fontSize: 13, marginTop: 6, fontFamily: 'inherit', boxSizing: 'border-box' }} />
                         )}
                       </div>
-                      <Input label="Quantity *" type="number" value={s.totalQty} onChange={e => updateStyle(s._key, { totalQty: e.target.value })} placeholder="5000" />
+                      <Input label={s.phase === 'development' ? 'Quantity' : 'Quantity *'} type="number" value={s.totalQty} onChange={e => updateStyle(s._key, { totalQty: e.target.value })} placeholder="5000" hint={s.phase === 'development' ? 'Optional until it moves to production.' : undefined} />
                     </div>
 
                     <div className="form-grid-2" style={{ gap: 10 }}>
-                      <Select label="Stage" value={s.phase} onChange={e => updateStyle(s._key, { phase: e.target.value })}>
+                      <Select label="Stage *" value={s.phase} onChange={e => updateStyle(s._key, { phase: e.target.value })}>
+                        <option value="">Select stage</option>
                         {PHASES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                       </Select>
                       {s.phase === 'production' && <Input label="Promised delivery date" type="date" value={s.delivery} onChange={e => updateStyle(s._key, { delivery: e.target.value })} hint={pastDateNote(s.delivery) || 'Optional. It can be added later.'} />}

@@ -15,14 +15,14 @@ export function UserSetup({ initialTab } = {}) {
   const [confirmBusy, setConfirmBusy] = useState(false)
   const [q, setQ] = useState('')
   const [showC, setShowC] = useState(false)
-  const [f, setF] = useState({ name: '', email: '', password: '', company: '', phone: '', role: 'buyer', adminType: 'user', code: '' })
+  const [f, setF] = useState({ name: '', email: '', password: '', company: '', phone: '', role: 'buyer', adminType: 'user', code: '', seasons: '' })
   const [errors, setErrors] = useState({})
   const [profileFile, setProfileFile] = useState(null)
   const [profileFileErr, setProfileFileErr] = useState('')
   const [saving, setSaving] = useState(false)
   const [tempPwInfo, setTempPwInfo] = useState(null)
   const [editUser, setEditUser] = useState(null)
-  const [ef, setEf] = useState({ name: '', email: '', phone: '' })
+  const [ef, setEf] = useState({ name: '', email: '', phone: '', seasons: '' })
   const [editErrors, setEditErrors] = useState({})
   const [editSaving, setEditSaving] = useState(false)
 
@@ -68,7 +68,7 @@ export function UserSetup({ initialTab } = {}) {
     setSaving(true)
     let newUser
     try {
-      newUser = await createUser({ ...f, code: f.role === 'admin' ? 'TRD' : f.code.toUpperCase().slice(0, 5) })
+      newUser = await createUser({ ...f, seasons: f.role === 'buyer' ? f.seasons : undefined, code: f.role === 'admin' ? 'TRD' : f.code.toUpperCase().slice(0, 5) })
     } catch (e) {
       toast(e?.message || 'Failed to create user', 'error')
       setSaving(false)
@@ -90,7 +90,7 @@ export function UserSetup({ initialTab } = {}) {
     if (profileError) toast(`User ${f.name} was created, but the profile document did not upload (${profileError}). Add it from the Documents page.`, 'warning')
     else toast(`User ${f.name} created`, 'success')
     setShowC(false)
-    setF({ name: '', email: '', password: '', company: '', phone: '', role: 'buyer', adminType: 'user', code: '' })
+    setF({ name: '', email: '', password: '', company: '', phone: '', role: 'buyer', adminType: 'user', code: '', seasons: '' })
     setProfileFile(null)
     setProfileFileErr('')
     setErrors({})
@@ -118,7 +118,7 @@ export function UserSetup({ initialTab } = {}) {
 
   const openEdit = (u) => {
     setEditUser(u)
-    setEf({ name: u.name, email: u.email, phone: u.phone || '' })
+    setEf({ name: u.name, email: u.email, phone: u.phone || '', seasons: (u.seasons || []).join(', ') })
     setEditErrors({})
   }
 
@@ -130,7 +130,7 @@ export function UserSetup({ initialTab } = {}) {
     if (Object.keys(errs).length) { setEditErrors(errs); return }
     setEditSaving(true)
     try {
-      await updateUser(editUser.id, { name: ef.name.trim(), email: ef.email.trim(), phone: ef.phone.trim() || null })
+      await updateUser(editUser.id, { name: ef.name.trim(), email: ef.email.trim(), phone: ef.phone.trim() || null, ...(editUser.role === 'buyer' ? { seasons: ef.seasons } : {}) })
       toast('User details updated', 'success')
       setEditUser(null)
     } catch (e) {
@@ -193,6 +193,7 @@ export function UserSetup({ initialTab } = {}) {
                 <Input label="Company Code (3–5 chars) *" value={f.code} onChange={e => { setF({ ...f, code: e.target.value.toUpperCase().slice(0, 5) }); setErrors({ ...errors, code: '' }) }} error={errors.code} placeholder="ZAR" maxLength={5} hint="Used in Order IDs - must be unique, permanent" />
               )}
             </div>
+            {f.role === 'buyer' && <Input label="Seasons" value={f.seasons} onChange={e => setF({ ...f, seasons: e.target.value.toUpperCase() })} placeholder="H1, H2" hint="Short codes, comma separated, e.g. H1, H2. Leave blank for the standard SS/FW seasons." />}
             {f.role === 'manufacturer' && (
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
@@ -232,6 +233,7 @@ export function UserSetup({ initialTab } = {}) {
             <Input label="Contact Person Name *" value={ef.name} onChange={e => { setEf({ ...ef, name: e.target.value }); setEditErrors({ ...editErrors, name: '' }) }} error={editErrors.name} placeholder="Jane Smith" />
             <Input label="Email Address *" type="email" value={ef.email} onChange={e => { setEf({ ...ef, email: e.target.value }); setEditErrors({ ...editErrors, email: '' }) }} error={editErrors.email} placeholder="jane@company.com" />
             <Input label="Phone Number" value={ef.phone} onChange={e => setEf({ ...ef, phone: e.target.value })} placeholder="+91-9876540000" />
+            {editUser.role === 'buyer' && <Input label="Seasons" value={ef.seasons} onChange={e => setEf({ ...ef, seasons: e.target.value.toUpperCase() })} placeholder="H1, H2" hint="Short codes, comma separated, e.g. H1, H2. Leave blank for the standard SS/FW seasons." />}
             {editErrors._ && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={12} /> {editErrors._}</div>}
             <FlexRow justify="flex-end" gap={8} style={{ marginTop: 4 }}>
               <Btn variant="secondary" onClick={() => setEditUser(null)}>Cancel</Btn>

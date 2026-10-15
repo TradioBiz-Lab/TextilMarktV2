@@ -13,6 +13,8 @@ const userSchema = new mongoose.Schema({
   language:         { type: String, default: 'hi' },
   code:         { type: String, required: true, maxlength: 5, uppercase: true },
   isActive:     { type: Boolean, default: true },
+  // A customer's own seasons (for example H1, H2); empty means the standard SS/FW list (lib/seasons.js).
+  seasons:      { type: [String], default: undefined },
   mustChangePw:      { type: Boolean, default: false },
   passwordChangedAt: { type: Date, default: null },
 }, { timestamps: true })

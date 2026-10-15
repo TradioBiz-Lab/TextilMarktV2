@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { AlertTriangle, X, Plus } from '../../icons.jsx'
-import { T, phaseOf, SEASONS, CATEGORIES, resolveNamedColor, pastDateNote } from '../../constants.js'
+import { T, phaseOf, seasonsFor, sameStyleIdIn, CATEGORIES, resolveNamedColor, pastDateNote } from '../../constants.js'
+import { useApp } from '../../context.jsx'
 import { swatchHex, normalisePantone, PANTONE_HINT, PANTONE_PLACEHOLDER } from '../../colours.js'
 import { Btn, FlexRow, Input, Select } from '../../components/ui.jsx'
 
@@ -8,6 +9,7 @@ let _cwKeySeq = 1
 let _fabKeySeq = 1
 
 export function EditOrderModal({ order, onClose, onSave }) {
+  const { users, orders } = useApp()
   const [f, setF] = useState({
     product: order.product || '',
     styleNumber: order.styleNumber || '',
@@ -47,7 +49,9 @@ export function EditOrderModal({ order, onClose, onSave }) {
     setErr('')
     if (!f.product.trim()) { setErr('Product name is required'); return }
     const qty = parseInt(f.totalQty, 10)
-    if (isNaN(qty) || qty < 1) { setErr('Total quantity must be a positive number'); return }
+    // A style in New Product Development with no manufacturer may not know its quantity yet.
+    const qtyLater = f.phase === 'development' && !(order.assignments || []).length && !String(f.totalQty).trim()
+    if (!qtyLater && (isNaN(qty) || qty < 1)) { setErr('Total quantity must be a positive number'); return }
     // The date is needed once a style in production has a manufacturer (its plan's Delivery step stands on it).
     const hasSplits = (order.assignments || []).length > 0
     // Optional until given; once a style in production with a manufacturer has one, it can be changed but not removed.
@@ -59,7 +63,7 @@ export function EditOrderModal({ order, onClose, onSave }) {
       category: f.category || undefined,
       season: f.season || undefined,
       // Only a real change travels: an unchanged quantity must not touch the manufacturer splits.
-      ...(qty !== order.totalQty ? { totalQty: qty } : {}),
+      ...(qtyLater ? (order.totalQty != null ? { totalQty: null } : {}) : qty !== order.totalQty ? { totalQty: qty } : {}),
       // A cleared date is sent as null (allowed with no manufacturer or in development); left out, the old one would stay.
       ...(f.delivery ? { delivery: f.delivery } : order.delivery ? { delivery: null } : {}),
       colourways: colourways.filter(c => c.name.trim()).map(c => ({ name: c.name.trim(), code: c.code.trim(), hex: c.hex.trim() })),
@@ -106,6 +110,7 @@ export function EditOrderModal({ order, onClose, onSave }) {
               value={f.styleNumber}
               onChange={set('styleNumber')}
               placeholder="The customer's own code, e.g. FLGCM16"
+              hint={(d => (d ? `Also used by ${d.product} in this master order.` : undefined))(sameStyleIdIn(orders, { masterOrderId: order.masterOrderId, styleNumber: f.styleNumber, exceptId: order.id }))}
             />
           </div>
 
@@ -123,13 +128,13 @@ export function EditOrderModal({ order, onClose, onSave }) {
             </div>
             <Select label="Season" value={f.season} onChange={set('season')}>
               <option value="">Select</option>
-              {SEASONS.map(s => <option key={s}>{s}</option>)}
+              {seasonsFor((users || []).find(u => u.id === order.buyerId), order.season).map(s => <option key={s}>{s}</option>)}
             </Select>
           </div>
 
           <div className="form-grid-2" style={{ gap: 12 }}>
             <Input
-              label="Total Quantity *"
+              label={f.phase === 'development' && !(order.assignments || []).length ? 'Total Quantity' : 'Total Quantity *'}
               type="number"
               value={f.totalQty}
               onChange={set('totalQty')}

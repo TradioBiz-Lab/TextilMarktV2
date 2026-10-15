@@ -26,6 +26,7 @@ import inboundRouter from './routes/inbound.js'
 import reviewRouter from './routes/review.js'
 import floorRouter from './routes/floor.js'
 import droppedRouter from './routes/dropped.js'
+import planTemplatesRouter from './routes/planTemplates.js'
 
 // ── Validate required env vars at startup ──────────────────────────────────
 const isProd = process.env.NODE_ENV === 'production'
@@ -178,6 +179,7 @@ app.use('/api/inbound',       inboundRouter)
 app.use('/api/review',        reviewRouter)
 app.use('/api/floor',         floorRouter)
 app.use('/api/dropped',       droppedRouter)
+app.use('/api/plan-templates', planTemplatesRouter)
 
 // ── Health check ────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

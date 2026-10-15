@@ -1,13 +1,15 @@
 import { useState, useMemo, useRef, Fragment } from 'react'
 import Papa from 'papaparse'
-import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight, ChevronUp, ChevronDown, Trash2, ArrowRight, Folder } from '../../icons.jsx'
+import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight, ChevronUp, ChevronDown, Trash2, ArrowRight, Folder, LayoutGrid } from '../../icons.jsx'
 import {
   T, ORDER_STATUSES, evidenceTypesFor, productDocForStep, DOC_ICONS,
   stageKindOf, kindForCustomerOwner, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
   stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber, getToday, planProgress,
   PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, stageNameForDoc, PO_INVOICE_DOC_TYPES, deliveryDocsOf, defaultStepOwner, stepOwnerOptions,
-  fmtDate, styleStatus, dueDates, dueText, pastDateNote,
+  fmtDate, styleStatus, dueDates, dueText, pastDateNote, siblingStepNames, stepNameWarning,
 } from '../../constants.js'
+import { PlanStarter } from '../../components/PlanStarter.jsx'
+import { planTemplatesApi } from '../../api.js'
 import { PromoteModal } from '../../components/PromoteModal.jsx'
 import { StyleGallery } from '../../components/StyleGallery.jsx'
 import { AddStepBar } from '../../components/AddStepBar.jsx'
@@ -137,6 +139,8 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
   const [newMfrId, setNewMfrId] = useState('')
   const [newMfrQty, setNewMfrQty] = useState(null) // null until typed in: the style's own quantity is shown
   const [newMfrDelivery, setNewMfrDelivery] = useState('')
+  const [tplSave, setTplSave] = useState(null) // { mid, steps }: saving a split's plan as the customer's template
+  const [tplBusy, setTplBusy] = useState(false)
   const [addingMfr, setAddingMfr] = useState(false)
   const [refDocFiles, setRefDocFiles] = useState({ measurements: null, tech_pack: null, pattern: null })
   const [refDocErrs, setRefDocErrs] = useState({})
@@ -204,7 +208,9 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
           } else {
             responsibleId = defaultStepOwner(name, order, mid, stepOwnerOptions(users, order, mid))
           }
-          return { row: i + 2, name, kind, startDate, eta: endDate, targetQty, description, responsibleId, errors }
+          // Not blocking: a name the master order's other styles do not use (a spelling variant makes a separate matrix row).
+          const warning = stepNameWarning(name, siblingStepNames(orders, order))
+          return { row: i + 2, name, kind, startDate, eta: endDate, targetQty, description, responsibleId, errors, warning }
         }).filter(r => r.name || r.startDate || r.eta) // skip fully blank rows
         setTnaCsvRows(p => ({ ...p, [mid]: rows }))
       },
@@ -1080,11 +1086,29 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
   )
 
   // The Move to production button sits in the summary header, which both the unassigned and the assigned pages render.
+  // Save one split's plan as the customer's template (it replaces any saved before).
+  const tplModal = tplSave && (
+    <Modal title={`Save as ${order.buyerCompany || 'the customer'}'s template`} subtitle={`${tplSave.steps} steps from ${order.product}`} onClose={() => { if (!tplBusy) setTplSave(null) }} size="sm">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ fontSize: 13, color: T.textMuted }}>New plans for this customer can then start from it. Dates are kept relative to the plan's first day, and owners by role (the customer, the factory, a Tradio admin). It replaces any template saved before.</div>
+        <FlexRow justify="flex-end" gap={8}>
+          <Btn variant="secondary" disabled={tplBusy} onClick={() => setTplSave(null)}>Cancel</Btn>
+          <Btn disabled={tplBusy} onClick={async () => {
+            setTplBusy(true)
+            try { await planTemplatesApi.save(order.buyerId, order.id, tplSave.mid); toast('Template saved', 'success'); setTplSave(null) }
+            catch (e) { toast(typeof e === 'string' ? e : (e?.message || 'Could not save the template'), 'error') }
+            finally { setTplBusy(false) }
+          }}>{tplBusy ? 'Saving...' : 'Save template'}</Btn>
+        </FlexRow>
+      </div>
+    </Modal>
+  )
+
   const promoteModal = promoteOpen && (
-    <PromoteModal count={1} needsDate={!order.delivery && (order.assignments || []).length > 0} busy={promoting} onClose={() => setPromoteOpen(false)}
-      onConfirm={async date => {
+    <PromoteModal count={1} needsDate={!order.delivery && (order.assignments || []).length > 0} needsQty={!order.totalQty} busy={promoting} onClose={() => setPromoteOpen(false)}
+      onConfirm={async (date, qty) => {
         setPromoting(true)
-        try { await editOrder(order.id, { phase: 'production', ...(order.delivery ? {} : { delivery: date }) }); toast('Moved to production', 'success'); setPromoteOpen(false) }
+        try { await editOrder(order.id, { phase: 'production', ...(order.delivery || !date ? {} : { delivery: date }), ...(qty ? { totalQty: qty } : {}) }); toast('Moved to production', 'success'); setPromoteOpen(false) }
         catch (e) { toast(typeof e === 'string' ? e : (e?.message || 'Could not move the style'), 'error') }
         finally { setPromoting(false) }
       }} />
@@ -1094,6 +1118,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
     return (
       <div>
         {promoteModal}
+        {tplModal}
         {uploadModals}
         {showEdit && (
           <EditOrderModal order={order} onClose={() => setShowEdit(false)}
@@ -1211,6 +1236,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
   return (
     <div>
       {promoteModal}
+      {tplModal}
       {/* ── Edit Order Modal ── */}
       {showEdit && (
         <EditOrderModal
@@ -1579,6 +1605,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                           <Btn size="sm" variant="secondary" onClick={() => { setReassignMid(a.mid); setReassignTo(''); setReassignQty(String(a.qty || '')) }} icon={<ArrowLeftRight size={12} />}>Change Mfr</Btn>
                         )}
                         {caps.editPlan && <Btn size="sm" variant="secondary" onClick={() => setTnaCsvOpen(p => ({ ...p, [a.mid]: !p[a.mid] }))} icon={<FileSpreadsheet size={12} />}>Upload CSV</Btn>}
+                        {caps.editPlan && stages.some(st => !st.isDelivery) && <Btn size="sm" variant="secondary" onClick={() => setTplSave({ mid: a.mid, steps: stages.filter(st => !st.isDelivery).length })} icon={<LayoutGrid size={12} />}>Save as template</Btn>}
                       </FlexRow>
                     </div>
 
@@ -1622,6 +1649,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                                 {csvRows.map((r, i) => (
                                   <div key={i} style={{ padding: '6px 10px', fontSize: 11, borderTop: i > 0 ? `1px solid ${T.border}` : 'none', color: r.errors.length ? T.danger : T.text }}>
                                     Row {r.row}: {r.name || '(no name)'} {r.errors.length > 0 && `- ${r.errors.join(', ')}`}
+                                    {!r.errors.length && r.warning && <span style={{ color: '#b45309' }}> - {r.warning}</span>}
                                   </div>
                                 ))}
                               </div>
@@ -1641,7 +1669,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                       {stages.length > 0 && <StageTimeline stages={stages} />}
 
                       {caps.editPlan
-                        ? <AddStepBar key={a.mid} order={order} asgn={a} users={users} onInserted={index => remapStageKeys(a.mid, k => (k >= index ? k + 1 : k))} />
+                        ? <>{!stages.some(s => !s.isDelivery) && <PlanStarter order={order} asgn={a} />}<AddStepBar key={a.mid} order={order} asgn={a} users={users} onInserted={index => remapStageKeys(a.mid, k => (k >= index ? k + 1 : k))} /></>
                         : stages.length === 0 && (
                           <div style={{ background: '#f8fafc', border: `1px dashed ${T.border}`, borderRadius: 10, padding: '14px 16px', marginBottom: 14, fontSize: 12, color: T.textMuted }}>
                             No production steps yet. Your Tradio coordinator sets up the plan.

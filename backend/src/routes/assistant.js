@@ -191,7 +191,8 @@ const WRITE_TOOLS = new Set([
 
 // Creating a master order or a style. The ID is never the model's to choose (the server numbers it: 'auto'), the
 // customer of a style is always its master order's, and nothing is created until the admin's own reply confirms it.
-const SEASONS = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
+// A season is the customer's own code (list_companies shows each customer's list); the server checks it.
+const SEASON_RE = /^[A-Z0-9][A-Z0-9-]{0,9}$/
 const MASTER_ORDER_KEYS = ['orderName', 'season', 'buyerId', 'poNumber', 'poDate', 'shipBy', 'notes']
 const ORDER_KEYS = ['product', 'styleNumber', 'category', 'season', 'totalQty', 'delivery', 'masterOrderId', 'phase', 'callout']
 // One confirmation can cover several creates in a turn, so a create the model repeats (a retry after an error, say) is
@@ -302,13 +303,13 @@ export const TOOL_HANDLERS = {
     const result = await loopbackFetch(ctx.cookie, 'GET', '/api/users')
     if (!result.ok) return result
     return { ...result, data: result.data.filter(u => u.isActive && (u.role === 'buyer' || u.role === 'manufacturer'))
-      .map(u => ({ id: u.id, company: u.company, code: u.code, kind: u.role === 'buyer' ? 'customer' : 'manufacturer' })) }
+      .map(u => ({ id: u.id, company: u.company, code: u.code, kind: u.role === 'buyer' ? 'customer' : 'manufacturer', ...(u.role === 'buyer' ? { seasons: u.seasons } : {}) })) }
   },
 
   create_master_order: async (input, ctx) => {
     if (typeof input?.orderName !== 'string' || !input.orderName.trim() || input.orderName.length > 200) return badInput('orderName')
     if (!OBJECT_ID_RE.test(String(input.buyerId))) return badInput('buyerId')
-    if (input.season !== undefined && !SEASONS.includes(input.season)) return badInput('season')
+    if (input.season !== undefined && !SEASON_RE.test(String(input.season))) return badInput('season')
     for (const k of ['poDate', 'shipBy']) if (input[k] !== undefined && !isoDay(input[k])) return badInput(k)
     if (input.poNumber !== undefined && (typeof input.poNumber !== 'string' || input.poNumber.length > 60)) return badInput('poNumber')
     if (input.notes !== undefined && (typeof input.notes !== 'string' || input.notes.length > 2000)) return badInput('notes')
@@ -318,9 +319,10 @@ export const TOOL_HANDLERS = {
 
   create_order: async (input, ctx) => {
     if (typeof input?.product !== 'string' || !input.product.trim() || input.product.length > 300) return badInput('product')
-    if (!Number.isInteger(input.totalQty) || input.totalQty < 1) return badInput('totalQty')
+    // A style still in development may not know its quantity yet.
+    if (!(input.phase === 'development' && input.totalQty === undefined && !input.manufacturerId) && (!Number.isInteger(input.totalQty) || input.totalQty < 1)) return badInput('totalQty')
     if (typeof input.masterOrderId !== 'string' || !ORDER_ID_RE.test(input.masterOrderId)) return badInput('masterOrderId')
-    if (input.season !== undefined && !SEASONS.includes(input.season)) return badInput('season')
+    if (input.season !== undefined && !SEASON_RE.test(String(input.season))) return badInput('season')
     if (input.phase !== undefined && !['production', 'development'].includes(input.phase)) return badInput('phase')
     if (input.manufacturerId !== undefined && !OBJECT_ID_RE.test(String(input.manufacturerId))) return badInput('manufacturerId')
     if (input.delivery !== undefined && !isoDay(input.delivery)) return badInput('delivery')
@@ -574,7 +576,7 @@ const TOOLS = [
       properties: {
         orderName: { type: 'string', maxLength: 200, description: "e.g. 'H1 & H2 26'." },
         buyerId: { type: 'string', description: "The customer's id (from list_companies)." },
-        season: { type: 'string', enum: SEASONS },
+        season: { type: 'string', maxLength: 10, description: "One of the customer's seasons (list_companies gives each customer's list)." },
         poNumber: { type: 'string', maxLength: 60, description: "The customer's purchase order number, if known." },
         poDate: { type: 'string', description: "ISO date 'YYYY-MM-DD' of the customer's PO, if known." },
         shipBy: { type: 'string', description: "ISO date 'YYYY-MM-DD' the order should ship by, if known." },
@@ -594,15 +596,15 @@ const TOOLS = [
         product: { type: 'string', maxLength: 300, description: "e.g. 'Smocked Waist Top'." },
         styleNumber: { type: 'string', maxLength: 60, description: "The customer's style ID (their own code for the style), if they give one." },
         category: { type: 'string', maxLength: 50, description: "Free text, e.g. 'TOP' or 'DRESS'. It becomes part of the style ID." },
-        totalQty: { type: 'integer', minimum: 1 },
-        season: { type: 'string', enum: SEASONS, description: "Defaults to the master order's." },
+        totalQty: { type: 'integer', minimum: 1, description: 'The bulk quantity. Required unless the style is in development (phase) with no manufacturer yet.' },
+        season: { type: 'string', maxLength: 10, description: "Defaults to the master order's; otherwise one of the customer's seasons." },
         phase: { type: 'string', enum: ['production', 'development'], description: "Defaults to production; 'development' for a style still being sampled." },
         colourways: { type: 'array', items: { type: 'string', maxLength: 60 }, maxItems: 40 },
         manufacturerId: { type: 'string', description: 'Optional: the manufacturer to assign (from list_companies).' },
         delivery: { type: 'string', description: "ISO date 'YYYY-MM-DD'. Needed when a manufacturer is assigned to a style in production." },
         callout: { type: 'string', maxLength: 500 },
       },
-      required: ['masterOrderId', 'product', 'totalQty'],
+      required: ['masterOrderId', 'product'],
       additionalProperties: false,
     },
   },

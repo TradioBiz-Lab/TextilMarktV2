@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { AlertTriangle } from '../../icons.jsx'
-import { T, SEASONS, styleOnHold } from '../../constants.js'
+import { T, seasonsFor, styleOnHold } from '../../constants.js'
 import { Btn, FlexRow, Input, Select, Mono, Modal, Textarea, useToast } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
@@ -12,7 +12,7 @@ import { DeleteOrderModal } from './DeleteOrderModal.jsx'
  */
 // `onDeleted` is called after the master order is deleted (its own page then leaves, since there is nothing to show).
 export function EditMasterOrderModal({ mo, onClose, onDeleted }) {
-  const { orders, masterOrders, updateMasterOrder, deleteOrder, deleteMasterOrder, editOrder, updateAssignment } = useApp()
+  const { orders, masterOrders, users, updateMasterOrder, deleteOrder, deleteMasterOrder, editOrder, updateAssignment } = useApp()
   const toast = useToast()
   const [name, setName] = useState(mo.orderName || '')
   const [season, setSeason] = useState(mo.season || '')
@@ -81,7 +81,7 @@ export function EditMasterOrderModal({ mo, onClose, onDeleted }) {
           <Input label="Order Name *" value={name} onChange={e => setName(e.target.value)} maxLength={200} />
           <Select label="Season" value={season} onChange={e => setSeason(e.target.value)}>
             <option value="">No season</option>
-            {SEASONS.map(s => <option key={s} value={s}>{s}</option>)}
+            {seasonsFor((users || []).find(u => u.id === mo.buyerId), mo.season).map(s => <option key={s} value={s}>{s}</option>)}
           </Select>
           <div className="form-grid-2" style={{ gap: 12 }}>
             <Input label="Customer PO number" value={details.poNumber} onChange={setDetail('poNumber')} maxLength={60} />
