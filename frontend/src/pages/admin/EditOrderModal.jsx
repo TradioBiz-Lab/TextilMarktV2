@@ -41,20 +41,26 @@ export function EditOrderModal({ order, onClose, onSave }) {
 
   const set = key => e => setF(p => ({ ...p, [key]: e.target.value }))
 
+  const splitSum = (order.assignments || []).reduce((n, a) => n + (Number(a.qty) || 0), 0)
+
   const save = async () => {
     setErr('')
     if (!f.product.trim()) { setErr('Product name is required'); return }
     const qty = parseInt(f.totalQty, 10)
     if (isNaN(qty) || qty < 1) { setErr('Total quantity must be a positive number'); return }
-    if (!f.delivery && f.phase !== 'development') { setErr('A delivery date is needed once a style is in production'); return }
+    // The date is needed once a style in production has a manufacturer (its plan's Delivery step stands on it).
+    const hasSplits = (order.assignments || []).length > 0
+    if (!f.delivery && f.phase !== 'development' && hasSplits) { setErr('A delivery date is needed for a style in production with a manufacturer'); return }
 
     const payload = {
       product: f.product.trim(),
       styleNumber: f.styleNumber.trim(),
       category: f.category || undefined,
       season: f.season || undefined,
-      totalQty: qty,
-      ...(f.delivery ? { delivery: f.delivery } : {}),
+      // Only a real change travels: an unchanged quantity must not touch the manufacturer splits.
+      ...(qty !== order.totalQty ? { totalQty: qty } : {}),
+      // A cleared date is sent as null (allowed with no manufacturer or in development); left out, the old one would stay.
+      ...(f.delivery ? { delivery: f.delivery } : order.delivery ? { delivery: null } : {}),
       colourways: colourways.filter(c => c.name.trim()).map(c => ({ name: c.name.trim(), code: c.code.trim(), hex: c.hex.trim() })),
       fabricDetails: fabrics.filter(fb => fb.name.trim()).map(fb => ({ name: fb.name.trim(), composition: fb.composition.trim(), gsm: fb.gsm.trim(), supplier: fb.supplier.trim() })),
       ecommerceLink: f.ecommerceLink.trim(),
@@ -72,8 +78,8 @@ export function EditOrderModal({ order, onClose, onSave }) {
 
   return (
     <div
+      className="dialog-backdrop"
       style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }}
-      onClick={e => e.target === e.currentTarget && onClose()}
     >
       <div style={{ background: '#fff', borderRadius: 14, border: `1px solid ${T.border}`, width: '100%', maxWidth: 520, boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
         {/* Header */}
@@ -110,12 +116,12 @@ export function EditOrderModal({ order, onClose, onSave }) {
                 onChange={set('category')}
                 style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 8, padding: '9px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit' }}
               >
-                <option value="">— Select —</option>
+                <option value="">Select</option>
                 {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <Select label="Season" value={f.season} onChange={set('season')}>
-              <option value="">— Select —</option>
+              <option value="">Select</option>
               {SEASONS.map(s => <option key={s}>{s}</option>)}
             </Select>
           </div>
@@ -127,10 +133,14 @@ export function EditOrderModal({ order, onClose, onSave }) {
               value={f.totalQty}
               onChange={set('totalQty')}
               placeholder="5000"
-              hint={(order.assignments || []).length === 1 ? 'Also updates the manufacturer quantity and every step target. Finished steps stay finished.' : undefined}
+              // With several splits the total is their sum. It stays editable when it no longer matches them (a split's
+              // quantity changed on Change Mfr), so it can be set to the sum.
+              disabled={(order.assignments || []).length > 1 && order.totalQty === splitSum}
+              hint={(order.assignments || []).length === 1 ? 'Also updates the manufacturer quantity and every step target. Finished steps stay finished.'
+                : (order.assignments || []).length > 1 ? (order.totalQty === splitSum ? `Split across ${(order.assignments || []).length} manufacturers, so the total is the sum of their quantities.` : `The splits add up to ${splitSum}. Set the total to ${splitSum} to match them.`) : undefined}
             />
             <Input
-              label={f.phase === 'development' ? 'Expected Delivery' : 'Expected Delivery *'}
+              label={f.phase !== 'development' && (order.assignments || []).length > 0 ? 'Expected Delivery *' : 'Expected Delivery'}
               type="date"
               value={f.delivery}
               onChange={set('delivery')}
@@ -172,7 +182,7 @@ export function EditOrderModal({ order, onClose, onSave }) {
             {fabrics.map(fb => (
               <div key={fb._key} style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
                 <input value={fb.name} onChange={e => updateFab(fb._key, { name: e.target.value })}
-                  placeholder="Fabric (e.g. Shell — Single Jersey)"
+                  placeholder="Fabric (e.g. Shell, Single Jersey)"
                   style={{ flex: '2 1 150px', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
                 <input value={fb.composition} onChange={e => updateFab(fb._key, { composition: e.target.value })}
                   placeholder="Composition"
@@ -199,13 +209,10 @@ export function EditOrderModal({ order, onClose, onSave }) {
             label="Callout"
             value={f.callout}
             onChange={set('callout')}
-            placeholder="e.g. delayed a week — lab dip submission slipped"
+            placeholder="e.g. delayed a week, lab dip submission slipped"
             hint="Order-level risk note. Shows on the Order Status report."
           />
 
-          <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#92400e' }}>
-            Note: editing the total quantity does not automatically update manufacturer assignment quantities. Update those from the order detail view if needed.
-          </div>
 
           {err && (
             <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 6 }}>

@@ -10,11 +10,14 @@ import { DeleteOrderModal } from './DeleteOrderModal.jsx'
  * master order of the same customer, drop one), or (once it has no styles left) delete it. Dropping a style and deleting a master
  * order both keep a permanent record, see DroppedRecord on the backend.
  */
-export function EditMasterOrderModal({ mo, onClose }) {
+// `onDeleted` is called after the master order is deleted (its own page then leaves, since there is nothing to show).
+export function EditMasterOrderModal({ mo, onClose, onDeleted }) {
   const { orders, masterOrders, updateMasterOrder, deleteOrder, deleteMasterOrder, editOrder, updateAssignment } = useApp()
   const toast = useToast()
   const [name, setName] = useState(mo.orderName || '')
   const [season, setSeason] = useState(mo.season || '')
+  const [details, setDetails] = useState({ poNumber: mo.poNumber || '', poDate: mo.poDate || '', shipBy: mo.shipBy || '', notes: mo.notes || '' })
+  const setDetail = k => e => setDetails(d => ({ ...d, [k]: e.target.value }))
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
   const [dropTarget, setDropTarget] = useState(null)
@@ -39,14 +42,18 @@ export function EditMasterOrderModal({ mo, onClose }) {
 
   // Read live from the store, so a style disappears from this list the moment it is dropped.
   const styles = (orders || []).filter(o => o.masterOrderId === mo.id)
-  const changed = name.trim() !== (mo.orderName || '') || season !== (mo.season || '')
+  const detailsChanged = details.poNumber.trim() !== (mo.poNumber || '') || details.poDate !== (mo.poDate || '') || details.shipBy !== (mo.shipBy || '') || details.notes.trim() !== (mo.notes || '')
+  const changed = name.trim() !== (mo.orderName || '') || season !== (mo.season || '') || detailsChanged
 
   const save = async () => {
     setErr('')
     if (!name.trim()) { setErr('Give the master order a name.'); return }
     setSaving(true)
     try {
-      await updateMasterOrder(mo.id, { orderName: name.trim(), season })
+      // Only the fields that changed are sent, so the audit log records real changes.
+      const next = { orderName: name.trim(), season, poNumber: details.poNumber.trim(), poDate: details.poDate || null, shipBy: details.shipBy || null, notes: details.notes.trim() }
+      const was = { orderName: mo.orderName || '', season: mo.season || '', poNumber: mo.poNumber || '', poDate: mo.poDate || null, shipBy: mo.shipBy || null, notes: mo.notes || '' }
+      await updateMasterOrder(mo.id, Object.fromEntries(Object.entries(next).filter(([k, v]) => v !== was[k])))
       toast('Master order updated', 'success')
       onClose()
     } catch (e) {
@@ -58,6 +65,7 @@ export function EditMasterOrderModal({ mo, onClose }) {
     setErr(''); setDeleting(true)
     try {
       await deleteMasterOrder(mo.id, deleteReason.trim())
+      onDeleted?.()
       toast('Master order deleted', 'success')
       onClose()
     } catch (e) {
@@ -75,6 +83,12 @@ export function EditMasterOrderModal({ mo, onClose }) {
             <option value="">No season</option>
             {SEASONS.map(s => <option key={s} value={s}>{s}</option>)}
           </Select>
+          <div className="form-grid-2" style={{ gap: 12 }}>
+            <Input label="Customer PO number" value={details.poNumber} onChange={setDetail('poNumber')} maxLength={60} />
+            <Input label="PO date" type="date" value={details.poDate} onChange={setDetail('poDate')} />
+          </div>
+          <Input label="Ship by" type="date" value={details.shipBy} onChange={setDetail('shipBy')} />
+          <Textarea label="Notes" value={details.notes} onChange={setDetail('notes')} rows={2} maxLength={2000} />
 
           <div>
             <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
@@ -87,8 +101,8 @@ export function EditMasterOrderModal({ mo, onClose }) {
             ) : (
               <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
                 {styles.map((o, i) => (
-                  <FlexRow key={o.id} gap={10} style={{ padding: '10px 12px', borderTop: i ? `1px solid ${T.border}` : 'none', background: T.surface }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                  <FlexRow key={o.id} gap={10} style={{ padding: '10px 12px', borderTop: i ? `1px solid ${T.border}` : 'none', background: T.surface, flexWrap: 'wrap' }}>
+                    <div style={{ flex: '1 1 180px', minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {o.product}{o.styleNumber ? ` (${o.styleNumber})` : ''}
                       </div>

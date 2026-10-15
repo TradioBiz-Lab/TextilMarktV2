@@ -5,7 +5,7 @@ import { Input, Btn } from '../components/ui.jsx'
 import api from '../api.js'
 
 const ROLE_OPTIONS = [
-  { value: '', label: '— Select your role —' },
+  { value: '', label: 'Select your role' },
   { value: 'Buyer', label: 'Buyer' },
   { value: 'Manufacturer', label: 'Manufacturer' },
   { value: 'Other', label: 'Other' },

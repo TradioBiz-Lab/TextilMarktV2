@@ -1,14 +1,15 @@
 import { useState, useMemo, useRef, Fragment } from 'react'
 import Papa from 'papaparse'
-import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight, Trash2, ArrowRight, Folder } from '../../icons.jsx'
+import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight, ChevronUp, ChevronDown, Trash2, ArrowRight, Folder } from '../../icons.jsx'
 import {
   T, ORDER_STATUSES, evidenceTypesFor, productDocForStep, DOC_ICONS,
   stageKindOf, kindForCustomerOwner, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
   stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber, getToday, planProgress,
-  PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, stageNameForDoc, PO_INVOICE_DOC_TYPES, deliveryDocsOf,
+  PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, stageNameForDoc, PO_INVOICE_DOC_TYPES, deliveryDocsOf, defaultStepOwner, stepOwnerOptions,
 } from '../../constants.js'
 import { PromoteModal } from '../../components/PromoteModal.jsx'
 import { StyleGallery } from '../../components/StyleGallery.jsx'
+import { AddStepBar } from '../../components/AddStepBar.jsx'
 import { StyleStatusMenu } from '../../components/StyleStatusMenu.jsx'
 import { ProductPhotos } from '../../components/ProductPhotos.jsx'
 import { swatchHex } from '../../colours.js'
@@ -35,7 +36,7 @@ const BULK_EDIT_COLS = '170px 168px 168px 150px 78px minmax(120px, 1fr) 30px 64p
 export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
   const { currentUser, orders, masterOrders, docs, users, loading, updateAssignment, updateStage, uploadDoc, getDocData, refreshOrders, editOrder, deleteOrder,
     addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
-    addStageItem, updateStageItem, removeStageItem, addAssignment, reassignAssignment, insertStage, bulkUpdateStages } = useApp()
+    addStageItem, updateStageItem, removeStageItem, addAssignment, reassignAssignment, insertStage, moveStage, bulkUpdateStages } = useApp()
   const toast = useToast()
   const isMaster = currentUser?.adminType === 'master'
   // Same screen for every role; this decides which controls each one gets.
@@ -43,6 +44,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
 
   const [showEdit, setShowEdit] = useState(false)
   const [promoteOpen, setPromoteOpen] = useState(false)
+  const [movingStage, setMovingStage] = useState(false)
   const [galleryIdx, setGalleryIdx] = useState(0) // which colourway photo the style gallery shows
   const [promoting, setPromoting] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
@@ -92,7 +94,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
   const [etaValues, setEtaValues] = useState([]) // array of end-date strings
   const [startValues, setStartValues] = useState([]) // array of start-date strings
   const [responsibleValues, setResponsibleValues] = useState([]) // array of responsibleId strings
-  const [totalUnitsValues, setTotalUnitsValues] = useState([]) // array of target-qty strings — not every stage tracks the full order qty
+  const [totalUnitsValues, setTotalUnitsValues] = useState([]) // array of target-qty strings - not every stage tracks the full order qty
   const [descriptionValues, setDescriptionValues] = useState([]) // array of stage description strings
   const [removeMarks, setRemoveMarks] = useState(() => new Set()) // stage indexes marked "not applicable", removed on save
 
@@ -139,7 +141,8 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
 
   // ── Unassigned style: "Add Manufacturer" + lightweight document upload ──
   const [newMfrId, setNewMfrId] = useState('')
-  const [newMfrQty, setNewMfrQty] = useState('')
+  const [newMfrQty, setNewMfrQty] = useState(null) // null until typed in: the style's own quantity is shown
+  const [newMfrDelivery, setNewMfrDelivery] = useState('')
   const [addingMfr, setAddingMfr] = useState(false)
   const [refDocFiles, setRefDocFiles] = useState({ measurements: null, tech_pack: null, pattern: null })
   const [refDocErrs, setRefDocErrs] = useState({})
@@ -149,14 +152,10 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
 
   // ── Manual TNA builder — one stage at a time, for an assignment that has
   // none yet. Keyed by mfrId so each assignment card keeps its own draft.
-  const [newStageDrafts, setNewStageDrafts] = useState({})
-  const [addingStage, setAddingStage] = useState(null) // mfrId mid-add
-  const newStageDraft = mid => newStageDrafts[mid] || { name: '', startDate: '', eta: '', kind: 'quantity' }
-  const setNewStageDraft = (mid, patch) => setNewStageDrafts(p => ({ ...p, [mid]: { ...newStageDraft(mid), ...patch } }))
 
   // ── TNA builder mode + CSV import — alternative to the manual one-at-a-time
   // form above, for pasting in a whole plan at once. Keyed by mfrId.
-  const [tnaCsvOpen, setTnaCsvOpen] = useState({}) // mid -> bool — always-available bulk upload, any TNA size
+  const [tnaCsvOpen, setTnaCsvOpen] = useState({}) // mid -> bool - always-available bulk upload, any TNA size
   const [tnaCsvRows, setTnaCsvRows] = useState({}) // mid -> parsed+validated rows
   const [tnaCsvErr, setTnaCsvErr] = useState({}) // mid -> file-level error
   const [tnaCsvImporting, setTnaCsvImporting] = useState(null) // mid mid-import
@@ -206,7 +205,10 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
           if (responsibleEmail) {
             const u = users.find(x => (x.email || '').toLowerCase() === responsibleEmail.toLowerCase())
             if (!u) errors.push(`unknown responsible_email "${responsibleEmail}"`)
+            else if (!stepOwnerOptions(users, order, mid).some(o => o.value === String(u.id))) errors.push(`${responsibleEmail} is not this style's customer, its factory or Tradio staff`)
             else responsibleId = u.id
+          } else {
+            responsibleId = defaultStepOwner(name, order, mid, stepOwnerOptions(users, order, mid))
           }
           return { row: i + 2, name, kind, startDate, eta: endDate, targetQty, description, responsibleId, errors }
         }).filter(r => r.name || r.startDate || r.eta) // skip fully blank rows
@@ -221,13 +223,18 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
     if (rows.length === 0) return
     setTnaCsvImporting(mid)
     let imported = 0
+    const plan = order.assignments.find(a => String(a.mid) === String(mid))?.stages || []
+    const csvAt = plan.findIndex(s => s.isDelivery) === -1 ? plan.length : plan.findIndex(s => s.isDelivery)
     try {
       for (const r of rows) {
         await insertStage(order.id, mid, {
-          name: r.name, kind: r.kind, startDate: r.startDate, eta: r.eta,
+          // A customer closes a step with one decision, so a quantity step owned by the customer becomes a milestone.
+          name: r.name, kind: r.responsibleId && String(r.responsibleId) === String(order.buyerId) && r.kind === 'quantity' ? 'milestone' : r.kind, startDate: r.startDate, eta: r.eta,
           totalUnits: r.targetQty || undefined, description: r.description || undefined,
           responsibleId: r.responsibleId || undefined,
         })
+        // Each row lands just before Delivery, so drafts and the open row from there on shift with it.
+        remapStageKeys(mid, k => (k >= csvAt + imported ? k + 1 : k))
         imported++
         // Drop the row once it is in, so a retry after a later failure cannot insert it twice.
         setTnaCsvRows(p => ({ ...p, [mid]: (p[mid] || []).filter(x => x !== r) }))
@@ -493,7 +500,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
       const asgn = order.assignments.find(a => String(a.mid) === String(mpMfrId))
       const material = asgn?.stages?.[mpStageIdx]?.materials?.[mpLineIdx]
       await uploadDoc({
-        type: 'material_po', name: material?.name ? `${material.name} — PO` : 'Material PO',
+        type: 'material_po', name: material?.name ? `${material.name} - PO` : 'Material PO',
         orderId: order.id, mfrId: mpMfrId, stageIndex: mpStageIdx, materialLineIndex: mpLineIdx,
         ...fileUploadPayload(mpFile),
       })
@@ -629,11 +636,27 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
   // A factory is never offered a PO or an invoice, and only Tradio issues invoices (the server enforces both).
   const orderDocTypes = [
     { v: 'PO', l: 'Purchase Order' }, { v: 'invoice', l: 'Invoice' }, { v: 'buyer_order', l: 'Buyer Order' },
-    { v: 'tech_pack', l: 'Tech Pack' },
     { v: 'cost_sheet', l: 'Cost Sheet' }, { v: 'RFQ', l: 'RFQ' },
     { v: 'terms', l: 'Terms & Conditions' },
   ].filter(t => caps.seePoInvoice || !PO_INVOICE_DOC_TYPES.includes(t.v)).filter(t => t.v !== 'invoice' || caps.uploadInvoices)
   const openDocUpload = type => { resetUpload(); setUf(u => ({ ...u, type })); setShowUp(true) }
+  // Product photos are added in Documents & Assets: open that row and bring it into view.
+  const openProductPhotos = () => { setExpandedDocKey('image'); setTimeout(() => document.getElementById('doc-row-image')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60) }
+  // Unsent notes, new material lines and the open row are keyed by a step's position, so they follow the step when it
+  // moves or when a step is inserted before it.
+  const remapStageKeys = (mid, to) => {
+    const re = k => { const [m, s] = String(k).split(':'); return m === String(mid) && /^\d+$/.test(s || '') ? `${m}:${to(Number(s))}` : k }
+    const remap = obj => Object.fromEntries(Object.entries(obj).map(([k, v]) => [re(k), v]))
+    setUpdateDrafts(remap); setMaterialDrafts(remap)
+    setExpandedStage(k => (k ? re(k) : k))
+  }
+  const doMoveStage = async (mid, i, dir) => {
+    setMovingStage(true)
+    const j = dir === 'up' ? i - 1 : i + 1
+    try { await moveStage(order.id, mid, i, dir); remapStageKeys(mid, k => (k === i ? j : k === j ? i : k)) }
+    catch (e) { toast(typeof e === 'string' ? e : (e?.message || 'Could not move the step'), 'error') }
+    finally { setMovingStage(false) }
+  }
 
   const overallStatus = () => {
     if (order.assignments.some(a => a.status === 'Delayed')) return 'Delayed'
@@ -651,7 +674,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
     setRefDocUploading(type)
     try {
       await uploadDoc({
-        type, name: `${refDocLabels[type]} — ${order.id}`, issuer: '', issueDate: getToday(),
+        type, name: `${refDocLabels[type]}, ${order.id}`, issuer: '', issueDate: getToday(),
         expiryDate: null, orderId: order.id, mfrId: null,
         ...fileUploadPayload(file),
       })
@@ -675,12 +698,15 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
     const gallery = (order.photos || []).length > 0
       ? order.photos.map(p => ({ src: p.image, colourway: p.colourway || '', label: p.colourway || order.product, accent: cwByName[p.colourway] ? swatchHex(cwByName[p.colourway], resolveNamedColor) : null }))
       : heroImgUrl ? [{ src: heroImgUrl, colourway: '', label: order.product }] : []
+    const planNames = (order.assignments || []).flatMap(a => (a.stages || []).map(st => st.name)).join(' | ')
+    const refDocNeeded = type => type === 'lab_dip' ? (/lab\s*dip/i.test(planNames) || orderDocs.some(d => d.type === type))
+      : type === 'test_report' ? (/\b(fpt|gpt)\b|test/i.test(planNames) || orderDocs.some(d => d.type === type)) : true
     const checklist = [
       {
         key: 'image', label: gallery.length > 1 ? `Product Images (${gallery.length})` : 'Product Image', uploaded: !!heroImgUrl, canUpload: caps.uploadProductPhoto,
         preview: heroImgUrl ? <img src={heroImgUrl} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover' }} /> : null,
       },
-      ...Object.keys(refDocLabels).map(type => {
+      ...Object.keys(refDocLabels).filter(refDocNeeded).map(type => {
         const typeDocs = orderDocs.filter(d => d.type === type)
         const doc = typeDocs[0]
         const uploadProps = type === 'pattern' ? PATTERN_FILE_PROPS : type === 'measurements' ? MEASUREMENTS_FILE_PROPS : {}
@@ -698,7 +724,9 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
       <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 10, whiteSpace: 'nowrap', flexShrink: 0, ...(ok ? { background: '#dcfce7', color: '#166534', border: '1px solid #86efac' } : { background: '#ffedd5', color: '#9a3412', border: '1px solid #fdba74' }) }}>{ok ? '\u2713 ' : ''}{text}</span>
     )
             const refTypes = Object.keys(refDocLabels)
-            const poDocs = orderDocs.filter(d => d.stageIndex == null && PO_INVOICE_DOC_TYPES.includes(d.type))
+            // The customer PO filed on the master order shows in every style under it.
+            const poDocs = [...orderDocs.filter(d => d.stageIndex == null && PO_INVOICE_DOC_TYPES.includes(d.type)),
+              ...(docs || []).filter(d => d.isActive !== false && !d.orderId && order.masterOrderId && d.masterOrderId === order.masterOrderId && PO_INVOICE_DOC_TYPES.includes(d.type))]
             const deliveryDocs = deliveryDocsOf(orders, orderDocs)
             const otherDocs = orderDocs.filter(d => d.stageIndex == null && !refTypes.includes(d.type) && !PO_INVOICE_DOC_TYPES.includes(d.type) && d.type !== 'dispatch_docs')
             // Delivery papers are filed on the Delivery step of the split they ship, so uploading needs one split.
@@ -770,8 +798,8 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
             <div style={{ display: 'flex', flexShrink: 0 }}>
               <div style={{ width: gallery.length ? 'auto' : 128, padding: 18, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
                 {gallery.length > 0 ? <StyleGallery photos={gallery} index={galleryIdx} onIndex={setGalleryIdx} /> : (
-                <div onClick={caps.editOrders ? () => setShowEdit(true) : undefined} role={caps.editOrders ? 'button' : undefined} tabIndex={caps.editOrders ? 0 : undefined} onKeyDown={caps.editOrders ? activateOnKey(() => setShowEdit(true)) : undefined}
-                  title={caps.editOrders ? 'Change photo' : undefined}
+                <div onClick={caps.uploadProductPhoto ? openProductPhotos : undefined} role={caps.uploadProductPhoto ? 'button' : undefined} tabIndex={caps.uploadProductPhoto ? 0 : undefined} onKeyDown={caps.uploadProductPhoto ? activateOnKey(openProductPhotos) : undefined}
+                  title={caps.uploadProductPhoto ? 'Add product photos' : undefined}
                   style={{ width: 92, height: 92, borderRadius: 6, overflow: 'hidden', background: '#f8fafc', border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: caps.editOrders ? 'pointer' : 'default' }}>
                   {heroImgUrl ? (
                     <img src={heroImgUrl} alt={order.product} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -850,7 +878,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                       <div key={fb.name} style={{ fontSize: 12.5, color: T.text }}>
                         <span style={{ fontWeight: 700 }}>{fb.name}</span>
                         {[fb.composition, fb.gsm && `${fb.gsm} GSM`, fb.supplier].filter(Boolean).length > 0 && (
-                          <span style={{ color: T.textMuted }}> — {[fb.composition, fb.gsm && `${fb.gsm} GSM`, fb.supplier].filter(Boolean).join(' · ')}</span>
+                          <span style={{ color: T.textMuted }}> - {[fb.composition, fb.gsm && `${fb.gsm} GSM`, fb.supplier].filter(Boolean).join(' · ')}</span>
                         )}
                       </div>
                     ))}
@@ -879,7 +907,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                 // (View/Download/Edit/Delete) needs real width; squeezed into
                 // one ~280px column it overlapped its own text instead of
                 // wrapping cleanly.
-                <div key={item.key} style={{ gridColumn: isOpen ? '1 / -1' : undefined, border: `1px solid ${T.border}`, borderLeft: `4px solid ${item.uploaded ? '#16a34a' : '#f59e0b'}`, background: T.surface, borderRadius: 10, minWidth: 0, overflow: 'hidden' }}>
+                <div key={item.key} id={`doc-row-${item.key}`} style={{ gridColumn: isOpen ? '1 / -1' : undefined, border: `1px solid ${T.border}`, borderLeft: `4px solid ${item.uploaded ? '#16a34a' : '#f59e0b'}`, background: T.surface, borderRadius: 10, minWidth: 0, overflow: 'hidden' }}>
                   <div role="button" tabIndex={0} aria-expanded={isOpen}
                     onClick={() => setExpandedDocKey(isOpen ? null : item.key)} onKeyDown={activateOnKey(() => setExpandedDocKey(isOpen ? null : item.key))}
                     style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 14px', minHeight: 56, cursor: 'pointer' }}>
@@ -917,6 +945,13 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                                   {g.docs.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} stageName={g.label} compact />)}
                                 </div>
                               ))}
+                              {item.canUpload && item.onFile && (
+                                <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 10 }}>
+                                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, marginBottom: 6 }}>Add a newer version (the earlier ones stay listed)</div>
+                                  <FileUpload {...item.uploadProps} file={item.file} onFile={item.onFile} error={item.err} onError={item.onErr} />
+                                  {item.file && <Btn size="sm" style={{ marginTop: 6 }} disabled={item.uploading} onClick={item.onUpload}>{item.uploading ? 'Uploading...' : 'Upload'}</Btn>}
+                                </div>
+                              )}
                             </div>
                           )
                         })()
@@ -962,7 +997,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                   <div style={{ marginTop: 12 }}>
                     <FlexRow justify="space-between">
                       <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Other Documents</span>
-                      <Btn size="sm" variant="ghost" onClick={() => openDocUpload(orderDocTypes.find(t => !PO_INVOICE_DOC_TYPES.includes(t.v))?.v || 'tech_pack')} icon={<Paperclip size={12} />}>Upload</Btn>
+                      <Btn size="sm" variant="ghost" onClick={() => openDocUpload(orderDocTypes.find(t => !PO_INVOICE_DOC_TYPES.includes(t.v))?.v || 'cost_sheet')} icon={<Paperclip size={12} />}>Upload</Btn>
                     </FlexRow>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
                       {otherDocs.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} />)}
@@ -979,9 +1014,77 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
 
   // ── Unassigned style — no manufacturer/TNA yet. Same summary as the
   // assigned page, plus the one action that matters here.
+  // The document and stage-evidence upload windows, in every view of the page (the buttons that open them are in all of them).
+  const uploadModals = (
+    <>
+        {/* ── Doc Upload Modal ── */}
+        {showUp && (
+          <Modal title="Upload Order Document" onClose={() => { setShowUp(false); resetUpload() }} size="lg">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div className="form-grid-2">
+                <Select label="Document Type" value={uf.type} onChange={e => setUf({ ...uf, type: e.target.value })}>
+                  {orderDocTypes.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}
+                </Select>
+                <Input label="Document Name" value={uf.name} onChange={e => setUf({ ...uf, name: e.target.value })} placeholder="Document title" />
+              </div>
+              <Input label="Issuing Authority" value={uf.issuer} onChange={e => setUf({ ...uf, issuer: e.target.value })} />
+              <div className="form-grid-2">
+                <Input label="Issue Date" type="date" value={uf.issueDate} onChange={e => setUf({ ...uf, issueDate: e.target.value })} />
+                <Input label="Expiry Date (optional)" type="date" value={uf.expiryDate} onChange={e => setUf({ ...uf, expiryDate: e.target.value })} />
+              </div>
+              <Alert type="info">{PO_INVOICE_DOC_TYPES.includes(uf.type) ? 'Visible to Tradio and the customer only. Factories never see purchase orders or invoices.' : 'Visible to Tradio, the customer and the manufacturers on this style.'}</Alert>
+              <FileUpload file={fileData} onFile={f => { setFileData(f); setFileErr('') }} error={fileErr} onError={setFileErr} />
+              <FlexRow justify="flex-end" gap={8}>
+                <Btn variant="secondary" onClick={() => { setShowUp(false); resetUpload() }}>Cancel</Btn>
+                <Btn disabled={!uf.name || !fileData || saving} onClick={submitDoc}>{saving ? 'Uploading…' : 'Upload Document'}</Btn>
+              </FlexRow>
+            </div>
+          </Modal>
+        )}
+
+        {/* ── Stage Doc Upload Modal ── */}
+        {showStageDocs && sdMfrId && (
+          <Modal title="Upload Stage Evidence" subtitle={`${(order.assignments.find(a => String(a.mid) === String(sdMfrId))?.stages?.[sdStageIdx]?.name) || `Stage ${sdStageIdx + 1}`} - Evidence Documents`} onClose={() => setShowStageDocs(false)} size="lg">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <Alert type="info">
+                Linked to the {(order.assignments.find(a => String(a.mid) === String(sdMfrId))?.stages?.[sdStageIdx]?.name) || `Stage ${sdStageIdx + 1}`} stage. Attach a file/link, or add SOP notes only - either is sufficient.
+                {productDocForStep(order.assignments.find(a => String(a.mid) === String(sdMfrId))?.stages?.[sdStageIdx]?.name) && ` It is also filed under "${productDocForStep(order.assignments.find(a => String(a.mid) === String(sdMfrId))?.stages?.[sdStageIdx]?.name).label}" in this product's documents, so there is no need to upload it again.`}
+              </Alert>
+              {sdItems.map((item, idx) => (
+                <div key={idx} style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 16px', background: '#f8fafc', position: 'relative' }}>
+                  {sdItems.length > 1 && (
+                    <button onClick={() => removeSdItem(idx)} style={{ position: 'absolute', top: 10, right: 10, background: '#fee2e2', border: 'none', borderRadius: 6, cursor: 'pointer', width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: T.danger }} aria-label="Close"><X size={12} /></button>
+                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <Input label="Document Name *" value={item.name} onChange={e => updateSdItem(idx, { name: e.target.value, fileErr: '' })} placeholder={`e.g. ${(order.assignments.find(a => String(a.mid) === String(sdMfrId))?.stages?.[sdStageIdx]?.name) || `Stage ${sdStageIdx + 1}`} GRN - Batch ${idx + 1}`} />
+                    <FileUpload file={item.file} onFile={f => updateSdItem(idx, { file: f, fileErr: '' })} error={item.fileErr} onError={err => updateSdItem(idx, { fileErr: err })} />
+                    <Textarea
+                      label="Notes (optional - text evidence)"
+                      value={item.notes}
+                      onChange={e => updateSdItem(idx, { notes: e.target.value, fileErr: '' })}
+                      placeholder="Add SOP context, observations, or text-only stage evidence…"
+                      rows={3}
+                    />
+                  </div>
+                </div>
+              ))}
+              {sdErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={12} /> {sdErr}</div>}
+              <FlexRow justify="space-between" gap={8} style={{ flexWrap: 'wrap' }}>
+                <Btn variant="secondary" size="sm" onClick={addSdItem} icon={<Plus size={12} />}>Add Another Document</Btn>
+                <FlexRow gap={8}>
+                  <Btn variant="secondary" onClick={() => setShowStageDocs(false)}>Cancel</Btn>
+                  <Btn disabled={saving} onClick={submitStageDoc}>{saving ? 'Uploading…' : `Upload ${sdItems.length > 1 ? `${sdItems.length} Documents` : 'Evidence'}`}</Btn>
+                </FlexRow>
+              </FlexRow>
+            </div>
+          </Modal>
+        )}
+    </>
+  )
+
   // The Move to production button sits in the summary header, which both the unassigned and the assigned pages render.
   const promoteModal = promoteOpen && (
-    <PromoteModal count={1} needsDate={!order.delivery} busy={promoting} onClose={() => setPromoteOpen(false)}
+    <PromoteModal count={1} needsDate={!order.delivery && (order.assignments || []).length > 0} busy={promoting} onClose={() => setPromoteOpen(false)}
       onConfirm={async date => {
         setPromoting(true)
         try { await editOrder(order.id, { phase: 'production', ...(order.delivery ? {} : { delivery: date }) }); toast('Moved to production', 'success'); setPromoteOpen(false) }
@@ -994,6 +1097,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
     return (
       <div>
         {promoteModal}
+        {uploadModals}
         {showEdit && (
           <EditOrderModal order={order} onClose={() => setShowEdit(false)}
             onSave={async (id, data) => { await editOrder(id, data); toast(`Style ${id} updated`, 'success'); setShowEdit(false) }} />
@@ -1016,22 +1120,25 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
           <Card>
             <SectionLabel>Add Manufacturer</SectionLabel>
             <div style={{ fontSize: 12, color: T.textMuted, margin: '6px 0 12px' }}>
-              This style has no manufacturer yet — production can't start until one is assigned. TNA (production stages) can be built or uploaded once it is.
+              This style has no manufacturer yet. Once one is added, build its plan step by step or upload it as a CSV.
             </div>
             <div className="form-grid-2" style={{ gap: 12, alignItems: 'flex-end' }}>
               <Select label="Manufacturer *" value={newMfrId} onChange={e => setNewMfrId(e.target.value)}>
                 <option value="">Select manufacturer…</option>
                 {mfrUsers.map(m => <option key={m.id} value={m.id}>{m.company} ({m.code})</option>)}
               </Select>
-              <Input label="Quantity *" type="number" value={newMfrQty} onChange={e => setNewMfrQty(e.target.value)} placeholder={String(order.totalQty || '')} />
+              <Input label="Quantity *" type="number" value={newMfrQty ?? String(order.totalQty || '')} onChange={e => setNewMfrQty(e.target.value)} />
+              {order.phase !== 'development' && !order.delivery && (
+                <Input label="Delivery date *" type="date" value={newMfrDelivery} onChange={e => setNewMfrDelivery(e.target.value)} hint="The plan ends in a Delivery step on this date." />
+              )}
             </div>
             <FlexRow justify="flex-end" style={{ marginTop: 12 }}>
               <Btn
-                disabled={!newMfrId || !newMfrQty || Number(newMfrQty) <= 0 || addingMfr}
+                disabled={!newMfrId || !(Number(newMfrQty ?? order.totalQty) > 0) || (order.phase !== 'development' && !order.delivery && !newMfrDelivery) || addingMfr}
                 onClick={async () => {
                   setAddingMfr(true)
                   try {
-                    await addAssignment(order.id, { mfrId: newMfrId, qty: Math.floor(Number(newMfrQty)) })
+                    await addAssignment(order.id, { mfrId: newMfrId, qty: Math.floor(Number(newMfrQty ?? order.totalQty)), ...(newMfrDelivery ? { delivery: newMfrDelivery } : {}) })
                     toast('Manufacturer assigned', 'success')
                   } catch (e) {
                     toast(typeof e === 'string' ? e : (e?.message || 'Failed to add manufacturer'), 'error')
@@ -1049,16 +1156,17 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
   if (!effectiveMid && order.assignments?.length > 1) {
     return (
       <div>
+        {uploadModals}
         <FlexRow style={{ marginBottom: 20 }} gap={12}>
           <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
-          <ProductThumb order={order} size="lg" onClick={caps.editOrders ? () => setShowEdit(true) : undefined} />
+          <ProductThumb order={order} size="lg" />
           <div style={{ flex: 1 }}>
             <FlexRow gap={10}>
               <Mono style={{ fontSize: 15 }}>{order.id}</Mono>
               <Badge status={overallStatus()} />
             </FlexRow>
             <div style={{ fontSize: 13, color: T.textMuted, marginTop: 3 }}>
-              {order.product}{order.styleNumber ? ` — ${order.styleNumber}` : ''} · {order.buyerCompany || '—'} · {order.totalQty?.toLocaleString()} pcs · Due {fmtDate(order.delivery)}
+              {order.product}{order.styleNumber ? ` - ${order.styleNumber}` : ''} · {order.buyerCompany || '—'} · {order.totalQty?.toLocaleString()} pcs · Due {fmtDate(order.delivery)}
             </div>
           </div>
           <Btn variant="secondary" onClick={() => setShowUp(true)} icon={<Paperclip size={13} />}>Upload Document</Btn>
@@ -1135,7 +1243,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
 
       {/* ── Status Override Modal ── */}
       {showSt && stTarget && (
-        <Modal title="Override Assignment Status" subtitle="Admin override — permanently logged in audit trail" onClose={() => setShowSt(false)}>
+        <Modal title="Override Assignment Status" subtitle="Admin override - permanently logged in audit trail" onClose={() => setShowSt(false)}>
           <Alert type="warning" style={{ marginBottom: 14 }}>All admin overrides are permanently logged with your name and timestamp.</Alert>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <Select label="New Status" value={stStatus} onChange={e => setStStatus(e.target.value)}>
@@ -1153,7 +1261,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
       {/* ── Stage Override Modal ── */}
       {showStage && sgTarget && (
         <Modal title="Override Production Stage" subtitle="Master admin can force any stage as done, bypassing the materials-pending gate" size="lg" onClose={() => setShowStage(false)}>
-          <Alert type="warning" style={{ marginBottom: 14 }}>Master-admin-only. Use this when a stage is marked done but isn't actually complete — it bypasses the materials-pending check and is logged in the audit trail. A mandatory comment is required.</Alert>
+          <Alert type="warning" style={{ marginBottom: 14 }}>Master-admin-only. Use this when a stage is marked done but isn't actually complete - it bypasses the materials-pending check and is logged in the audit trail. A mandatory comment is required.</Alert>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <Select label="Stage" value={sgIndex} onChange={e => {
               const idx = parseInt(e.target.value)
@@ -1251,8 +1359,8 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                       style={{ minWidth: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: responsibleValues[i] ? T.text : T.textLight, cursor: 'pointer' }}
                     >
                       <option value="">Unassigned</option>
-                      {responsibleUsers.map(u => (
-                        <option key={u.id} value={u.id}>{u.role === 'admin' ? `Admin: ${u.name}` : u.role === 'buyer' ? `Customer: ${u.company || u.name}` : `Mfr: ${u.company}`}</option>
+                      {stepOwnerOptions(users, order, etaTarget, { isDelivery: !!s.isDelivery, currentId: responsibleValues[i] }).map(o => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
                       ))}
                     </select>
                     <input
@@ -1261,7 +1369,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                       value={totalUnitsValues[i] || ''}
                       onChange={e => setTotalUnitsValues(prev => prev.map((v, j) => j === i ? e.target.value : v))}
                       placeholder="Target qty"
-                      title="Target quantity for this stage — not every stage tracks the full order qty (e.g. Lab Dip Approval might target 3 dips, not 600 pieces)"
+                      title="Target quantity for this stage - not every stage tracks the full order qty (e.g. Lab Dip Approval might target 3 dips, not 600 pieces)"
                       style={{ minWidth: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit' }}
                     />
                     <input
@@ -1355,7 +1463,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
       {showApplyAll && (
         <Modal
           title="Apply to other orders too?"
-          subtitle="This order belongs to a master order with other line items — apply the same responsibility assignment(s) to their matching stages (by stage name)?"
+          subtitle="This order belongs to a master order with other line items - apply the same responsibility assignment(s) to their matching stages (by stage name)?"
           onClose={() => { setShowApplyAll(false); setPendingRespChanges([]) }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
@@ -1375,74 +1483,13 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
         </Modal>
       )}
 
-      {/* ── Doc Upload Modal ── */}
-      {showUp && (
-        <Modal title="Upload Order Document" onClose={() => { setShowUp(false); resetUpload() }} size="lg">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div className="form-grid-2">
-              <Select label="Document Type" value={uf.type} onChange={e => setUf({ ...uf, type: e.target.value })}>
-                {orderDocTypes.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}
-              </Select>
-              <Input label="Document Name" value={uf.name} onChange={e => setUf({ ...uf, name: e.target.value })} placeholder="Document title" />
-            </div>
-            <Input label="Issuing Authority" value={uf.issuer} onChange={e => setUf({ ...uf, issuer: e.target.value })} />
-            <div className="form-grid-2">
-              <Input label="Issue Date" type="date" value={uf.issueDate} onChange={e => setUf({ ...uf, issueDate: e.target.value })} />
-              <Input label="Expiry Date (optional)" type="date" value={uf.expiryDate} onChange={e => setUf({ ...uf, expiryDate: e.target.value })} />
-            </div>
-            <Alert type="info">Document will be visible to the buyer and all assigned manufacturers.</Alert>
-            <FileUpload file={fileData} onFile={f => { setFileData(f); setFileErr('') }} error={fileErr} onError={setFileErr} />
-            <FlexRow justify="flex-end" gap={8}>
-              <Btn variant="secondary" onClick={() => { setShowUp(false); resetUpload() }}>Cancel</Btn>
-              <Btn disabled={!uf.name || !fileData || saving} onClick={submitDoc}>{saving ? 'Uploading…' : 'Upload Document'}</Btn>
-            </FlexRow>
-          </div>
-        </Modal>
-      )}
-
-      {/* ── Stage Doc Upload Modal ── */}
-      {showStageDocs && sdMfrId && (
-        <Modal title="Upload Stage Evidence" subtitle={`${(order.assignments.find(a => String(a.mid) === String(sdMfrId))?.stages?.[sdStageIdx]?.name) || `Stage ${sdStageIdx + 1}`} — Evidence Documents`} onClose={() => setShowStageDocs(false)} size="lg">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <Alert type="info">
-              Linked to the {(order.assignments.find(a => String(a.mid) === String(sdMfrId))?.stages?.[sdStageIdx]?.name) || `Stage ${sdStageIdx + 1}`} stage. Attach a file/link, or add SOP notes only — either is sufficient.
-              {productDocForStep(order.assignments.find(a => String(a.mid) === String(sdMfrId))?.stages?.[sdStageIdx]?.name) && ` It is also filed under "${productDocForStep(order.assignments.find(a => String(a.mid) === String(sdMfrId))?.stages?.[sdStageIdx]?.name).label}" in this product's documents, so there is no need to upload it again.`}
-            </Alert>
-            {sdItems.map((item, idx) => (
-              <div key={idx} style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 16px', background: '#f8fafc', position: 'relative' }}>
-                {sdItems.length > 1 && (
-                  <button onClick={() => removeSdItem(idx)} style={{ position: 'absolute', top: 10, right: 10, background: '#fee2e2', border: 'none', borderRadius: 6, cursor: 'pointer', width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: T.danger }} aria-label="Close"><X size={12} /></button>
-                )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <Input label="Document Name *" value={item.name} onChange={e => updateSdItem(idx, { name: e.target.value, fileErr: '' })} placeholder={`e.g. ${(order.assignments.find(a => String(a.mid) === String(sdMfrId))?.stages?.[sdStageIdx]?.name) || `Stage ${sdStageIdx + 1}`} GRN - Batch ${idx + 1}`} />
-                  <FileUpload file={item.file} onFile={f => updateSdItem(idx, { file: f, fileErr: '' })} error={item.fileErr} onError={err => updateSdItem(idx, { fileErr: err })} />
-                  <Textarea
-                    label="Notes (optional — text evidence)"
-                    value={item.notes}
-                    onChange={e => updateSdItem(idx, { notes: e.target.value, fileErr: '' })}
-                    placeholder="Add SOP context, observations, or text-only stage evidence…"
-                    rows={3}
-                  />
-                </div>
-              </div>
-            ))}
-            {sdErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={12} /> {sdErr}</div>}
-            <FlexRow justify="space-between" gap={8}>
-              <Btn variant="secondary" size="sm" onClick={addSdItem} icon={<Plus size={12} />}>Add Another Document</Btn>
-              <FlexRow gap={8}>
-                <Btn variant="secondary" onClick={() => setShowStageDocs(false)}>Cancel</Btn>
-                <Btn disabled={saving} onClick={submitStageDoc}>{saving ? 'Uploading…' : `Upload ${sdItems.length > 1 ? `${sdItems.length} Documents` : 'Evidence'}`}</Btn>
-              </FlexRow>
-            </FlexRow>
-          </div>
-        </Modal>
-      )}
+      {uploadModals}
 
       {/* ── Attach PO Document Modal ── */}
       {showMaterialPo && mpMfrId && (() => {
         const material = order.assignments.find(a => String(a.mid) === String(mpMfrId))?.stages?.[mpStageIdx]?.materials?.[mpLineIdx]
         return (
-          <Modal title="Attach PO Document" subtitle={material?.name ? `${material.name} — attach the purchase order for this material line` : 'Attach a PO document for this material line'} onClose={() => setShowMaterialPo(false)}>
+          <Modal title="Attach PO Document" subtitle={material?.name ? `${material.name} - attach the purchase order for this material line` : 'Attach a PO document for this material line'} onClose={() => setShowMaterialPo(false)}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <FileUpload file={mpFile} onFile={f => { setMpFile(f); setMpFileErr('') }} error={mpFileErr} onError={setMpFileErr} />
               <FlexRow justify="flex-end" gap={8}>
@@ -1557,7 +1604,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                       const csvValid = csvRows.filter(r => r.errors.length === 0)
                       const csvInvalid = csvRows.filter(r => r.errors.length > 0)
                       return (
-                        <Modal title="Upload CSV" subtitle={stages.length > 0 ? 'New rows are appended after the existing plan.' : 'Import a whole plan at once.'}
+                        <Modal title="Upload CSV" subtitle={stages.length > 0 ? 'New steps go after the existing ones, before Delivery. A row with no owner gets the standard owner.' : 'Import a whole plan at once.'}
                           onClose={() => setTnaCsvOpen(p => ({ ...p, [a.mid]: false }))}>
                           <FlexRow gap={10} style={{ marginBottom: 10 }}>
                             <label style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 10px', fontSize: 11, fontWeight: 700, color: T.text, background: '#f8fafc', border: `1px solid ${T.border}`, borderRadius: 8, cursor: 'pointer' }}>
@@ -1567,7 +1614,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                             </label>
                             <button onClick={downloadTnaCsvTemplate} style={{ fontSize: 11, fontWeight: 700, color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>Download template</button>
                           </FlexRow>
-                          <div style={{ fontSize: 10, color: T.textLight, marginBottom: 8 }}>Columns: {TNA_CSV_HEADERS.join(', ')} — one row per stage, in order.</div>
+                          <div style={{ fontSize: 10, color: T.textLight, marginBottom: 8 }}>Columns: {TNA_CSV_HEADERS.join(', ')} - one row per stage, in order.</div>
                           {tnaCsvErr[a.mid] && <div style={{ fontSize: 11, color: T.danger, marginBottom: 8 }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {tnaCsvErr[a.mid]}</div>}
                           {csvRows.length > 0 && (
                             <div>
@@ -1577,7 +1624,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                               <div style={{ maxHeight: 180, overflowY: 'auto', border: `1px solid ${T.border}`, borderRadius: 6, background: '#fff' }}>
                                 {csvRows.map((r, i) => (
                                   <div key={i} style={{ padding: '6px 10px', fontSize: 11, borderTop: i > 0 ? `1px solid ${T.border}` : 'none', color: r.errors.length ? T.danger : T.text }}>
-                                    Row {r.row}: {r.name || '(no name)'} {r.errors.length > 0 && `— ${r.errors.join(', ')}`}
+                                    Row {r.row}: {r.name || '(no name)'} {r.errors.length > 0 && `- ${r.errors.join(', ')}`}
                                   </div>
                                 ))}
                               </div>
@@ -1596,57 +1643,13 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                     <div style={{ padding: '14px 18px' }}>
                       {stages.length > 0 && <StageTimeline stages={stages} />}
 
-                      {stages.length === 0 && (
-                        !caps.editPlan ? (
+                      {caps.editPlan
+                        ? <AddStepBar key={a.mid} order={order} asgn={a} users={users} onInserted={index => remapStageKeys(a.mid, k => (k >= index ? k + 1 : k))} />
+                        : stages.length === 0 && (
                           <div style={{ background: '#f8fafc', border: `1px dashed ${T.border}`, borderRadius: 10, padding: '14px 16px', marginBottom: 14, fontSize: 12, color: T.textMuted }}>
-                            No TNA yet. The production plan is set up by your Tradio coordinator.
+                            No production steps yet. Your Tradio coordinator sets up the plan.
                           </div>
-                        ) :
-                        <div style={{ background: '#f8fafc', border: `1px dashed ${T.border}`, borderRadius: 10, padding: '14px 16px', marginBottom: 14 }}>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 2 }}>No TNA yet</div>
-                          <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Add stages one at a time below, or click "Upload CSV" above for a whole plan at once.</div>
-                          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
-                            <div style={{ flex: '2 1 160px' }}>
-                              <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Stage Name</label>
-                              <input value={newStageDraft(a.mid).name} onChange={e => setNewStageDraft(a.mid, { name: e.target.value })}
-                                placeholder="e.g. Lab Dip Approval"
-                                style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box' }} />
-                            </div>
-                            <div style={{ flex: '1 1 120px' }}>
-                              <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Start Date</label>
-                              <DateOrNA label="Start date" value={newStageDraft(a.mid).startDate} onChange={v => setNewStageDraft(a.mid, { startDate: v })} />
-                            </div>
-                            <div style={{ flex: '1 1 120px' }}>
-                              <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>End Date</label>
-                              <DateOrNA label="End date" value={newStageDraft(a.mid).eta} onChange={v => setNewStageDraft(a.mid, { eta: v })} />
-                            </div>
-                            <div style={{ flex: '1 1 110px' }}>
-                              <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Kind</label>
-                              <select value={newStageDraft(a.mid).kind} onChange={e => setNewStageDraft(a.mid, { kind: e.target.value })}
-                                style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 6px', fontSize: 12, fontFamily: 'inherit', background: '#fff' }}>
-                                <option value="quantity">Quantity</option>
-                                <option value="milestone">Milestone</option>
-                                <option value="checklist">Checklist</option>
-                              </select>
-                            </div>
-                            <Btn
-                              icon={<Plus size={12} />}
-                              size="sm"
-                              disabled={!newStageDraft(a.mid).name.trim() || !newStageDraft(a.mid).startDate || !newStageDraft(a.mid).eta || addingStage === a.mid}
-                              onClick={async () => {
-                                const draft = newStageDraft(a.mid)
-                                setAddingStage(a.mid)
-                                try {
-                                  await insertStage(order.id, a.mid, { name: draft.name.trim(), startDate: draft.startDate, eta: draft.eta, kind: draft.kind })
-                                  setNewStageDraft(a.mid, { name: '', startDate: '', eta: '', kind: 'quantity' })
-                                } catch (e) {
-                                  toast(typeof e === 'string' ? e : (e?.message || 'Failed to add stage'), 'error')
-                                } finally { setAddingStage(null) }
-                              }}
-                            >{addingStage === a.mid ? 'Adding…' : 'Add Stage'}</Btn>
-                          </div>
-                        </div>
-                      )}
+                        )}
 
                       {/* TNA table — one row per step, the same shape as the plan
                           the team keeps in Excel: step, owner, planned vs revised
@@ -1732,8 +1735,19 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                                   <div style={{ height: 4, background: done ? T.success : isLate ? T.danger : T.primary, borderRadius: 2, width: `${pct}%` }} />
                                 </div>
                               </td>
-                              <td style={{ padding: '8px 10px', textAlign: 'right' }}>
-                                <button onClick={e => { e.stopPropagation(); setExpandedStage(rowExpanded ? null : rowKey) }}
+                              <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                {caps.editPlan && !s.isDelivery && (
+                                  <span style={{ display: 'inline-flex', gap: 2, marginRight: 6, verticalAlign: 'middle' }}>
+                                    {[['up', i === 0, ChevronUp], ['down', !stages[i + 1] || !!stages[i + 1].isDelivery, ChevronDown]].map(([dir, off, Icon]) => (
+                                      <button key={dir} type="button" title={`Move ${dir}`} aria-label={`Move ${s.name} ${dir}`} disabled={off || movingStage}
+                                        onClick={e => { e.stopPropagation(); doMoveStage(a.mid, i, dir) }} onKeyDown={e => e.stopPropagation()}
+                                        style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.border}`, background: '#fff', cursor: off ? 'default' : 'pointer', opacity: off ? 0.35 : 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                                        <Icon size={12} color={T.textMuted} />
+                                      </button>
+                                    ))}
+                                  </span>
+                                )}
+                                <button onClick={e => { e.stopPropagation(); setExpandedStage(rowExpanded ? null : rowKey) }} onKeyDown={e => e.stopPropagation()}
                                   style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2 }}>
                                   <span style={{ color: T.textMuted, display: 'inline-flex', transition: 'transform 0.15s', transform: rowExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}><ChevronRight size={14} /></span>
                                 </button>
@@ -1825,7 +1839,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                                       return (
                                         <div key={mi} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fff', borderRadius: 6, padding: '6px 10px', border: `1px solid ${T.border}` }}>
                                           <div style={{ flex: 1, minWidth: 0 }}>
-                                            <div style={{ fontSize: 11, fontWeight: 600, color: T.text }}>{m.name} — {m.requiredQty}{m.unit ? ` ${m.unit}` : ''}</div>
+                                            <div style={{ fontSize: 11, fontWeight: 600, color: T.text }}>{m.name} - {m.requiredQty}{m.unit ? ` ${m.unit}` : ''}</div>
                                             <div style={{ fontSize: 10, color: T.textLight }}>{[m.supplier, m.poNumber, m.expectedDate].filter(Boolean).join(' · ') || '—'}</div>
                                           </div>
                                           <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: statusStyle.bg, color: statusStyle.c, border: `1px solid ${statusStyle.border}`, whiteSpace: 'nowrap' }}>
@@ -1902,7 +1916,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
               ) : (
                 mfrDocs.map(d => {
                   const asgn = order.assignments.find(a => String(a.mid) === String(d.mfrId))
-                  return <DocCard key={d.id} doc={{ ...d, name: `${d.name} — ${asgn?.mfrCompany || '—'}` }} users={users} onGetData={getDocData} />
+                  return <DocCard key={d.id} doc={{ ...d, name: `${d.name} - ${asgn?.mfrCompany || '—'}` }} users={users} onGetData={getDocData} />
                 })
               )}
             </div>

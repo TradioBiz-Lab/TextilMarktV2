@@ -21,6 +21,7 @@ export function DeleteOrderModal({ order, onClose, onConfirm }) {
 
   return (
     <div
+      className="dialog-backdrop"
       style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }}
       onClick={e => e.target === e.currentTarget && onClose()}
     >
@@ -36,7 +37,7 @@ export function DeleteOrderModal({ order, onClose, onConfirm }) {
           <div style={{ background: '#fff1f2', border: '1px solid #fecdd3', borderRadius: 10, padding: '14px 16px' }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#9f1239', marginBottom: 6 }}>This style will be removed from every list and report.</div>
             <div style={{ fontSize: 13, color: '#be123c', lineHeight: 1.6 }}>
-              A full record of it, including its production plan, is kept in the database with who dropped it and when. Its documents stay in the Documents tab. It can't be brought back from the app.
+              A full record of it, including its production plan, is kept in the database with who dropped it and when. Its documents are kept with that record. It can't be brought back from the app.
             </div>
           </div>
 

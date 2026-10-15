@@ -23,6 +23,8 @@ export function StyleStatusMenu({ order, canStatus, canStage, canDrop, onPromote
   const { updateAssignment, editOrder } = useApp()
   const toast = useToast()
   const [open, setOpen] = useState(false)
+  // On a narrow screen the button can sit near the left edge: the menu then opens rightwards so it stays on screen.
+  const [alignLeft, setAlignLeft] = useState(false)
   const [pick, setPick] = useState(null)      // the status being applied (asks for an optional note)
   const [note, setNote] = useState('')
   const [demoting, setDemoting] = useState(false)
@@ -73,14 +75,14 @@ export function StyleStatusMenu({ order, canStatus, canStage, canDrop, onPromote
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      <button onClick={() => setOpen(v => !v)} aria-haspopup="menu" aria-expanded={open}
+      <button onClick={() => { if (!open && ref.current) setAlignLeft(ref.current.getBoundingClientRect().right < 270); setOpen(v => !v) }} aria-haspopup="menu" aria-expanded={open}
         style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 10px 6px 12px', fontSize: 12, fontWeight: 700, borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.text, cursor: 'pointer', fontFamily: 'inherit' }}>
         Status
         <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 999, background: st.bg, color: st.c }}>{current}</span>
         <ChevronDown size={13} color={T.textMuted} />
       </button>
       {open && (
-        <div role="menu" style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 400, minWidth: 250, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, boxShadow: '0 12px 32px rgba(15,23,42,0.14)', padding: '4px 0' }}>
+        <div role="menu" style={{ position: 'absolute', ...(alignLeft ? { left: 0 } : { right: 0 }), top: 'calc(100% + 6px)', zIndex: 400, minWidth: 250, maxWidth: 'calc(100vw - 24px)', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, boxShadow: '0 12px 32px rgba(15,23,42,0.14)', padding: '4px 0' }}>
           {showStatus && (<>
             {heading(splits.length > 1 ? `Status (all ${splits.length} splits)` : 'Status')}
             {current === 'Delivered'

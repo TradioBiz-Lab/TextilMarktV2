@@ -103,7 +103,7 @@ export function KriyaaPage() {
           </span>
           Kriyaa
         </span>}
-        subtitle="TextilMarkt's AI assistant — ask what's pending, narrate a status change, or ask about delivery risk, in plain language."
+        subtitle="TextilMarkt's AI assistant - ask what's pending, narrate a status change, or ask about delivery risk, in plain language."
       />
 
       <Card pad={false} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 400, marginTop: 16, position: 'relative' }}>
@@ -154,7 +154,7 @@ export function KriyaaPage() {
                 <Bot size={13} color={T.primaryDark} />
               </div>
               <div style={{ padding: '11px 15px', borderRadius: T.radius.md, background: T.bg, border: `1px solid ${T.border}`, fontSize: 13, color: T.textMuted }}>
-                {slow ? 'Still working — cross-order questions can take a bit longer…' : 'Thinking…'}
+                {slow ? 'Still working - cross-order questions can take a bit longer…' : 'Thinking…'}
               </div>
             </div>
           )}
@@ -164,7 +164,7 @@ export function KriyaaPage() {
         <div style={{ borderTop: `1px solid ${T.border}` }}>
           {(voice.recState === 'recording' || voice.transcribing || voice.recErrorMsg || voice.voiceError) && (
             <div style={{ padding: '8px 14px 0', fontSize: 11.5, color: voice.recErrorMsg || voice.voiceError ? T.danger : T.textMuted }}>
-              {voice.recState === 'recording' ? 'Recording — tap the mic again to stop'
+              {voice.recState === 'recording' ? 'Recording - tap the mic again to stop'
                 : voice.transcribing ? 'Transcribing…'
                 : (voice.recErrorMsg || voice.voiceError)}
             </div>

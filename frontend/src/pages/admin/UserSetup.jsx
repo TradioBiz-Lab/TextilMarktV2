@@ -84,7 +84,7 @@ export function UserSetup() {
     if (f.role === 'manufacturer' && profileFile) {
       try {
         await uploadDoc({
-          type: 'mfr_profile', name: `${f.company} — Manufacturer Profile`,
+          type: 'mfr_profile', name: `${f.company} - Manufacturer Profile`,
           issuer: f.company, issueDate: getToday(),
           expiryDate: null, mfrId: newUser.id, orderId: null,
           ...fileUploadPayload(profileFile),
@@ -171,7 +171,7 @@ export function UserSetup() {
       )}
       {showC && (
         <Modal title="Create New User" subtitle="User must change password on first login" onClose={() => { setShowC(false); setErrors({}); setProfileFile(null); setProfileFileErr('') }} size="lg">
-          <div style={{ marginBottom: 14 }}><Alert type="success"><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Crown size={13} /> Master Admin privilege — only you can create platform users.</span></Alert></div>
+          <div style={{ marginBottom: 14 }}><Alert type="success"><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Crown size={13} /> Master Admin privilege - only you can create platform users.</span></Alert></div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div className="form-grid-2">
               <Input label="Full Name *" value={f.name} onChange={e => { setF({ ...f, name: e.target.value }); setErrors({ ...errors, name: '' }) }} error={errors.name} placeholder="Jane Smith" />
@@ -194,7 +194,7 @@ export function UserSetup() {
                   <option value="master">Master Admin</option>
                 </Select>
               ) : (
-                <Input label="Company Code (3–5 chars) *" value={f.code} onChange={e => { setF({ ...f, code: e.target.value.toUpperCase().slice(0, 5) }); setErrors({ ...errors, code: '' }) }} error={errors.code} placeholder="ZAR" maxLength={5} hint="Used in Order IDs — must be unique, permanent" />
+                <Input label="Company Code (3–5 chars) *" value={f.code} onChange={e => { setF({ ...f, code: e.target.value.toUpperCase().slice(0, 5) }); setErrors({ ...errors, code: '' }) }} error={errors.code} placeholder="ZAR" maxLength={5} hint="Used in Order IDs - must be unique, permanent" />
               )}
             </div>
             {f.role === 'manufacturer' && (
@@ -208,7 +208,7 @@ export function UserSetup() {
                   error={profileFileErr}
                   onError={setProfileFileErr}
                 />
-                <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>Upload a PDF or image (factory profile, certifications overview, etc.) — visible to buyers.</div>
+                <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>Upload a PDF or image (factory profile, certifications overview, etc.) - visible to buyers.</div>
               </div>
             )}
             {f.role === 'admin' && f.adminType === 'master' && <Alert type="warning">You are creating another Master Admin. They will have full user management access.</Alert>}
@@ -246,7 +246,7 @@ export function UserSetup() {
       )}
       <PageHeader
         title="User Setup"
-        subtitle={<span style={{ color: T.master, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Crown size={13} /> Master Admin exclusive — manage all platform accounts</span>}
+        subtitle={<span style={{ color: T.master, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Crown size={13} /> Master Admin exclusive - manage all platform accounts</span>}
         action={<Btn onClick={() => setShowC(true)} icon={<Plus size={13} />}>Create User</Btn>}
       />
       <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${T.border}`, marginBottom: 14 }}>

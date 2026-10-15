@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { ArrowRight, X, AlertTriangle, Paperclip, Plus } from '../../icons.jsx'
-import { T, evidenceTypesFor, productDocForStep, kindForCustomerOwner, stageKindOf, stageStatusOf, stageVariance, stageActualVariance, STAGE_STATUS_LABELS, fmtStageDate, getToday } from '../../constants.js'
+import { T, evidenceTypesFor, productDocForStep, kindForCustomerOwner, stepOwnerOptions, stageKindOf, stageStatusOf, stageVariance, stageActualVariance, STAGE_STATUS_LABELS, fmtStageDate, getToday } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, FlexRow, Input, FileUpload, DocCard, useToast, fileUploadPayload, SectionLabel } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { capsFor, canWriteStage } from '../../caps.js'
@@ -67,11 +67,8 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
   // them), then Tradio admins and factories. The customer cannot own Delivery, which only Tradio or
   // the factory may close.
   const customer = (users || []).find(u => u.role === 'buyer' && u.isActive && String(u.id) === String(order?.buyerId))
-  const ownerOptions = [
-    ...(customer && !stage?.isDelivery ? [{ value: customer.id, label: `Customer: ${customer.company || customer.name}` }] : []),
-    ...(users || []).filter(u => u.isActive && u.role === 'admin').map(u => ({ value: u.id, label: `Tradio: ${u.name}` })),
-    ...(users || []).filter(u => u.isActive && u.role === 'manufacturer').map(u => ({ value: u.id, label: `Factory: ${u.company}` })),
-  ]
+  // The factory listed is the one making this split; another factory could not see the step it was given.
+  const ownerOptions = stepOwnerOptions(users, order, mfrId, { isDelivery: !!stage?.isDelivery, currentId: stage?.responsibleId })
   const saveOwner = async value => {
     if (savingOwner) return
     setSavingOwner(true)
@@ -575,7 +572,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
               return (
                 <FlexRow key={mi} gap={8} style={{ background: '#fff', borderRadius: 6, padding: '6px 10px', border: `1px solid ${T.border}` }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: T.text }}>{m.name} — {m.requiredQty}{m.unit ? ` ${m.unit}` : ''}</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: T.text }}>{m.name} - {m.requiredQty}{m.unit ? ` ${m.unit}` : ''}</div>
                   </div>
                   <button onClick={canMaterials ? () => advanceMaterial(mi, m.status) : undefined} disabled={!canMaterials}
                     style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: sStyle.bg, color: sStyle.c, border: 'none', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
@@ -619,10 +616,10 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
     </Modal>
 
     {showStageDocs && (
-      <Modal title="Upload Stage Evidence" subtitle={`${stage?.name || `Stage ${stageIndex + 1}`} — Evidence Documents`} onClose={() => setShowStageDocs(false)} size="lg">
+      <Modal title="Upload Stage Evidence" subtitle={`${stage?.name || `Stage ${stageIndex + 1}`} - Evidence Documents`} onClose={() => setShowStageDocs(false)} size="lg">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ fontSize: 12, color: T.textMuted, background: '#f0f7ff', border: `1px solid #dbeafe`, borderRadius: 8, padding: '8px 12px' }}>
-            Linked to the {stage?.name || `Stage ${stageIndex + 1}`} stage. Attach a file/link, or add SOP notes only — either is sufficient.
+            Linked to the {stage?.name || `Stage ${stageIndex + 1}`} stage. Attach a file/link, or add SOP notes only - either is sufficient.
             {productDocForStep(stage?.name) && ` It is also filed under "${productDocForStep(stage?.name).label}" in this product's documents, so there is no need to upload it again.`}
           </div>
           {sdItems.map((item, idx) => (
@@ -634,7 +631,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
                 <Input label="Document Name *" value={item.name} onChange={e => updateSdItem(idx, { name: e.target.value, fileErr: '' })} placeholder={`e.g. ${stage?.name || `Stage ${stageIndex + 1}`} GRN - Batch ${idx + 1}`} />
                 <FileUpload file={item.file} onFile={f => updateSdItem(idx, { file: f, fileErr: '' })} error={item.fileErr} onError={err => updateSdItem(idx, { fileErr: err })} />
                 <Textarea
-                  label="Notes (optional — text evidence)"
+                  label="Notes (optional - text evidence)"
                   value={item.notes}
                   onChange={e => updateSdItem(idx, { notes: e.target.value, fileErr: '' })}
                   placeholder="Add SOP context, observations, or text-only stage evidence…"
@@ -644,7 +641,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
             </div>
           ))}
           {sdErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500 }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {sdErr}</div>}
-          <FlexRow justify="space-between" gap={8}>
+          <FlexRow justify="space-between" gap={8} style={{ flexWrap: 'wrap' }}>
             <Btn variant="secondary" size="sm" onClick={addSdItem} icon={<Plus size={12} />}>Add Another Document</Btn>
             <FlexRow gap={8}>
               <Btn variant="secondary" onClick={() => setShowStageDocs(false)}>Cancel</Btn>

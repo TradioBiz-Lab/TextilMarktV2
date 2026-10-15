@@ -514,7 +514,7 @@ export function FileUpload({ file, onFile, error, onError, mimeTypes, extensions
     if (!trimmed) { onError && onError('Please paste a drive link.'); return }
     if (trimmed.length > 2000) { onError && onError('Link is too long.'); return }
     let u
-    try { u = new URL(trimmed) } catch { onError && onError('Invalid link — must be a valid URL.'); return }
+    try { u = new URL(trimmed) } catch { onError && onError('Invalid link - must be a valid URL.'); return }
     if (u.protocol !== 'http:' && u.protocol !== 'https:') {
       onError && onError('Link must start with http:// or https://')
       return
@@ -692,7 +692,7 @@ function DocEditModal({ doc, onClose, onSaved }) {
             <>
               <FileUpload file={newFile} onFile={f => { setNewFile(f); setFileErr('') }} error={fileErr} onError={setFileErr} />
               <div style={{ marginTop: 6 }}>
-                <Btn size="sm" variant="ghost" onClick={() => { setReplacing(false); setNewFile(null); setFileErr('') }}>Cancel replace — keep current file</Btn>
+                <Btn size="sm" variant="ghost" onClick={() => { setReplacing(false); setNewFile(null); setFileErr('') }}>Cancel replace - keep current file</Btn>
               </div>
             </>
           )}
@@ -903,7 +903,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp, compa
           {/* Stage header bar */}
           <div style={{ background: '#f0f7ff', borderBottom: `1px solid #dbeafe`, padding: '6px 14px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 10, fontWeight: 800, background: '#1d4ed8', color: '#fff', padding: '2px 8px', borderRadius: 6, letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
-              Stage {doc.stageIndex + 1} — {stageName}
+              Stage {doc.stageIndex + 1} - {stageName}
             </span>
             {doc.orderId && <span style={{ fontSize: 11, color: T.primary, fontWeight: 700, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Package size={11} /> {doc.orderId}</span>}
             {!doc.orderId && doc.masterOrderId && <span title="Attached to the whole master order" style={{ fontSize: 11, color: T.primary, fontWeight: 700, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Folder size={11} /> {doc.masterOrderId}</span>}
@@ -1047,7 +1047,7 @@ export function MfrProfileLink({ mfrId, mfrName, docs, onGetData }) {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.75)', zIndex: 2000, display: 'flex', flexDirection: 'column' }}
           onClick={e => e.target === e.currentTarget && closeViewer()}>
           <div style={{ height: 48, background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', flexShrink: 0, gap: 12 }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>{mfrName} — Manufacturer Profile</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>{mfrName} - Manufacturer Profile</span>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               {viewerBlob && (
                 <button onClick={() => { const a = document.createElement('a'); a.href = viewerBlob.url; a.download = `${mfrName}_profile`; a.click() }}

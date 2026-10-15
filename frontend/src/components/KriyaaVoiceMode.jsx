@@ -15,7 +15,7 @@ const PHASE_LABEL = {
 // states, since both ultimately feed this the same shape of number.
 function ampToScale(amp) {
   const clamped = Math.min(amp / 0.18, 1)
-  return 1 + clamped * 0.22 // 1.0 - 1.22 — a raw waveform's RMS swings a
+  return 1 + clamped * 0.22 // 1.0 - 1.22 - a raw waveform's RMS swings a
   // lot sample to sample even within one word, so a wide range here reads
   // as jittery; kept the pulse noticeable but subtler than the initial 1.35.
 }

@@ -1,8 +1,8 @@
-import { useState } from 'react'
-import { X, Plus, Trash2, ChevronLeft, ChevronRight, AlertTriangle } from '../../icons.jsx'
+import { useState, useEffect } from 'react'
+import { X, Plus, Trash2, ChevronLeft, ChevronRight, AlertTriangle, Camera } from '../../icons.jsx'
 import { T, PHASES, CATEGORIES, PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, getToday } from '../../constants.js'
-import { swatchHex, normalisePantone, PANTONE_HINT, PANTONE_PLACEHOLDER } from '../../colours.js'
-import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload } from '../../components/ui.jsx'
+import { swatchHex, normalisePantone, PANTONE_HINT, PANTONE_PLACEHOLDER, photoFromFile } from '../../colours.js'
+import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload, useToast } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
 let _styleKeySeq = 1
@@ -11,28 +11,15 @@ const newStyle = () => ({
   product: '', styleNumber: '', category: '', customCategory: '',
   colourways: [{ _key: _styleKeySeq++, name: '', code: '', hex: '' }],
   fabrics: [{ _key: _styleKeySeq++, name: '', composition: '', gsm: '', supplier: '' }],
-  totalQty: '', delivery: '', phase: 'production',
-  // Step 3 — all optional
-  photoFile: null, photoErr: '',
+  // No delivery date here: it is given when the style's manufacturer is added.
+  totalQty: '', phase: 'production',
+  // Step 3, all optional. Product photos, each tied to one of the style's colourways or to none; the first is the main photo.
+  photos: [], photoColour: '',
   measurementsFile: null, measurementsErr: '',
   techPackFile: null, techPackErr: '',
   patternFile: null, patternErr: '',
   ecommerceLink: '',
 })
-
-// Next sequence number for this buyer+category+season, derived from the
-// highest existing suffix (not array length) — same fix as genMoId, so a
-// deleted style can't cause the next one to collide with a survivor.
-function genStyleId(orders, buyerCode, cat, season) {
-  const prefix = `${buyerCode}-${cat}-${season}-`
-  const maxN = orders
-    .filter(o => o.id.startsWith(prefix))
-    .reduce((max, o) => {
-      const n = parseInt(o.id.slice(prefix.length), 10)
-      return Number.isFinite(n) && n > max ? n : max
-    }, 0)
-  return `${prefix}${String(maxN + 1).padStart(3, '0')}`
-}
 
 const STEPS = ['Master order & basic details', 'Colourways & fabric (optional)', 'Reference documents (optional)']
 
@@ -41,12 +28,16 @@ const STEPS = ['Master order & basic details', 'Colourways & fabric (optional)',
 // collects optional reference documents per style. No manufacturer, no
 // production stages (TNA) here at all — both are added later from the Style
 // Detail page once the style exists.
-export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMasterOrder }) {
-  const { orders, createOrder, uploadDoc } = useApp()
+export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, onCreated, onNewMasterOrder }) {
+  const { createOrder, uploadDoc } = useApp()
+  const toast = useToast()
   const [step, setStep] = useState(1)
-  const [masterOrderId, setMasterOrderId] = useState('')
+  const [masterOrderId, setMasterOrderId] = useState(presetMasterOrderId || '')
+  // A master order created from inside the wizard (or asked for by the page) becomes the chosen one.
+  useEffect(() => { if (presetMasterOrderId) setMasterOrderId(presetMasterOrderId) }, [presetMasterOrderId])
   const [styles, setStyles] = useState([newStyle()])
   const [err, setErr] = useState('')
+  const [photoMsg, setPhotoMsg] = useState({}) // style key -> what the photo picker could not add
   const [saving, setSaving] = useState(false)
 
   const mo = masterOrders.find(m => m.id === masterOrderId)
@@ -78,7 +69,7 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
   const step1Valid = masterOrderId && styles.every(s =>
     s.product.trim() && s.styleNumber.trim() &&
     (s.category && s.category !== '__custom__' ? true : s.customCategory.trim()) &&
-    s.totalQty && Number(s.totalQty) > 0 && (s.phase === 'development' || s.delivery)
+    s.totalQty && Number.isInteger(Number(s.totalQty)) && Number(s.totalQty) > 0
   )
 
   const submit = async () => {
@@ -86,28 +77,24 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
     setSaving(true)
     const createdIds = []
     const createdKeys = []
-    // Styles made earlier in this same run are not in `orders` yet, so the next ID has to
-    // count them too, or two styles in one category both get -001.
-    const justCreated = []
+    const failedUploads = []
     try {
       for (const s of styles) {
         const category = s.category === '__custom__' ? s.customCategory.trim() : s.category
-        const id = genStyleId([...orders, ...justCreated], mo.buyerCode, (category || 'XX').toUpperCase().slice(0, 6), mo.season || 'XX')
-        const photoPayload = fileUploadPayload(s.photoFile)
         const colourways = s.colourways.filter(c => c.name.trim()).map(c => ({ name: c.name.trim(), code: c.code.trim(), hex: c.hex.trim() }))
         const fabricDetails = s.fabrics.filter(f => f.name.trim()).map(f => ({
           name: f.name.trim(), composition: f.composition.trim(), gsm: f.gsm.trim(), supplier: f.supplier.trim(),
         }))
+        // The server numbers the style ('auto'): no clash with someone creating at the same time, no dropped number reused.
         const created = await createOrder({
-          id, buyerId: mo.buyerId, product: s.product.trim(), styleNumber: s.styleNumber.trim(),
+          id: 'auto', buyerId: mo.buyerId, product: s.product.trim(), styleNumber: s.styleNumber.trim(),
           category, season: mo.season || undefined, masterOrderId,
-          totalQty: Math.floor(Number(s.totalQty)), ...(s.phase === 'production' && s.delivery ? { delivery: s.delivery } : {}), phase: s.phase,
+          totalQty: Math.floor(Number(s.totalQty)), phase: s.phase,
           createdAt: getToday(),
           colourways, fabricDetails, ecommerceLink: s.ecommerceLink.trim(),
-          imageDataUrl: photoPayload.dataUrl || null, imageUrl: photoPayload.externalUrl || null,
+          photos: s.photos.map(ph => ({ image: ph.image, colourway: colourways.some(c => c.name === ph.colourway) ? ph.colourway : '' })),
         })
         createdIds.push(created.id)
-        justCreated.push({ id: created.id })
         createdKeys.push(s._key)
 
         const docUploads = [
@@ -119,13 +106,15 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
           if (!file) continue
           try {
             await uploadDoc({
-              type, name: `${label} — ${created.id}`, issuer: '', issueDate: getToday(),
+              type, name: `${label}, ${created.id}`, issuer: '', issueDate: getToday(),
               expiryDate: null, orderId: created.id, mfrId: null,
               ...fileUploadPayload(file),
             })
-          } catch { /* style is created either way — document can be re-uploaded from Style Detail */ }
+          } catch (e) { failedUploads.push(`${label} for ${created.id} (${e?.message || 'upload failed'})`) }
         }
       }
+      // The styles exist either way; say which files did not make it, so they can be added on the style page.
+      if (failedUploads.length) toast(`Created, but these files did not upload: ${failedUploads.join('; ')}. Add them in Documents & Assets.`, 'warning')
       onCreated(createdIds[0])
     } catch (e) {
       // A failure part-way through must not leave the styles that did get created in the form,
@@ -138,13 +127,13 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }} onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="dialog-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }}>
       <div style={{ background: '#fff', borderRadius: 14, border: `1px solid ${T.border}`, width: '100%', maxWidth: 860, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '20px 24px 16px', borderBottom: `1px solid ${T.border}` }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>Create Style{styles.length > 1 ? 's' : ''}</div>
             <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>
-              Step {step} of {STEPS.length} — {STEPS[step - 1]}
+              Step {step} of {STEPS.length} - {STEPS[step - 1]}
             </div>
           </div>
           <button onClick={onClose} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.textMuted }}><X size={15} /></button>
@@ -160,13 +149,12 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
                 </FlexRow>
                 <select value={masterOrderId} onChange={e => setMasterOrderId(e.target.value)}
                   style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 8, padding: '9px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit' }}>
-                  <option value="">— Select Master Order —</option>
-                  {masterOrders.map(m => <option key={m.id} value={m.id}>{m.id} — {m.orderName} ({m.buyerCompany})</option>)}
+                  <option value="">Select master order</option>
+                  {masterOrders.map(m => <option key={m.id} value={m.id}>{m.id} - {m.orderName} ({m.buyerCompany})</option>)}
                 </select>
               </div>
 
               {styles.map((s, si) => {
-                const catForId = s.category === '__custom__' ? (s.customCategory || 'CUST').toUpperCase().slice(0, 6) : (s.category || 'XX')
                 return (
                   <div key={s._key} style={{ background: '#f8fafc', border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                     <FlexRow justify="space-between">
@@ -182,7 +170,7 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
                     <div className="form-grid-2" style={{ gap: 10 }}>
                       <div>
                         <Select label="Category *" value={s.category} onChange={e => updateStyle(s._key, { category: e.target.value })}>
-                          <option value="">— Select —</option>
+                          <option value="">Select</option>
                           {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                           <option value="__custom__">Custom…</option>
                         </Select>
@@ -195,16 +183,9 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
                       <Input label="Quantity *" type="number" value={s.totalQty} onChange={e => updateStyle(s._key, { totalQty: e.target.value })} placeholder="5000" />
                     </div>
 
-                    {mo && (s.product || s.styleNumber) && (
-                      <div style={{ fontSize: 11, color: T.textLight, fontFamily: "'JetBrains Mono',monospace" }}>
-                        ID preview: {genStyleId(orders, mo.buyerCode, catForId, mo.season || 'XX')}
-                      </div>
-                    )}
                     <Select label="Stage" value={s.phase} onChange={e => updateStyle(s._key, { phase: e.target.value })}>
                       {PHASES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                     </Select>
-                    {/* A style still in Sampling & Development has no delivery date; it is asked for on the way to production. */}
-                    {s.phase === 'production' && <Input label="Expected Delivery *" type="date" value={s.delivery} onChange={e => updateStyle(s._key, { delivery: e.target.value })} />}
                   </div>
                 )
               })}
@@ -217,11 +198,11 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
           {step === 2 && (
             <>
               <div style={{ fontSize: 12, color: T.textMuted }}>
-                Everything below is optional — anything left blank can be added later from each style's detail page.
+                Everything below is optional - anything left blank can be added later from each style's detail page.
               </div>
               {styles.map((s, si) => (
                 <div key={s._key} style={{ background: '#f8fafc', border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <span style={{ fontSize: 12, fontWeight: 800, color: T.text }}>{s.product || `Style ${si + 1}`}{s.styleNumber ? ` — ${s.styleNumber}` : ''}</span>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: T.text }}>{s.product || `Style ${si + 1}`}{s.styleNumber ? ` - ${s.styleNumber}` : ''}</span>
 
                   <div>
                     <FlexRow justify="space-between" style={{ marginBottom: 6 }}>
@@ -259,7 +240,7 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
                     {s.fabrics.map(f => (
                       <div key={f._key} style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
                         <input value={f.name} onChange={e => updateFabric(s._key, f._key, { name: e.target.value })}
-                          placeholder="Fabric (e.g. Shell — Single Jersey)"
+                          placeholder="Fabric (e.g. Shell - Single Jersey)"
                           style={{ flex: '2 1 160px', border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
                         <input value={f.composition} onChange={e => updateFabric(s._key, f._key, { composition: e.target.value })}
                           placeholder="Composition (e.g. 100% Cotton)"
@@ -284,15 +265,67 @@ export function CreateStyleWizard({ masterOrders, onClose, onCreated, onNewMaste
           {step === 3 && (
             <>
               <div style={{ fontSize: 12, color: T.textMuted }}>
-                Everything below is optional — anything left blank can be uploaded later from each style's detail page.
+                Everything here is optional. Anything left out can be added later in the style's Documents & Assets.
               </div>
               {styles.map((s, si) => (
                 <div key={s._key} style={{ background: '#f8fafc', border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <span style={{ fontSize: 12, fontWeight: 800, color: T.text }}>{s.product || `Style ${si + 1}`}{s.styleNumber ? ` — ${s.styleNumber}` : ''}</span>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: T.text }}>{s.product || `Style ${si + 1}`}{s.styleNumber ? ` - ${s.styleNumber}` : ''}</span>
                   <div className="form-grid-2" style={{ gap: 12 }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Image</label>
-                      <FileUpload file={s.photoFile} onFile={f => updateStyle(s._key, { photoFile: f, photoErr: '' })} error={s.photoErr} onError={e => updateStyle(s._key, { photoErr: e })} />
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Product photos</label>
+                      {(() => {
+                        const names = s.colourways.map(c => c.name.trim()).filter(Boolean)
+                        const sel = { border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', background: '#fff', color: T.text }
+                        const add = async files => {
+                          const added = [], skipped = []
+                          const colourway = s.photoColour
+                          // A style holds 12 photos (the server's limit): files past that are named, not converted.
+                          const room = Math.max(0, 12 - s.photos.length)
+                          for (const [i, f] of files.entries()) {
+                            if (i >= room) { skipped.push(`${f.name}: a style holds 12 photos`); continue }
+                            try { added.push({ _key: _styleKeySeq++, image: await photoFromFile(f), colourway }) }
+                            catch (e) { skipped.push(`${f.name}: ${e.message}`) }
+                          }
+                          // Written against the latest state, so a second pick or a removal made meanwhile is kept.
+                          if (added.length) setStyles(p => p.map(x => (x._key === s._key ? { ...x, photos: [...x.photos, ...added].slice(0, 12) } : x)))
+                          setPhotoMsg(m => ({ ...m, [s._key]: skipped.length ? `Not added: ${skipped.join('; ')}` : '' }))
+                        }
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <FlexRow gap={8} style={{ flexWrap: 'wrap' }}>
+                              <select value={s.photoColour} onChange={e => updateStyle(s._key, { photoColour: e.target.value })} aria-label="Colourway the photos show" style={sel}>
+                                <option value="">No particular colourway</option>
+                                {names.map(n => <option key={n} value={n}>{n}</option>)}
+                              </select>
+                              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', fontSize: 12, fontWeight: 700, borderRadius: 8, background: T.primaryDeep, color: '#fff', cursor: 'pointer' }}>
+                                <Camera size={13} color="#fff" /> Choose photos
+                                <input type="file" multiple accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }}
+                                  onChange={e => { const fs = [...(e.target.files || [])]; e.target.value = ''; if (fs.length) add(fs) }} />
+                              </label>
+                              <span style={{ fontSize: 11, color: T.textLight }}>JPEG, PNG or WebP, up to 12. The first is the main photo.</span>
+                            </FlexRow>
+                            {photoMsg[s._key] && <div style={{ fontSize: 11, color: T.danger }}>{photoMsg[s._key]}</div>}
+                            {s.photos.length > 0 && (
+                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                {s.photos.map((ph, i) => (
+                                  <div key={ph._key} style={{ width: 110, border: `1px solid ${i === 0 ? T.primaryDeep : T.border}`, borderRadius: 8, padding: 4, background: '#fff', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                    <div style={{ position: 'relative', height: 110, borderRadius: 6, overflow: 'hidden', background: '#f8fafc' }}>
+                                      <img src={ph.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                                      <button onClick={() => updateStyle(s._key, { photos: s.photos.filter(x => x._key !== ph._key) })} aria-label="Remove photo"
+                                        style={{ position: 'absolute', right: 3, top: 3, width: 20, height: 20, borderRadius: '50%', border: 'none', background: 'rgba(15,23,42,0.6)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}><X size={11} color="#fff" /></button>
+                                    </div>
+                                    <select value={names.includes(ph.colourway) ? ph.colourway : ''} aria-label="Colourway shown in this photo" style={{ ...sel, fontSize: 11, padding: '3px 4px' }}
+                                      onChange={e => updateStyle(s._key, { photos: s.photos.map(x => (x._key === ph._key ? { ...x, colourway: e.target.value } : x)) })}>
+                                      <option value="">No colourway</option>
+                                      {names.map(n => <option key={n} value={n}>{n}</option>)}
+                                    </select>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })()}
                     </div>
                     <div>
                       <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Measurements</label>

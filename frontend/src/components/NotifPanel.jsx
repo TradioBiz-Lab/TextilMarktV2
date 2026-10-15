@@ -37,7 +37,7 @@ export function NotifPanel({ onClose, onOpenOrder }) {
   }
 
   return (
-    <div ref={panelRef} style={{ position: 'fixed', top: 54, right: 16, zIndex: 500, width: 340, background: T.surface, borderRadius: 12, border: `1px solid ${T.border}`, boxShadow: '0 12px 40px rgba(0,0,0,0.14)', overflow: 'hidden' }}>
+    <div ref={panelRef} style={{ position: 'fixed', top: 54, right: 16, zIndex: 500, width: 'min(340px, calc(100vw - 32px))', maxHeight: 'calc(100vh - 70px)', display: 'flex', flexDirection: 'column', background: T.surface, borderRadius: 12, border: `1px solid ${T.border}`, boxShadow: '0 12px 40px rgba(0,0,0,0.14)', overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: `1px solid ${T.border}` }}>
         <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>Notifications</span>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -45,7 +45,8 @@ export function NotifPanel({ onClose, onOpenOrder }) {
           <button onClick={onClose} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 24, height: 24, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, color: T.textMuted }} aria-label="Close"><X size={12} /></button>
         </div>
       </div>
-      <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+      {/* The list takes the height left on screen and scrolls, so the panel never runs past the bottom. */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         {notifs.length === 0
           ? <EmptyState icon={<Bell size={26} color={T.textLight} />} title="All caught up" desc="No notifications" />
           : notifs.map(n => {

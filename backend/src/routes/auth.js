@@ -149,7 +149,7 @@ router.get('/me', requireAuth, async (req, res) => {
   const startedAt = req.user.oiat ?? req.user.iat
   if (startedAt && Math.floor(Date.now() / 1000) - startedAt > MAX_SESSION_SECONDS) {
     res.clearCookie('tradio_token', { httpOnly: true, sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', secure: process.env.NODE_ENV === 'production' })
-    return res.status(401).json({ error: 'Session expired — please log in again' })
+    return res.status(401).json({ error: 'Session expired - please log in again' })
   }
   const payload = {
     id: req.user.id, email: req.user.email, role: req.user.role,

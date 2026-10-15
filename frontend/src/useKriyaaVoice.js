@@ -21,15 +21,15 @@ export function useKriyaaVoice({ active = true, suppressAutoPlay = false } = {})
     setVoiceError(null)
     if (rec.state === 'recording') {
       const result = await rec.stop()
-      if (!result) { setVoiceError('No audio captured — try again.'); return }
+      if (!result) { setVoiceError('No audio captured - try again.'); return }
       setTranscribing(true)
       try {
         const dataUrl = await blobToDataUrl(result.blob)
         const { transcript, languageCode } = await voiceApi.transcribe(dataUrl)
-        if (!transcript?.trim()) { setVoiceError("Didn't catch that — try again or type it."); return }
+        if (!transcript?.trim()) { setVoiceError("Didn't catch that - try again or type it."); return }
         await send(transcript, { voiceOriginated: true, languageCode })
       } catch (err) {
-        setVoiceError(err?.message || 'Voice failed — please type your message instead.')
+        setVoiceError(err?.message || 'Voice failed - please type your message instead.')
       } finally {
         setTranscribing(false)
       }

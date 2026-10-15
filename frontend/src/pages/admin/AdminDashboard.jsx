@@ -141,7 +141,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
     .filter(({ s }) => s.responsibleId && String(s.responsibleId) === String(currentUser?.id))
     .map(({ s, o, asgn, ai, si }) => ({
       id: `stage:${o.id}:${asgn.mid || ai}:${si}`,
-      title: `${s.name} — ${o.product}`,
+      title: `${s.name} - ${o.product}`,
       buyerCompany: o.buyerCompany,
       eta: effectiveEta(s),
       orderId: o.id,
@@ -203,7 +203,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
 
       {/* ── Ribbon Publish Modal ── */}
       {showRibbon && (
-        <Modal title="Publish Ribbon Notification" subtitle="Only one active ribbon per audience — previous active ribbon will be deactivated" onClose={() => { setShowRibbon(false); resetRibbonForm() }}>
+        <Modal title="Publish Ribbon Notification" subtitle="Only one active ribbon per audience - previous active ribbon will be deactivated" onClose={() => { setShowRibbon(false); resetRibbonForm() }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <Textarea label="Message *" value={rf.message} onChange={e => setRf({ ...rf, message: e.target.value })} placeholder="Enter the notification message (max 160 chars)…" hint={`${rf.message.length}/160`} />
             <div className="form-grid-2">
@@ -389,13 +389,13 @@ export function AdminDashboard({ onNavigate, onOpen }) {
               {delayed.map(o => (
                 <div key={o.id} style={{ background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}>
                   <Mono style={{ fontSize: 10 }}>{o.id}</Mono>
-                  <div style={{ fontSize: 12, color: T.danger, marginTop: 2 }}>{o.product} — {o.assignments.find(a => a.status === 'Delayed' || a.status === 'On Hold')?.status}</div>
+                  <div style={{ fontSize: 12, color: T.danger, marginTop: 2 }}>{o.product} - {o.assignments.find(a => a.status === 'Delayed' || a.status === 'On Hold')?.status}</div>
                 </div>
               ))}
               {expDocs.map(d => (
                 <div key={d.id} style={{ background: T.warningBg, border: `1px solid ${T.warningBorder}`, borderRadius: 8, padding: '8px 12px' }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: T.warning }}>{d.name}</div>
-                  <div style={{ fontSize: 11, color: '#92400e' }}>{isExpired(d.expiryDate) ? 'Expired' : 'Expiring soon'} — {d.expiryDate}</div>
+                  <div style={{ fontSize: 11, color: '#92400e' }}>{isExpired(d.expiryDate) ? 'Expired' : 'Expiring soon'} - {d.expiryDate}</div>
                 </div>
               ))}
               {delayed.length === 0 && expDocs.length === 0 && <EmptyState icon={<Check size={26} color={T.success} strokeWidth={2.5} />} title="No active alerts" desc="All orders and documents are in good standing" />}

@@ -80,7 +80,9 @@ Uses a human-readable custom string `_id` for traceability.
                                   JACKET, POLO, SHORTS, HOODIE
   season        String            enum: ["SS26","FW26","SS27","FW27","SS28"]
   totalQty      Number            required, min: 1
-  delivery      Date              required — target delivery date
+  delivery      Date | null       the delivery date: given when the style's first manufacturer is added
+                                  (its plan's Delivery step stands on it); none while the style has no
+                                  manufacturer or is in Sampling & Development
   photos        [{image, colourway}] max 12 - the style's product photos, in order. `image` is an
                                   uploaded JPEG/PNG/WebP (data URL, under 1MB) or an http(s) link;
                                   `colourway` is one of `colourways[].name` or "". The first photo is
@@ -362,6 +364,11 @@ Optional grouping of related orders for the same buyer (e.g. one season's full p
   buyerId   ObjectId → users  required
   orderName String            required, trim, max 200 chars
   season    String            enum: ["SS26","FW26","SS27","FW27","SS28"]
+  poNumber  String            default "", max 60 - the customer's own PO number for this buy
+  poDate    Date | null       the customer's PO date
+  shipBy    Date | null       when the customer needs the buy shipped (each style's own delivery
+                              date is set when its manufacturer is added)
+  notes     String            default "", max 2000
   createdBy ObjectId → users  required — admin who created it
   createdAt Date              auto
   updatedAt Date              auto
@@ -374,7 +381,9 @@ Optional grouping of related orders for the same buyer (e.g. one season's full p
 **Notes:**
 - An `order.masterOrderId` referencing a master order must belong to the **same buyer**
   (enforced at order-creation time).
-- Manufacturers cannot list master orders (admin/buyer only, per `routes/masterOrders.js`).
+- A manufacturer lists only the master orders its own orders belong to, read-only. It gets `shipBy` but
+  never the customer's `poNumber`, `poDate` or `notes` (they come back blank), the same rule that keeps
+  the PO file from factories.
 
 ---
 
@@ -651,8 +660,9 @@ removed. Nothing in the app updates or deletes these. Admin-only read access via
 
 Action items and notifications that mention a dropped style's order ID are left as they were.
 
-Master orders can be edited with `POST /api/master-orders/:id` (admin only): `orderName` and/or
-`season` (`""` clears it). The id, buyer and creator never change, and the styles under it keep
+Master orders can be edited with `POST /api/master-orders/:id` (admin only): `orderName`, `season`,
+`poNumber`, `poDate`, `shipBy` and `notes` (`""` or null clears one). Sending `id: 'auto'` on create lets the
+server number it; a number that belonged to a deleted master order is never given out again. The id, buyer and creator never change, and the styles under it keep
 their own season.
 
 ---

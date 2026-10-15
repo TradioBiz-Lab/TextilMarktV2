@@ -89,7 +89,7 @@ function btn(text, url) {
 export async function sendEmail({ to, subject, html }) {
   if (!resend) {
     if (process.env.NODE_ENV !== 'test') {
-      console.log(`[Email skipped — no RESEND_API_KEY] To: ${to}, Subject: ${subject}`)
+      console.log(`[Email skipped - no RESEND_API_KEY] To: ${to}, Subject: ${subject}`)
     }
     return null
   }
@@ -144,7 +144,7 @@ export function emailPasswordReset({ name, email, tempPassword }) {
     btn('Sign In', `${FRONTEND_URL}?login=1`) +
     footer()
   )
-  return { to: email, subject: 'TextilMarkt — Password Reset', html }
+  return { to: email, subject: 'TextilMarkt - Password Reset', html }
 }
 
 export function emailOrderCreated({ to, orderId, product, qty, delivery, buyerCompany, role }) {
@@ -184,7 +184,7 @@ export function emailStageUpdated({ to, orderId, stageName, unitsDone, totalUnit
     btn('View Order', `${FRONTEND_URL}`) +
     footer()
   )
-  return { to, subject: `Production Update: ${orderId} — ${stageName} ${pct}%`, html }
+  return { to, subject: `Production Update: ${orderId} - ${stageName} ${pct}%`, html }
 }
 
 export function emailStatusChanged({ to, orderId, product, newStatus, note, changedBy }) {
@@ -208,7 +208,7 @@ export function emailEscalation({ to, orderId, product, reason, escalatedBy, buy
   const html = wrap(
     header('Order Escalation Alert') +
     `<div style="margin:0 0 16px;padding:12px 16px;background:#fff1f2;border:1px solid #fecdd3;border-radius:8px;font-size:13px;color:#9f1239;font-weight:600">
-      A buyer has escalated an order — immediate attention required.
+      A buyer has escalated an order - immediate attention required.
     </div>` +
     table(
       row('Order ID', `<code style="background:#f1f5f9;padding:2px 8px;border-radius:4px">${esc(orderId)}</code>`) +
@@ -275,7 +275,7 @@ export function emailBuyerDocumentReceived({ docName, docType, buyerName, buyerC
     ? buyerEmail.trim()
     : ''
   const html = wrap(
-    header('Buyer Document Received — Action Required') +
+    header('Buyer Document Received - Action Required') +
     `<div style="margin:0 0 16px;padding:12px 16px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:13px;color:#1d4ed8;font-weight:600">
       A buyer has submitted a document. Please review and take action.
     </div>` +
@@ -290,7 +290,7 @@ export function emailBuyerDocumentReceived({ docName, docType, buyerName, buyerC
     btn('Open Platform', `${FRONTEND_URL}`) +
     footer()
   )
-  return { to: TRADIO_EMAIL, subject: `Document Received: ${docName}${orderId ? ` — Order ${orderId}` : ''}`, html }
+  return { to: TRADIO_EMAIL, subject: `Document Received: ${docName}${orderId ? ` - Order ${orderId}` : ''}`, html }
 }
 
 export function emailDocumentUploaded({ to, docName, docType, orderId, uploadedBy }) {
@@ -306,5 +306,5 @@ export function emailDocumentUploaded({ to, docName, docType, orderId, uploadedB
     btn('View Document', `${FRONTEND_URL}`) +
     footer()
   )
-  return { to, subject: `New Document: ${docName} — Order ${orderId}`, html }
+  return { to, subject: `New Document: ${docName} - Order ${orderId}`, html }
 }

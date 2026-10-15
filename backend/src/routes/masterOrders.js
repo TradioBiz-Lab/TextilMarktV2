@@ -7,10 +7,19 @@ import { Order }        from '../models/Order.js'
 import { User }        from '../models/User.js'
 import { AuditLog }    from '../models/AuditLog.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
+import { parseMasterOrderDetails, masterOrderDetailsOut } from '../lib/masterOrderDetails.js'
+import { nextMasterOrderId } from '../lib/ids.js'
 
 const router = Router()
 
-const enrich = (mo) => ({
+// A factory never sees the customer's purchase order (documents.js keeps the PO file from it too), so the PO number and
+// date and the notes stay with Tradio and the customer. The ship-by date is the factory's deadline as well, so it stays.
+const detailsFor = (mo, viewer) => {
+  const d = masterOrderDetailsOut(mo)
+  return viewer?.role === 'manufacturer' ? { ...d, poNumber: '', poDate: null, notes: '' } : d
+}
+
+const enrich = (mo, viewer) => ({
   id: mo._id,
   buyerId: mo.buyerId?._id?.toString?.() ?? mo.buyerId?.toString?.() ?? mo.buyerId,
   buyerCompany: mo.buyerId?.company ?? null,
@@ -21,6 +30,7 @@ const enrich = (mo) => ({
   createdBy: mo.createdBy?._id?.toString?.() ?? mo.createdBy?.toString?.(),
   createdByName: mo.createdBy?.name ?? null,
   createdAt: mo.createdAt,
+  ...detailsFor(mo, viewer),
 })
 
 // GET /api/master-orders - list (admin sees all, buyer sees theirs, a manufacturer sees
@@ -38,7 +48,7 @@ router.get('/', requireAuth, async (req, res) => {
       .populate('createdBy', 'name')
       .sort({ createdAt: -1 })
       .lean()
-    res.json(mos.map(enrich))
+    res.json(mos.map(mo => enrich(mo, req.user)))
   } catch (err) {
     res.status(500).json({ error: 'Server error' })
   }
@@ -47,7 +57,8 @@ router.get('/', requireAuth, async (req, res) => {
 // POST /api/master-orders — create (admin only)
 router.post('/', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { id, buyerId, orderName, season } = req.body
+    const { buyerId, orderName, season } = req.body
+    let { id } = req.body
     if (!id || !buyerId || !orderName)
       return res.status(400).json({ error: 'Missing required fields (id, buyerId, orderName)' })
     if (typeof id !== 'string' || id.length > 100)
@@ -57,29 +68,37 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(buyerId))
       return res.status(400).json({ error: 'Invalid buyer ID' })
 
-    const buyer = await User.findById(buyerId, 'role isActive company').lean()
+    const buyer = await User.findById(buyerId, 'role isActive company code').lean()
     if (!buyer || buyer.role !== 'buyer')
       return res.status(400).json({ error: 'Buyer not found' })
     if (!buyer.isActive)
       return res.status(400).json({ error: 'Buyer account is inactive' })
-
-    // Check for duplicate ID
-    const existing = await MasterOrder.findById(id).lean()
-    if (existing)
-      return res.status(400).json({ error: 'A master order with this ID already exists' })
-
-    const mo = await MasterOrder.create({
-      _id: id,
-      buyerId,
-      orderName: orderName.trim(),
-      season: season || null,
-      createdBy: req.user.id,
-    })
+    if (season && !SEASONS.includes(season))
+      return res.status(400).json({ error: `Invalid season. Must be one of: ${SEASONS.join(', ')}` })
+    const details = parseMasterOrderDetails(req.body)
+    if (details.error) return res.status(400).json({ error: details.error })
+    const doc = { buyerId, orderName: orderName.trim(), season: season || null, createdBy: req.user.id, ...details.set }
+    let mo
+    if (id === 'auto') {
+      // The server numbers it (the app's form and Kriyaa both create this way). Two creators racing for the same
+      // number are caught by the unique id, and the later one takes the next number.
+      for (let attempt = 1; !mo; attempt++) {
+        id = await nextMasterOrderId(buyer.code, season)
+        try { mo = await MasterOrder.create({ _id: id, ...doc }) }
+        catch (err) { if (err.code !== 11000 || attempt >= 4) throw err }
+      }
+    } else {
+      // Check for duplicate ID
+      const existing = await MasterOrder.findById(id).lean()
+      if (existing)
+        return res.status(400).json({ error: 'A master order with this ID already exists' })
+      mo = await MasterOrder.create({ _id: id, ...doc })
+    }
 
     await AuditLog.create({
       byUser: req.user.id,
       action: 'Master Order Created',
-      detail: `${id} — ${orderName.trim()} for buyer ${buyer.company}`,
+      detail: `${id} - ${orderName.trim()} for buyer ${buyer.company}`,
     })
 
     // Re-fetch with populated fields
@@ -88,7 +107,7 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
       .populate('createdBy', 'name')
       .lean()
 
-    res.status(201).json(enrich(populated))
+    res.status(201).json(enrich(populated, req.user))
   } catch (err) {
     if (err.code === 11000)
       return res.status(400).json({ error: 'Duplicate master order ID' })
@@ -97,7 +116,7 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
   }
 })
 
-// POST /api/master-orders/:id - edit the name and/or season (admin only). Only the
+// POST /api/master-orders/:id - edit the name, season, PO number and date, ship-by date or notes (admin only). Only the
 // fields sent are changed; the id, buyer and creator never change. The styles under
 // it keep their own season, since each style carries its own.
 router.post('/:id', requireAuth, requireAdmin, async (req, res) => {
@@ -118,7 +137,15 @@ router.post('/:id', requireAuth, requireAdmin, async (req, res) => {
       else if (!SEASONS.includes(body.season)) return res.status(400).json({ error: `Invalid season. Must be one of: ${SEASONS.join(', ')}` })
       else set.season = body.season
     }
+    const details = parseMasterOrderDetails(body)
+    if (details.error) return res.status(400).json({ error: details.error })
+    Object.assign(set, details.set)
     if (Object.keys(set).length === 0) return res.status(400).json({ error: 'Nothing to change' })
+    // Only real changes are written and logged: a field sent with the value it already has is dropped.
+    const norm = v => (v instanceof Date ? v.getTime() : v == null || v === '' ? null : v)
+    for (const k of Object.keys(set)) if (norm(set[k]) === norm(mo[k])) delete set[k]
+    const populate = () => MasterOrder.findById(mo._id).populate('buyerId', 'name company code').populate('createdBy', 'name').lean()
+    if (Object.keys(set).length === 0) return res.json(enrich(await populate(), req.user))
 
     await MasterOrder.updateOne({ _id: mo._id }, { $set: set })
 
@@ -129,8 +156,7 @@ router.post('/:id', requireAuth, requireAdmin, async (req, res) => {
       detail: `${mo._id}: ${changes} by ${req.user.name}`,
     })
 
-    const populated = await MasterOrder.findById(mo._id).populate('buyerId', 'name company code').populate('createdBy', 'name').lean()
-    res.json(enrich(populated))
+    res.json(enrich(await populate(), req.user))
   } catch (err) {
     console.error('Master order edit error:', err)
     res.status(500).json({ error: 'Server error' })
@@ -146,7 +172,7 @@ router.post('/:id/delete', requireAuth, requireAdmin, async (req, res) => {
 
     const childCount = await Order.countDocuments({ masterOrderId: mo._id })
     if (childCount > 0)
-      return res.status(400).json({ error: `Cannot delete — ${childCount} order(s) still reference this master order. Delete those first.` })
+      return res.status(400).json({ error: `Cannot delete - ${childCount} order(s) still reference this master order. Delete those first.` })
 
     const { reason, error: reasonErr } = parseDropReason(req.body?.reason)
     if (reasonErr) return res.status(400).json({ error: reasonErr })

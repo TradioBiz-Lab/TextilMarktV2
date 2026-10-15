@@ -15,11 +15,12 @@ import {
 } from '../models/Order.js'
 import { dayNumber, getToday, effectiveEta, DELIVERY_STEP_NAME, isDeliveryName, deliveryStageIndex, makeDeliveryStage, makeDevelopmentStages, statusAfterDeliveryStep } from '../lib/stageMath.js'
 import { notify, notifyOrderChange } from '../lib/notify.js'
+import { nextStyleId } from '../lib/ids.js'
 
 // Categories are now free-text — no validation needed
 const VALID_SEASONS    = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
 const ORDER_PHASES    = ['development', 'production']
-const MAX_PRODUCT_PHOTO_SIZE = 1024 * 1024 // 1MB raw — reference thumbnail, not full-res
+const MAX_PRODUCT_PHOTO_SIZE = 1024 * 1024 // 1MB raw - reference thumbnail, not full-res
 const MAX_STYLE_PHOTOS = 12
 
 /** One product photo from a request: { image } ('' when empty) or { error }. An upload (JPEG/PNG/WebP, under 1MB) or an http(s) link. */
@@ -242,6 +243,16 @@ async function withRetry(label, fn, attempts = 3) {
   }
 }
 
+// Re-points the documents filed on a split's steps after a step was inserted or moved. Each document's new position is
+// worked out once from the one read here, and every write is guarded on the old position, so a retry after a write
+// that did land changes nothing (a bare $inc or a parking value would move it twice).
+async function repointStageDocs(label, orderId, mfrObjectId, stageIndex, to) {
+  const rows = await Document.find({ orderId, mfrId: mfrObjectId, isActive: true, stageIndex }, { _id: 1, stageIndex: 1 }).lean()
+  if (!rows.length) return
+  const ops = rows.map(d => ({ updateOne: { filter: { _id: d._id, stageIndex: d.stageIndex }, update: { $set: { stageIndex: to(d.stageIndex) } } } }))
+  await withRetry(label, () => Document.bulkWrite(ops, { ordered: false }))
+}
+
 // A product link is shown to buyers and factories as a clickable link, so it must be a real
 // http(s) address: anything else (javascript:, data:, ...) is refused rather than rendered.
 // People paste "amazon.in/x" without the scheme. A bare web address gets https:// added; anything
@@ -303,8 +314,9 @@ router.get('/:id', requireAuth, async (req, res) => {
 // and creates it if valid. Centralizes rules (including the B1 required-end-date
 // check) so both call sites can't drift out of sync. Returns the raw created
 // Mongoose doc on success (not populated/enriched — that's caller-specific).
-export async function validateAndCreateOrder({ id, buyerId, product, styleNumber, category, season, phase, totalQty, delivery, createdAt, masterOrderId, assignments: asgns, stageEtas, stageStartDates, stageNames: customStages, stageResponsibleIds, stageDescriptions, stageTotalUnits, stageKinds, colourways, fabricDetails, callout, imageDataUrl, imageUrl, ecommerceLink }) {
-  if (!id || !buyerId || !product || !totalQty || (!delivery && phase !== 'development'))
+export async function validateAndCreateOrder({ id, buyerId, product, styleNumber, category, season, phase, totalQty, delivery, createdAt, masterOrderId, assignments: asgns, stageEtas, stageStartDates, stageNames: customStages, stageResponsibleIds, stageDescriptions, stageTotalUnits, stageKinds, colourways, fabricDetails, callout, imageDataUrl, imageUrl, ecommerceLink, photos }) {
+  // No delivery date at creation: it is set when the style gets its manufacturer (or with a plan sent here).
+  if (!id || !buyerId || !product || !totalQty)
     return { ok: false, error: 'Missing required fields' }
   if (typeof id !== 'string' || typeof product !== 'string')
     return { ok: false, error: 'Invalid input types' }
@@ -339,7 +351,7 @@ export async function validateAndCreateOrder({ id, buyerId, product, styleNumber
   // full exactly as before.
   const hasAssignments = Array.isArray(asgns) && asgns.length > 0
   if (hasAssignments && !deliveryDate)
-    return { ok: false, error: 'Add the manufacturer after creating the style: a style in Sampling & Development has no delivery date, and a plan with manufacturers needs one' }
+    return { ok: false, error: 'A plan with manufacturers needs a delivery date. Create the style first and give the date when you add the manufacturer.' }
   if (ecommerceLink !== undefined && ecommerceLink !== null) {
     if (typeof ecommerceLink !== 'string') return { ok: false, error: 'E-commerce link must be text' }
     if (ecommerceLink.trim().length > 2000) return { ok: false, error: 'E-commerce link too long' }
@@ -494,7 +506,7 @@ export async function validateAndCreateOrder({ id, buyerId, product, styleNumber
       for (let i = 0; i < stages.length; i++) {
         const k = stageKinds[i]
         if (k === undefined || k === null || k === '') continue
-        if (!STAGE_KINDS.includes(k)) return { ok: false, error: `Invalid kind "${k}" for stage "${stages[i]}" — must be one of: ${STAGE_KINDS.join(', ')}` }
+        if (!STAGE_KINDS.includes(k)) return { ok: false, error: `Invalid kind "${k}" for stage "${stages[i]}" - must be one of: ${STAGE_KINDS.join(', ')}` }
         stageKindsResolved[i] = k
       }
     }
@@ -513,7 +525,7 @@ export async function validateAndCreateOrder({ id, buyerId, product, styleNumber
       if (name.length > 60) return { ok: false, error: `Colourway name too long: "${name.slice(0, 20)}…"` }
       if (colourwaysResolved.some(x => x.name.toLowerCase() === name.toLowerCase())) continue
       const hex = (typeof c === 'object' && c?.hex ? String(c.hex).trim() : '')
-      if (hex && !/^#[0-9a-fA-F]{6}$/.test(hex)) return { ok: false, error: `Invalid swatch colour for "${name}" — must be a hex colour like #2C3E50` }
+      if (hex && !/^#[0-9a-fA-F]{6}$/.test(hex)) return { ok: false, error: `Invalid swatch colour for "${name}" - must be a hex colour like #2C3E50` }
       colourwaysResolved.push({ name, code: (typeof c === 'object' && c?.code ? String(c.code).trim() : ''), hex })
     }
     if (colourwaysResolved.length > 40) return { ok: false, error: 'Too many colourways (max 40)' }
@@ -548,18 +560,34 @@ export async function validateAndCreateOrder({ id, buyerId, product, styleNumber
   if (imageDataUrl) {
     const m = /^data:(image\/jpeg|image\/jpg|image\/png);base64,(.+)$/.exec(imageDataUrl)
     if (!m) return { ok: false, error: 'Photo must be a JPEG or PNG image' }
-    if (m[2].length * 0.75 > MAX_PRODUCT_PHOTO_SIZE) return { ok: false, error: 'Photo too large — keep it under 1MB' }
+    if (m[2].length * 0.75 > MAX_PRODUCT_PHOTO_SIZE) return { ok: false, error: 'Photo too large - keep it under 1MB' }
   }
   if (imageUrl) {
     if (imageUrl.trim().length > 2000) return { ok: false, error: 'Image URL too long' }
     try { const u = new URL(imageUrl.trim()); if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error() }
-    catch { return { ok: false, error: 'Invalid image URL — must be a valid http(s) link' } }
+    catch { return { ok: false, error: 'Invalid image URL - must be a valid http(s) link' } }
   }
+
+  // Product photos sent with the style, each tied to one of its colourways or to none; the first is the main photo.
+  let photosResolved = []
+  if (photos !== undefined && photos !== null) {
+    if (!Array.isArray(photos)) return { ok: false, error: 'Photos must be a list' }
+    if (photos.length > MAX_STYLE_PHOTOS) return { ok: false, error: `Too many photos (max ${MAX_STYLE_PHOTOS})` }
+    for (const [i, p] of photos.entries()) {
+      const r = stylePhotoImage(p && typeof p === 'object' ? p.image : p, `Photo ${i + 1}`)
+      if (r.error) return { ok: false, error: r.error }
+      if (r.image) photosResolved.push({ image: r.image, colourway: colourwayFor(p?.colourway, colourwaysResolved) })
+    }
+    if (photosResolved.length && (imageDataUrl || imageUrl)) return { ok: false, error: 'Send the photos or a single product photo, not both' }
+  }
+  const mainPhoto = photosResolved[0]?.image || null
 
   try {
     const created = await Order.create({
       _id: id, buyerId, product, styleNumber: styleNumber ? styleNumber.trim() : '', category, season, phase: phase || 'production', totalQty, masterOrderId: masterOrderId || null,
-      imageDataUrl: imageDataUrl || null, imageUrl: imageUrl ? imageUrl.trim() : null,
+      imageDataUrl: mainPhoto ? (mainPhoto.startsWith('data:') ? mainPhoto : null) : (imageDataUrl || null),
+      imageUrl: mainPhoto ? (mainPhoto.startsWith('data:') ? null : mainPhoto) : (imageUrl ? imageUrl.trim() : null),
+      photos: photosResolved,
       delivery: deliveryDate,
       baselineDelivery: deliveryDate,
       colourways: colourwaysResolved,
@@ -607,7 +635,19 @@ export async function validateAndCreateOrder({ id, buyerId, product, styleNumber
 // POST /api/orders
 router.post('/', requireAuth, requireAdmin, createOrderLimiter, async (req, res) => {
   try {
-    const result = await validateAndCreateOrder(req.body)
+    // id 'auto': the server numbers the style (Kriyaa creates this way), retrying if a number was just taken.
+    let result
+    if (req.body?.id === 'auto') {
+      const buyer = mongoose.Types.ObjectId.isValid(req.body.buyerId) ? await User.findById(req.body.buyerId, 'code role').lean() : null
+      if (!buyer || buyer.role !== 'buyer') return res.status(400).json({ error: 'Customer not found' })
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const id = await nextStyleId(buyer.code, req.body.category, req.body.season)
+        result = await validateAndCreateOrder({ ...req.body, id })
+        if (result.ok || result.error !== 'Order ID already exists') break
+      }
+    } else {
+      result = await validateAndCreateOrder(req.body)
+    }
     if (!result.ok) {
       const status = result.error === 'Order ID already exists' ? 409 : 400
       return res.status(status).json({ error: result.error })
@@ -618,7 +658,7 @@ router.post('/', requireAuth, requireAdmin, createOrderLimiter, async (req, res)
     await AuditLog.create({
       byUser: req.user.id,
       action: 'Order Created',
-      detail: `${order._id} — ${order.product}`,
+      detail: `${order._id} - ${order.product}`,
     })
     await notify([order.buyerId], { type: 'order', msg: `New order created: ${order._id}`, orderId: order._id }, { exceptUserId: req.user.id })
     await notify((order.assignments || []).map(a => a.mfrId), { type: 'order', msg: `New order assigned to you: ${order._id}`, orderId: order._id }, { exceptUserId: req.user.id })
@@ -786,7 +826,7 @@ router.post('/:orderId/assignments/:mfrId', requireAuth, updateLimiter, async (r
 router.post('/:orderId/assignments', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
   try {
     const { orderId } = req.params
-    const { mfrId, qty, sub } = req.body
+    const { mfrId, qty, sub, delivery } = req.body
     if (!mfrId || !mongoose.Types.ObjectId.isValid(mfrId))
       return res.status(400).json({ error: 'Invalid manufacturer ID' })
     const aqty = parseInt(qty, 10)
@@ -804,14 +844,25 @@ router.post('/:orderId/assignments', requireAuth, requireAdmin, updateLimiter, a
 
     const nextSub = sub && typeof sub === 'string' && sub.trim() ? sub.trim().slice(0, 20) : `M${(existing.assignments || []).length + 1}`
 
+    // A style in production gets its delivery date with its first manufacturer: the plan ends in a Delivery step on it.
+    let deliveryISO = existing.delivery ? new Date(existing.delivery).toISOString().slice(0, 10) : null
+    let setDelivery = null
+    if (existing.phase !== 'development' && !deliveryISO) {
+      if (typeof delivery !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(delivery) || isNaN(new Date(delivery).getTime()))
+        return res.status(400).json({ error: 'Give the delivery date for this style (the plan ends in a Delivery step on it)' })
+      deliveryISO = delivery
+      setDelivery = new Date(delivery)
+    }
+
     const order = await Order.findByIdAndUpdate(
       orderId,
       // Starts with just the mandatory Delivery step; the TNA builder adds the rest in front of it. A style still
       // in Sampling & Development starts with the standard development plan instead, and no Delivery step yet.
-      { $push: { assignments: { mfrId, qty: aqty, status: 'Processing', sub: nextSub, note: '', stages: existing.phase === 'development'
+      { ...(setDelivery ? { $set: { delivery: setDelivery, ...(existing.baselineDelivery ? {} : { baselineDelivery: setDelivery }) } } : {}),
+        $push: { assignments: { mfrId, qty: aqty, status: 'Processing', sub: nextSub, note: '', stages: existing.phase === 'development'
         // No Delivery step until the style moves to production and gets a delivery date.
         ? makeDevelopmentStages(getToday())
-        : [makeDeliveryStage(new Date(existing.delivery).toISOString().slice(0, 10))] } } },
+        : [makeDeliveryStage(deliveryISO)] } } },
       { new: true }
     ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
 
@@ -1012,7 +1063,7 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimit
 
       if (req.user.role === 'buyer') {
         if (!buyerMayWriteStage(req.user, stage))
-          return res.status(403).json({ error: `Forbidden on stage ${i + 1} — buyers may only update stages they own` })
+          return res.status(403).json({ error: `Forbidden on stage ${i + 1} - buyers may only update stages they own` })
         if (stage.isDelivery)
           return res.status(403).json({ error: 'Only Tradio or the manufacturer can confirm delivery' })
         const attempted = Object.keys(row).filter(k => !['index', 'status', 'blocked', 'blockedReason'].includes(k))
@@ -1072,7 +1123,7 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimit
       // Dates: same rules as the single-stage /eta route, including the
       // baseline capture on first revision.
       const badDate = (label, v) => {
-        if (v === null || v === undefined || v === '') return `${label} on stage ${i + 1} cannot be blank — use "NA"`
+        if (v === null || v === undefined || v === '') return `${label} on stage ${i + 1} cannot be blank - use "NA"`
         if (v !== 'NA' && isNaN(new Date(v).getTime())) return `Invalid ${label} on stage ${i + 1}`
         return null
       }
@@ -1106,21 +1157,21 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimit
         if (!STAGE_STATUS_VALUES.includes(row.status))
           return res.status(400).json({ error: `Invalid status "${row.status}" on stage ${i + 1}` })
         if (kind === 'quantity')
-          return res.status(400).json({ error: `Stage ${i + 1} tracks units — update its progress from the stage itself, not here` })
+          return res.status(400).json({ error: `Stage ${i + 1} tracks units - update its progress from the stage itself, not here` })
         // Checklist full-close gate: the stage can't say done while its own
         // items say otherwise. No override.
         if (kind === 'checklist' && row.status === 'done') {
           const items = stage.items || []
           const pendingItems = items.filter(it => it.status !== 'done')
           if (pendingItems.length > 0)
-            return res.status(400).json({ error: `Stage ${i + 1}: cannot mark done — ${pendingItems.length} of ${items.length} checklist item(s) still pending` })
+            return res.status(400).json({ error: `Stage ${i + 1}: cannot mark done - ${pendingItems.length} of ${items.length} checklist item(s) still pending` })
         }
         const nextUnits = mirroredUnits(row.status, has('totalUnits') ? parseInt(row.totalUnits, 10) : (stage.totalUnits ?? 0))
         // The mirror raises unitsDone, so the materials gate must apply here too.
         const isTrims = (stage.name || '').trim().toLowerCase() === 'trims order'
         const pending = (stage.materials || []).filter(m => isTrims ? m.status === 'pending' : m.status !== 'received')
         if (pending.length > 0 && nextUnits > (stage.unitsDone || 0))
-          return res.status(400).json({ error: `Stage ${i + 1}: cannot advance — ${pending.length} material(s) still pending${isTrims ? '' : '/ordered'}` })
+          return res.status(400).json({ error: `Stage ${i + 1}: cannot advance - ${pending.length} material(s) still pending${isTrims ? '' : '/ordered'}` })
         setFields[p('status')] = row.status
         setFields[p('unitsDone')] = nextUnits
         setFields[p('actualEnd')] = deriveActualEnd(row.status, stage.actualEnd, has('actualEnd') ? row.actualEnd : undefined)
@@ -1131,7 +1182,7 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimit
           const items = stage.items || []
           const pendingItems = items.filter(it => it.status !== 'done')
           if (pendingItems.length > 0)
-            return res.status(400).json({ error: `Stage ${i + 1}: cannot mark done — ${pendingItems.length} of ${items.length} checklist item(s) still pending` })
+            return res.status(400).json({ error: `Stage ${i + 1}: cannot mark done - ${pendingItems.length} of ${items.length} checklist item(s) still pending` })
         }
         setFields[p('status')] = s
         setFields[p('unitsDone')] = mirroredUnits(s, has('totalUnits') ? parseInt(row.totalUnits, 10) : (stage.totalUnits ?? 0))
@@ -1202,15 +1253,15 @@ router.post('/:orderId/assignments/:mfrId/stages/insert', requireAuth, requireAd
     const { name, kind, totalUnits, startDate, eta, description, responsibleId, status, actualEnd } = req.body
     if (!name?.trim()) return res.status(400).json({ error: 'Stage name is required' })
     if (kind !== undefined && kind !== null && !STAGE_KINDS.includes(kind))
-      return res.status(400).json({ error: `Invalid kind — must be one of: ${STAGE_KINDS.join(', ')}` })
+      return res.status(400).json({ error: `Invalid kind - must be one of: ${STAGE_KINDS.join(', ')}` })
     const resolvedKind = kind || 'quantity'
     if (status !== undefined && status !== null && !STAGE_STATUS_VALUES.includes(status))
-      return res.status(400).json({ error: `Invalid status — must be one of: ${STAGE_STATUS_VALUES.join(', ')}` })
+      return res.status(400).json({ error: `Invalid status - must be one of: ${STAGE_STATUS_VALUES.join(', ')}` })
 
     // Same date rules as creation and /eta: a real date or literal "NA", never blank.
     const invalidDateMsg = (label, val) => {
-      if (val === null || val === undefined || val === '') return `${label} cannot be blank — use "NA" if it doesn't apply`
-      if (val !== 'NA' && isNaN(new Date(val).getTime())) return `Invalid ${label} — must be a date or "NA"`
+      if (val === null || val === undefined || val === '') return `${label} cannot be blank - use "NA" if it doesn't apply`
+      if (val !== 'NA' && isNaN(new Date(val).getTime())) return `Invalid ${label} - must be a date or "NA"`
       return null
     }
     let dateErr = invalidDateMsg('start date', startDate)
@@ -1285,10 +1336,7 @@ router.post('/:orderId/assignments/:mfrId/stages/insert', requireAuth, requireAd
     if (inserted.modifiedCount === 0) return res.status(409).json(STAGES_CHANGED)
 
     // Documents linked to a stage at/after the insertion point shift up to match.
-    await withRetry('document shift after stage insert', () => Document.updateMany(
-      { orderId, mfrId: mfrObjectId, isActive: true, stageIndex: { $gte: index } },
-      { $inc: { stageIndex: 1 } }
-    ))
+    await repointStageDocs('document shift after stage insert', orderId, mfrObjectId, { $gte: index }, i => i + 1)
 
     const order = await Order.findById(orderId)
       .populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS)
@@ -1379,7 +1427,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
     }
 
     if (has('status') && !STAGE_STATUS_VALUES.includes(status))
-      return res.status(400).json({ error: `Invalid status — must be one of: ${STAGE_STATUS_VALUES.join(', ')}` })
+      return res.status(400).json({ error: `Invalid status - must be one of: ${STAGE_STATUS_VALUES.join(', ')}` })
     if (blockedReason !== undefined && blockedReason !== null && String(blockedReason).length > 300)
       return res.status(400).json({ error: 'Blocked reason too long (max 300 characters)' })
 
@@ -1432,7 +1480,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
       const items = stage.items || []
       const pendingItems = items.filter(it => it.status !== 'done')
       if (pendingItems.length > 0)
-        return res.status(400).json({ error: `Cannot mark done — ${pendingItems.length} of ${items.length} checklist item(s) still pending` })
+        return res.status(400).json({ error: `Cannot mark done - ${pendingItems.length} of ${items.length} checklist item(s) still pending` })
     }
 
     // Materials gate: a stage with 1+ material lines cannot advance past its current
@@ -1447,7 +1495,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
     const stageMaterials = stage.materials || []
     const pendingMaterials = stageMaterials.filter(m => isTrimsOrderStage ? m.status === 'pending' : m.status !== 'received')
     if (!isMasterOverride && pendingMaterials.length > 0 && nextUnits > currentUnits)
-      return res.status(400).json({ error: `Cannot advance this stage — ${pendingMaterials.length} material(s) still pending${isTrimsOrderStage ? '' : '/ordered'}` })
+      return res.status(400).json({ error: `Cannot advance this stage - ${pendingMaterials.length} material(s) still pending${isTrimsOrderStage ? '' : '/ordered'}` })
 
     // Closing the Delivery step marks this split delivered; reopening it puts it back to Processing.
     const nextAsgnStatus = stage.isDelivery ? statusAfterDeliveryStep(existingAsgn.status, nextStatus) : null
@@ -1494,7 +1542,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
     await AuditLog.create({
       byUser: req.user.id,
       action: isMasterOverride ? 'Stage Override' : 'Stage Updated',
-      detail: `${orderId}: ${stageName} — ${nextStatus}${kind === 'quantity' ? ` (${nextUnits}/${totalUnits} units)` : ''} by ${req.user.name}${isMasterOverride ? ' [MASTER OVERRIDE]' : ''}`,
+      detail: `${orderId}: ${stageName} - ${nextStatus}${kind === 'quantity' ? ` (${nextUnits}/${totalUnits} units)` : ''} by ${req.user.name}${isMasterOverride ? ' [MASTER OVERRIDE]' : ''}`,
     })
     if (nextAsgnStatus) await AuditLog.create({
       byUser: req.user.id,
@@ -1563,7 +1611,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
       return res.status(403).json({ error: 'Only the master admin can set the planned or actual date directly' })
 
     if (hasKind && !STAGE_KINDS.includes(kind))
-      return res.status(400).json({ error: `Invalid kind — must be one of: ${STAGE_KINDS.join(', ')}` })
+      return res.status(400).json({ error: `Invalid kind - must be one of: ${STAGE_KINDS.join(', ')}` })
 
     let assigneeRole = null
     if (hasResponsibleId && responsibleId) {
@@ -1625,9 +1673,9 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
     // required-at-creation rule; a PATCH shouldn't be able to null one out).
     const invalidDateMsg = (label, val) => {
       if (val === null || val === undefined || val === '')
-        return `${label} cannot be blank — use "NA" if it doesn't apply`
+        return `${label} cannot be blank - use "NA" if it doesn't apply`
       if (val !== 'NA' && isNaN(new Date(val).getTime()))
-        return `Invalid ${label} — must be a date or "NA"`
+        return `Invalid ${label} - must be a date or "NA"`
       return null
     }
     if (hasEta) {
@@ -1702,7 +1750,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
         const items = currentStage.items || []
         const pendingItems = items.filter(it => it.status !== 'done')
         if (pendingItems.length > 0)
-          return res.status(400).json({ error: `Cannot mark done — ${pendingItems.length} of ${items.length} checklist item(s) still pending` })
+          return res.status(400).json({ error: `Cannot mark done - ${pendingItems.length} of ${items.length} checklist item(s) still pending` })
       }
       const effectiveTotal = hasTotalUnits ? parsedTotalUnits : (currentStage.totalUnits ?? 0)
       setFields[`assignments.$[asgn].stages.${stageIndex}.status`] = 'done'
@@ -1720,7 +1768,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
         const items = currentStage.items || []
         const pendingItems = items.filter(it => it.status !== 'done')
         if (pendingItems.length > 0)
-          return res.status(400).json({ error: `Cannot mark done — ${pendingItems.length} of ${items.length} checklist item(s) still pending` })
+          return res.status(400).json({ error: `Cannot mark done - ${pendingItems.length} of ${items.length} checklist item(s) still pending` })
       }
       setFields[`assignments.$[asgn].stages.${stageIndex}.status`] = nextStatus
       if (kind !== 'quantity')
@@ -1773,6 +1821,66 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
   }
 })
 
+// POST /api/orders/:orderId/assignments/:mfrId/stages/:stageIndex/move — move one step up or down the plan
+// (admin only). Body { direction: 'up' | 'down' }. The Delivery step always stays last, so it never moves and
+// nothing moves below it. Documents filed on the two steps swap with them, so evidence stays with its step.
+router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/move', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
+  try {
+    const { orderId, mfrId } = req.params
+    if (!mongoose.Types.ObjectId.isValid(mfrId)) return res.status(400).json({ error: 'Invalid manufacturer ID' })
+    const mfrObjectId = new mongoose.Types.ObjectId(mfrId)
+    const from = parseInt(req.params.stageIndex, 10)
+    const dir = req.body?.direction
+    if (dir !== 'up' && dir !== 'down') return res.status(400).json({ error: "direction must be 'up' or 'down'" })
+    const to = dir === 'up' ? from - 1 : from + 1
+
+    const existingOrder = await Order.findById(orderId).lean()
+    if (!existingOrder) return res.status(404).json({ error: 'Order not found' })
+    const asgn = (existingOrder.assignments || []).find(a => a.mfrId?.toString() === mfrId)
+    if (!asgn) return res.status(404).json({ error: 'Assignment not found' })
+    const stages = asgn.stages || []
+    const n = stages.length
+    if (isNaN(from) || from < 0 || from >= n || to < 0 || to >= n) return res.status(400).json({ error: 'That step cannot move further' })
+    if (stages[from].isDelivery || stages[to].isDelivery) return res.status(400).json({ error: 'The Delivery step stays last' })
+
+    // Atomic swap, guarded on the plan's size and on both steps still being where they were read.
+    const lo = Math.min(from, to), hi = Math.max(from, to)
+    const swapped = await Order.updateOne(
+      { _id: orderId, assignments: { $elemMatch: { mfrId: mfrObjectId, stages: { $size: n }, [`stages.${lo}.name`]: stages[lo].name, [`stages.${hi}.name`]: stages[hi].name } } },
+      [{ $set: { assignments: { $map: { input: '$assignments', as: 'a', in: { $cond: [
+        { $eq: ['$$a.mfrId', mfrObjectId] },
+        { $mergeObjects: ['$$a', {
+          stages: { $concatArrays: [
+            { $slice: ['$$a.stages', lo] },
+            [{ $arrayElemAt: ['$$a.stages', hi] }, { $arrayElemAt: ['$$a.stages', lo] }],
+            { $slice: ['$$a.stages', hi + 1, n] },
+          ] },
+          updatedAt: '$$NOW',
+        }] },
+        '$$a',
+      ] } } } } }]
+    )
+    if (swapped.modifiedCount === 0) return res.status(409).json(STAGES_CHANGED)
+
+    // The two steps' documents swap with them.
+    await repointStageDocs('document swap after stage move', orderId, mfrObjectId, { $in: [lo, hi] }, i => (i === lo ? hi : lo))
+
+    const order = await Order.findById(orderId)
+      .populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS)
+      .populate('assignments.stages.responsibleId', 'name company code role')
+      .populate('assignments.stages.updates.byUser', 'name').lean()
+    await AuditLog.create({
+      byUser: req.user.id,
+      action: 'Stage Moved',
+      detail: `${orderId}: moved "${stages[from].name}" ${dir} (step ${from + 1} to ${to + 1}) by ${req.user.name}`,
+    })
+    res.json(enrichFor(order, req))
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
 // POST /api/orders/:orderId/assignments/:mfrId/stages/:stageIndex/delete — remove one
 // stage from an assignment's stage list (admin only). Shifts subsequent stage indices
 // down by one, and re-points any evidence/PO documents that referenced a later stage.
@@ -1802,7 +1910,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/delete', requireAut
 
     const linkedDocs = await Document.countDocuments({ orderId, mfrId: mfrObjectId, stageIndex, isActive: true })
     if (linkedDocs > 0)
-      return res.status(400).json({ error: `Cannot delete — ${linkedDocs} document(s) are linked to this stage. Remove those first.` })
+      return res.status(400).json({ error: `Cannot delete - ${linkedDocs} document(s) are linked to this stage. Remove those first.` })
 
     // Atomic removal by index with an update pipeline, guarded on the stage count and on the
     // stage still sitting at that index. Nothing else in the array is rewritten, so there is no
@@ -1889,7 +1997,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/updates', requireAu
     await AuditLog.create({
       byUser: req.user.id,
       action: 'Stage Update Added',
-      detail: `${orderId}: ${stageName} — ${text.trim().slice(0, 100)}`,
+      detail: `${orderId}: ${stageName} - ${text.trim().slice(0, 100)}`,
     })
 
     res.json(enrichFor(order, req))
@@ -1953,10 +2061,10 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items', requireAuth
     if (fromColourways) {
       const colours = ctx.order.colourways || []
       if (colours.length === 0)
-        return res.status(400).json({ error: 'This order has no colourways yet — add them to the order first' })
+        return res.status(400).json({ error: 'This order has no colourways yet - add them to the order first' })
       const prefix = (name || ctx.stage.name || 'Item').trim().slice(0, 150)
       lines = colours.map(c => ({
-        name: `${prefix} — ${c.name}`, colourway: c.name,
+        name: `${prefix} - ${c.name}`, colourway: c.name,
         status: 'pending', dueDate: dueDate || null, doneDate: null, note: '',
       }))
     } else {
@@ -1981,7 +2089,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items', requireAuth
     await AuditLog.create({
       byUser: req.user.id,
       action: 'Stage Item Added',
-      detail: `${ctx.orderId}: ${ctx.stage.name || `Stage ${ctx.stageIndex + 1}`} — added ${lines.length} item(s)`,
+      detail: `${ctx.orderId}: ${ctx.stage.name || `Stage ${ctx.stageIndex + 1}`} - added ${lines.length} item(s)`,
     })
     res.json(enrichFor(order, req))
   } catch (err) {
@@ -2043,7 +2151,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items/:lineIndex', 
     await AuditLog.create({
       byUser: req.user.id,
       action: 'Stage Item Updated',
-      detail: `${ctx.orderId}: ${ctx.stage.name || `Stage ${ctx.stageIndex + 1}`} — "${items[lineIndex].name}"${has('status') ? ` → ${status}` : ''}`,
+      detail: `${ctx.orderId}: ${ctx.stage.name || `Stage ${ctx.stageIndex + 1}`} - "${items[lineIndex].name}"${has('status') ? ` → ${status}` : ''}`,
     })
     res.json(enrichFor(order, req))
   } catch (err) {
@@ -2077,7 +2185,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/items/:lineIndex/de
     await AuditLog.create({
       byUser: req.user.id,
       action: 'Stage Item Removed',
-      detail: `${ctx.orderId}: ${ctx.stage.name || `Stage ${ctx.stageIndex + 1}`} — removed "${items[lineIndex].name}"`,
+      detail: `${ctx.orderId}: ${ctx.stage.name || `Stage ${ctx.stageIndex + 1}`} - removed "${items[lineIndex].name}"`,
     })
     res.json(enrichFor(order, req))
   } catch (err) {
@@ -2136,7 +2244,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials', require
     await AuditLog.create({
       byUser: req.user.id,
       action: 'Stage Material Added',
-      detail: `${orderId}: ${stage.name || `Stage ${stageIndex + 1}`} — added "${line.name}" (${line.requiredQty} ${line.unit})`,
+      detail: `${orderId}: ${stage.name || `Stage ${stageIndex + 1}`} - added "${line.name}" (${line.requiredQty} ${line.unit})`,
     })
 
     res.json(enrichFor(order, req))
@@ -2224,7 +2332,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineInde
     await AuditLog.create({
       byUser: req.user.id,
       action: 'Stage Material Updated',
-      detail: `${orderId}: ${stage.name || `Stage ${stageIndex + 1}`} — "${stage.materials[lineIndex].name}"${status ? ` → ${status}` : ''}`,
+      detail: `${orderId}: ${stage.name || `Stage ${stageIndex + 1}`} - "${stage.materials[lineIndex].name}"${status ? ` → ${status}` : ''}`,
     })
 
     res.json(enrichFor(order, req))
@@ -2299,7 +2407,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineInde
     await AuditLog.create({
       byUser: req.user.id,
       action: 'Stage Material Deleted',
-      detail: `${orderId}: ${stage.name || `Stage ${stageIndex + 1}`} — removed "${removedName}"`,
+      detail: `${orderId}: ${stage.name || `Stage ${stageIndex + 1}`} - removed "${removedName}"`,
     })
 
     res.json(enrichFor(order, req))
@@ -2442,7 +2550,9 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
       // all, and the order silently violated its own invariant.
       const asgns = existing.assignments || []
       const currentSum = asgns.reduce((n, a) => n + (a.qty || 0), 0)
-      if (qty !== currentSum && asgns.length > 0) {
+      // Only a real change of the style quantity touches the splits: saving Edit Style with the quantity as it was must
+      // not overwrite a split that was deliberately set to a different quantity.
+      if (qty !== existing.totalQty && qty !== currentSum && asgns.length > 0) {
         if (asgns.length === 1) {
           updates['assignments.0.qty'] = qty
           // Stage targets that were defaulted to the assignment qty follow it, so the
@@ -2455,7 +2565,7 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
           //    a target below them.
           ;(asgns[0].stages || []).forEach((s, i) => {
             if (stageKindOf(s) !== 'quantity') return
-            if ((s.totalUnits ?? 0) !== currentSum) return  // deliberately overridden — leave it
+            if ((s.totalUnits ?? 0) !== currentSum) return  // deliberately overridden - leave it
             if (deriveStageStatus(s) === 'done') {
               updates[`assignments.0.stages.${i}.totalUnits`] = qty
               updates[`assignments.0.stages.${i}.unitsDone`] = qty
@@ -2481,8 +2591,8 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
     }
 
     if (delivery === null || delivery === '') {
-      // Only a style in Sampling & Development may be without a delivery date (new Date(null) would be 1 Jan 1970).
-      if ((updates.phase || existing.phase) !== 'development') return res.status(400).json({ error: 'A style in production needs a delivery date' })
+      // A style with a manufacturer in production needs its date (its Delivery step stands on it); new Date(null) would be 1 Jan 1970.
+      if ((updates.phase || existing.phase) !== 'development' && (existing.assignments || []).length) return res.status(400).json({ error: 'A style with a manufacturer in production needs a delivery date' })
       updates.delivery = null
     } else if (delivery !== undefined) {
       const d = new Date(delivery)
@@ -2506,8 +2616,9 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
     let promoteDeliveryISO = null
     if (existing.phase === 'development' && updates.phase === 'production') {
       const when = updates.delivery || existing.delivery
-      if (!when) return res.status(400).json({ error: 'Set a delivery date to move this style to production' })
-      promoteDeliveryISO = new Date(when).toISOString().slice(0, 10)
+      // Its manufacturers' plans gain a Delivery step on that date; with no manufacturer yet the date comes later.
+      if (!when && (existing.assignments || []).length) return res.status(400).json({ error: 'Set a delivery date to move this style to production' })
+      promoteDeliveryISO = when ? new Date(when).toISOString().slice(0, 10) : null
     }
     // Moving a style back to Sampling & Development: its plans lose the Delivery step and the style its delivery date
     // (unless this same edit sets one), as for any style being developed. A style with a delivered split stays in
@@ -2530,7 +2641,7 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
         if (name.length > 60) return res.status(400).json({ error: `Colourway name too long: "${name.slice(0, 20)}…"` })
         if (next.some(x => x.name.toLowerCase() === name.toLowerCase())) continue
         const hex = (typeof c === 'object' && c?.hex ? String(c.hex).trim() : '')
-        if (hex && !/^#[0-9a-fA-F]{6}$/.test(hex)) return res.status(400).json({ error: `Invalid swatch colour for "${name}" — must be a hex colour like #2C3E50` })
+        if (hex && !/^#[0-9a-fA-F]{6}$/.test(hex)) return res.status(400).json({ error: `Invalid swatch colour for "${name}" - must be a hex colour like #2C3E50` })
         const code = (typeof c === 'object' && c?.code ? String(c.code).trim() : '')
         if (code.length > 40) return res.status(400).json({ error: `Pantone reference too long for "${name}" (max 40 characters)` })
         next.push({ name, code, hex })
@@ -2596,12 +2707,12 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
       if (nextDataUrl) {
         const m = /^data:(image\/jpeg|image\/jpg|image\/png);base64,(.+)$/.exec(nextDataUrl)
         if (!m) return res.status(400).json({ error: 'Photo must be a JPEG or PNG image' })
-        if (m[2].length * 0.75 > MAX_PRODUCT_PHOTO_SIZE) return res.status(400).json({ error: 'Photo too large — keep it under 1MB' })
+        if (m[2].length * 0.75 > MAX_PRODUCT_PHOTO_SIZE) return res.status(400).json({ error: 'Photo too large - keep it under 1MB' })
       }
       if (nextUrl) {
         if (nextUrl.trim().length > 2000) return res.status(400).json({ error: 'Image URL too long' })
         try { const u = new URL(nextUrl.trim()); if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error() }
-        catch { return res.status(400).json({ error: 'Invalid image URL — must be a valid http(s) link' } )}
+        catch { return res.status(400).json({ error: 'Invalid image URL - must be a valid http(s) link' } )}
       }
       if (imageDataUrl !== undefined) updates.imageDataUrl = imageDataUrl || null
       if (imageUrl !== undefined) updates.imageUrl = imageUrl ? imageUrl.trim() : null
@@ -2703,7 +2814,7 @@ router.post('/:id/escalate', requireAuth, escalationLimiter, async (req, res) =>
     const masters = await User.find({ role: 'admin', adminType: 'master', isActive: true }, '_id email name')
     if (masters.length === 0) return res.status(500).json({ error: 'No master admins available' })
 
-    const msg = `Escalation from ${req.user.name} (${req.user.company}): Order ${req.params.id} — ${reason.trim()}`
+    const msg = `Escalation from ${req.user.name} (${req.user.company}): Order ${req.params.id} - ${reason.trim()}`
 
     await Notification.insertMany(
       masters.map(m => ({ toUser: m._id, type: 'alert', msg, orderId: req.params.id, isRead: false }))

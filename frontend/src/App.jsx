@@ -55,7 +55,7 @@ function ForceChangePassword() {
         <div style={{ fontSize: 20, fontWeight: 800, color: T.text, marginBottom: 6 }}>Set your password</div>
         <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 24 }}>You must change your temporary password before continuing.</div>
         {ok ? (
-          <div style={{ color: T.success, fontWeight: 600, textAlign: 'center', padding: '16px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><CheckCircle2 size={16} /> Password changed — redirecting to login…</div>
+          <div style={{ color: T.success, fontWeight: 600, textAlign: 'center', padding: '16px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><CheckCircle2 size={16} /> Password changed - redirecting to login…</div>
         ) : (
           <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <Input label="Current (temporary) password" type="password" value={cur} onChange={e => { setCur(e.target.value); setErr('') }} required />
@@ -78,6 +78,7 @@ function Inner() {
   const [selMid, setSelMid] = useState(null)
   const [ordersStatus, setOrdersStatus] = useState(null)
   const [ordersPhase, setOrdersPhase] = useState(null)   // 'production' | 'development' to open the Orders page on
+  const [ordersNewStyle, setOrdersNewStyle] = useState(false) // open Create Style for ordersMo on arrival
   const [ordersMo, setOrdersMo] = useState(null)     // master order to open on the Orders page
   const [reportsMo, setReportsMo] = useState(null)   // master order to open on the Reports page
   const [selMo, setSelMo] = useState(null)           // master order open on its own page
@@ -91,7 +92,7 @@ function Inner() {
   const BLANK = { view: 'dashboard', selOid: null, selMid: null, ordersStatus: null, ordersMo: null, ordersPhase: null, reportsMo: null }
   const apply = useCallback(s => {
     setView(s.view); setSelOid(s.selOid); setSelMid(s.selMid)
-    setOrdersStatus(s.ordersStatus); setOrdersMo(s.ordersMo); setOrdersPhase(s.ordersPhase ?? null); setReportsMo(s.reportsMo); setSelMo(s.selMo ?? null)
+    setOrdersStatus(s.ordersStatus); setOrdersMo(s.ordersMo); setOrdersPhase(s.ordersPhase ?? null); setOrdersNewStyle(!!s.ordersNewStyle); setReportsMo(s.reportsMo); setSelMo(s.selMo ?? null)
   }, [])
   const go = useCallback(next => {
     const h = hist.current
@@ -99,6 +100,8 @@ function Inner() {
     h.stack = h.stack.slice(0, h.idx + 1); h.stack.push(snap); h.idx = h.stack.length - 1
     window.history.pushState({ nav: h.idx }, '')
     apply(snap)
+    // Create Style opens once on arrival: coming Back or Forward to this screen later shows the list only.
+    if (snap.ordersNewStyle) h.stack[h.idx] = { ...snap, ordersNewStyle: false }
   }, [apply])
   const goBack = useCallback(fallback => {
     if (hist.current.idx > 0) window.history.back()
@@ -140,6 +143,7 @@ function Inner() {
     view: v,
     ordersStatus: params?.status ?? null,
     ordersPhase: v === 'orders' ? (params?.phase ?? null) : null,
+    ordersNewStyle: v === 'orders' && !!params?.newStyle,
     ordersMo: v === 'orders' ? (params?.mo ?? null) : null,
     reportsMo: v === 'reports' ? (params?.mo ?? null) : null,
     selMo: v === 'master_order' ? (params?.mo ?? null) : null,
@@ -164,7 +168,7 @@ function Inner() {
     // signed-in user, and hides the controls that role cannot use (see caps.js).
     if (view === 'dashboard') return <AdminDashboard onNavigate={navTo} onOpen={openOrder} />
     if (view === 'kriyaa') return <KriyaaPage />
-    if (view === 'orders') return <AdminOrders key={`o:${ordersMo || 'all'}:${ordersPhase || ''}`} onOpen={openOrder} onOpenMo={openMo} initialStatus={ordersStatus} initialMo={ordersMo} initialPhase={ordersPhase} onSubmitReq={user.role === 'buyer' ? () => navTo('submit_req') : undefined} />
+    if (view === 'orders') return <AdminOrders key={`o:${ordersMo || 'all'}:${ordersPhase || ''}`} onOpen={openOrder} onOpenMo={openMo} initialStatus={ordersStatus} initialMo={ordersMo} initialPhase={ordersPhase} openWizardFor={ordersNewStyle ? ordersMo : null} onSubmitReq={user.role === 'buyer' ? () => navTo('submit_req') : undefined} />
     if (view === 'master_order' && selMo) return <MasterOrderPage moId={selMo} onOpen={openOrder} onNavigate={navTo} onBack={() => goBack({ view: 'orders', ordersMo: selMo })} />
     if (view === 'order_detail' && selOid) return <AdminOrderDetail orderId={selOid} initialMid={selMid} onOpenMo={openMo} onBack={() => goBack({ view: 'orders', ordersMo: orders?.find(o => o.id === selOid)?.masterOrderId || '__none__' })} />
     if (view === 'documents') return <AdminDocuments />

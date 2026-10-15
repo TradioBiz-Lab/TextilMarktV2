@@ -35,6 +35,9 @@ export function AppProvider({ children }) {
   const sessionGenRef = useRef(0)
   useEffect(() => { setOrdersAt(Date.now()) }, [orders])
   const docDataCache = useRef({})
+  // The latest orders, for an action that needs the plan as it was before its own write.
+  const ordersRef = useRef([])
+  ordersRef.current = orders
   const loadData = useCallback(async (user) => {
     if (loadingRef.current) return // prevent duplicate calls from StrictMode
     // Someone on a temporary password may only change it; the server refuses everything else, so
@@ -141,7 +144,7 @@ export function AppProvider({ children }) {
         setCurrentUser(user)
         loadData(user)
       } catch {
-        setStoredToken(null) // no valid session — stay on login
+        setStoredToken(null) // no valid session - stay on login
         setAuthToken(null)
       }
     }
@@ -156,7 +159,7 @@ export function AppProvider({ children }) {
       try {
         const { token } = await authApi.me() // backend re-issues cookie + a fresh fallback token
         setAuthToken(token)
-      } catch { /* session expired — next API call will trigger 401 reload */ }
+      } catch { /* session expired - next API call will trigger 401 reload */ }
     }, 30 * 60 * 1000)
     return () => clearInterval(iv)
   }, [currentUser])
@@ -227,7 +230,7 @@ export function AppProvider({ children }) {
       if (expired.length > 0) {
         r.push({
           id: 'cert-expired', type: 'urgent',
-          msg: `${expired.length} compliance certificate${expired.length > 1 ? 's have' : ' has'} expired — contact your manufacturer.`,
+          msg: `${expired.length} compliance certificate${expired.length > 1 ? 's have' : ' has'} expired - contact your manufacturer.`,
         })
       }
       if (expiring.length > 0) {
@@ -259,7 +262,7 @@ export function AppProvider({ children }) {
       if (expired.length > 0) {
         r.push({
           id: 'mfr-cert-expired', type: 'urgent',
-          msg: `${expired.length} of your compliance certificate${expired.length > 1 ? 's have' : ' has'} expired — please renew immediately.`,
+          msg: `${expired.length} of your compliance certificate${expired.length > 1 ? 's have' : ' has'} expired - please renew immediately.`,
         })
       }
       if (expiring.length > 0) {
@@ -362,8 +365,8 @@ export function AppProvider({ children }) {
     return order
   }, [])
 
-  const addAssignment = useCallback(async (orderId, { mfrId, qty, sub }) => {
-    const order = await ordersApi.addAssignment(orderId, { mfrId, qty, sub })
+  const addAssignment = useCallback(async (orderId, { mfrId, qty, sub, delivery }) => {
+    const order = await ordersApi.addAssignment(orderId, { mfrId, qty, sub, delivery })
     setOrders(p => p.map(o => o.id === orderId ? order : o))
     return order
   }, [])
@@ -380,11 +383,30 @@ export function AppProvider({ children }) {
     return order
   }, [])
 
+  // Documents are filed against a step's position. The server re-points them when a step is inserted or moved;
+  // the same change is made here, so evidence stays under its own step without reloading every document.
+  const shiftStageDocs = useCallback((orderId, mfrId, to) => setDocs(p => p.map(d =>
+    d.orderId === orderId && String(d.mfrId) === String(mfrId) && Number.isInteger(d.stageIndex) ? { ...d, stageIndex: to(d.stageIndex) } : d)), [])
+
   const insertStage = useCallback(async (orderId, mfrId, data) => {
+    const before = ordersRef.current.find(o => o.id === orderId)?.assignments?.find(a => String(a.mid) === String(mfrId))?.stages || []
     const order = await ordersApi.insertStage(orderId, mfrId, data)
     setOrders(p => p.map(o => o.id === orderId ? order : o))
+    // The server's position rule: at the end unless an index is given, and never after the Delivery step.
+    const deliveryAt = before.findIndex(s => s.isDelivery)
+    let at = Number.isInteger(data?.index) ? data.index : before.length
+    if (deliveryAt !== -1 && at > deliveryAt) at = deliveryAt
+    shiftStageDocs(orderId, mfrId, i => (i >= at ? i + 1 : i))
     return order
-  }, [])
+  }, [shiftStageDocs])
+
+  const moveStage = useCallback(async (orderId, mfrId, stageIndex, direction) => {
+    const order = await ordersApi.moveStage(orderId, mfrId, stageIndex, direction)
+    setOrders(p => p.map(o => o.id === orderId ? order : o))
+    const to = direction === 'up' ? stageIndex - 1 : stageIndex + 1
+    shiftStageDocs(orderId, mfrId, i => (i === stageIndex ? to : i === to ? stageIndex : i))
+    return order
+  }, [shiftStageDocs])
 
   const editOrder = useCallback(async (id, data) => {
     const updated = await ordersApi.update(id, data)
@@ -564,7 +586,7 @@ export function AppProvider({ children }) {
       login, logout,
       updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
       bulkUpdateStages, addStageItem, updateStageItem, removeStageItem,
-      updateAssignment, addAssignment, reassignAssignment, setDeliveredQty, insertStage, uploadDoc, updateDoc, deleteDoc, createOrder, createMasterOrder, updateMasterOrder, deleteMasterOrder,
+      updateAssignment, addAssignment, reassignAssignment, setDeliveredQty, insertStage, moveStage, uploadDoc, updateDoc, deleteDoc, createOrder, createMasterOrder, updateMasterOrder, deleteMasterOrder,
       editOrder, deleteOrder,
       createUser, updateUser, toggleUser, resetUserPw,
       markAllRead, markOneRead, getDocData, refreshAudit, loadMoreAudit,

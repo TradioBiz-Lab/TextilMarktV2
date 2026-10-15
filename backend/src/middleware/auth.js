@@ -47,7 +47,7 @@ export async function requireAuth(req, res, next) {
     if (!dbUser || !dbUser.isActive) return res.status(401).json({ error: 'Unauthorized' })
     if (dbUser.passwordChangedAt && req.user.iat) {
       if (req.user.iat * 1000 < dbUser.passwordChangedAt.getTime()) {
-        return res.status(401).json({ error: 'Session expired — please log in again' })
+        return res.status(401).json({ error: 'Session expired - please log in again' })
       }
     }
     // The database is the authority on who this is and what they may do, not the claims baked into
