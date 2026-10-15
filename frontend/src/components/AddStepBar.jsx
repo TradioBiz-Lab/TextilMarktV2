@@ -17,7 +17,8 @@ export function AddStepBar({ order, asgn, users, onInserted }) {
   const stages = asgn.stages || []
   const steps = stages.filter(s => !s.isDelivery)
   const [open, setOpen] = useState(steps.length === 0)
-  const blank = { name: '', startDate: '', eta: '', kind: 'quantity', owner: undefined, at: 'end' }
+  // Start is NA unless given: screens work from end dates.
+  const blank = { name: '', startDate: 'NA', eta: '', kind: 'quantity', owner: undefined, at: 'end' }
   const [d, setD] = useState(blank)
   const [busy, setBusy] = useState(false)
   const set = patch => setD(p => ({ ...p, ...patch }))
@@ -102,7 +103,7 @@ export function AddStepBar({ order, asgn, users, onInserted }) {
             {stages.map((s, i) => (s.isDelivery || i === steps.length - 1 ? null : <option key={i} value={String(i)}>After {i + 1}. {s.name}</option>))}
           </select>
         </div>
-        <Btn icon={<Plus size={12} />} size="sm" disabled={!d.name.trim() || !d.startDate || !d.eta || busy} onClick={add}>{busy ? 'Adding...' : 'Add step'}</Btn>
+        <Btn icon={<Plus size={12} />} size="sm" disabled={!d.name.trim() || !d.eta || busy} onClick={add}>{busy ? 'Adding...' : 'Add step'}</Btn>
       </div>
     </div>
   )

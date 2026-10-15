@@ -189,7 +189,8 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
           if (/^delivery$/i.test(name)) errors.push('Delivery is added automatically as the last step')
           // Dates are normalized to YYYY-MM-DD here: the server stores the text as sent and
           // all date maths assumes that shape. Ambiguous or invalid cells are rejected.
-          const start = normalizeCsvDate(startRaw)
+          // A blank start_date is NA: screens work from end dates.
+          const start = startRaw ? normalizeCsvDate(startRaw) : { value: 'NA' }
           const end = normalizeCsvDate(endRaw)
           if (start.error) errors.push(start.error === 'missing' ? 'missing start_date' : `start_date "${startRaw}" is ${start.error} (use YYYY-MM-DD or DD/MM/YYYY)`)
           if (end.error) errors.push(end.error === 'missing' ? 'missing end_date' : `end_date "${endRaw}" is ${end.error} (use YYYY-MM-DD or DD/MM/YYYY)`)

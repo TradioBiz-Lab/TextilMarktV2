@@ -819,7 +819,8 @@ describe('insert stage', () => {
   test('rejects an invalid index and an invalid date', async () => {
     const { api, base } = await arrange({ stageNames: ['One'] })
     assert.equal((await api.post(`${base}/stages/insert`, { index: 5, name: 'X', startDate: 'NA', eta: 'NA' })).status, 400)
-    assert.equal((await api.post(`${base}/stages/insert`, { index: 0, name: 'X', startDate: '', eta: 'NA' })).status, 400)
+    // A blank start is NA now; a start that is not a date is still refused.
+    assert.equal((await api.post(`${base}/stages/insert`, { index: 0, name: 'X', startDate: 'soon', eta: 'NA' })).status, 400)
     assert.equal((await api.post(`${base}/stages/insert`, { index: 0, name: '', startDate: 'NA', eta: 'NA' })).status, 400)
   })
 
