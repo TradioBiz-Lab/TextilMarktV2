@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { DashboardSummary } from '../../components/DashboardSummary.jsx'
 import { capsFor } from '../../caps.js'
+import { FileIntoStyle } from '../../components/FileIntoStyle.jsx'
 import { ShoppingBag, Factory, Package, Siren, Target, Check, Shirt, Layers, ClipboardList, Megaphone, ChevronRight, Building2, Truck, FlaskConical, Scissors } from '../../icons.jsx'
 import { T, ST, productionMetrics, productionOrders, developmentOrders, isExpiringSoon, isExpired, getToday, dayNumber, effectiveEta, withBuyerPrefix, fmtDate, styleStatus, masterOrderStatus, inFlightStages } from '../../constants.js'
 import { StatCard, Card, Grid, EmptyState, Mono, PageHeader, Badge, Btn, FlexRow, Modal, Select, Textarea, Input, Alert, LoadingScreen, DocCard } from '../../components/ui.jsx'
@@ -77,7 +78,8 @@ export function AdminDashboard({ onNavigate, onOpen }) {
 
   if (loading) return <LoadingScreen />
 
-  const buyerRequests = docs.filter(d => d.isActive !== false && ['RFQ', 'tech_pack', 'buyer_order'].includes(d.type) && users.find(u => String(u.id) === String(d.uploadedBy) && u.role === 'buyer')).sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))
+  // What customers sent in with no style yet; once Tradio files one into a style it leaves this list.
+  const buyerRequests = docs.filter(d => d.isActive !== false && ['RFQ', 'tech_pack', 'PO'].includes(d.type) && !d.orderId && !d.masterOrderId && d.stageIndex == null && users.find(u => String(u.id) === String(d.uploadedBy) && u.role === 'buyer')).sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))
 
   const buyers = users.filter(u => u.role === 'buyer' && u.isActive)
   // For a customer or manufacturer the users list is just themselves, so count the other side from their own orders.
@@ -327,10 +329,10 @@ export function AdminDashboard({ onNavigate, onOpen }) {
         {openSections.requests && (
           <div style={{ padding: '0 18px 18px' }}>
             {buyerRequests.length === 0 ? (
-              <EmptyState icon={<ClipboardList size={26} color={T.textLight} />} compact title="No buyer requests yet" desc="Buyer-submitted RFQs, Tech Packs, and Buyer Orders will appear here" />
+              <EmptyState icon={<ClipboardList size={26} color={T.textLight} />} compact title="No buyer requests yet" desc="RFQs, tech packs and POs customers send in will appear here, until they are filed into a style" />
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                {buyerRequests.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} />)}
+                {buyerRequests.map(d => <div key={d.id}><DocCard doc={d} users={users} onGetData={getDocData} /><FileIntoStyle doc={d} /></div>)}
               </div>
             )}
           </div>

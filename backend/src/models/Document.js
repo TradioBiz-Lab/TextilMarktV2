@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 
 const DOC_TYPES = [
+  // 'buyer_order' is the old name for the customer's PO: kept so old records load, read and filed as 'PO'.
   'PO', 'buyer_order', 'tech_pack', 'cost_sheet', 'RFQ', 'terms',
   // Tradio's invoice to the customer. Commercial: a factory never sees it (see HIDDEN_FROM_FACTORIES in routes/documents.js).
   'invoice',
@@ -34,6 +35,16 @@ const documentSchema = new mongoose.Schema({
   version:    { type: Number, default: 1 },
   isActive:   { type: Boolean, default: true },
 
+  // An earlier version: when a document's file is replaced, the old file is kept as its own record, inactive, pointing at
+  // the live document (versionOf). It opens under the same rules as that document. See GET /api/documents/:id/versions.
+  versionOf:      { type: mongoose.Schema.Types.ObjectId, ref: 'Document', default: null },
+  replacedAt:     { type: Date, default: null },
+  replacedByUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+
+  // A requirement the customer sent in without a style, once Tradio files it into one (POST /api/documents/:id/file).
+  filedAt:        { type: Date, default: null },
+  filedBy:        { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+
   // Production stage link (index into assignment.stages array, null for non-stage docs)
   stageIndex: { type: Number, default: null, min: 0 },
 
@@ -63,6 +74,7 @@ const documentSchema = new mongoose.Schema({
 }, { timestamps: true })
 
 documentSchema.index({ masterOrderId: 1 })
+documentSchema.index({ versionOf: 1 }, { partialFilterExpression: { versionOf: { $type: 'objectId' } } })
 documentSchema.index({ mfrId: 1, isActive: 1 })
 documentSchema.index({ orderId: 1, isActive: 1 })
 documentSchema.index({ expiryDate: 1 })          // for expiry-alert queries

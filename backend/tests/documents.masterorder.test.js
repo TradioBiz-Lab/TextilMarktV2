@@ -40,9 +40,10 @@ test('Tradio attaches a PO to a master order; its customer can see and open it, 
   assert.equal((await as(mfr).get(`/api/documents/${id}/data`)).status, 403)
 })
 
-test('only an admin may attach to a master order, and it must exist', async () => {
+test('Tradio attaches any file to a master order, the customer only its own PO, and it must exist', async () => {
   const { admin, buyer, mo } = await arrange()
   const body = { type: 'PO', name: 'x', dataUrl: pdf, fileName: 'po.pdf', mimeType: 'application/pdf' }
-  assert.equal((await as(buyer).post('/api/documents', { ...body, masterOrderId: mo._id })).status, 403)
+  assert.equal((await as(buyer).post('/api/documents', { ...body, masterOrderId: mo._id })).status, 201)
+  assert.equal((await as(buyer).post('/api/documents', { ...body, type: 'RFQ', masterOrderId: mo._id })).status, 403)
   assert.equal((await as(admin).post('/api/documents', { ...body, masterOrderId: 'MO-NOPE-999' })).status, 400)
 })

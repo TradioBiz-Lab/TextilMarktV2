@@ -5,7 +5,7 @@ import {
   T, ORDER_STATUSES, evidenceTypesFor, productDocForStep, DOC_ICONS,
   stageKindOf, kindForCustomerOwner, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
   stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber, getToday, planProgress,
-  PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, stageNameForDoc, PO_INVOICE_DOC_TYPES, deliveryDocsOf, defaultStepOwner, stepOwnerOptions,
+  PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, stageNameForDoc, PO_INVOICE_DOC_TYPES, COMMERCIAL_DOC_TYPES, deliveryDocsOf, defaultStepOwner, stepOwnerOptions,
   fmtDate, styleStatus, dueDates, dueText, pastDateNote, siblingStepNames, stepNameWarning,
 } from '../../constants.js'
 import { PlanStarter } from '../../components/PlanStarter.jsx'
@@ -634,12 +634,13 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
     } finally { setSaving(false) }
   }
 
-  // A factory is never offered a PO or an invoice, and only Tradio issues invoices (the server enforces both).
+  // A factory is never offered the commercial papers (PO, invoice, cost sheet, terms), and only Tradio issues invoices
+  // (the server enforces both).
   const orderDocTypes = [
-    { v: 'PO', l: 'Purchase Order' }, { v: 'invoice', l: 'Invoice' }, { v: 'buyer_order', l: 'Buyer Order' },
+    { v: 'PO', l: 'Purchase Order' }, { v: 'invoice', l: 'Invoice' },
     { v: 'cost_sheet', l: 'Cost Sheet' }, { v: 'RFQ', l: 'RFQ' },
     { v: 'terms', l: 'Terms & Conditions' },
-  ].filter(t => caps.seePoInvoice || !PO_INVOICE_DOC_TYPES.includes(t.v)).filter(t => t.v !== 'invoice' || caps.uploadInvoices)
+  ].filter(t => caps.seePoInvoice || !COMMERCIAL_DOC_TYPES.includes(t.v)).filter(t => t.v !== 'invoice' || caps.uploadInvoices)
   const openDocUpload = type => { resetUpload(); setUf(u => ({ ...u, type })); setShowUp(true) }
   // Product photos are added in Documents & Assets: open that row and bring it into view.
   const openProductPhotos = () => { setExpandedDocKey('image'); setTimeout(() => document.getElementById('doc-row-image')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60) }
@@ -663,7 +664,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
   const overallStatus = () => styleStatus(order)
 
   const mfrUsers = users.filter(u => u.role === 'manufacturer' && u.isActive)
-  const refDocLabels = { measurements: 'Measurements', tech_pack: 'Tech Pack', pattern: 'Patterns / DXF', lab_dip: 'Lab Dip Receipts', test_report: 'Test Reports (FPT/GPT)' }
+  const refDocLabels = { measurements: 'Measurements', tech_pack: 'Tech Pack', pattern: 'Patterns', lab_dip: 'Lab Dip Receipts', test_report: 'Test Reports (FPT/GPT)' }
 
   const uploadRefDoc = async (type) => {
     const file = refDocFiles[type]
@@ -750,7 +751,19 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                       {action && <div>{action}</div>}
                       {docsIn.length === 0
                         ? <div style={{ fontSize: 12, fontWeight: 600, color: '#334155', padding: '6px 4px' }}>{empty}</div>
-                        : docsIn.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} compact />)}
+                        : docsIn.map((d, i) => {
+                          // The PO folder holds the style's own papers first, then the master order's (one PO for the whole
+                          // buy); each kind gets a heading once both are there.
+                          const ofBuy = !d.orderId && !!d.masterOrderId
+                          const mixed = docsIn.some(x => !x.orderId && x.masterOrderId) && docsIn.some(x => x.orderId)
+                          const heading = mixed && (i === 0 || ofBuy !== (!docsIn[i - 1].orderId && !!docsIn[i - 1].masterOrderId))
+                          return (
+                            <Fragment key={d.id}>
+                              {heading && <div style={{ fontSize: 10.5, fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', padding: '4px 4px 0' }}>{ofBuy ? 'For the whole master order' : 'For this style'}</div>}
+                              <DocCard doc={d} users={users} onGetData={getDocData} compact />
+                            </Fragment>
+                          )
+                        })}
                       {hint && <div style={{ fontSize: 11, color: '#475569', padding: '2px 4px' }}>{hint}</div>}
                     </div>
                   )}
@@ -983,6 +996,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
               poDocs,
               caps.uploadPoInvoice && <Btn size="sm" variant="secondary" onClick={() => openDocUpload('PO')} icon={<Paperclip size={12} />}>Upload</Btn>,
               'No purchase order or invoice yet.',
+              order.masterOrderId ? 'Upload here for this style. A PO that covers the whole buy goes on the master order page and shows in every style.' : null,
             )}
             {(order.assignments?.length || 0) > 0 && folder(
               'delivery', 'Delivery documents',
@@ -1036,7 +1050,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                 <Input label="Issue Date" type="date" value={uf.issueDate} onChange={e => setUf({ ...uf, issueDate: e.target.value })} />
                 <Input label="Expiry Date (optional)" type="date" value={uf.expiryDate} onChange={e => setUf({ ...uf, expiryDate: e.target.value })} />
               </div>
-              <Alert type="info">{PO_INVOICE_DOC_TYPES.includes(uf.type) ? 'Visible to Tradio and the customer only. Factories never see purchase orders or invoices.' : 'Visible to Tradio, the customer and the manufacturers on this style.'}</Alert>
+              <Alert type="info">{COMMERCIAL_DOC_TYPES.includes(uf.type) ? 'Visible to Tradio and the customer only. Factories never see purchase orders, invoices, cost sheets or terms.' : 'Visible to Tradio, the customer and the manufacturers on this style.'}</Alert>
               <FileUpload file={fileData} onFile={f => { setFileData(f); setFileErr('') }} error={fileErr} onError={setFileErr} />
               <FlexRow justify="flex-end" gap={8}>
                 <Btn variant="secondary" onClick={() => { setShowUp(false); resetUpload() }}>Cancel</Btn>

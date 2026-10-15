@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { AlertTriangle } from '../../icons.jsx'
-import { T, seasonsFor, styleOnHold } from '../../constants.js'
+import { T, seasonsFor, styleOnHold, moDetailsForm, moDetailsPayload } from '../../constants.js'
+import { MasterOrderTermsFields } from './MasterOrderTermsFields.jsx'
 import { Btn, FlexRow, Input, Select, Mono, Modal, Textarea, useToast } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
@@ -16,7 +17,7 @@ export function EditMasterOrderModal({ mo, onClose, onDeleted }) {
   const toast = useToast()
   const [name, setName] = useState(mo.orderName || '')
   const [season, setSeason] = useState(mo.season || '')
-  const [details, setDetails] = useState({ poNumber: mo.poNumber || '', poDate: mo.poDate || '', shipBy: mo.shipBy || '', notes: mo.notes || '' })
+  const [details, setDetails] = useState(() => moDetailsForm(mo))
   const setDetail = k => e => setDetails(d => ({ ...d, [k]: e.target.value }))
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
@@ -42,7 +43,7 @@ export function EditMasterOrderModal({ mo, onClose, onDeleted }) {
 
   // Read live from the store, so a style disappears from this list the moment it is dropped.
   const styles = (orders || []).filter(o => o.masterOrderId === mo.id)
-  const detailsChanged = details.poNumber.trim() !== (mo.poNumber || '') || details.poDate !== (mo.poDate || '') || details.shipBy !== (mo.shipBy || '') || details.notes.trim() !== (mo.notes || '')
+  const detailsChanged = Object.keys(moDetailsPayload(details, moDetailsForm(mo))).length > 0
   const changed = name.trim() !== (mo.orderName || '') || season !== (mo.season || '') || detailsChanged
 
   const save = async () => {
@@ -51,9 +52,8 @@ export function EditMasterOrderModal({ mo, onClose, onDeleted }) {
     setSaving(true)
     try {
       // Only the fields that changed are sent, so the audit log records real changes.
-      const next = { orderName: name.trim(), season, poNumber: details.poNumber.trim(), poDate: details.poDate || null, shipBy: details.shipBy || null, notes: details.notes.trim() }
-      const was = { orderName: mo.orderName || '', season: mo.season || '', poNumber: mo.poNumber || '', poDate: mo.poDate || null, shipBy: mo.shipBy || null, notes: mo.notes || '' }
-      await updateMasterOrder(mo.id, Object.fromEntries(Object.entries(next).filter(([k, v]) => v !== was[k])))
+      const top = Object.fromEntries(Object.entries({ orderName: name.trim(), season }).filter(([k, v]) => v !== (mo[k] || '')))
+      await updateMasterOrder(mo.id, { ...top, ...moDetailsPayload(details, moDetailsForm(mo)) })
       toast('Master order updated', 'success')
       onClose()
     } catch (e) {
@@ -88,6 +88,7 @@ export function EditMasterOrderModal({ mo, onClose, onDeleted }) {
             <Input label="PO date" type="date" value={details.poDate} onChange={setDetail('poDate')} />
           </div>
           <Input label="Ship by" type="date" value={details.shipBy} onChange={setDetail('shipBy')} />
+          <MasterOrderTermsFields details={details} setDetail={setDetail} />
           <Textarea label="Notes" value={details.notes} onChange={setDetail('notes')} rows={2} maxLength={2000} />
 
           <div>

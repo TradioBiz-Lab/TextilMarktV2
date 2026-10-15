@@ -23,7 +23,7 @@ export function capsFor(user) {
     // Shipping the daily work
     manageMaterials: isAdmin || isMfr, manageChecklist: isAdmin || isMfr,
     uploadStageEvidence: isAdmin || isMfr,
-    uploadProductPhoto: isAdmin,
+    uploadProductPhoto: isAdmin || isBuyer,   // a customer on its own styles (POST /orders/:id/photos)
     uploadReferenceDocs: isAdmin || isBuyer,   // tech pack, measurements, pattern, lab dip
     // The customer's PO and Tradio's invoice: Tradio and the customer only, never a factory (the server enforces it).
     seePoInvoice: !isMfr,

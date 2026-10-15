@@ -9,7 +9,7 @@ import { photoFromFile } from '../colours.js'
 // colourway they show; change a photo's colourway, make one the main photo, remove one. Every photo here is a slide in
 // the style's gallery, and the main one is its thumbnail everywhere. Each change saves at once.
 export function ProductPhotos({ order, canEdit }) {
-  const { editOrder } = useApp()
+  const { editOrder, setStylePhotos, currentUser } = useApp()
   const toast = useToast()
   const [colour, setColour] = useState('')   // the colourway the next upload shows
   const [busy, setBusy] = useState(false)
@@ -20,7 +20,9 @@ export function ProductPhotos({ order, canEdit }) {
 
   const save = async (next, done) => {
     setBusy(true)
-    try { await editOrder(order.id, { photos: next.map(p => ({ image: p.image, colourway: p.colourway || '' })) }); toast(done, 'success') }
+    const list = next.map(p => ({ image: p.image, colourway: p.colourway || '' }))
+    // The customer saves through its own route; Tradio edits photos with the rest of the style.
+    try { await (currentUser?.role === 'buyer' ? setStylePhotos(order.id, list) : editOrder(order.id, { photos: list })); toast(done, 'success') }
     catch (e) { toast(typeof e === 'string' ? e : (e?.message || 'Could not save the photos'), 'error') }
     finally { setBusy(false) }
   }

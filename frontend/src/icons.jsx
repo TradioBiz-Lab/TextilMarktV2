@@ -23,6 +23,8 @@ import {
   CheckCircle as P_CheckCircle,
   Circle as P_Circle,
   ClipboardText as P_ClipboardText,
+  Clock as P_Clock,
+  MapPin as P_MapPin,
   ClockCounterClockwise as P_ClockCounterClockwise,
   CloudArrowUp as P_CloudArrowUp,
   Crown as P_Crown,
@@ -188,6 +190,8 @@ export const FlaskConical = make(P_Flask, 'FlaskConical')
 export const Folder = make(P_FolderSimple, 'Folder')
 export const Hexagon = make(P_Hexagon, 'Hexagon')
 export const History = make(P_ClockCounterClockwise, 'History')
+export const Clock = make(P_Clock, 'Clock')
+export const MapPin = make(P_MapPin, 'MapPin')
 export const Home = make(P_House, 'Home')
 export const Image = make(P_Image, 'Image')
 export const Inbox = make(P_Tray, 'Inbox')

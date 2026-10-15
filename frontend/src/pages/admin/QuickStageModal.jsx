@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ArrowRight, X, AlertTriangle, Paperclip, Plus } from '../../icons.jsx'
+import { ArrowRight, X, AlertTriangle, Paperclip, Plus, Pencil } from '../../icons.jsx'
 import { T, evidenceTypesFor, productDocForStep, kindForCustomerOwner, stepOwnerOptions, stageKindOf, stageStatusOf, stageVariance, stageActualVariance, STAGE_STATUS_LABELS, fmtStageDate, getToday, fmtDateTime } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, FlexRow, Input, FileUpload, DocCard, useToast, fileUploadPayload, SectionLabel } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -15,6 +15,27 @@ function dateToInput(d) {
   return isNaN(t.getTime()) ? '' : t.toISOString().slice(0, 10) // a stored date that will not parse shows blank, not a crash
 }
 
+
+// A material line as the form holds it, and as the API takes it (lib/materialFields.js on the server).
+const BLANK_MATERIAL = { name: '', requiredQty: '', unit: '', supplier: '', poNumber: '', expectedDate: '' }
+const materialBody = d => ({
+  name: d.name.trim(), requiredQty: parseFloat(d.requiredQty), unit: d.unit.trim(), supplier: d.supplier.trim(),
+  poNumber: d.poNumber.trim(), expectedDate: d.expectedDate || null,
+})
+const matInput = { width: '100%', boxSizing: 'border-box', border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit', minWidth: 0 }
+function MaterialFields({ draft, setDraft }) {
+  const field = (k, props) => <input value={draft[k]} onChange={e => setDraft(d => ({ ...d, [k]: e.target.value }))} style={matInput} {...props} />
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6 }}>
+      <div style={{ gridColumn: '1 / -1' }}>{field('name', { placeholder: 'Material name', 'aria-label': 'Material name', maxLength: 200 })}</div>
+      {field('requiredQty', { type: 'number', min: '0', placeholder: 'Qty', 'aria-label': 'Quantity' })}
+      {field('unit', { placeholder: 'Unit (m, kg, pcs)', 'aria-label': 'Unit', maxLength: 30 })}
+      {field('supplier', { placeholder: 'Supplier', 'aria-label': 'Supplier', maxLength: 200 })}
+      {field('poNumber', { placeholder: 'PO number', 'aria-label': 'PO number', maxLength: 60 })}
+      {field('expectedDate', { type: 'date', 'aria-label': 'Expected date', title: 'Expected date' })}
+    </div>
+  )
+}
 
 // The one stage-update modal, used from both the Order Management page
 // (clicking a matrix date cell — no navigation, saving leaves you exactly
@@ -53,7 +74,9 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
   const [blocking, setBlocking] = useState(false)
   const [blockReason, setBlockReason] = useState('')
   const [updateText, setUpdateText] = useState('')
-  const [matDraft, setMatDraft] = useState({ name: '', requiredQty: '' })
+  const [matDraft, setMatDraft] = useState(BLANK_MATERIAL)
+  const [matEditing, setMatEditing] = useState(null)   // the line whose details are open for editing
+  const [matEdit, setMatEdit] = useState(BLANK_MATERIAL)
   const [saving, setSaving] = useState(false)
   const [savingEta, setSavingEta] = useState(false)
   const [savingOwner, setSavingOwner] = useState(false)
@@ -340,11 +363,23 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
     if (!matDraft.name.trim() || !matDraft.requiredQty) return
     setSaving(true)
     try {
-      await addStageMaterial(orderId, mfrId, stageIndex, { name: matDraft.name.trim(), requiredQty: parseFloat(matDraft.requiredQty) })
-      setMatDraft({ name: '', requiredQty: '' })
+      await addStageMaterial(orderId, mfrId, stageIndex, materialBody(matDraft))
+      setMatDraft(BLANK_MATERIAL)
     } catch (err) {
       toast(err?.message || 'Failed to add material', 'error')
     } finally { setSaving(false) }
+  }
+
+  const editMaterial = (mi, m) => {
+    setMatEditing(mi)
+    setMatEdit({ name: m.name || '', requiredQty: String(m.requiredQty ?? ''), unit: m.unit || '', supplier: m.supplier || '', poNumber: m.poNumber || '', expectedDate: m.expectedDate || '' })
+  }
+  const saveMaterial = async mi => {
+    if (!matEdit.name.trim() || matEdit.requiredQty === '') return
+    setSaving(true)
+    try { await updateStageMaterial(orderId, mfrId, stageIndex, mi, materialBody(matEdit)); setMatEditing(null) }
+    catch (err) { toast(err?.message || 'Failed to save the material', 'error') }
+    finally { setSaving(false) }
   }
 
   const advanceMaterial = async (mi, current) => {
@@ -588,10 +623,26 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
                 : m.status === 'ordered' ? { bg: T.warningBg, c: T.warning }
                 : { bg: '#f1f5f9', c: T.textMuted }
               return (
+                matEditing === mi ? (
+                  <div key={mi} style={{ background: '#fff', borderRadius: 6, padding: 8, border: `1px solid ${T.primary}` }}>
+                    <MaterialFields draft={matEdit} setDraft={setMatEdit} />
+                    <FlexRow justify="flex-end" gap={6} style={{ marginTop: 6 }}>
+                      <Btn size="sm" variant="secondary" disabled={saving} onClick={() => setMatEditing(null)}>Cancel</Btn>
+                      <Btn size="sm" disabled={saving || !matEdit.name.trim() || matEdit.requiredQty === ''} onClick={() => saveMaterial(mi)}>Save</Btn>
+                    </FlexRow>
+                  </div>
+                ) :
                 <FlexRow key={mi} gap={8} style={{ background: '#fff', borderRadius: 6, padding: '6px 10px', border: `1px solid ${T.border}` }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: T.text }}>{m.name} - {m.requiredQty}{m.unit ? ` ${m.unit}` : ''}</div>
+                    {(m.supplier || m.poNumber || m.expectedDate) && (
+                      <div style={{ fontSize: 10.5, color: T.textMuted, marginTop: 2 }}>
+                        {[m.supplier, m.poNumber && `PO ${m.poNumber}`, m.expectedDate && `expected ${fmtStageDate(m.expectedDate)}`].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
                   </div>
+                  {canMaterials && <button onClick={() => editMaterial(mi, m)} aria-label={`Edit ${m.name}`} title="Edit details"
+                    style={{ background: '#f1f5f9', border: 'none', borderRadius: 6, cursor: 'pointer', width: 20, height: 20, color: T.textMuted, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}><Pencil size={11} /></button>}
                   <button onClick={canMaterials ? () => advanceMaterial(mi, m.status) : undefined} disabled={!canMaterials}
                     style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: sStyle.bg, color: sStyle.c, border: 'none', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
                     {m.status}
@@ -602,13 +653,12 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
               )
             })}
           </div>
-          {canMaterials && <FlexRow gap={6}>
-            <input value={matDraft.name} placeholder="Material name" onChange={e => setMatDraft(d => ({ ...d, name: e.target.value }))}
-              style={{ flex: 1, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit' }} />
-            <input type="number" value={matDraft.requiredQty} placeholder="Qty" onChange={e => setMatDraft(d => ({ ...d, requiredQty: e.target.value }))}
-              style={{ width: 70, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit' }} />
-            <Btn size="sm" disabled={saving || !matDraft.name.trim() || !matDraft.requiredQty} onClick={addMaterial} icon={<Plus size={12} />}>Add</Btn>
-          </FlexRow>}
+          {canMaterials && <div>
+            <MaterialFields draft={matDraft} setDraft={setMatDraft} />
+            <FlexRow justify="flex-end" style={{ marginTop: 6 }}>
+              <Btn size="sm" disabled={saving || !matDraft.name.trim() || !matDraft.requiredQty} onClick={addMaterial} icon={<Plus size={12} />}>Add</Btn>
+            </FlexRow>
+          </div>}
         </div>
 
         <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, ArrowRight, Folder, Package, Truck, Scissors, FlaskConical, PauseCircle, Trash2, Factory, Calendar, ChevronRight, Building2, BarChart3, LayoutGrid, Pencil, Plus, FileText, StickyNote } from '../../icons.jsx'
-import { T, phaseOf, deliveryStatus, planProgress, styleOnHold, dayNumber, getToday, effectiveEta, fmtDate, dueText, dueDates, factoriesOnHold } from '../../constants.js'
-import { Btn, Card, FlexRow, Mono, ProductThumb, EmptyState, LoadingScreen } from '../../components/ui.jsx'
+import { ArrowLeft, ArrowRight, Folder, Package, Truck, Scissors, FlaskConical, PauseCircle, Trash2, Factory, Calendar, ChevronRight, Building2, BarChart3, LayoutGrid, Pencil, Plus, FileText, StickyNote, Wallet, MapPin, Paperclip } from '../../icons.jsx'
+import { T, phaseOf, deliveryStatus, planProgress, styleOnHold, dayNumber, getToday, effectiveEta, fmtDate, dueText, dueDates, factoriesOnHold, fmtMoney } from '../../constants.js'
+import { Btn, Card, FlexRow, Mono, ProductThumb, EmptyState, LoadingScreen, DocCard, Modal, Input, FileUpload, useToast, fileUploadPayload } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { capsFor, canEditMasterOrder } from '../../caps.js'
 import { EditMasterOrderModal } from './EditMasterOrderModal.jsx'
@@ -139,6 +139,52 @@ function DroppedRow({ r }) {
         {r.reason && <div style={{ fontSize: 12, color: '#334155', marginTop: 5, fontStyle: 'italic' }}>"{r.reason}"</div>}
       </div>
     </div>
+  )
+}
+
+// The customer's purchase orders for the whole buy (one PO can cover every style in it). Each style's PO and Invoice folder
+// shows them too. Tradio and the customer only: a factory never sees a PO (the server keeps it from them).
+function BuyPurchaseOrders({ mo, canUpload }) {
+  const { docs, users, uploadDoc, getDocData } = useApp()
+  const toast = useToast()
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState('')
+  const [file, setFile] = useState(null)
+  const [fileErr, setFileErr] = useState('')
+  const [saving, setSaving] = useState(false)
+  const list = (docs || []).filter(d => d.isActive !== false && !d.orderId && d.masterOrderId === mo.id && d.type === 'PO')
+  const close = () => { setOpen(false); setName(''); setFile(null); setFileErr('') }
+  const save = async () => {
+    setSaving(true)
+    try {
+      await uploadDoc({ type: 'PO', name: name.trim(), orderId: null, mfrId: null, masterOrderId: mo.id, issueDate: getToday(), expiryDate: null, ...fileUploadPayload(file) })
+      toast('Purchase order attached', 'success'); close()
+    } catch (e) { toast(typeof e === 'string' ? e : (e?.message || 'Could not upload'), 'error') }
+    finally { setSaving(false) }
+  }
+  return (
+    <Card>
+      <FlexRow justify="space-between" style={{ marginBottom: 6 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>Purchase orders</div>
+        {canUpload && <Btn size="sm" variant="secondary" icon={<Paperclip size={12} />} onClick={() => { setName(`Customer PO, ${mo.id}`); setOpen(true) }}>Upload</Btn>}
+      </FlexRow>
+      <div style={{ fontSize: 11.5, color: T.textMuted, marginBottom: 8 }}>For the whole buy. It shows in every style's PO and Invoice folder; a PO for one style goes on that style.</div>
+      {list.length === 0
+        ? <div style={{ fontSize: 12, color: T.textMuted }}>No purchase order for the whole buy yet.</div>
+        : list.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} compact />)}
+      {open && (
+        <Modal title="Attach a purchase order" subtitle={`${mo.orderName} · whole buy`} onClose={close}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <Input label="Document name *" value={name} onChange={e => setName(e.target.value)} maxLength={300} />
+            <FileUpload file={file} onFile={f => { setFile(f); setFileErr('') }} error={fileErr} onError={setFileErr} />
+            <FlexRow justify="flex-end" gap={8}>
+              <Btn variant="secondary" onClick={close} disabled={saving}>Cancel</Btn>
+              <Btn onClick={save} disabled={!name.trim() || !file || saving}>{saving ? 'Uploading…' : 'Upload'}</Btn>
+            </FlexRow>
+          </div>
+        </Modal>
+      )}
+    </Card>
   )
 }
 
@@ -288,6 +334,11 @@ export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
             <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', marginBottom: 4 }}>Order details</div>
             {(mo.poNumber || mo.poDate) && <InfoRow icon={FileText} label="Customer PO">{mo.poNumber || 'No number'}{mo.poDate ? <span style={{ color: T.textMuted, fontWeight: 500 }}> · {fmtDate(mo.poDate)}</span> : null}</InfoRow>}
             {mo.shipBy && <InfoRow icon={Calendar} label="Ship by">{fmtDate(mo.shipBy)}</InfoRow>}
+            {/* Price and payment terms come back blank for a factory (the server keeps them from it), so these rows hide. */}
+            {mo.price != null && <InfoRow icon={Wallet} label="Order value">{fmtMoney(mo.price, mo.currency)}</InfoRow>}
+            {mo.paymentTerms && <InfoRow icon={Wallet} label="Payment terms"><span style={{ fontWeight: 500 }}>{mo.paymentTerms}</span></InfoRow>}
+            {mo.incoterm && <InfoRow icon={Truck} label="Incoterm">{mo.incoterm}</InfoRow>}
+            {mo.shipTo && <InfoRow icon={MapPin} label="Ship to"><span style={{ fontWeight: 500, whiteSpace: 'pre-wrap' }}>{mo.shipTo}</span></InfoRow>}
             <InfoRow icon={Building2} label="Customer">{mo.buyerCompany || '-'}{mo.buyerName ? <span style={{ color: T.textMuted, fontWeight: 500 }}> · {mo.buyerName}</span> : null}</InfoRow>
             <InfoRow icon={Factory} label={factories.length === 1 ? 'Manufacturer' : 'Manufacturers'}>{factories.length ? factories.join(', ') : 'None assigned yet'}</InfoRow>
             <InfoRow icon={Calendar} label="Delivery window">{dates.length ? (dates.length === 1 || fmtDate(dates[0]) === fmtDate(dates[dates.length - 1]) ? fmtDate(dates[0]) : `${fmtDate(dates[0])} to ${fmtDate(dates[dates.length - 1])}`) : 'No delivery dates yet'}</InfoRow>
@@ -299,6 +350,7 @@ export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
             <InfoRow icon={Package} label="Quantity">{pieces.toLocaleString('en-IN')} pcs across {styles.length} style{styles.length === 1 ? '' : 's'}</InfoRow>
             {mo.notes && <InfoRow icon={StickyNote} label="Notes"><span style={{ fontWeight: 500, whiteSpace: 'pre-wrap' }}>{mo.notes}</span></InfoRow>}
           </Card>
+          {caps.seePoInvoice && <BuyPurchaseOrders mo={mo} canUpload={caps.uploadPoInvoice} />}
         </div>
       </div>
     </div>

@@ -47,7 +47,6 @@ export const REPORT_STATUSES = ['In Progress', 'On Track', 'Delayed']
 export const DOC_TYPES = [
   { v: 'PO', l: 'Purchase Order' },
   { v: 'invoice', l: 'Invoice' },
-  { v: 'buyer_order', l: 'Buyer Order' },
   { v: 'tech_pack', l: 'Tech Pack' },
   { v: 'cost_sheet', l: 'Cost Sheet' },
   { v: 'RFQ', l: 'RFQ' },
@@ -120,8 +119,12 @@ export const stageForDoc = (orders, doc) => {
 }
 export const stageNameForDoc = (orders, doc) => stageForDoc(orders, doc)?.name || null
 
-// The customer's purchase order and Tradio's invoice. Commercial: factories never see them (the server enforces it too).
-export const PO_INVOICE_DOC_TYPES = ['PO', 'buyer_order', 'invoice']
+// The customer's purchase order and Tradio's invoice: the style's PO and Invoice folder. ('buyer_order' was a second name for
+// the PO; the server reads old ones back as 'PO'.)
+export const PO_INVOICE_DOC_TYPES = ['PO', 'invoice']
+// Commercial papers: what the customer pays and on what terms. Tradio and the customer only; a factory never lists, opens or
+// uploads them (the server enforces it, routes/documents.js HIDDEN_FROM_FACTORIES).
+export const COMMERCIAL_DOC_TYPES = ['PO', 'invoice', 'cost_sheet', 'terms']
 
 // An order's Delivery documents: delivery paperwork attached to the order or to its Delivery step. A delivery document
 // that was filed against some other step by mistake is not listed here.
@@ -157,6 +160,31 @@ export const DOC_ICONS = {
 
 export const CATEGORIES = ['TSHRT', 'JEANS', 'BEDSH', 'SHIRT', 'DRESS', 'JACKET', 'POLO', 'SHORTS', 'HOODIE']
 export const SEASONS = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
+
+// A master order's commercial details (backend lib/masterOrderDetails.js). Price, currency and payment terms reach Tradio
+// and the customer only: the server sends a factory blanks for them.
+export const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'AED']
+export const INCOTERMS = ['EXW', 'FCA', 'FAS', 'FOB', 'CFR', 'CIF', 'CPT', 'CIP', 'DAP', 'DPU', 'DDP']
+const MO_DETAIL_KEYS = ['poNumber', 'poDate', 'shipBy', 'notes', 'currency', 'price', 'paymentTerms', 'incoterm', 'shipTo']
+const MO_NULLABLE = ['poDate', 'shipBy', 'price']
+/** A master order's details as form strings. */
+export const moDetailsForm = mo => Object.fromEntries(MO_DETAIL_KEYS.map(k => [k, mo?.[k] == null ? '' : String(mo[k])]))
+/** The form as the API takes it: trimmed, a blank date or price as null. Given `was`, only the fields that changed. */
+export function moDetailsPayload(form, was) {
+  const out = {}
+  for (const k of MO_DETAIL_KEYS) {
+    const v = String(form?.[k] ?? '').trim()
+    if (was && v === String(was[k] ?? '').trim()) continue
+    out[k] = v === '' && MO_NULLABLE.includes(k) ? null : v
+  }
+  return out
+}
+/** "USD 125,000.5", or "INR 1,25,000" (Indian grouping for rupees). Blank when there is no price. */
+export const fmtMoney = (price, currency) => {
+  if (price == null || price === '' || !Number.isFinite(Number(price))) return ''
+  const n = Number(price).toLocaleString(!currency || currency === 'INR' ? 'en-IN' : 'en-US', { maximumFractionDigits: 2 })
+  return currency ? `${currency} ${n}` : n
+}
 /** A customer's own seasons (set in User Setup), or the standard list; the value already on a record stays listed. */
 export const seasonsFor = (buyer, current) => {
   const list = buyer?.seasons?.length ? buyer.seasons : SEASONS
@@ -677,10 +705,10 @@ export function resolveNamedColor(name) {
 // here (not duplicated per call site) since the backend's own allowlist
 // (documents.js) must stay in sync with whatever these actually accept.
 export const PATTERN_FILE_PROPS = {
-  extensions: ['.dxf'],
-  mimeTypes: ['application/dxf', 'image/vnd.dxf', 'application/octet-stream'],
-  accept: '.dxf',
-  label: 'DXF',
+  extensions: ['.dxf', '.pdf'],
+  mimeTypes: ['application/dxf', 'image/vnd.dxf', 'application/octet-stream', 'application/pdf'],
+  accept: '.dxf,.pdf',
+  label: 'DXF or PDF',
 }
 export const MEASUREMENTS_FILE_PROPS = {
   extensions: ['.xlsx', '.xls', '.csv'],
@@ -688,10 +716,13 @@ export const MEASUREMENTS_FILE_PROPS = {
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'application/vnd.ms-excel',
     'text/csv',
+    'application/pdf',
   ],
-  accept: '.xlsx,.xls,.csv',
-  label: 'Excel/CSV',
+  accept: '.xlsx,.xls,.csv,.pdf',
+  label: 'Excel, CSV or PDF',
 }
+/** The extra upload props for a document type whose slot takes more than PDF, JPG and PNG. */
+export const fileUploadPropsFor = type => type === 'pattern' ? PATTERN_FILE_PROPS : type === 'measurements' ? MEASUREMENTS_FILE_PROPS : {}
 
 /** The single stage to show when only one fits — earliest ETA among those in flight. */
 export const primaryStage = assignment => {
