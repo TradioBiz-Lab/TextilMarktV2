@@ -21,7 +21,7 @@ const fmtDate = d => {
 const SECTIONS = [
   { id: 'production', label: 'In production', icon: Scissors, fg: '#92400e', bg: '#fef9c3', bd: '#fde68a' },
   { id: 'delivered', label: 'Delivered', icon: Truck, fg: '#166534', bg: '#dcfce7', bd: '#86efac' },
-  { id: 'development', label: 'Sampling & Development', icon: FlaskConical, fg: '#5b21b6', bg: '#ede9fe', bd: '#c4b5fd' },
+  { id: 'development', label: 'New Product Development', icon: FlaskConical, fg: '#5b21b6', bg: '#ede9fe', bd: '#c4b5fd' },
   { id: 'hold', label: 'On hold', icon: PauseCircle, fg: '#475569', bg: '#f1f5f9', bd: '#cbd5e1' },
   { id: 'dropped', label: 'Dropped', icon: Trash2, fg: '#991b1b', bg: '#fee2e2', bd: '#fca5a5' },
 ]

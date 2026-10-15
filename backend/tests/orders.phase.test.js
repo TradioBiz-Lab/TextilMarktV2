@@ -1,4 +1,4 @@
-// A style is in Sampling & Development or in Production. Old styles are production; the customer and Tradio
+// A style is in New Product Development or in Production. Old styles are production; the customer and Tradio
 // move a style across, the factory does not.
 
 import test, { before, after, beforeEach, describe } from 'node:test'
@@ -28,7 +28,7 @@ describe('style phase', () => {
     assert.equal(res.body.phase, 'production')
   })
 
-  test('a style can be created in sampling and development, and moved to production', async () => {
+  test('a style can be created in new product development, and moved to production', async () => {
     const { master, res } = await arrange({ phase: 'development' })
     assert.equal(res.body.phase, 'development')
     const moved = await as(master).post('/api/orders/PH-001', { phase: 'production' })
@@ -51,7 +51,7 @@ describe('style phase', () => {
   })
 })
 
-describe('the standard plan for a style in sampling and development', () => {
+describe('the standard plan for a style in new product development', () => {
   test('a manufacturer added to a development style gets the development steps and no Delivery step', async () => {
     const master = await makeMaster()
     const buyer = await makeBuyer()
@@ -81,7 +81,7 @@ describe('the standard plan for a style in sampling and development', () => {
   })
 })
 
-describe('a style in sampling and development has no delivery date and no Delivery step', () => {
+describe('a style in new product development has no delivery date and no Delivery step', () => {
   async function dev() {
     const master = await makeMaster()
     const buyer = await makeBuyer()
@@ -91,14 +91,21 @@ describe('a style in sampling and development has no delivery date and no Delive
     return { master, mfr, made }
   }
 
-  test('any style is created without a delivery date; production takes it with its first manufacturer', async () => {
+  test('any style is created without a delivery date; production takes it with its first manufacturer, or later', async () => {
     const { master, mfr, made } = await dev()
     assert.equal(made.body.delivery, null)
     const prod = await as(master).post('/api/orders', { id: 'ND-002', buyerId: String(made.body.buyerId), product: 'Prod', category: 'HOODIE', season: 'FW26', totalQty: 10 })
     assert.equal(prod.status, 201, JSON.stringify(prod.body))
     assert.equal(prod.body.delivery, null)
-    // The first manufacturer needs the date, and the plan's Delivery step stands on it.
-    assert.equal((await as(master).post('/api/orders/ND-002/assignments', { mfrId: String(mfr._id), qty: 10 })).status, 400)
+    // Without a date the plan's Delivery step is undated, and takes the style's date once it is given.
+    const later = await as(master).post('/api/orders', { id: 'ND-003', buyerId: String(made.body.buyerId), product: 'Later', category: 'HOODIE', season: 'FW26', totalQty: 10 })
+    assert.equal(later.status, 201, JSON.stringify(later.body))
+    assert.equal((await as(master).post('/api/orders/ND-003/assignments', { mfrId: String(mfr._id), qty: 10 })).status, 201)
+    let undated = (await Order.findById('ND-003').lean()).assignments[0].stages.at(-1)
+    assert.deepEqual([undated.name, undated.startDate, undated.baselineEta], ['Delivery', 'NA', 'NA'])
+    assert.equal((await as(master).post('/api/orders/ND-003', { delivery: '2027-02-10' })).status, 200)
+    undated = (await Order.findById('ND-003').lean()).assignments[0].stages.at(-1)
+    assert.deepEqual([undated.startDate, undated.baselineEta], ['2027-02-10', '2027-02-10'])
     const added = await as(master).post('/api/orders/ND-002/assignments', { mfrId: String(mfr._id), qty: 10, delivery: '2027-01-20' })
     assert.equal(added.status, 201, JSON.stringify(added.body))
     const o = await Order.findById('ND-002').lean()
@@ -116,12 +123,9 @@ describe('a style in sampling and development has no delivery date and no Delive
     assert.equal(names[0], 'Request Received')
   })
 
-  test('moving it to production needs a date, then adds the Delivery step', async () => {
+  test('moving it to production adds the Delivery step, on the date when there is one and undated otherwise', async () => {
     const { master, mfr } = await dev()
     await as(master).post('/api/orders/ND-001/assignments', { mfrId: String(mfr._id), qty: 100 })
-    const refused = await as(master).post('/api/orders/ND-001', { phase: 'production' })
-    assert.equal(refused.status, 400)
-    assert.equal((await Order.findById('ND-001').lean()).phase, 'development')
     const ok = await as(master).post('/api/orders/ND-001', { phase: 'production', delivery: '2026-12-20' })
     assert.equal(ok.status, 200, JSON.stringify(ok.body))
     const o = await Order.findById('ND-001').lean()
@@ -133,7 +137,7 @@ describe('a style in sampling and development has no delivery date and no Delive
   })
 })
 
-describe('moving a style back to sampling and development', () => {
+describe('moving a style back to new product development', () => {
   async function prod() {
     const master = await makeMaster()
     const buyer = await makeBuyer()
@@ -151,10 +155,11 @@ describe('moving a style back to sampling and development', () => {
     assert.equal(o.phase, 'development')
     assert.equal(o.delivery, null)
     assert.ok(!o.assignments[0].stages.some(s => s.isDelivery))
-    assert.equal((await as(master).post('/api/orders/BK-001', { phase: 'production' })).status, 400)
-    assert.equal((await as(master).post('/api/orders/BK-001', { phase: 'production', delivery: '2027-01-15' })).status, 200)
+    assert.equal((await as(master).post('/api/orders/BK-001', { phase: 'production' })).status, 200)
     o = await Order.findById('BK-001').lean()
-    assert.equal(o.assignments[0].stages.filter(s => s.isDelivery).length, 1)
+    const step = o.assignments[0].stages.filter(s => s.isDelivery)
+    assert.equal(step.length, 1)
+    assert.equal(step[0].baselineEta, 'NA')   // no date yet: undated until one is given
   })
 
   test('a style with a delivered split stays in production', async () => {

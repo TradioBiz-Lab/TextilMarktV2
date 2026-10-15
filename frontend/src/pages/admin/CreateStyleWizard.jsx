@@ -11,8 +11,8 @@ const newStyle = () => ({
   product: '', styleNumber: '', category: '', customCategory: '',
   colourways: [{ _key: _styleKeySeq++, name: '', code: '', hex: '' }],
   fabrics: [{ _key: _styleKeySeq++, name: '', composition: '', gsm: '', supplier: '' }],
-  // No delivery date here: it is given when the style's manufacturer is added.
-  totalQty: '', phase: 'production',
+  // Optional: the date the customer expects it. A plan's Delivery step is dated with it (or stays undated until given).
+  totalQty: '', delivery: '', phase: 'production',
   // Step 3, all optional. Product photos, each tied to one of the style's colourways or to none; the first is the main photo.
   photos: [], photoColour: '',
   measurementsFile: null, measurementsErr: '',
@@ -67,7 +67,7 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
   }))
 
   const step1Valid = masterOrderId && styles.every(s =>
-    s.product.trim() && s.styleNumber.trim() &&
+    s.product.trim() &&
     (s.category && s.category !== '__custom__' ? true : s.customCategory.trim()) &&
     s.totalQty && Number.isInteger(Number(s.totalQty)) && Number(s.totalQty) > 0
   )
@@ -89,7 +89,7 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
         const created = await createOrder({
           id: 'auto', buyerId: mo.buyerId, product: s.product.trim(), styleNumber: s.styleNumber.trim(),
           category, season: mo.season || undefined, masterOrderId,
-          totalQty: Math.floor(Number(s.totalQty)), phase: s.phase,
+          totalQty: Math.floor(Number(s.totalQty)), ...(s.phase === 'production' && s.delivery ? { delivery: s.delivery } : {}), phase: s.phase,
           createdAt: getToday(),
           colourways, fabricDetails, ecommerceLink: s.ecommerceLink.trim(),
           photos: s.photos.map(ph => ({ image: ph.image, colourway: colourways.some(c => c.name === ph.colourway) ? ph.colourway : '' })),
@@ -165,7 +165,7 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
                     </FlexRow>
                     <div className="form-grid-2" style={{ gap: 10 }}>
                       <Input label="Product Name *" value={s.product} onChange={e => updateStyle(s._key, { product: e.target.value })} placeholder="e.g. Classic T-Shirt" />
-                      <Input label="Style Number *" value={s.styleNumber} onChange={e => updateStyle(s._key, { styleNumber: e.target.value })} placeholder="e.g. STY-2026-014" />
+                      <Input label="Customer Style ID" value={s.styleNumber} onChange={e => updateStyle(s._key, { styleNumber: e.target.value })} placeholder="The customer's own code, e.g. FLGCM16" maxLength={60} />
                     </div>
                     <div className="form-grid-2" style={{ gap: 10 }}>
                       <div>
@@ -183,9 +183,12 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
                       <Input label="Quantity *" type="number" value={s.totalQty} onChange={e => updateStyle(s._key, { totalQty: e.target.value })} placeholder="5000" />
                     </div>
 
-                    <Select label="Stage" value={s.phase} onChange={e => updateStyle(s._key, { phase: e.target.value })}>
-                      {PHASES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                    </Select>
+                    <div className="form-grid-2" style={{ gap: 10 }}>
+                      <Select label="Stage" value={s.phase} onChange={e => updateStyle(s._key, { phase: e.target.value })}>
+                        {PHASES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                      </Select>
+                      {s.phase === 'production' && <Input label="Expected delivery date" type="date" value={s.delivery} onChange={e => updateStyle(s._key, { delivery: e.target.value })} hint="Optional. It can be added later." />}
+                    </div>
                   </div>
                 )
               })}

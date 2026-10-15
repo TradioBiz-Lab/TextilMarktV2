@@ -1,5 +1,4 @@
 import { Logo } from './Brand.jsx'
-import { ViewAsPicker } from './ViewAsPicker.jsx'  // sandbox-only, remove with the feature
 import { useState, useEffect } from 'react'
 import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot, Hexagon, Inbox } from '../icons.jsx'
 import { T } from '../constants.js'
@@ -122,7 +121,6 @@ export function Shell({ view, setView, children, onOpenOrder }) {
                   <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: roleDot, flexShrink: 0 }} />
                   <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.78)', textTransform: 'uppercase', letterSpacing: '0.09em', whiteSpace: 'nowrap' }}>{roleLabel}</span>
                 </div>
-                <ViewAsPicker />
               </>
           }
         </div>
@@ -133,7 +131,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
             const Icon = n.icon
             return (
               <button key={n.id} onClick={() => handleNav(n.id)} title={sidebarCollapsed ? n.label : undefined}
-                className="sidebar-nav-item"
+                className="sidebar-nav-item" aria-current={active ? 'page' : undefined}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', gap: 10, padding: sidebarCollapsed ? '9px 0' : '9px 12px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: active ? 700 : 500, textAlign: 'left', background: active ? 'rgba(255,255,255,0.12)' : 'transparent', color: active ? '#fff' : 'rgba(255,255,255,0.55)', transition: 'all 0.12s', fontFamily: 'inherit' }}>
                 <Icon size={18} weight={active ? 'fill' : 'regular'} style={{ flexShrink: 0 }} />{!sidebarCollapsed && n.label}
               </button>
@@ -151,7 +149,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
         {!sidebarCollapsed && (
           <div style={{ padding: '12px 14px', borderTop: `1px solid ${T.sidebarBorder}` }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#002B5B', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: '#e2e8f0', flexShrink: 0, border: '1px solid rgba(255,255,255,0.15)' }}>{user?.name?.[0]}</div>
+              <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#273D6D', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: '#e2e8f0', flexShrink: 0, border: '1px solid rgba(255,255,255,0.15)' }}>{user?.name?.[0]}</div>
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.name}</div>
                 <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.company}</div>
@@ -161,7 +159,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
         )}
         {sidebarCollapsed && (
           <div style={{ padding: '12px 0', borderTop: `1px solid ${T.sidebarBorder}`, display: 'flex', justifyContent: 'center' }}>
-            <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#002B5B', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: '#e2e8f0', border: '1px solid rgba(255,255,255,0.15)' }}>{user?.name?.[0]}</div>
+            <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#273D6D', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: '#e2e8f0', border: '1px solid rgba(255,255,255,0.15)' }}>{user?.name?.[0]}</div>
           </div>
         )}
       </aside>
@@ -173,7 +171,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
         <header className="shell-header" style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, height: 54, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, position: 'relative', zIndex: 300 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {/* Hamburger for mobile */}
-            <button className="hamburger-btn" onClick={() => setSidebarOpen(true)}>
+            <button className="hamburger-btn" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
               <Menu size={20} />
             </button>
             <div className="header-logo"><Logo size={28} /></div>

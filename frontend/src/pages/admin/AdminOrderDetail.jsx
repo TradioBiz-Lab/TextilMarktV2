@@ -775,7 +775,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
               </button>
             )
           })()}
-          {order.phase === 'development' && <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 10, background: '#ede9fe', color: '#5b21b6', border: '1px solid #c4b5fd' }}>Sampling &amp; Development</span>}
+          {order.phase === 'development' && <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 10, background: '#ede9fe', color: '#5b21b6', border: '1px solid #c4b5fd' }}>New Product Development</span>}
           <div style={{ flex: 1 }} />
           {!unassigned && order.assignments?.length > 1 && (
             <Btn variant="secondary" size="sm" onClick={() => setSelectedMid(null)} icon={<ArrowLeftRight size={13} />}>All splits</Btn>
@@ -817,12 +817,16 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
 
             {/* Spec sheet */}
             <div style={{ flex: '1 1 420px', padding: '18px 22px', minWidth: 300 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Tradio Style ID</div>
               <Mono style={{ fontSize: 11, color: T.textLight, letterSpacing: '0.04em' }}>{order.id}</Mono>
               <h1 style={{ fontSize: 26, fontWeight: 800, color: T.info, margin: '2px 0 2px', lineHeight: 1.15, letterSpacing: '-0.01em' }}>
                 {order.product}
               </h1>
               {order.styleNumber && (
-                <Mono style={{ fontSize: 12, color: T.textMuted }}>Style {order.styleNumber}</Mono>
+                <div style={{ marginTop: 2 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.08em', marginRight: 6 }}>Customer Style ID</span>
+                  <Mono style={{ fontSize: 12, color: T.textMuted }}>{order.styleNumber}</Mono>
+                </div>
               )}
               {order.ecommerceLink && (
                 /^https?:\/\//i.test(order.ecommerceLink)
@@ -1129,12 +1133,12 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
               </Select>
               <Input label="Quantity *" type="number" value={newMfrQty ?? String(order.totalQty || '')} onChange={e => setNewMfrQty(e.target.value)} />
               {order.phase !== 'development' && !order.delivery && (
-                <Input label="Delivery date *" type="date" value={newMfrDelivery} onChange={e => setNewMfrDelivery(e.target.value)} hint="The plan ends in a Delivery step on this date." />
+                <Input label="Expected delivery date" type="date" value={newMfrDelivery} onChange={e => setNewMfrDelivery(e.target.value)} hint="Optional. The plan's Delivery step is dated with it." />
               )}
             </div>
             <FlexRow justify="flex-end" style={{ marginTop: 12 }}>
               <Btn
-                disabled={!newMfrId || !(Number(newMfrQty ?? order.totalQty) > 0) || (order.phase !== 'development' && !order.delivery && !newMfrDelivery) || addingMfr}
+                disabled={!newMfrId || !(Number(newMfrQty ?? order.totalQty) > 0) || addingMfr}
                 onClick={async () => {
                   setAddingMfr(true)
                   try {

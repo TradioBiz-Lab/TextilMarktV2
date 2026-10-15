@@ -46,7 +46,7 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
   const [sfilt, setSfilt] = useState(initialStatus || 'All')
   // Styles still being sampled and developed are kept apart from the ones in production.
   const [phase, setPhase] = useState(initialPhase || 'production')
-  // Moving styles out of Sampling & Development: tick the ones that are ready and move them in one go.
+  // Moving styles out of New Product Development: tick the ones that are ready and move them in one go.
   const [promoteOpen, setPromoteOpen] = useState(false)
   const [picked, setPicked] = useState(() => new Set())
   const [moving, setMoving] = useState(false)
@@ -104,7 +104,7 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
   const buyerUsers = users.filter(u => u.role === 'buyer' && u.isActive)  // used in Master Order modal
 
   const filtered = orders.filter(o => {
-    const qm = !q || (o.id.toLowerCase().includes(q.toLowerCase()) || o.product.toLowerCase().includes(q.toLowerCase()))
+    const qm = !q || [o.id, o.product, o.styleNumber].some(v => (v || '').toLowerCase().includes(q.toLowerCase()))
     const sm = sfilt === 'All' || (o.assignments || []).some(a => a.status === sfilt)
     return qm && sm && phaseOf(o) === phase
   })
@@ -347,7 +347,8 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
             const sugg = q.trim().length > 0
               ? orders.filter(o =>
                   o.id.toLowerCase().includes(q.toLowerCase()) ||
-                  o.product.toLowerCase().includes(q.toLowerCase())
+                  o.product.toLowerCase().includes(q.toLowerCase()) ||
+                  (o.styleNumber || '').toLowerCase().includes(q.toLowerCase())
                 ).slice(0, 8)
               : []
             return (
@@ -389,7 +390,7 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
         {/* Styles across the top, TNA steps down the side. Each cell's state is named in its hover tooltip. */}
           <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-            {groupedOrders.length === 0 && <EmptyState icon={<Package size={26} color={T.textLight} />} title={phase === 'development' ? 'Nothing in Sampling & Development' : 'No orders'} desc={phase === 'development' ? 'Styles still being sampled show up here.' : caps.createOrders ? "Create your first order above" : "Orders will appear here once they are placed"} />}
+            {groupedOrders.length === 0 && <EmptyState icon={<Package size={26} color={T.textLight} />} title={phase === 'development' ? 'Nothing in New Product Development' : 'No orders'} desc={phase === 'development' ? 'Styles still being sampled show up here.' : caps.createOrders ? "Create your first order above" : "Orders will appear here once they are placed"} />}
 
             {groupedOrders.map(g => {
               // Earliest delivery first — the style due soonest is the one that

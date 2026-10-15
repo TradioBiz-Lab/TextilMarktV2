@@ -7,6 +7,17 @@ body { font-family: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe 
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 input, select, textarea, button { font-family: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; }
 input:focus, select:focus, textarea:focus { outline: none; box-shadow: 0 0 0 3px rgba(249,115,22,0.15); border-color: #f97316 !important; }
+/* One dropdown arrow on every select, set in from the right edge (the browser's own sits against the border).
+   Most selects set their background and padding inline, so only these properties carry !important. */
+select:not([multiple]):not([size]) {
+  -webkit-appearance: none; -moz-appearance: none; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 10px center !important;
+  background-size: 12px 12px !important;
+  padding-right: 30px !important;
+}
+select:not([multiple]):not([size]):disabled { opacity: 0.6; cursor: default; }
 /* Buttons/links/custom controls get NO focus indicator without this — the
    button:focus reset below had nothing put back in its place, so every
    sidebar nav item, every Btn, was invisible to keyboard navigation.
@@ -55,6 +66,19 @@ table { border-collapse: collapse; width: 100%; }
 }
 .shell-sidebar.collapsed { width: 56px; }
 .sidebar-collapse-btn:hover { color: rgba(255,255,255,0.7) !important; }
+
+/* Sidebar nav: a hover tint for mouse users (the rows set their colours inline, so only !important
+   gets through; the current page is left alone), and a short brand-orange bar on the current page's row. */
+.sidebar-nav-item { position: relative; }
+.sidebar-nav-item:not([aria-current="page"]):hover { background: rgba(255,255,255,0.07) !important; color: rgba(255,255,255,0.9) !important; }
+.sidebar-nav-item[aria-current="page"]::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 9px; bottom: 9px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: #C4622D;
+}
 
 /* Hamburger hidden on desktop */
 .hamburger-btn { display: none; }

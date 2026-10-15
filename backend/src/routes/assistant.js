@@ -193,7 +193,7 @@ const WRITE_TOOLS = new Set([
 // customer of a style is always its master order's, and nothing is created until the admin's own reply confirms it.
 const SEASONS = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
 const MASTER_ORDER_KEYS = ['orderName', 'season', 'buyerId', 'poNumber', 'poDate', 'shipBy', 'notes']
-const ORDER_KEYS = ['product', 'styleNumber', 'category', 'season', 'totalQty', 'masterOrderId', 'phase', 'callout']
+const ORDER_KEYS = ['product', 'styleNumber', 'category', 'season', 'totalQty', 'delivery', 'masterOrderId', 'phase', 'callout']
 // One confirmation can cover several creates in a turn, so a create the model repeats (a retry after an error, say) is
 // caught here: the same product and style number in the same master order is refused before anything is written.
 const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -324,7 +324,6 @@ export const TOOL_HANDLERS = {
     if (input.phase !== undefined && !['production', 'development'].includes(input.phase)) return badInput('phase')
     if (input.manufacturerId !== undefined && !OBJECT_ID_RE.test(String(input.manufacturerId))) return badInput('manufacturerId')
     if (input.delivery !== undefined && !isoDay(input.delivery)) return badInput('delivery')
-    if (input.manufacturerId && (input.phase || 'production') === 'production' && !input.delivery) return badInput('delivery (needed with a manufacturer for a style in production)')
     if (input.colourways !== undefined && !(Array.isArray(input.colourways) && input.colourways.every(c => typeof c === 'string' && c.length <= 60))) return badInput('colourways')
     // The customer is the master order's, never the model's.
     const mos = await loopbackFetch(ctx.cookie, 'GET', '/api/master-orders')
@@ -345,7 +344,7 @@ export const TOOL_HANDLERS = {
     if (input.colourways) body.colourways = input.colourways.slice(0, 40).map(name => ({ name }))
     const created = await loopbackOrderFetch(ctx.cookie, 'POST', '/api/orders', body)
     if (!created.ok || !input.manufacturerId) return created
-    const assigned = await loopbackOrderFetch(ctx.cookie, 'POST', `/api/orders/${created.data.id}/assignments`, { mfrId: input.manufacturerId, qty: input.totalQty, ...(input.delivery ? { delivery: input.delivery } : {}) })
+    const assigned = await loopbackOrderFetch(ctx.cookie, 'POST', `/api/orders/${created.data.id}/assignments`, { mfrId: input.manufacturerId, qty: input.totalQty })
     if (!assigned.ok) return { ok: true, status: 201, data: { created: created.data.id, warning: `The style ${created.data.id} WAS created, but adding the manufacturer failed: ${assigned.data?.error || 'error'}. Do not call create_order again for it. Tell the admin; the manufacturer can be added on the style page.` } }
     return assigned
   },
@@ -593,7 +592,7 @@ const TOOLS = [
       properties: {
         masterOrderId: { type: 'string', description: 'From list_master_orders.' },
         product: { type: 'string', maxLength: 300, description: "e.g. 'Smocked Waist Top'." },
-        styleNumber: { type: 'string', maxLength: 60 },
+        styleNumber: { type: 'string', maxLength: 60, description: "The customer's style ID (their own code for the style), if they give one." },
         category: { type: 'string', maxLength: 50, description: "Free text, e.g. 'TOP' or 'DRESS'. It becomes part of the style ID." },
         totalQty: { type: 'integer', minimum: 1 },
         season: { type: 'string', enum: SEASONS, description: "Defaults to the master order's." },

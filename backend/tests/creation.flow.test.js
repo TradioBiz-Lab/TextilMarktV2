@@ -154,10 +154,13 @@ describe('Kriyaa creating orders', () => {
 
     const styleInput = { masterOrderId: mo.data.id, product: 'Red Tee', category: 'TSHRT', totalQty: 2000, colourways: ['Red'], manufacturerId: String(mfr._id), delivery: '2026-10-16' }
     assert.equal((await TOOL_HANDLERS.create_order(styleInput, ctxFor(admin, []))).status, 409)
-    assert.equal((await TOOL_HANDLERS.create_order({ ...styleInput, delivery: undefined }, ctxFor(admin, confirmed))).status, 400)
+    // A manufacturer without a date is fine: the plan's Delivery step stays undated until the date is given.
+    const undated = await TOOL_HANDLERS.create_order({ ...styleInput, product: 'Blue Tee', delivery: undefined }, ctxFor(admin, confirmed))
+    assert.equal(undated.ok, true, JSON.stringify(undated.data))
+    assert.equal((await Order.findOne({ product: 'Blue Tee' }).lean()).assignments[0].stages.at(-1).baselineEta, 'NA')
     const style = await TOOL_HANDLERS.create_order(styleInput, ctxFor(admin, confirmed))
     assert.equal(style.ok, true, JSON.stringify(style.data))
-    const o = await Order.findById('KON-TSHRT-SS27-001').lean()
+    const o = await Order.findOne({ product: 'Red Tee' }).lean()
     assert.equal(String(o.buyerId), String(buyer._id))      // the master order's customer
     assert.equal(o.masterOrderId, 'MO-KON-SS27-001')
     assert.equal(o.season, 'SS27')                           // the master order's season

@@ -255,7 +255,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
       {/* ── Stat cards ── grouped under a heading, each tile named by its status; every tile opens the list behind it ── */}
       {(() => {
         const go = (view, params) => () => onNavigate && onNavigate(view, params)
-        const openUsers = (currentUser?.adminType === 'master') ? go('users') : undefined
+        const openUsers = tab => (currentUser?.adminType === 'master') ? go('users', { tab }) : undefined
         const group = (title, tiles) => (
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 2px 8px' }}>{title}</div>
@@ -268,7 +268,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
               <StatCard key="total" label="Total" value={allOrders.length} icon={<Shirt size={19} color={T.primaryDeep} />} bg={T.primaryLight} onClick={go('orders')} hint="Open Orders" />,
               <StatCard key="deliv" label="Delivered" value={prod.stylesDelivered} icon={<Truck size={19} color={T.success} />} bg={T.successBg} onClick={go('reports')} hint="Open Reports" />,
               <StatCard key="prod" label="In production" value={prod.stylesInProduction} icon={<Scissors size={19} color="#92400e" />} bg="#fef9c3" onClick={go('orders')} hint="Open Orders" />,
-              <StatCard key="pre" label="In pre-production" value={inDevelopment} icon={<FlaskConical size={19} color="#5b21b6" />} bg="#ede9fe" onClick={go('orders', { phase: 'development' })} hint="Open Sampling & Development" />,
+              <StatCard key="pre" label="New product development" value={inDevelopment} icon={<FlaskConical size={19} color="#5b21b6" />} bg="#ede9fe" onClick={go('orders', { phase: 'development' })} hint="Open New Product Development" />,
             ])}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18 }}>
               {caps.isAdmin && group('Products (pieces)', [
@@ -276,8 +276,8 @@ export function AdminDashboard({ onNavigate, onOpen }) {
                 <StatCard key="pprod" label="In production" value={prod.productsInProduction.toLocaleString()} icon={<Package size={19} color="#92400e" />} bg="#fef9c3" onClick={go('orders')} hint="Open Orders" />,
               ])}
               {group(caps.isAdmin ? 'Network' : (caps.isBuyer ? 'Your factories' : 'Your customers'), caps.isAdmin ? [
-                <StatCard key="buyers" label="Customers" value={buyers.length} icon={<Building2 size={19} color="#1d4ed8" />} bg="#dbeafe" onClick={openUsers} hint="Open User Setup" />,
-                <StatCard key="mfrs" label="Manufacturers" value={mfrs.length} icon={<Factory size={19} color="#92400e" />} bg="#fef9c3" onClick={openUsers} hint="Open User Setup" />,
+                <StatCard key="buyers" label="Customers" value={buyers.length} icon={<Building2 size={19} color="#1d4ed8" />} bg="#dbeafe" onClick={openUsers('buyer')} hint="Open the customers in User Setup" />,
+                <StatCard key="mfrs" label="Manufacturers" value={mfrs.length} icon={<Factory size={19} color="#92400e" />} bg="#fef9c3" onClick={openUsers('manufacturer')} hint="Open the manufacturers in User Setup" />,
               ] : [
                 <StatCard key="cp" label={caps.isBuyer ? 'Factories' : 'Customers'} value={counterparties} icon={caps.isBuyer ? <Factory size={19} color="#92400e" /> : <Building2 size={19} color="#1d4ed8" />} bg={caps.isBuyer ? '#fef9c3' : '#dbeafe'} />,
               ])}

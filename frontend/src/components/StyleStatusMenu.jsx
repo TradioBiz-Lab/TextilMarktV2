@@ -5,7 +5,7 @@ import { Btn, FlexRow, Modal, Textarea, useToast } from './ui.jsx'
 import { useApp } from '../context.jsx'
 
 // Everything about where a style stands, in one place: its status (applied to every manufacturer split at once), its
-// stage (Sampling & Development or Production) and dropping it. Delivered is never picked here: it follows the
+// stage (New Product Development or Production) and dropping it. Delivered is never picked here: it follows the
 // Delivery step, which is closed on the plan.
 const SETTABLE = ['Processing', 'On Hold', 'Delayed']
 
@@ -57,7 +57,7 @@ export function StyleStatusMenu({ order, canStatus, canStage, canDrop, onPromote
   }
   const demote = async () => {
     setBusy(true)
-    try { await editOrder(order.id, { phase: 'development' }); toast('Moved back to Sampling & Development', 'success'); setDemoting(false) }
+    try { await editOrder(order.id, { phase: 'development' }); toast('Moved back to New Product Development', 'success'); setDemoting(false) }
     catch (e) { toast(typeof e === 'string' ? e : (e?.message || 'Could not move the style'), 'error') }
     finally { setBusy(false) }
   }
@@ -95,7 +95,7 @@ export function StyleStatusMenu({ order, canStatus, canStage, canDrop, onPromote
             {heading('Stage')}
             {dev
               ? item('Move to production', { icon: <ArrowRight size={13} />, onClick: onPromote })
-              : item('Move back to Sampling & Development', { icon: <ArrowLeft size={13} />, disabled: anyDelivered, hint: anyDelivered ? 'A style with a delivered split stays in production' : undefined, onClick: () => setDemoting(true) })}
+              : item('Move back to New Product Development', { icon: <ArrowLeft size={13} />, disabled: anyDelivered, hint: anyDelivered ? 'A style with a delivered split stays in production' : undefined, onClick: () => setDemoting(true) })}
           </>)}
           {canDrop && (<>
             <div style={{ height: 1, background: T.border, margin: '4px 0' }} />
@@ -117,7 +117,7 @@ export function StyleStatusMenu({ order, canStatus, canStage, canDrop, onPromote
         </Modal>
       )}
       {demoting && (
-        <Modal title="Move back to Sampling & Development" onClose={() => { if (!busy) setDemoting(false) }} size="sm">
+        <Modal title="Move back to New Product Development" onClose={() => { if (!busy) setDemoting(false) }} size="sm">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ fontSize: 13, color: T.textMuted }}>The style leaves the production numbers. Its plans lose the Delivery step and the style its delivery date; both come back when it moves to production again.</div>
             <FlexRow justify="flex-end" gap={8}>

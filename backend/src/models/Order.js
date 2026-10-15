@@ -258,7 +258,7 @@ const orderSchema = new mongoose.Schema({
   // this field are production.
   phase:    { type: String, enum: ['development', 'production'], default: 'production' },
   totalQty: { type: Number, required: true, min: 1 },
-  // A style still in Sampling & Development has no delivery date; one is set when it moves to production.
+  // A style still in New Product Development has no delivery date; one is set when it moves to production.
   delivery: { type: Date, default: null },
   // Frozen original delivery promise — same baselineEta/eta pattern as
   // stages: `delivery` is the current, kept-honest date (e.g. realigned to

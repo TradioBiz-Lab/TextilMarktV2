@@ -92,7 +92,7 @@ export const makeDeliveryStage = dateISO => ({
   isDelivery: true, updates: [], materials: [], items: [], actualEnd: null,
 })
 
-// ── The standard plan for a style still in Sampling & Development ───────────
+// ── The standard plan for a style still in New Product Development ───────────
 // Short steps from the request landing to the style being ready to go into production. Matching a factory takes
 // 3-4 days and the proto / fit sample 4-5; the plan books the longer figure. Sharing the fit sample is given a day,
 // its approval three, and the pricing approval two. Each step starts when the one before it ends. There is no

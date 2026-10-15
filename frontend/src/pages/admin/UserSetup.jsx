@@ -12,10 +12,11 @@ function fmtDate(d) {
   return `${dd}-${mm}-${dt.getFullYear()}`
 }
 
-export function UserSetup() {
+// `initialTab` opens a tab directly (the dashboard's Customers and Manufacturers tiles).
+export function UserSetup({ initialTab } = {}) {
   const { users, loading, createUser, updateUser, toggleUser, resetUserPw, uploadDoc } = useApp()
   const toast = useToast()
-  const [tab, setTab] = useState('all')
+  const [tab, setTab] = useState(initialTab || 'all')
   // Deactivate and Reset password are one click away from locking someone out, so they ask first.
   const [confirmAction, setConfirmAction] = useState(null) // { kind: 'deactivate' | 'reset', user }
   const [confirmBusy, setConfirmBusy] = useState(false)
@@ -48,6 +49,8 @@ export function UserSetup() {
     const qm = !q || (u.name.toLowerCase().includes(q.toLowerCase()) || u.email.toLowerCase().includes(q.toLowerCase()) || u.company.toLowerCase().includes(q.toLowerCase()))
     return rm && qm
   })
+    // Active accounts first; deactivated ones drop to the bottom, keeping their order.
+    .sort((a, b) => (a.isActive === false) - (b.isActive === false))
 
   const counts = {
     all: users.length,
@@ -116,7 +119,7 @@ export function UserSetup() {
       }
       setConfirmAction(null)
     } catch (e) {
-      toast(e?.message || (kind === 'reset' ? 'Failed to reset password' : 'Failed to update user status'), 'error')
+      toast((typeof e === 'string' ? e : e?.message) || (kind === 'reset' ? 'Failed to reset password' : 'Failed to update user status'), 'error')
     } finally { setConfirmBusy(false) }
   }
 
