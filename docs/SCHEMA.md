@@ -57,6 +57,9 @@ Stores every portal account across all three roles.
   isActive     Boolean           default: true
   mustChangePw       Boolean     default: false — force password change on next login
   passwordChangedAt  Date | null — JWTs issued before this are invalidated
+  resetTokenHash     String | null  sha256 of the emailed self-service reset token (POST /api/auth/forgot-password);
+                                    the token itself is never stored. Cleared when used
+  resetTokenExpires  Date | null    30 minutes after the request; an expired token does nothing
   orgId        ObjectId → organizations | null   buyers and manufacturers only; created on first sight
                                  for accounts that predate organizations
   orgRole      String | null     enum: ["owner", "member"] — the owner is the company's primary account
@@ -826,6 +829,9 @@ manufacturer, an order, or both — or is stage-evidence tied to a specific stag
                                   document). It opens under the same rules as the live one, while that is live
   replacedAt  Date | null         when that earlier version was replaced
   replacedByUser ObjectId → users nullable - who replaced it
+  filedAt     Date | null         a requirement the customer sent in without a style, once Tradio filed it into one of
+                                  that customer's styles (POST /api/documents/:id/file sets orderId too)
+  filedBy     ObjectId → users    nullable - who filed it
 
   stageIndex  Number | null       min: 0 — index into the relevant assignment's stages[],
                                   null for non-stage documents

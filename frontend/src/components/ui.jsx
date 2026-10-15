@@ -429,14 +429,14 @@ export function Modal({ title, subtitle, onClose, children, size = 'md' }) {
   return (
     <div className="modal-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }} onMouseDown={e => { backdropDown.current = e.target === e.currentTarget }} onClick={e => { if (e.target === e.currentTarget && backdropDown.current) onClose() }}>
       <div className="modal-inner" role="dialog" aria-modal="true" style={{ background: T.surface, border: `1px solid ${T.border}`, width: '100%', maxWidth: w, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '20px 24px 16px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
-          <div>
+        <div className="modal-head" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, padding: '20px 24px 16px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
+          <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>{title}</div>
             {subtitle && <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>{subtitle}</div>}
           </div>
           <button onClick={onClose} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: T.textMuted, flexShrink: 0, marginTop: 1 }} aria-label="Close"><X size={14} /></button>
         </div>
-        <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>{children}</div>
+        <div className="modal-body" style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>{children}</div>
       </div>
     </div>
   )

@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Eye, EyeOff, AlertTriangle } from '../icons.jsx'
 import { T } from '../constants.js'
 import { Input } from '../components/ui.jsx'
 import { Logo } from '../components/Brand.jsx'
 import { useApp } from '../context.jsx'
 import { SignUpPage } from './SignUpPage.jsx'
+import { PasswordHelp } from './PasswordHelp.jsx'
 
 export function LoginPage() {
   const { login } = useApp()
@@ -16,6 +17,16 @@ export function LoginPage() {
   const [locked, setLocked] = useState({})
   const [showPw, setShowPw] = useState(false)
   const [loading, setLoading] = useState(false)
+  // 'login', 'forgot' (ask for a reset link) or 'reset' (opened from the emailed link, ?reset=<token>).
+  // Read on first render only (no side effect here: React may run it twice); the URL is cleaned once mounted.
+  const [resetToken] = useState(() => new URLSearchParams(window.location.search).get('reset'))
+  const [mode, setMode] = useState(resetToken ? 'reset' : 'login')
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (!params.has('reset')) return
+    params.delete('reset')
+    window.history.replaceState({}, '', window.location.pathname + (params.toString() ? '?' + params : ''))
+  }, [])
 
   const submit = async e => {
     e.preventDefault()
@@ -62,6 +73,7 @@ export function LoginPage() {
             <Logo size={44} />
           </div>
 
+          {mode !== 'login' ? <PasswordHelp mode={mode} token={resetToken} initialEmail={email} onBack={() => setMode('login')} /> : (<>
           {/* Title */}
           <div style={{ textAlign: 'center', marginBottom: 28 }}>
             <div style={{ fontSize: 20, fontWeight: 700, color: T.text }}>Welcome back</div>
@@ -82,12 +94,16 @@ export function LoginPage() {
                 </button>
               </div>
               {error && <div style={{ fontSize: 12, color: T.danger, marginTop: 6, fontWeight: 500, background: T.dangerBg, padding: '8px 12px', borderRadius: 8, border: `1px solid ${T.dangerBorder}`, display: 'flex', alignItems: 'center', gap: 6 }}><AlertTriangle size={13} /> {error}</div>}
+              <div style={{ textAlign: 'right', marginTop: 6 }}>
+                <button type="button" onClick={() => { setError(''); setMode('forgot') }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, color: T.primary, fontWeight: 600, fontFamily: 'inherit' }}>Forgot password?</button>
+              </div>
             </div>
             <button type="submit" disabled={loading}
               style={{ background: loading ? '#fb923c' : T.primary, color: '#fff', border: 'none', padding: '12px', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: loading ? 'wait' : 'pointer', marginTop: 4, transition: 'background 0.15s', fontFamily: 'inherit', letterSpacing: '0.01em' }}>
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
+          </>)}
 
           {/* Security info */}
           <div style={{ marginTop: 24, textAlign: 'center', fontSize: 11, color: T.textLight, lineHeight: 1.7 }}>

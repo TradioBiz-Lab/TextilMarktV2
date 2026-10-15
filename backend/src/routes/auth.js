@@ -2,6 +2,8 @@ import { Router } from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import rateLimit from 'express-rate-limit'
+import crypto from 'node:crypto'
+import { sendEmail, emailConfigured, emailPasswordResetLink } from '../lib/email.js'
 import { User, AuditLog } from '../db/index.js'
 import { requireAuth } from '../middleware/auth.js'
 import { viewAsFlags } from './viewAs.js'
@@ -186,6 +188,69 @@ router.get('/me', requireAuth, async (req, res) => {
 })
 
 // POST /api/auth/logout — clear the httpOnly cookie
+// ── Forgotten password ────────────────────────────────────────────────────────
+// Anyone may ask; the answer is the same whether or not the email has an account, so it reveals nothing. An active account
+// gets a link with a one-time token (only its hash is stored) that expires in 30 minutes. When email is not set up on this
+// server the answer says so, and the person asks Tradio to reset it instead.
+const RESET_TOKEN_MINUTES = 30
+const hashToken = t => crypto.createHash('sha256').update(String(t)).digest('hex')
+const forgotLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, max: 5,
+  keyGenerator: req => `${req.ip}|${emailOf(req)}`,
+  message: { error: 'Too many requests. Please try again in an hour.' },
+  standardHeaders: true, legacyHeaders: false, validate: false, skip: skipInTest,
+})
+const resetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 10,
+  keyGenerator: req => req.ip,
+  message: { error: 'Too many attempts. Please try again in 15 minutes.' },
+  standardHeaders: true, legacyHeaders: false, validate: false, skip: skipInTest,
+})
+
+router.post('/forgot-password', forgotLimiter, async (req, res) => {
+  try {
+    const email = emailOf(req)
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Enter your email address' })
+    const enabled = emailConfigured()
+    const user = enabled ? await User.findOne({ email, isActive: true }) : null
+    if (user) {
+      const token = crypto.randomBytes(32).toString('base64url')
+      user.resetTokenHash = hashToken(token)
+      user.resetTokenExpires = new Date(Date.now() + RESET_TOKEN_MINUTES * 60 * 1000)
+      await user.save()
+      // Not awaited: how long the send takes must not tell an outsider that the account exists.
+      sendEmail(emailPasswordResetLink({ name: user.name, email: user.email, token }))
+      AuditLog.create({ byUser: user._id, action: 'Password Reset Requested', detail: `Reset link emailed to ${user.email}` }).catch(err => console.error('[auth] Audit log failed:', err))
+    }
+    res.json({ ok: true, emailEnabled: enabled })
+  } catch (err) {
+    console.error('[auth]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+router.post('/reset-password', resetLimiter, async (req, res) => {
+  try {
+    const { token, password } = req.body || {}
+    if (typeof token !== 'string' || token.length < 20 || token.length > 200) return res.status(400).json({ error: 'This reset link is not valid. Ask for a new one.' })
+    if (typeof password !== 'string' || password.length < 8 || password.length > 128 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password))
+      return res.status(400).json({ error: 'Password must be at least 8 characters and include uppercase, lowercase, a number, and a special character' })
+    const user = await User.findOne({ resetTokenHash: hashToken(token), resetTokenExpires: { $gt: new Date() }, isActive: true })
+    if (!user) return res.status(400).json({ error: 'This reset link has expired or was already used. Ask for a new one.' })
+    user.passwordHash = await bcrypt.hash(password, 10)
+    user.mustChangePw = false
+    user.passwordChangedAt = new Date()   // signs out every session that was open under the old password
+    user.resetTokenHash = null
+    user.resetTokenExpires = null
+    await user.save()
+    await AuditLog.create({ byUser: user._id, action: 'Password Reset', detail: `Password reset through the emailed link: ${user.email}` })
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('[auth]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
 router.post('/logout', (_req, res) => {
   res.clearCookie('tradio_token', { httpOnly: true, sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', secure: process.env.NODE_ENV === 'production' })
   res.json({ ok: true })

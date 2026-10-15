@@ -573,3 +573,11 @@ table { border-collapse: collapse; width: 100%; }
   .gl-row input, .gl-row select { min-height: 44px; font-size: 16px; }
   .gl-remove { position: absolute; top: 10px; right: 10px; }
 }
+
+/* ── Phones (≤480px): dialogs give their content the width, and long labels or rows never push past the screen ── */
+@media (max-width: 480px) {
+  .dialog-backdrop { padding: 8px !important; }
+  .modal-head, .dialog-head { padding: 14px 14px 12px !important; }
+  .modal-body, .dialog-body { padding: 14px !important; }
+  .phone-hide { display: none !important; }
+}

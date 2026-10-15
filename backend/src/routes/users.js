@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs'
 import rateLimit from 'express-rate-limit'
 import { User, AuditLog, Organization } from '../db/index.js'
 import { requireAuth, requireAdmin, requireMaster } from '../middleware/auth.js'
-import { sendEmail, emailUserCreated, emailPasswordReset } from '../lib/email.js'
+import { sendEmail, emailUserCreated, emailPasswordReset, emailConfigured, emailSent } from '../lib/email.js'
 import { ensureOrgForUser } from '../lib/orgs.js'
 import { parseSeasonList } from '../lib/seasons.js'
 
@@ -188,7 +188,13 @@ router.post('/:id/toggle', requireAuth, requireMaster, async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
     if (!user) return res.status(404).json({ error: 'User not found' })
-    if (user.adminType === 'master') return res.status(403).json({ error: 'Cannot deactivate master admin' })
+    // Masters manage each other, but there is always one active master: the last one cannot be switched off, and nobody
+    // switches off their own account.
+    if (user.adminType === 'master' && user.isActive) {
+      if (String(user._id) === String(req.user.actorId || req.user.id)) return res.status(400).json({ error: 'You cannot deactivate your own account' })
+      const others = await User.countDocuments({ _id: { $ne: user._id }, role: 'admin', adminType: 'master', isActive: true })
+      if (others === 0) return res.status(400).json({ error: 'At least one master admin must stay active' })
+    }
     // A company's primary account is what its orders point at; it stays active while the team does.
     // Deactivate the whole organization (POST /api/orgs/:id) instead.
     if (user.isActive && user.orgRole === 'owner' && user.orgId
@@ -243,7 +249,7 @@ router.post('/:id/reset-password', requireAuth, requireMaster, async (req, res) 
     await user.save()
 
     // BRD US-USR-01: "Sends a password reset email to the user instantly"
-    sendEmail(emailPasswordReset({ name: user.name, email: user.email, tempPassword: tempPw }))
+    const sent = emailConfigured() && emailSent(await sendEmail(emailPasswordReset({ name: user.name, email: user.email, tempPassword: tempPw })))
 
     await AuditLog.create({
       byUser: req.user.id,
@@ -251,8 +257,9 @@ router.post('/:id/reset-password', requireAuth, requireMaster, async (req, res) 
       detail: `Forced password reset for: ${user.email} by ${req.user.name}`,
     })
 
-    // Do NOT return tempPassword in response — delivered via email only
-    res.json({ ok: true })
+    // Normally the password goes by email only. When email is not set up, or the send failed, the master admin who reset it
+    // gets it once, to pass on themselves; otherwise the person would be locked out with no way in.
+    res.json(sent ? { ok: true, emailed: true } : { ok: true, emailed: false, tempPassword: tempPw })
   } catch (err) {
     console.error('[users]', err)
     res.status(500).json({ error: 'Server error' })

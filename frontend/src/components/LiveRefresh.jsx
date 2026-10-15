@@ -1,9 +1,14 @@
 import { useEffect, useRef } from 'react'
 import { floorApi } from '../api.js'
 import { useApp } from '../context.jsx'
+import { isStandalone } from '../caps.js'
 import * as refreshRegistry from '../stores/refreshRegistry.js'
 
-const POLL_MS = 3000
+// The Tradio portal polls every 15 seconds (its WhatsApp Review Queue is dormant, and other people's edits do not need
+// to land faster). The standalone product keeps 3: a goods received note or a challan photo taken on one phone should
+// show on the next one at once.
+const POLL_MS = 15000
+const STANDALONE_POLL_MS = 3000
 
 /**
  * Renders nothing. Polls a tiny feed endpoint and refetches orders and
@@ -21,7 +26,8 @@ const POLL_MS = 3000
  * key. The first poll only sets the baseline. Without `versions` none of this runs.
  */
 export function LiveRefresh() {
-  const { refreshOrders, refreshDocs, refreshActionItems } = useApp()
+  const { refreshOrders, refreshDocs, refreshActionItems, currentUser } = useApp()
+  const standalone = isStandalone(currentUser)
   const version = useRef(null)
   const itemsVersion = useRef(null)
   const versions = useRef(null) // the last `versions` map seen on the feed (feature stores)
@@ -53,9 +59,9 @@ export function LiveRefresh() {
       } catch { /* transient, next tick retries */ }
     }
     tick()
-    const t = setInterval(tick, POLL_MS)
+    const t = setInterval(tick, standalone ? STANDALONE_POLL_MS : POLL_MS)
     return () => { dead = true; clearInterval(t) }
-  }, [refreshOrders, refreshDocs, refreshActionItems])
+  }, [refreshOrders, refreshDocs, refreshActionItems, standalone])
 
   return null
 }

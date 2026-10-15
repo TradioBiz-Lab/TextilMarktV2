@@ -445,6 +445,10 @@ admin enables them in User Setup.
 
 ## Conventions / gotchas for future work
 - `category` on Order is free-text (not enum) — don't add enum validation back.
+- **Email to customers and factories is escalations only** (plus the account emails they need to get in: account
+  created, password reset, the self-service reset link). Everything else they hear about is an in-app notification.
+  When `RESEND_API_KEY` is unset, Reset PW hands the master the temporary password once, and the forgot-password
+  form says email is not set up. Action items are closed, never deleted (there is no delete route).
 - **Buyers never write the Delivery step**, even when they own it: closing it marks the split
   Delivered. Only Tradio or the manufacturer confirms delivery (enforced in `routes/orders.js`, and
   hidden in `caps.js`).

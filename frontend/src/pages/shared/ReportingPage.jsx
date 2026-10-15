@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { CalendarClock, AlertTriangle, Package, Ban, CircleDot, CheckCircle2, Search, BarChart3, Folder, MessageCircle, Calendar, ChevronDown, ChevronRight, Play, Download, ArrowRight, Sparkles } from '../../icons.jsx'
 import {
-  T, dayNumber, getToday, fmtN, effectiveEta, planProgress, deliveryStatus,
+  T, dayNumber, getToday, fmtN, effectiveEta, planProgress, deliveryStatus, splitDue,
   stageStatusOf, stageIsOverdue, isStageDone, inFlightStages, stageProgressLabel, stageVariance, productionOrders, developmentOrders, styleOnHold, fmtDate, dueDates,
 } from '../../constants.js'
 import { toCsvCell } from '../../csvCell.js'
@@ -206,9 +206,11 @@ export function ReportingPage({ onOpen, initialMo }) {
         .filter(({ stage }) => effectiveEta(stage) && dayNumber(effectiveEta(stage)) >= todayNum)
         .sort((x, y) => dayNumber(effectiveEta(x.stage)) - dayNumber(effectiveEta(y.stage)))[0] || null
 
-      // Delivered splits show the day they were delivered; open ones count down to the promise.
+      // Delivered splits show the day they were delivered; open ones count down to the current plan's delivery date
+      // (the Delivery step's revised date when it moved, else the promised one).
       const delivery = deliveryStatus(o, a)
-      const deliveryDay = !delivery.delivered && o.delivery ? dayNumber(new Date(o.delivery).toISOString()) : null
+      const due = splitDue(o, a)
+      const deliveryDay = !delivery.delivered && due.date ? dayNumber(due.date) : null
       const daysToDelivery = deliveryDay != null ? deliveryDay - todayNum : null
 
       const health = delivery.delivered ? 'done'
@@ -224,7 +226,7 @@ export function ReportingPage({ onOpen, initialMo }) {
         ? allUpdates.reduce((a, b) => new Date(b.at) > new Date(a.at) ? b : a)
         : null
 
-      return { order: o, asgn: a, stages, doneCount, pct, live, blocked, late, working, upcoming, delivery, daysToDelivery, health, lastUpdate }
+      return { order: o, asgn: a, stages, doneCount, pct, live, blocked, late, working, upcoming, delivery, due, daysToDelivery, health, lastUpdate }
     }))
   }, [orders, todayNum])
 

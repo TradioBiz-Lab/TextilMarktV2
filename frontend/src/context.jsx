@@ -123,7 +123,8 @@ export function AppProvider({ children }) {
   useEffect(() => {
     let cancelled = false
     const params = new URLSearchParams(window.location.search)
-    const forceLogin = params.has('login')
+    // A password reset link signs out whoever is here too, so its sign-in page shows; LoginPage reads the token.
+    const forceLogin = params.has('login') || params.has('reset')
 
     const init = async () => {
       if (forceLogin) {
@@ -436,6 +437,9 @@ export function AppProvider({ children }) {
     return updated
   }, [])
 
+  // A customer escalates one of its styles to Tradio's master admins.
+  const escalateOrder = useCallback((id, reason) => ordersApi.escalate(id, reason), [])
+
   // The customer sets the photos of its own style.
   const setStylePhotos = useCallback(async (id, photos) => {
     const updated = await ordersApi.setPhotos(id, photos)
@@ -601,10 +605,6 @@ export function AppProvider({ children }) {
     return item
   }, [])
 
-  const removeActionItem = useCallback(async (id) => {
-    await actionItemsApi.remove(id)
-    setActionItems(await actionItemsApi.list())
-  }, [])
 
   const unread = notifs.filter(n => !n.read).length
 
@@ -616,11 +616,11 @@ export function AppProvider({ children }) {
       updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
       bulkUpdateStages, addStageItem, updateStageItem, removeStageItem,
       updateAssignment, addAssignment, reassignAssignment, setDeliveredQty, insertStage, moveStage, startPlan, uploadDoc, updateDoc, deleteDoc, getDocVersions, fileDocInto, setStylePhotos, createOrder, createMasterOrder, updateMasterOrder, deleteMasterOrder,
-      editOrder, deleteOrder,
+      editOrder, deleteOrder, escalateOrder,
       createUser, updateUser, toggleUser, resetUserPw,
       markAllRead, markOneRead, getDocData, refreshAudit, loadMoreAudit,
       refreshOrders, refreshDocs, listAllRibbons, createRibbon, updateRibbon, removeRibbon,
-      createActionItem, updateActionItem, addActionItemUpdate, removeActionItem, refreshActionItems,
+      createActionItem, updateActionItem, addActionItemUpdate, refreshActionItems,
     }}>
       {children}
     </AppContext.Provider>

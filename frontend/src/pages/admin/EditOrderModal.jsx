@@ -86,9 +86,9 @@ export function EditOrderModal({ order, onClose, onSave }) {
       className="dialog-backdrop"
       style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }}
     >
-      <div style={{ background: '#fff', borderRadius: 14, border: `1px solid ${T.border}`, width: '100%', maxWidth: 520, boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
+      <div style={{ background: '#fff', borderRadius: 14, border: `1px solid ${T.border}`, width: '100%', maxWidth: 520, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '20px 24px 16px', borderBottom: `1px solid ${T.border}` }}>
+        <div className="dialog-head" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, padding: '20px 24px 16px', borderBottom: `1px solid ${T.border}` }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>Edit Style</div>
             <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3, fontFamily: "'JetBrains Mono',monospace" }}>{order.id}</div>
@@ -97,7 +97,7 @@ export function EditOrderModal({ order, onClose, onSave }) {
         </div>
 
         {/* Body */}
-        <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className="dialog-body" style={{ padding: '20px 24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className="form-grid-2" style={{ gap: 12 }}>
             <Input
               label="Product Name *"
@@ -166,11 +166,11 @@ export function EditOrderModal({ order, onClose, onSave }) {
                   style={{ width: 32, height: 32, padding: 0, border: `1px solid ${T.border}`, borderRadius: 6, cursor: 'pointer', flexShrink: 0 }} />
                 <input value={c.name} onChange={e => updateCw(c._key, { name: e.target.value })}
                   placeholder="Colour (e.g. Peacot)"
-                  style={{ flex: 2, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
+                  style={{ flex: 2, minWidth: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
                 <input value={c.code} maxLength={40} onChange={e => updateCw(c._key, { code: e.target.value })}
                   onBlur={() => updateCw(c._key, { code: normalisePantone(c.code).value })}
                   placeholder={PANTONE_PLACEHOLDER} title={PANTONE_HINT} aria-label="Pantone reference"
-                  style={{ flex: 1, border: `1px solid ${normalisePantone(c.code).valid ? T.border : T.warning}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
+                  style={{ flex: 1, minWidth: 0, border: `1px solid ${normalisePantone(c.code).valid ? T.border : T.warning}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
                 {colourways.length > 1 && (
                   <button onClick={() => removeCw(c._key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textLight }} aria-label="Close"><X size={14} /></button>
                 )}

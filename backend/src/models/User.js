@@ -17,6 +17,9 @@ const userSchema = new mongoose.Schema({
   seasons:      { type: [String], default: undefined },
   mustChangePw:      { type: Boolean, default: false },
   passwordChangedAt: { type: Date, default: null },
+  // Self-service reset (POST /api/auth/forgot-password): only a hash of the emailed token is kept, and it expires.
+  resetTokenHash:    { type: String, default: null },
+  resetTokenExpires: { type: Date, default: null },
   // Buyers and manufacturers belong to an organization (see Organization). An 'owner' is the
   // organization's primary account; a 'member' is a teammate who acts as that organization.
   // Admins belong to none. Filled in on first sight for accounts that predate organizations.

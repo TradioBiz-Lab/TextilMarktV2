@@ -524,6 +524,15 @@ export function expectedDate(order) {
   const dates = (order?.assignments || []).map(a => effectiveEta((a.stages || []).find(st => st.isDelivery))).filter(Boolean).map(isoDay).sort()
   return dates.length ? dates[dates.length - 1] : null
 }
+/**
+ * When one factory split is due: its Delivery step's current date (the revised one once the plan moved it), else the date
+ * promised to the customer. { date, expected, promised, revised }, dates as 'YYYY-MM-DD'.
+ */
+export function splitDue(order, asgn) {
+  const expected = isoDay(effectiveEta((asgn?.stages || []).find(st => st.isDelivery)))
+  const promised = promisedDate(order)
+  return { date: expected || promised, expected, promised, revised: !!(expected && promised && expected !== promised) }
+}
 /** { promised, expected, slipped } where slipped means the plan now lands after the promise. */
 export function dueDates(order) {
   const promised = promisedDate(order), expected = expectedDate(order)

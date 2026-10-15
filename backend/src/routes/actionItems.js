@@ -3,7 +3,7 @@ import mongoose from 'mongoose'
 import { ActionItem } from '../models/ActionItem.js'
 import { User } from '../models/User.js'
 import { AuditLog } from '../models/AuditLog.js'
-import { requireAuth, requireAdmin, requireMaster } from '../middleware/auth.js'
+import { requireAuth, requireAdmin } from '../middleware/auth.js'
 
 const router = Router()
 
@@ -207,23 +207,6 @@ router.post('/:id/updates', requireAuth, requireAdmin, async (req, res) => {
   }
 })
 
-// POST /api/action-items/:id/delete
-router.post('/:id/delete', requireAuth, requireMaster, async (req, res) => {
-  try {
-    const item = await ActionItem.findByIdAndDelete(req.params.id).lean()
-    if (!item) return res.status(404).json({ error: 'Action item not found' })
-
-    await AuditLog.create({
-      byUser: req.user.id,
-      action: 'Action Item Deleted',
-      detail: `Deleted "${item.title}"`,
-    })
-
-    res.json({ ok: true })
-  } catch (err) {
-    console.error('[action-items]', err)
-    res.status(500).json({ error: 'Server error' })
-  }
-})
+// Action items are closed, never deleted: the list keeps a record of what was asked and done.
 
 export default router

@@ -36,7 +36,7 @@ const BULK_EDIT_COLS = '170px 168px 168px 150px 78px minmax(120px, 1fr) 30px 64p
 export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack, onNavigate }) {
   const { currentUser, orders, masterOrders, docs, users, loading, updateAssignment, updateStage, uploadDoc, getDocData, refreshOrders, editOrder, deleteOrder,
     addStageUpdate,
-    addStageItem, updateStageItem, removeStageItem, addAssignment, reassignAssignment, insertStage, moveStage, bulkUpdateStages } = useApp()
+    addStageItem, updateStageItem, removeStageItem, addAssignment, reassignAssignment, insertStage, moveStage, bulkUpdateStages, escalateOrder } = useApp()
   const toast = useToast()
   // Same screen for every role; this decides which controls each one gets. `caps` is the role's
   // standing; what a user may do to THIS order or THIS split is asked per order (orderCaps) and
@@ -46,6 +46,18 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack, onNavi
   const { partners } = usePartners(caps.standalone && caps.isBuyer)
 
   const [showEdit, setShowEdit] = useState(false)
+  // Escalating to Tradio (customers): the reason being written, or null while closed.
+  const [escalation, setEscalation] = useState(null)
+  const [escalating, setEscalating] = useState(false)
+  const sendEscalation = async () => {
+    setEscalating(true)
+    try {
+      const r = await escalateOrder(order.id, escalation.trim())
+      toast(r?.emailed === false ? "Escalated. Tradio's master admins see it in the app (email is not set up yet)." : "Escalated. Tradio's master admins have been told.", 'success')
+      setEscalation(null)
+    } catch (e) { toast(typeof e === 'string' ? e : (e?.message || 'Could not escalate'), 'error') }
+    finally { setEscalating(false) }
+  }
   const [promoteOpen, setPromoteOpen] = useState(false)
   const [movingStage, setMovingStage] = useState(false)
   const [galleryIdx, setGalleryIdx] = useState(0) // which colourway photo the style gallery shows
@@ -740,6 +752,19 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack, onNavi
           <div style={{ flex: 1 }} />
           {!unassigned && order.assignments?.length > 1 && (
             <Btn variant="secondary" size="sm" onClick={() => setSelectedMid(null)} icon={<ArrowLeftRight size={13} />}>All splits</Btn>
+          )}
+          {caps.escalate && <Btn variant="secondary" size="sm" onClick={() => setEscalation('')} icon={<ShieldAlert size={13} />}>Escalate</Btn>}
+          {escalation !== null && (
+            <Modal title="Escalate this style" subtitle={`${order.product} · ${order.id}`} onClose={() => !escalating && setEscalation(null)} size="sm">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ fontSize: 13, color: T.text, lineHeight: 1.5 }}>Tradio's master admins are told at once, in the app and by email. Say what is wrong and what you need.</div>
+                <Textarea label="What needs attention? *" value={escalation} onChange={e => setEscalation(e.target.value)} rows={4} maxLength={1000} placeholder="e.g. The PP sample is two weeks late and we have not heard why" />
+                <FlexRow justify="flex-end" gap={8}>
+                  <Btn variant="secondary" disabled={escalating} onClick={() => setEscalation(null)}>Cancel</Btn>
+                  <Btn disabled={escalating || !escalation.trim()} onClick={sendEscalation}>{escalating ? 'Sending…' : 'Escalate'}</Btn>
+                </FlexRow>
+              </div>
+            </Modal>
           )}
           {oc.edit && <Btn variant="secondary" size="sm" onClick={() => setShowEdit(true)} icon={<Pencil size={13} />}>Edit Style</Btn>}
           {/* One place for where the style stands: status (every split at once), stage, and dropping it. */}
