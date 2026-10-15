@@ -31,6 +31,7 @@ export function capsFor(user) {
     uploadInvoices: isAdmin,
     uploadDeliveryDocs: isAdmin || isMfr,       // packing lists, carton stickers: Tradio and the factory that ships
     submitRequirement: isBuyer,
+    escalate: isBuyer,   // a customer raises a style with Tradio's master admins (in-app and email)
     manageCertificates: isMfr,
     // Admin-only surfaces
     seeUsers: isAdmin, seeAudit: isAdmin, seeReviewQueue: false /* retired until the WhatsApp integration; set to isAdmin to bring it back */, seeRibbonsAdmin: isAdmin, seeBuyerRequests: isAdmin,

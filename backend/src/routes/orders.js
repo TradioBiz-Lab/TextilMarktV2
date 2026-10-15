@@ -15,6 +15,7 @@ import {
 } from '../models/Order.js'
 import { dayNumber, getToday, effectiveEta, DELIVERY_STEP_NAME, isDeliveryName, deliveryStageIndex, makeDeliveryStage, makeDevelopmentStages, statusAfterDeliveryStep } from '../lib/stageMath.js'
 import { notify, notifyOrderChange, adminIds } from '../lib/notify.js'
+import { sendEmail, emailEscalation, emailConfigured } from '../lib/email.js'
 import { nextStyleId } from '../lib/ids.js'
 import { splitStatus } from '../lib/splitStatus.js'
 import { seasonError } from '../lib/seasons.js'
@@ -2963,8 +2964,10 @@ router.post('/:id/escalate', requireAuth, escalationLimiter, async (req, res) =>
       action: 'Order Escalated',
       detail: `${req.user.name} escalated order ${req.params.id}: ${reason.trim()}`,
     })
+    // And by email, the one email a customer's action sends (escalations only, to the master admins).
+    sendEmail(emailEscalation({ to: masters.map(m => m.email), orderId: req.params.id, product: order.product, reason: reason.trim(), escalatedBy: req.user.name, buyerCompany: req.user.company }))
 
-    res.json({ ok: true, notified: masters.length })
+    res.json({ ok: true, notified: masters.length, emailed: emailConfigured() })
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })

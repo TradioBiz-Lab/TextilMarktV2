@@ -57,7 +57,7 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
   const {
     orders, masterOrders, users, actionItems, currentUser, loading, loadError,
     bulkUpdateStages, updateStage, addStageUpdate,
-    createActionItem, updateActionItem, addActionItemUpdate, removeActionItem,
+    createActionItem, updateActionItem, addActionItemUpdate,
   } = useApp()
   const toast = useToast()
   const canEditPlan = capsFor(currentUser).editPlan

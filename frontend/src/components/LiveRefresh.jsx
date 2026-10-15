@@ -2,7 +2,9 @@ import { useEffect, useRef } from 'react'
 import { floorApi } from '../api.js'
 import { useApp } from '../context.jsx'
 
-const POLL_MS = 3000
+// Every 15 seconds. It was every 3 while the WhatsApp Review Queue was live; that queue is dormant, and other people's
+// edits do not need to land faster than this.
+const POLL_MS = 15000
 
 /**
  * Renders nothing. Polls a tiny feed endpoint and refetches orders and

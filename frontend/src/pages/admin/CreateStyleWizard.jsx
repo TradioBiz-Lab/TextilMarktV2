@@ -132,7 +132,7 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
   return (
     <div className="dialog-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }}>
       <div style={{ background: '#fff', borderRadius: 14, border: `1px solid ${T.border}`, width: '100%', maxWidth: 860, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '20px 24px 16px', borderBottom: `1px solid ${T.border}` }}>
+        <div className="dialog-head" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, padding: '20px 24px 16px', borderBottom: `1px solid ${T.border}` }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>Create Style{styles.length > 1 ? 's' : ''}</div>
             <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>
@@ -142,7 +142,7 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
           <button onClick={onClose} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.textMuted }}><X size={15} /></button>
         </div>
 
-        <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div className="dialog-body" style={{ padding: '20px 24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 18 }}>
           {step === 1 && (
             <>
               <div>
@@ -229,11 +229,11 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
                           style={{ width: 32, height: 32, padding: 0, border: `1px solid ${T.border}`, borderRadius: 6, cursor: 'pointer', flexShrink: 0 }} />
                         <input value={c.name} onChange={e => updateColourway(s._key, c._key, { name: e.target.value })}
                           placeholder="Colour (e.g. Peacot)"
-                          style={{ flex: 2, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
+                          style={{ flex: 2, minWidth: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
                         <input value={c.code} maxLength={40} onChange={e => updateColourway(s._key, c._key, { code: e.target.value })}
                           onBlur={() => updateColourway(s._key, c._key, { code: normalisePantone(c.code).value })}
                           placeholder={PANTONE_PLACEHOLDER} title={PANTONE_HINT} aria-label="Pantone reference"
-                          style={{ flex: 1, border: `1px solid ${normalisePantone(c.code).valid ? T.border : T.warning}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
+                          style={{ flex: 1, minWidth: 0, border: `1px solid ${normalisePantone(c.code).valid ? T.border : T.warning}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit' }} />
                         {s.colourways.length > 1 && (
                           <button onClick={() => removeColourway(s._key, c._key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textLight, display: 'flex', alignItems: 'center' }}><X size={13} /></button>
                         )}
@@ -361,13 +361,13 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
 
           {err && <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {err}</div>}
 
-          <FlexRow justify="space-between" style={{ marginTop: 4 }}>
+          <FlexRow justify="space-between" style={{ marginTop: 4, flexWrap: 'wrap', gap: 8 }}>
             <Btn variant="secondary" onClick={step === 1 ? onClose : () => setStep(step - 1)}>
               {step === 1 ? 'Cancel' : <><ChevronLeft size={13} style={{ marginRight: -2 }} /> Back</>}
             </Btn>
             {step < STEPS.length ? (
               <Btn disabled={step === 1 && !step1Valid} onClick={() => setStep(step + 1)}>
-                Next: {STEPS[step]} <ChevronRight size={13} style={{ marginLeft: -2 }} />
+                Next<span className="phone-hide">: {STEPS[step]}</span> <ChevronRight size={13} style={{ marginLeft: -2 }} />
               </Btn>
             ) : (
               <Btn disabled={saving} onClick={submit}>{saving ? 'Creating…' : `Create Style${styles.length > 1 ? 's' : ''}`}</Btn>

@@ -60,6 +60,8 @@ export const authApi = {
   me: () => api.get('/auth/me'),
   logout: () => api.post('/auth/logout'),
   changePassword: (currentPassword, newPassword) => api.post('/auth/change-password', { currentPassword, newPassword }),
+  forgotPassword: email => api.post('/auth/forgot-password', { email }),
+  resetPassword: (token, password) => api.post('/auth/reset-password', { token, password }),
 }
 
 export const ordersApi = {
@@ -166,7 +168,6 @@ export const actionItemsApi = {
   create: data => api.post('/action-items', data),
   update: (id, data) => api.post(`/action-items/${id}`, data),
   addUpdate: (id, text) => api.post(`/action-items/${id}/updates`, { text }),
-  remove: id => api.post(`/action-items/${id}/delete`),
 }
 
 export const assistantApi = {

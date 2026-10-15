@@ -17,6 +17,9 @@ const userSchema = new mongoose.Schema({
   seasons:      { type: [String], default: undefined },
   mustChangePw:      { type: Boolean, default: false },
   passwordChangedAt: { type: Date, default: null },
+  // Self-service reset (POST /api/auth/forgot-password): only a hash of the emailed token is kept, and it expires.
+  resetTokenHash:    { type: String, default: null },
+  resetTokenExpires: { type: Date, default: null },
 }, { timestamps: true })
 
 // Ensure admin users cannot have buyer/manufacturer roles and vice versa

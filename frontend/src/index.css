@@ -320,3 +320,11 @@ table { border-collapse: collapse; width: 100%; }
 @media (max-width: 359.98px) {
   .header-logo .brand-text { display: none !important; }
 }
+
+/* ── Phones (≤480px): dialogs give their content the width, and long labels or rows never push past the screen ── */
+@media (max-width: 480px) {
+  .dialog-backdrop { padding: 8px !important; }
+  .modal-head, .dialog-head { padding: 14px 14px 12px !important; }
+  .modal-body, .dialog-body { padding: 14px !important; }
+  .phone-hide { display: none !important; }
+}

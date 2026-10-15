@@ -1,8 +1,10 @@
 import { Resend } from 'resend'
 
-const resend = process.env.RESEND_API_KEY
+let resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
   : null
+// Tests swap in a fake mailer to see exactly what would have been sent.
+export function setMailerForTests(client) { resend = client }
 
 const FROM = process.env.EMAIL_FROM || 'TextilMarkt <noreply@textilmarkt.com>'
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
@@ -86,6 +88,11 @@ function btn(text, url) {
 
 // ── Send function (no-op if RESEND_API_KEY not set) ────────────────────────
 
+/** Whether email can go out at all (RESEND_API_KEY set). Callers that would otherwise leave someone with nothing use it. */
+export const emailConfigured = () => !!resend
+/** True when a send result says the message was accepted. Resend answers { data, error } rather than throwing. */
+export const emailSent = result => !!result && !result.error
+
 export async function sendEmail({ to, subject, html }) {
   if (!resend) {
     if (process.env.NODE_ENV !== 'test') {
@@ -145,6 +152,18 @@ export function emailPasswordReset({ name, email, tempPassword }) {
     footer()
   )
   return { to: email, subject: 'TextilMarkt - Password Reset', html }
+}
+
+// A link the person follows to choose a new password themselves (POST /api/auth/forgot-password). It works once, for 30 minutes.
+export function emailPasswordResetLink({ name, email, token }) {
+  const html = wrap(
+    header('Reset your password') +
+    `<p style="font-size:14px;color:#334155;line-height:1.6;margin:0 0 16px">Hi <strong>${esc(name)}</strong>, someone asked to reset the password for this TextilMarkt account. Use the button below to choose a new one. The link works once and expires in 30 minutes.</p>` +
+    btn('Choose a new password', `${FRONTEND_URL}?reset=${encodeURIComponent(token)}`) +
+    `<p style="font-size:12px;color:#64748b;line-height:1.6;margin:16px 0 0">If you did not ask for this, ignore this email. Your password stays as it is.</p>` +
+    footer()
+  )
+  return { to: email, subject: 'TextilMarkt - Reset your password', html }
 }
 
 export function emailOrderCreated({ to, orderId, product, qty, delivery, buyerCompany, role }) {
@@ -208,11 +227,11 @@ export function emailEscalation({ to, orderId, product, reason, escalatedBy, buy
   const html = wrap(
     header('Order Escalation Alert') +
     `<div style="margin:0 0 16px;padding:12px 16px;background:#fff1f2;border:1px solid #fecdd3;border-radius:8px;font-size:13px;color:#9f1239;font-weight:600">
-      A buyer has escalated an order - immediate attention required.
+      A customer has escalated an order and needs an answer.
     </div>` +
     table(
       row('Order ID', `<code style="background:#f1f5f9;padding:2px 8px;border-radius:4px">${esc(orderId)}</code>`) +
-      row('Product', esc(product || '—')) +
+      row('Product', esc(product || '-')) +
       row('Escalated By', `${esc(escalatedBy)} (${esc(buyerCompany)})`) +
       row('Reason', esc(reason))
     ) +

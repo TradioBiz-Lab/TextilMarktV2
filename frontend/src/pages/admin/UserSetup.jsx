@@ -7,7 +7,7 @@ import { useApp } from '../../context.jsx'
 
 // `initialTab` opens a tab directly (the dashboard's Customers and Manufacturers tiles).
 export function UserSetup({ initialTab } = {}) {
-  const { users, loading, createUser, updateUser, toggleUser, resetUserPw, uploadDoc } = useApp()
+  const { users, loading, createUser, updateUser, toggleUser, resetUserPw, uploadDoc, currentUser, docs } = useApp()
   const toast = useToast()
   const [tab, setTab] = useState(initialTab || 'all')
   // Deactivate and Reset password are one click away from locking someone out, so they ask first.
@@ -63,7 +63,6 @@ export function UserSetup({ initialTab } = {}) {
     if (f.role !== 'admin' && !f.code.trim()) errs.code = 'Required'
     if (f.role !== 'admin' && f.code.trim().length > 0 && (f.code.trim().length < 3 || f.code.trim().length > 5)) errs.code = 'Must be 3–5 characters'
     if (f.role !== 'admin' && f.code.trim() && users.find(u => u.code === f.code.toUpperCase().trim())) errs.code = 'Code already in use'
-    if (f.role === 'manufacturer' && !profileFile) { setProfileFileErr('Manufacturer profile document is required'); return }
     if (Object.keys(errs).length) { setErrors(errs); return }
     setSaving(true)
     let newUser
@@ -103,8 +102,9 @@ export function UserSetup({ initialTab } = {}) {
     setConfirmBusy(true)
     try {
       if (kind === 'reset') {
-        await resetUserPw(u.id)
-        setTempPwInfo({ name: u.name, email: u.email })
+        const r = await resetUserPw(u.id)
+        // With email not set up (or a failed send) the server hands the temporary password over once, to pass on.
+        setTempPwInfo({ name: u.name, email: u.email, tempPassword: r?.emailed === false ? r.tempPassword : null })
         toast(`Password reset for ${u.name}`, 'success')
       } else {
         await toggleUser(u.id)
@@ -154,7 +154,7 @@ export function UserSetup({ initialTab } = {}) {
           onClose={() => !confirmBusy && setConfirmAction(null)}>
           <div style={{ fontSize: 13, color: T.text, lineHeight: 1.5, marginBottom: 16 }}>
             {confirmAction.kind === 'reset'
-              ? 'Their current password stops working and they are signed out. A new temporary password is emailed to them, and they must change it at their next login.'
+              ? 'Their current password stops working and they are signed out. A new temporary password is emailed to them (or shown to you, if email is not set up), and they must change it at their next login.'
               : 'They are signed out at once and cannot log in until you activate the account again. Their orders and history are kept.'}
           </div>
           <FlexRow gap={8} style={{ justifyContent: 'flex-end' }}>
@@ -197,7 +197,7 @@ export function UserSetup({ initialTab } = {}) {
             {f.role === 'manufacturer' && (
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-                  Manufacturer Profile Document <span style={{ color: T.danger }}>*</span>
+                  Manufacturer Profile Document <span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 600 }}>(optional)</span>
                 </div>
                 <FileUpload
                   file={profileFile}
@@ -205,7 +205,7 @@ export function UserSetup({ initialTab } = {}) {
                   error={profileFileErr}
                   onError={setProfileFileErr}
                 />
-                <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>Upload a PDF or image (factory profile, certifications overview, etc.) - visible to buyers.</div>
+                <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>Upload a PDF or image (factory profile, certifications overview, etc.) - visible to buyers. It can be added later from Documents; the factory shows "No profile" here until then.</div>
               </div>
             )}
             {f.role === 'admin' && f.adminType === 'master' && <Alert type="warning">You are creating another Master Admin. They will have full user management access.</Alert>}
@@ -219,8 +219,17 @@ export function UserSetup({ initialTab } = {}) {
       {tempPwInfo && (
         <Modal title="Password Reset Successful" onClose={() => setTempPwInfo(null)}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <Alert type="success">Temporary password sent to <strong>{tempPwInfo.name}</strong> at {tempPwInfo.email}</Alert>
-            <Alert type="warning">The user has been emailed their temporary password and will be required to change it on first login.</Alert>
+            {tempPwInfo.tempPassword ? (<>
+              <Alert type="warning">Email is not set up, so nothing was sent. Pass this temporary password to <strong>{tempPwInfo.name}</strong> yourself. It is shown only now.</Alert>
+              <FlexRow gap={8} style={{ alignItems: 'center', padding: '10px 12px', background: '#f8fafc', border: `1px solid ${T.border}`, borderRadius: 8 }}>
+                <code style={{ flex: 1, fontSize: 15, fontWeight: 700, letterSpacing: '0.04em', color: T.text, wordBreak: 'break-all' }}>{tempPwInfo.tempPassword}</code>
+                <Btn size="sm" variant="secondary" onClick={() => { navigator.clipboard?.writeText(tempPwInfo.tempPassword).then(() => toast('Copied', 'success')).catch(() => {}) }}>Copy</Btn>
+              </FlexRow>
+              <Alert type="info">They sign in with it at {tempPwInfo.email} and must choose their own password straight away.</Alert>
+            </>) : (<>
+              <Alert type="success">Temporary password sent to <strong>{tempPwInfo.name}</strong> at {tempPwInfo.email}</Alert>
+              <Alert type="warning">The user has been emailed their temporary password and will be required to change it on first login.</Alert>
+            </>)}
             <FlexRow justify="flex-end">
               <Btn onClick={() => setTempPwInfo(null)}>Done</Btn>
             </FlexRow>
@@ -291,32 +300,35 @@ export function UserSetup({ initialTab } = {}) {
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: u.isActive ? T.successBg : '#f1f5f9', color: u.isActive ? T.success : T.textMuted }}>
                         <Circle size={7} fill={u.isActive ? 'currentColor' : 'none'} stroke="currentColor" /> {u.isActive ? 'Active' : 'Inactive'}
                       </span>
+                      {/* A factory created without its profile document says so until one is uploaded (Documents page). */}
+                      {u.role === 'manufacturer' && !(docs || []).some(d => d.type === 'mfr_profile' && String(d.mfrId) === String(u.id) && d.isActive !== false) && (
+                        <span title="No manufacturer profile uploaded yet (Documents page)" style={{ padding: '2px 8px', borderRadius: 10, fontSize: 10, fontWeight: 700, background: '#f1f5f9', color: '#475569', border: `1px solid ${T.border}` }}>No profile</span>
+                      )}
                       {u.mustChangePw && <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 10, fontWeight: 700, background: T.warningBg, color: T.warning, display: 'inline-flex', alignItems: 'center', gap: 3 }}><KeyRound size={9} /> Pending</span>}
                     </div>
                   </td>
                   <td style={{ padding: '12px 18px' }}>
-                    {u.adminType === 'master' ? (
-                      <span style={{ fontSize: 11, color: T.textLight, fontStyle: 'italic' }}>Protected</span>
-                    ) : (
+                    {/* Masters manage each other too; the server keeps one master active. Your own account is only edited here. */}
+                    {(() => { const self = String(u.id) === String(currentUser?.actorId || currentUser?.id); return (
                       <FlexRow gap={6} style={{ flexWrap: 'nowrap' }}>
                         <button onClick={() => openEdit(u)}
                           style={{ padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: T.primaryLight, color: T.primary, border: 'none', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
                           <Pencil size={11} style={{ marginRight: 4, verticalAlign: -1 }} />Edit
                         </button>
-                        <button onClick={async () => {
+                        {!self && <button onClick={async () => {
                             if (u.isActive) { setConfirmAction({ kind: 'deactivate', user: u }); return }
                             try { await toggleUser(u.id); toast(`${u.name} activated`, 'success') }
                             catch (e) { toast(e?.message || 'Failed to update user status', 'error') }
                           }}
                           style={{ padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: u.isActive ? T.dangerBg : T.successBg, color: u.isActive ? T.danger : T.success, border: 'none', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
                           {u.isActive ? 'Deactivate' : 'Activate'}
-                        </button>
-                        <button onClick={() => setConfirmAction({ kind: 'reset', user: u })}
+                        </button>}
+                        {!self && <button onClick={() => setConfirmAction({ kind: 'reset', user: u })}
                           style={{ padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: T.warningBg, color: T.warning, border: 'none', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
                           Reset PW
-                        </button>
+                        </button>}
                       </FlexRow>
-                    )}
+                    ) })()}
                   </td>
                 </tr>
               ))}

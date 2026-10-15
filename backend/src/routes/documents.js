@@ -3,7 +3,7 @@ import mongoose from 'mongoose'
 import rateLimit from 'express-rate-limit'
 import { Document, Order, User, Notification, AuditLog, MasterOrder } from '../db/index.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
-import { sendEmail, emailCertExpiry, emailBuyerDocumentReceived } from '../lib/email.js'
+import { sendEmail, emailBuyerDocumentReceived } from '../lib/email.js'
 import { notify, adminIds } from '../lib/notify.js'
 
 // Max 20 document uploads per user per hour — prevents storage abuse
@@ -231,13 +231,7 @@ router.post('/cert-expiry-check', requireAuth, requireAdmin, async (req, res) =>
     }).lean()
     const notifiedKeys = new Set(todayNotifs.map(n => `${n.toUser.toString()}-${n.msg}`))
 
-    // Batch-fetch all manufacturer users whose certs are expiring (one query, not one per cert)
-    const mfrIdsWithCerts = [...new Set(certs.map(c => c.mfrId?.toString()).filter(Boolean))]
-    const mfrUsersForEmail = await User.find({ _id: { $in: mfrIdsWithCerts } }, 'email').lean()
-    const mfrEmailMap = Object.fromEntries(mfrUsersForEmail.map(u => [u._id.toString(), u]))
-
     const notifBatch = []
-    const emailedKeys = new Set()
 
     for (const cert of certs) {
       const expiry = new Date(cert.expiryDate)
@@ -245,22 +239,14 @@ router.post('/cert-expiry-check', requireAuth, requireAdmin, async (req, res) =>
 
       let msg = null
       let daysLeft = 0
-      let isExpired = false
       if (expiry < today) {
         msg = `Certificate expired: "${cert.name}" (expired ${cert.expiryDate.toISOString().slice(0, 10)})`
-        isExpired = true
       } else if (expiry <= in30Days) {
         daysLeft = Math.ceil((expiry - today) / 86400000)
         msg = `Certificate expiring in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}: "${cert.name}" (expires ${cert.expiryDate.toISOString().slice(0, 10)})`
       }
 
       if (!msg) continue
-
-      const certEmailData = {
-        certName: cert.name,
-        expiryDate: cert.expiryDate.toISOString().slice(0, 10),
-        daysLeft, status: isExpired ? 'expired' : 'expiring',
-      }
 
       for (const adminId of adminIds) {
         const key = `${adminId}-${msg}`
@@ -270,9 +256,7 @@ router.post('/cert-expiry-check', requireAuth, requireAdmin, async (req, res) =>
         }
       }
 
-      // Admin cert-expiry emails intentionally disabled to conserve email-send credits.
-      // Admins still receive in-portal notifications (created above).
-      // Manufacturers continue to receive emails so they know to renew.
+      // In-portal only, for Tradio and the factory alike: the one email a customer or factory gets is an escalation.
 
       // Notify the manufacturer (seller) who owns the cert
       if (cert.mfrId) {
@@ -281,15 +265,6 @@ router.post('/cert-expiry-check', requireAuth, requireAdmin, async (req, res) =>
         if (!notifiedKeys.has(mfrKey)) {
           notifBatch.push({ toUser: cert.mfrId, type: 'alert', msg, isRead: false })
           notifiedKeys.add(mfrKey)
-        }
-        // Email the manufacturer — use pre-fetched map instead of per-cert query
-        const emailKey = `${mfrIdStr}-${cert._id}`
-        if (!emailedKeys.has(emailKey)) {
-          const mfrUser = mfrEmailMap[mfrIdStr]
-          if (mfrUser?.email) {
-            sendEmail(emailCertExpiry({ ...certEmailData, to: mfrUser.email }))
-            emailedKeys.add(emailKey)
-          }
         }
       }
     }

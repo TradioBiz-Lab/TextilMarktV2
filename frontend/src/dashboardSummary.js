@@ -1,4 +1,4 @@
-import { dayNumber, getToday, isStageDone, deliveryStatus, stageStatusOf, stageIsOverdue, effectiveEta, inFlightStages, fmtDate } from './constants.js'
+import { dayNumber, getToday, isStageDone, deliveryStatus, stageStatusOf, stageIsOverdue, effectiveEta, inFlightStages, fmtDate, splitDue } from './constants.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dashboard "AI summary" - PLACEHOLDER GENERATOR.
@@ -48,7 +48,9 @@ function buildRows(orders, role, userId, todayNum) {
       const upcoming = live
         .filter(({ stage }) => { const e = effectiveEta(stage); return e && dayNumber(e) >= todayNum })
         .sort((x, y) => dayNumber(effectiveEta(x.stage)) - dayNumber(effectiveEta(y.stage)))[0] || null
-      const deliveryDay = o.delivery ? dayNumber(new Date(o.delivery).toISOString()) : null
+      // Counted to the current plan: the Delivery step's revised date when it moved, else the promised date.
+      const due = splitDue(o, a)
+      const deliveryDay = due.date ? dayNumber(due.date) : null
       const { delivered } = deliveryStatus(o, a)
       const lateBy = ({ stage }) => todayNum - dayNumber(effectiveEta(stage))
       const worstLate = late.reduce((w, x) => (!w || lateBy(x) > lateBy(w) ? x : w), null)
@@ -57,7 +59,7 @@ function buildRows(orders, role, userId, todayNum) {
         : blocked.length ? 'blocked'
         : a.status === 'Delayed' ? 'late'   // the server's rule: an open step or the delivery date has passed
         : 'ontrack'
-      rows.push({ order: o, asgn: a, stages, live, blocked, late, worstLate, working, upcoming, delivered, health, daysLate, deliveryDay })
+      rows.push({ order: o, asgn: a, stages, live, blocked, late, worstLate, working, upcoming, delivered, health, daysLate, deliveryDay, due })
     }
   }
   return rows
@@ -109,7 +111,8 @@ function nextDeliveryLine(rows, role, todayNum) {
   if (!next) return null
   const days = next.deliveryDay - todayNum
   const who = role === 'admin' ? ` for ${next.order.buyerCompany || 'an unknown customer'}` : ''
-  return `Next delivery: **${next.order.product}**${who} on ${shortDate(next.order.delivery)} (${days === 0 ? 'today' : `in ${plural(days, 'day')}`}).`
+  const promised = next.due.revised ? `; promised ${shortDate(next.due.promised)}` : ''
+  return `Next delivery: **${next.order.product}**${who} on ${shortDate(next.due.date)} (${days === 0 ? 'today' : `in ${plural(days, 'day')}`}${promised}).`
 }
 
 function build({ role, user, orders, actionItems }) {
@@ -202,9 +205,11 @@ export async function generateSummary(ctx) {
 export function rowCallout(r) {
   const { order, stages, live, blocked, late, working, upcoming, health, doneCount, daysToDelivery } = r
   const total = stages.length
+  // The date the plan now delivers on (the Delivery step's revised date when it moved), else the promised one.
+  const dueOn = r.due?.date || order.delivery
   const deliveryBit = daysToDelivery == null ? ''
-    : daysToDelivery < 0 ? `delivery was due ${shortDate(order.delivery)}`
-    : `delivery ${shortDate(order.delivery)} (${daysToDelivery === 0 ? 'today' : `${daysToDelivery}d`})`
+    : daysToDelivery < 0 ? `delivery was due ${shortDate(dueOn)}`
+    : `delivery ${shortDate(dueOn)} (${daysToDelivery === 0 ? 'today' : `${daysToDelivery}d`})`
 
   if (health === 'done') {
     const when = r.delivery?.isActual ? ` on ${shortDate(r.delivery.date)}` : ''
