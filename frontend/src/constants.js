@@ -360,7 +360,8 @@ export const planProgress = stages => {
  * factory's). Approvals such as Lab Dip and PP Sample are single-decision steps, so a quantity step given
  * to the customer becomes a milestone. Steps that are already milestones or checklists stay as they are.
  */
-export const kindForCustomerOwner = stage => (stageKindOf(stage) === 'quantity' ? { kind: 'milestone' } : {})
+// A customer gives one decision on a step it owns (approve or reject), so a quantity or checklist step becomes one.
+export const kindForCustomerOwner = stage => (stageKindOf(stage) !== 'milestone' ? { kind: 'milestone' } : {})
 
 /** The step names of the standard production TNA, offered when a step is added (any name is still allowed). */
 export const STANDARD_STEP_NAMES = [

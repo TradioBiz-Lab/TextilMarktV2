@@ -3,7 +3,7 @@ import { ArrowRight, X, AlertTriangle, Paperclip, Plus } from '../../icons.jsx'
 import { T, evidenceTypesFor, productDocForStep, kindForCustomerOwner, stepOwnerOptions, stageKindOf, stageStatusOf, stageVariance, stageActualVariance, STAGE_STATUS_LABELS, fmtStageDate, getToday, fmtDateTime } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, FlexRow, Input, FileUpload, DocCard, useToast, fileUploadPayload, SectionLabel } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
-import { capsFor, canWriteStage } from '../../caps.js'
+import { capsFor, canWriteStage, canManageStepLists } from '../../caps.js'
 import { ordersApi } from '../../api.js'
 
 // 'YYYY-MM-DD' or 'NA' → the value a native <input type="date"> (or the 'NA'
@@ -46,6 +46,12 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
   const [startDraft, setStartDraft] = useState(dateToInput(stage?.startDate))
   // The description is set once, so it sits at the bottom as text with an Edit link.
   const [editingDesc, setEditingDesc] = useState(false)
+  // A customer's approval step is one decision: Approve, or Reject with the reason (it goes into the updates).
+  const [rejecting, setRejecting] = useState(false)
+  const [rejectReason, setRejectReason] = useState('')
+  // Only Tradio marks a step blocked, with the reason everyone else reads on the plan.
+  const [blocking, setBlocking] = useState(false)
+  const [blockReason, setBlockReason] = useState('')
   const [updateText, setUpdateText] = useState('')
   const [matDraft, setMatDraft] = useState({ name: '', requiredQty: '' })
   const [saving, setSaving] = useState(false)
@@ -179,7 +185,8 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
     || (isMaster && !!actualEndDraft && actualEndDraft !== dateToInput(stage.actualEnd))
   // A customer may only set status on a stage assigned to them, never close a quantity stage.
   const canProgress = writable && !(caps.isBuyer && kind === 'quantity')
-  const canMaterials = caps.manageMaterials && writable
+  // A factory manages materials only on steps assigned to it; Tradio on any step.
+  const canMaterials = caps.manageMaterials && canManageStepLists(currentUser, asgn, stage)
   const canEvidence = caps.uploadStageEvidence && writable
 
   const saveDescription = async () => {
@@ -295,6 +302,27 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
 
   // Enter pressed twice (or Enter then a click) must post once; `saving` is state and has not
   // flipped yet when the second call arrives, so a ref does the guarding.
+  const decide = async approve => {
+    setSaving(true)
+    try {
+      if (approve) { await updateStage(orderId, mfrId, stageIndex, { status: 'done' }); toast('Approved', 'success') }
+      else {
+        await addStageUpdate(orderId, mfrId, stageIndex, `Rejected: ${rejectReason.trim()}`)
+        if (stageStatusOf(stage) !== 'in_progress') await updateStage(orderId, mfrId, stageIndex, { status: 'in_progress' })
+        toast('Sent back with your reason', 'success'); setRejecting(false); setRejectReason('')
+      }
+    } catch (err) { toast(err?.message || 'Could not save your decision', 'error') }
+    finally { setSaving(false) }
+  }
+  const setBlocked = async on => {
+    setSaving(true)
+    try {
+      await updateStage(orderId, mfrId, stageIndex, on ? { blocked: true, blockedReason: blockReason.trim() } : { blocked: false, blockedReason: '' })
+      toast(on ? 'Marked blocked' : 'Unblocked', 'success'); setBlocking(false); setBlockReason('')
+    } catch (err) { toast(err?.message || 'Could not change the blocked flag', 'error') }
+    finally { setSaving(false) }
+  }
+
   const postingRef = useRef(false)
   const postUpdate = async () => {
     if (!updateText.trim() || postingRef.current) return
@@ -377,6 +405,21 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
 
         <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
           <SectionLabel>Progress</SectionLabel>
+          {stage.blocked && (
+            <div style={{ marginBottom: 10, padding: '9px 12px', borderRadius: 8, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, fontSize: 12, color: T.danger, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ flex: 1, minWidth: 160 }}><b>Blocked</b>{stage.blockedReason ? `: ${stage.blockedReason}` : ''}</span>
+              {currentUser?.role === 'admin' && <Btn size="sm" variant="secondary" disabled={saving} onClick={() => setBlocked(false)}>Unblock</Btn>}
+            </div>
+          )}
+          {currentUser?.role === 'admin' && !stage.blocked && !isDone && (blocking ? (
+            <div style={{ marginBottom: 10, display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 220px' }}><Input label="Why is it blocked? *" value={blockReason} onChange={e => setBlockReason(e.target.value)} placeholder="e.g. waiting on trims from the mill" /></div>
+              <Btn size="sm" variant="secondary" disabled={saving} onClick={() => { setBlocking(false); setBlockReason('') }}>Cancel</Btn>
+              <Btn size="sm" disabled={saving || !blockReason.trim()} onClick={() => setBlocked(true)}>Mark blocked</Btn>
+            </div>
+          ) : (
+            <button type="button" onClick={() => setBlocking(true)} style={{ marginBottom: 8, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, color: T.danger, padding: 0 }}>Mark blocked</button>
+          ))}
           {stage.isDelivery && (
             <div style={{ marginBottom: 10, padding: '9px 12px', borderRadius: 8, background: '#f0fdf4', border: '1px solid #bbf7d0', fontSize: 12, lineHeight: 1.5, color: '#166534' }}>
               This is the mandatory Delivery step. Marking it done marks this order as delivered; reopening it puts the order back to Processing.
@@ -446,7 +489,24 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
               )}
             </>
           ) : (
-            canProgress ? (
+            caps.isBuyer && canProgress ? (
+              isDone ? (
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.success }}>Approved</div>
+              ) : rejecting ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <Textarea label="What needs to change? *" value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={2} placeholder="e.g. shade is too dark, please resubmit" />
+                  <FlexRow justify="flex-end" gap={8}>
+                    <Btn size="sm" variant="secondary" disabled={saving} onClick={() => { setRejecting(false); setRejectReason('') }}>Cancel</Btn>
+                    <Btn size="sm" disabled={saving || !rejectReason.trim()} onClick={() => decide(false)}>Send back</Btn>
+                  </FlexRow>
+                </div>
+              ) : (
+                <FlexRow gap={8}>
+                  <Btn size="sm" disabled={saving} onClick={() => decide(true)}>Approve</Btn>
+                  <Btn size="sm" variant="secondary" disabled={saving} onClick={() => setRejecting(true)}>Reject</Btn>
+                </FlexRow>
+              )
+            ) : canProgress ? (
               <>
                 <Select label="Status" value={status} onChange={e => setStatus(e.target.value)}>
                   {Object.entries(STAGE_STATUS_LABELS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
@@ -501,7 +561,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
             <SectionLabel>Owner and type</SectionLabel>
             <div style={{ fontSize: 11, color: T.textMuted, margin: '2px 0 8px' }}>
               {stage.responsibleRole === 'buyer'
-                ? 'With the customer: they can mark this step done or blocked, and are told when it is assigned.'
+                ? 'With the customer: they approve or reject this step, and are told when it is assigned.'
                 : 'Hand an approval step (Lab Dip, PP Sample) to the customer and they will see it in their action items. A quantity step becomes a single approval step.'}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>

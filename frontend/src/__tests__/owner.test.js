@@ -8,8 +8,8 @@ describe('kindForCustomerOwner', () => {
   test('a legacy step with no kind is a quantity step', () => {
     expect(kindForCustomerOwner({ totalUnits: 453 })).toEqual({ kind: 'milestone' })
   })
-  test('milestones and checklists keep their shape', () => {
+  test('a customer gives one decision: a checklist becomes a milestone, a milestone stays one', () => {
     expect(kindForCustomerOwner({ kind: 'milestone' })).toEqual({})
-    expect(kindForCustomerOwner({ kind: 'checklist' })).toEqual({})
+    expect(kindForCustomerOwner({ kind: 'checklist' })).toEqual({ kind: 'milestone' })
   })
 })

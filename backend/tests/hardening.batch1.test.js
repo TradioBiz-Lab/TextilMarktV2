@@ -78,7 +78,9 @@ describe('plan fields are admin-only for manufacturers', () => {
       const res = await a.post(base, { stages: [{ index: 0, ...patch }] })
       assert.equal(res.status, 403, `${Object.keys(patch)[0]}: ${JSON.stringify(res.body)}`)
     }
-    assert.equal((await a.post(base, { stages: [{ index: 0, blocked: true, blockedReason: 'waiting on trims' }] })).status, 200)
+    // Progress yes; blocking is Tradio's alone.
+    assert.equal((await a.post(base, { stages: [{ index: 0, unitsDone: 1 }] })).status, 200)
+    assert.equal((await a.post(base, { stages: [{ index: 0, blocked: true, blockedReason: 'waiting on trims' }] })).status, 403)
   })
 
   test('an admin can still move dates', async () => {

@@ -19,7 +19,7 @@ import { swatchHex } from '../../colours.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, DateOrNA, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { normalizeCsvDate } from '../../csvDates.js'
-import { capsFor, canWriteStage, canSetAssignmentStatus } from '../../caps.js'
+import { capsFor, canWriteStage, canSetAssignmentStatus, canManageStepLists } from '../../caps.js'
 import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
@@ -1710,7 +1710,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                           // Per-stage rights: a manufacturer on their own assignment, a customer only on a
                           // stage assigned to them, an admin everywhere (see caps.js).
                           const writable = canWriteStage(currentUser, a, s)
-                          const canItems = caps.manageChecklist && writable
+                          const canItems = caps.manageChecklist && canManageStepLists(currentUser, a, s)
                           return (
                             <Fragment key={i}>
                             <tr onClick={() => openUpdateStage(a.mid, i)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => openUpdateStage(a.mid, i))}

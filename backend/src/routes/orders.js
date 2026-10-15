@@ -1074,6 +1074,8 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimit
           return res.status(403).json({ error: `Only an admin can change the plan (not: ${planKeys.join(', ')})` })
       }
 
+      if ((has('blocked') || has('blockedReason')) && req.user.role !== 'admin')
+        return res.status(403).json({ error: `Stage ${i + 1}: only Tradio can mark a step blocked or unblock it` })
       if (req.user.role === 'buyer') {
         if (!buyerMayWriteStage(req.user, stage))
           return res.status(403).json({ error: `Forbidden on stage ${i + 1} - buyers may only update stages they own` })
@@ -1442,6 +1444,9 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
     const mfrObjectId = new mongoose.Types.ObjectId(mfrId)
     const stageIndex = parseInt(req.params.stageIndex, 10)
     const { unitsDone, note, eta, startDate, stageDate, status, blocked, blockedReason, override, actualEnd } = req.body
+    // Only Tradio marks a step blocked or clears it (the reason is what everyone else reads on the plan).
+    if ((blocked !== undefined || blockedReason !== undefined) && req.user.role !== 'admin')
+      return res.status(403).json({ error: 'Only Tradio can mark a step blocked or unblock it' })
     const has = k => Object.prototype.hasOwnProperty.call(req.body, k)
     const hasEta = has('eta')
     const hasStartDate = has('startDate')
@@ -1491,7 +1496,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
       // may not set. Delivery is confirmed by Tradio or the manufacturer, never from the buyer side.
       if (stage.isDelivery)
         return res.status(403).json({ error: 'Only Tradio or the manufacturer can confirm delivery' })
-      const BUYER_WRITABLE = new Set(['status', 'blocked', 'blockedReason'])
+      const BUYER_WRITABLE = new Set(['status'])
       const attempted = Object.keys(req.body).filter(k => !BUYER_WRITABLE.has(k))
       if (attempted.length)
         return res.status(403).json({ error: `Buyers may only set status on a stage they own (not: ${attempted.join(', ')})` })
