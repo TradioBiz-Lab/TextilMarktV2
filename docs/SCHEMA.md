@@ -104,16 +104,17 @@ Uses a human-readable custom string `_id` for traceability.
   masterOrderId String | null     → masterorders._id, optional grouping
   buyerId       ObjectId → users  required
   product       String            required (e.g. "Classic T-Shirt"), max 300 chars
-  styleNumber   String            default: "", max 60 chars — the buyer/factory's own style
-                                  reference, distinct from the generated order _id
+  styleNumber   String            default: "", max 60 chars, optional. Shown as "Customer Style ID": the
+                                  customer's own code for the style, distinct from the generated _id
+                                  (shown as "Tradio Style ID")
   category      String            free-text (trimmed) — NOT enum-restricted server-side;
                                   frontend suggests: TSHRT, JEANS, BEDSH, SHIRT, DRESS,
                                   JACKET, POLO, SHORTS, HOODIE
   season        String            enum: ["SS26","FW26","SS27","FW27","SS28"]
   totalQty      Number            required, min: 1
-  delivery      Date | null       the delivery date: given when the style's first manufacturer is added
-                                  (its plan's Delivery step stands on it); none while the style has no
-                                  manufacturer or is in Sampling & Development
+  delivery      Date | null       the expected delivery date, optional: at creation, with the first
+                                  manufacturer or later. A plan's Delivery step is dated with it; made
+                                  without one it is undated (NA) and takes the date once it is given
   photos        [{image, colourway}] max 12 - the style's product photos, in order. `image` is an
                                   uploaded JPEG/PNG/WebP (data URL, under 1MB) or an http(s) link;
                                   `colourway` is one of `colourways[].name` or "". The first photo is

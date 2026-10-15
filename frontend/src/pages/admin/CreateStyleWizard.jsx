@@ -13,8 +13,7 @@ const newStyle = () => ({
   product: '', styleNumber: '', category: '', customCategory: '',
   colourways: [{ _key: _styleKeySeq++, name: '', code: '', hex: '' }],
   fabrics: [{ _key: _styleKeySeq++, name: '', composition: '', gsm: '', supplier: '' }],
-  // The delivery date is only asked for here when a manufacturer is chosen in the wizard (its plan ends in a Delivery
-  // step on it); otherwise it is given when the manufacturer is added on the style page.
+  // Optional: the date the customer expects it. A plan's Delivery step is dated with it (or stays undated until given).
   totalQty: '', delivery: '', phase: 'production',
   // Step 3, all optional. Product photos, each tied to one of the style's colourways or to none; the first is the main photo.
   photos: [], photoColour: '',
@@ -48,9 +47,6 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
   const asksForManufacturer = caps.standalone && (caps.isAdmin || caps.isBuyer)
   const mfrRequired = caps.standalone && caps.isAdmin
   const [mfrId, setMfrId] = useState('')
-  // The style gets its manufacturer at creation (chosen here, or the creating manufacturer itself), so its plan's
-  // Delivery step needs the date now; otherwise the date comes when the manufacturer is added on the style page.
-  const assignedAtCreation = (asksForManufacturer && !!mfrId) || (caps.standalone && caps.isMfr)
   const [step, setStep] = useState(1)
   const [masterOrderId, setMasterOrderId] = useState(presetMasterOrderId || '')
   // A master order created from inside the wizard (or asked for by the page) becomes the chosen one.
@@ -87,9 +83,9 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
   }))
 
   const step1Valid = masterOrderId && (!mfrRequired || mfrId) && styles.every(s =>
-    s.product.trim() && s.styleNumber.trim() &&
+    s.product.trim() &&
     (s.category && s.category !== '__custom__' ? true : s.customCategory.trim()) &&
-    s.totalQty && Number.isInteger(Number(s.totalQty)) && Number(s.totalQty) > 0 && (s.phase === 'development' || !assignedAtCreation || s.delivery)
+    s.totalQty && Number.isInteger(Number(s.totalQty)) && Number(s.totalQty) > 0
   )
 
   const submit = async () => {
@@ -109,7 +105,7 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
         const created = await createOrder({
           id: 'auto', buyerId: mo.buyerId, product: s.product.trim(), styleNumber: s.styleNumber.trim(),
           category, season: mo.season || undefined, masterOrderId,
-          totalQty, ...(s.phase === 'production' && assignedAtCreation && s.delivery ? { delivery: s.delivery } : {}), phase: s.phase,
+          totalQty, ...(s.phase === 'production' && s.delivery ? { delivery: s.delivery } : {}), phase: s.phase,
           createdAt: getToday(),
           colourways, fabricDetails, ecommerceLink: s.ecommerceLink.trim(),
           photos: s.photos.map(ph => ({ image: ph.image, colourway: colourways.some(c => c.name === ph.colourway) ? ph.colourway : '' })),
@@ -208,7 +204,7 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
                     </FlexRow>
                     <div className="form-grid-2" style={{ gap: 10 }}>
                       <Input label="Product Name *" value={s.product} onChange={e => updateStyle(s._key, { product: e.target.value })} placeholder="e.g. Classic T-Shirt" />
-                      <Input label="Style Number *" value={s.styleNumber} onChange={e => updateStyle(s._key, { styleNumber: e.target.value })} placeholder="e.g. STY-2026-014" />
+                      <Input label="Customer Style ID" value={s.styleNumber} onChange={e => updateStyle(s._key, { styleNumber: e.target.value })} placeholder="The customer's own code, e.g. FLGCM16" maxLength={60} />
                     </div>
                     <div className="form-grid-2" style={{ gap: 10 }}>
                       <div>
@@ -225,11 +221,12 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
                       </div>
                       <Input label="Quantity *" type="number" value={s.totalQty} onChange={e => updateStyle(s._key, { totalQty: e.target.value })} placeholder="5000" />
                     </div>
-                    <Select label="Stage" value={s.phase} onChange={e => updateStyle(s._key, { phase: e.target.value })}>
-                      {PHASES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                    </Select>
-                    {/* Only when the style gets its manufacturer now: its plan ends in a Delivery step on this date. */}
-                    {s.phase === 'production' && assignedAtCreation && <Input label="Expected Delivery *" type="date" value={s.delivery} onChange={e => updateStyle(s._key, { delivery: e.target.value })} />}
+                    <div className="form-grid-2" style={{ gap: 10 }}>
+                      <Select label="Stage" value={s.phase} onChange={e => updateStyle(s._key, { phase: e.target.value })}>
+                        {PHASES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                      </Select>
+                      {s.phase === 'production' && <Input label="Expected delivery date" type="date" value={s.delivery} onChange={e => updateStyle(s._key, { delivery: e.target.value })} hint="Optional. It can be added later." />}
+                    </div>
                   </div>
               ))}
               <div style={{ fontSize: 11, color: T.textLight }}>Style IDs are numbered automatically when you create.</div>

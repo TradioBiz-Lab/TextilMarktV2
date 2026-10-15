@@ -319,7 +319,7 @@ export function ReportingPage({ onOpen, initialMo }) {
     <div>
       <PageHeader
         title="Order Status"
-        subtitle={`Where every style stands right now: what's open, what's stuck, what's next${inDevelopment ? `. ${inDevelopment} ${inDevelopment === 1 ? 'style' : 'styles'} in Sampling & Development not included.` : ''}${onHold ? ` ${onHold} on hold not included.` : ''}`}
+        subtitle={`Where every style stands right now: what's open, what's stuck, what's next${inDevelopment ? `. ${inDevelopment} ${inDevelopment === 1 ? 'style' : 'styles'} in New Product Development not included.` : ''}${onHold ? ` ${onHold} on hold not included.` : ''}`}
         action={(
           <FlexRow gap={8}>
             <Btn variant="secondary" icon={<Download size={16} />} onClick={exportExcel} disabled={filtered.length === 0 || exporting}>{exporting ? 'Preparing…' : 'Export to Excel'}</Btn>

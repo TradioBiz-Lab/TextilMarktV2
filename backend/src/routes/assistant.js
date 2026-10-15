@@ -779,7 +779,7 @@ const TOOLS = [
         delivery: { type: 'string', description: "ISO date 'YYYY-MM-DD'. Needed when the style gets a manufacturer now (manufacturerId, or a manufacturer creating its own)." },
         category: { type: 'string', maxLength: 50, description: "Free text, e.g. 'SWTSHT' or 'Sweatshirt'. It becomes part of the order number." },
         season: { type: 'string', enum: SEASONS },
-        styleNumber: { type: 'string', maxLength: 60 },
+        styleNumber: { type: 'string', maxLength: 60, description: "The customer's style ID (their own code for the style), if they give one." },
         masterOrderId: { type: 'string', description: "From list_master_orders." },
         buyerId: { type: 'string', description: "The customer's id (from list_partners). Omit when you are the customer." },
         manufacturerId: { type: 'string', description: "A customer assigning one of its manufacturers: the manufacturer's id (from list_partners). Omit otherwise." },

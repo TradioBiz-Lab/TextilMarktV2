@@ -374,8 +374,6 @@ export async function validateAndCreateOrder({ id, buyerId, product, styleNumber
   // legacy single-order form and CSV bulk-upload path), they're validated in
   // full exactly as before.
   const hasAssignments = Array.isArray(asgns) && asgns.length > 0
-  if (hasAssignments && !deliveryDate)
-    return { ok: false, error: 'A plan with manufacturers needs a delivery date. Create the style first and give the date when you add the manufacturer.' }
   if (ecommerceLink !== undefined && ecommerceLink !== null) {
     if (typeof ecommerceLink !== 'string') return { ok: false, error: 'E-commerce link must be text' }
     if (ecommerceLink.trim().length > 2000) return { ok: false, error: 'E-commerce link too long' }
@@ -443,7 +441,8 @@ export async function validateAndCreateOrder({ id, buyerId, product, styleNumber
       // plan that already ends in one keeps it, a plan with none gets one appended,
       // and a Delivery step anywhere but last is rejected. Its dates default to the
       // order's promised delivery date, so callers never have to supply them.
-      const deliveryISO = deliveryDate.toISOString().slice(0, 10)
+      // With no delivery date yet the Delivery step is undated (NA); it takes the style's date when one is given.
+    const deliveryISO = deliveryDate ? deliveryDate.toISOString().slice(0, 10) : 'NA'
       const namedDelivery = stages.findIndex(isDeliveryName)
       if (namedDelivery !== -1 && namedDelivery !== stages.length - 1)
         return { ok: false, error: 'The Delivery step must be the last step' }
@@ -896,12 +895,13 @@ router.post('/:orderId/assignments', requireAuth, requireAssigner, updateLimiter
 
     const nextSub = sub && typeof sub === 'string' && sub.trim() ? sub.trim().slice(0, 20) : `M${(existing.assignments || []).length + 1}`
 
-    // A style in production gets its delivery date with its first manufacturer: the plan ends in a Delivery step on it.
+    // A style in production may get its expected delivery date with its first manufacturer: the plan ends in a
+    // Delivery step on it. Without one the Delivery step is undated (NA) and takes the date when it is given.
     let deliveryISO = existing.delivery ? new Date(existing.delivery).toISOString().slice(0, 10) : null
     let setDelivery = null
-    if (existing.phase !== 'development' && !deliveryISO) {
+    if (existing.phase !== 'development' && !deliveryISO && delivery !== undefined && delivery !== null && delivery !== '') {
       if (typeof delivery !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(delivery) || isNaN(new Date(delivery).getTime()))
-        return res.status(400).json({ error: 'Give the delivery date for this style (the plan ends in a Delivery step on it)' })
+        return res.status(400).json({ error: 'Invalid delivery date (YYYY-MM-DD)' })
       deliveryISO = delivery
       setDelivery = new Date(delivery)
     }
@@ -909,12 +909,12 @@ router.post('/:orderId/assignments', requireAuth, requireAssigner, updateLimiter
     const order = await Order.findByIdAndUpdate(
       orderId,
       // Starts with just the mandatory Delivery step; the TNA builder adds the rest in front of it. A style still
-      // in Sampling & Development starts with the standard development plan instead, and no Delivery step yet.
+      // in New Product Development starts with the standard development plan instead, and no Delivery step yet.
       { ...(setDelivery ? { $set: { delivery: setDelivery, ...(existing.baselineDelivery ? {} : { baselineDelivery: setDelivery }) } } : {}),
         $push: { assignments: { mfrId, qty: aqty, status: 'Processing', sub: nextSub, note: '', stages: existing.phase === 'development'
         // No Delivery step until the style moves to production and gets a delivery date.
         ? makeDevelopmentStages(getToday())
-        : [makeDeliveryStage(deliveryISO)] } } },
+        : [makeDeliveryStage(deliveryISO || 'NA')] } } },
       { new: true }
     ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
 
@@ -2705,21 +2705,21 @@ router.post('/:id', requireAuth, requireOrderOwner, updateLimiter, async (req, r
       if (!existing.baselineDelivery && existing.delivery && d.getTime() !== new Date(existing.delivery).getTime()) {
         updates.baselineDelivery = existing.delivery
       } else if (!existing.baselineDelivery && !existing.delivery) {
-        updates.baselineDelivery = d   // the first date a style in Sampling & Development is given is its original promise
+        updates.baselineDelivery = d   // the first date a style in New Product Development is given is its original promise
       }
       updates.delivery = d
     }
 
-    // Moving a style out of Sampling & Development needs a delivery date, and its plans then end in the mandatory
+    // Moving a style out of New Product Development needs a delivery date, and its plans then end in the mandatory
     // Delivery step they did not have while it was being developed.
     let promoteDeliveryISO = null
-    if (existing.phase === 'development' && updates.phase === 'production') {
+    const promoting = existing.phase === 'development' && updates.phase === 'production'
+    if (promoting) {
       const when = updates.delivery || existing.delivery
-      // Its manufacturers' plans gain a Delivery step on that date; with no manufacturer yet the date comes later.
-      if (!when && (existing.assignments || []).length) return res.status(400).json({ error: 'Set a delivery date to move this style to production' })
-      promoteDeliveryISO = when ? new Date(when).toISOString().slice(0, 10) : null
+      // Its manufacturers' plans gain a Delivery step on that date, or an undated one when there is no date yet.
+      promoteDeliveryISO = when ? new Date(when).toISOString().slice(0, 10) : 'NA'
     }
-    // Moving a style back to Sampling & Development: its plans lose the Delivery step and the style its delivery date
+    // Moving a style back to New Product Development: its plans lose the Delivery step and the style its delivery date
     // (unless this same edit sets one), as for any style being developed. A style with a delivered split stays in
     // production, since that delivery really happened.
     let demote = false
@@ -2828,7 +2828,19 @@ router.post('/:id', requireAuth, requireOrderOwner, updateLimiter, async (req, r
     if (!order) return res.status(404).json({ error: 'Order not found' })
 
     let reshaped = false
-    if (promoteDeliveryISO) {
+    // A Delivery step made without a date (none was known yet) takes the style's date once it is given.
+    if (updates.delivery && !promoting) {
+      const iso = updates.delivery.toISOString().slice(0, 10)
+      const set = {}
+      ;(order.assignments || []).forEach((a, ai) => (a.stages || []).forEach((st, si) => {
+        if (!st.isDelivery || effectiveEta(st) || deriveStageStatus(st) === 'done') return
+        set[`assignments.${ai}.stages.${si}.baselineEta`] = iso
+        if (st.eta === 'NA') set[`assignments.${ai}.stages.${si}.eta`] = iso
+        if (!st.startDate || st.startDate === 'NA') set[`assignments.${ai}.stages.${si}.startDate`] = iso
+      }))
+      if (Object.keys(set).length) { await Order.updateOne({ _id: orderId }, { $set: set }); reshaped = true }
+    }
+    if (promoting) {
       const push = {}
       ;(order.assignments || []).forEach((a, ai) => {
         if (!(a.stages || []).some(st => st.isDelivery)) push[`assignments.${ai}.stages`] = makeDeliveryStage(promoteDeliveryISO)

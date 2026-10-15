@@ -50,7 +50,8 @@ export function EditOrderModal({ order, onClose, onSave }) {
     if (isNaN(qty) || qty < 1) { setErr('Total quantity must be a positive number'); return }
     // The date is needed once a style in production has a manufacturer (its plan's Delivery step stands on it).
     const hasSplits = (order.assignments || []).length > 0
-    if (!f.delivery && f.phase !== 'development' && hasSplits) { setErr('A delivery date is needed for a style in production with a manufacturer'); return }
+    // Optional until given; once a style in production with a manufacturer has one, it can be changed but not removed.
+    if (!f.delivery && order.delivery && f.phase !== 'development' && hasSplits) { setErr('The delivery date can be changed but not removed once the style has a manufacturer'); return }
 
     const payload = {
       product: f.product.trim(),
@@ -101,10 +102,10 @@ export function EditOrderModal({ order, onClose, onSave }) {
               placeholder="e.g. Classic T-Shirt"
             />
             <Input
-              label="Style Number"
+              label="Customer Style ID"
               value={f.styleNumber}
               onChange={set('styleNumber')}
-              placeholder="e.g. STY-2026-014"
+              placeholder="The customer's own code, e.g. FLGCM16"
             />
           </div>
 

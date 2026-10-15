@@ -95,6 +95,7 @@ function Inner() {
   const [ordersStatus, setOrdersStatus] = useState(null)
   const [ordersPhase, setOrdersPhase] = useState(null)   // 'production' | 'development' to open the Orders page on
   const [ordersNewStyle, setOrdersNewStyle] = useState(false) // open Create Style for ordersMo on arrival
+  const [usersTab, setUsersTab] = useState(null) // User Setup opens on this tab ('buyer', 'manufacturer')
   const [ordersMo, setOrdersMo] = useState(null)     // master order to open on the Orders page
   const [reportsMo, setReportsMo] = useState(null)   // master order to open on the Reports page
   const [selMo, setSelMo] = useState(null)           // master order open on its own page
@@ -112,7 +113,7 @@ function Inner() {
   const BLANK = { view: 'dashboard', selOid: null, selMid: null, ordersStatus: null, ordersMo: null, ordersPhase: null, reportsMo: null, selPo: null, selSupplier: null, selCost: null, selGrn: null }
   const apply = useCallback(s => {
     setView(s.view); setSelOid(s.selOid); setSelMid(s.selMid)
-    setOrdersStatus(s.ordersStatus); setOrdersMo(s.ordersMo); setOrdersPhase(s.ordersPhase ?? null); setOrdersNewStyle(!!s.ordersNewStyle); setReportsMo(s.reportsMo); setSelMo(s.selMo ?? null)
+    setOrdersStatus(s.ordersStatus); setOrdersMo(s.ordersMo); setOrdersPhase(s.ordersPhase ?? null); setOrdersNewStyle(!!s.ordersNewStyle); setUsersTab(s.usersTab ?? null); setReportsMo(s.reportsMo); setSelMo(s.selMo ?? null)
     setSelPo(s.selPo ?? null); setSelSupplier(s.selSupplier ?? null); setSelCost(s.selCost ?? null); setSelGrn(s.selGrn ?? null)
   }, [])
   const go = useCallback(next => {
@@ -186,6 +187,7 @@ function Inner() {
     ordersStatus: params?.status ?? null,
     ordersPhase: v === 'orders' ? (params?.phase ?? null) : null,
     ordersNewStyle: v === 'orders' && !!params?.newStyle,
+    usersTab: v === 'users' ? (params?.tab ?? null) : null,
     ordersMo: v === 'orders' ? (params?.mo ?? null) : null,
     reportsMo: v === 'reports' ? (params?.mo ?? null) : null,
     selMo: v === 'master_order' ? (params?.mo ?? null) : null,
@@ -264,7 +266,7 @@ function Inner() {
     if (user.role === 'admin') {
       if (view === 'review') return <ReviewQueuePage />
       if (view === 'audit') return <AdminAuditLog />
-      if (view === 'users' && caps.seeUserSetup) return <UserSetup />
+      if (view === 'users' && caps.seeUserSetup) return <UserSetup key={usersTab || 'all'} initialTab={usersTab} />
     }
     return <div style={{ textAlign: 'center', padding: '60px', color: T.textLight }}>Page not found</div>
   }

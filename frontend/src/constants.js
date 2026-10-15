@@ -381,7 +381,7 @@ export const stepOwnerOptions = (users, order, mfrId, { isDelivery = false, curr
 export const deliveryStatus = (order, asgn) => {
   const stages = asgn?.stages || []
   const step = stages.find(s => s.isDelivery)
-  // A style still in Sampling & Development has no Delivery step; finishing its development steps is not delivery.
+  // A style still in New Product Development has no Delivery step; finishing its development steps is not delivery.
   const delivered = order?.phase !== 'development' && (asgn?.status === 'Delivered'
     || (step ? isStageDone(step) : stages.length > 0 && stages.every(isStageDone)))
   const actualEnd = delivered && step?.actualEnd && step.actualEnd !== 'NA' ? step.actualEnd : null
@@ -394,8 +394,8 @@ export const deliveryStatus = (order, asgn) => {
   }
 }
 
-/** A style is either still in sampling and development or in production; styles from before the field are production. */
-export const PHASES = [['production', 'Production'], ['development', 'Sampling & Development']]
+/** A style is either still in new product development or in production; styles from before the field are production. */
+export const PHASES = [['production', 'Production'], ['development', 'New Product Development']]
 export const phaseOf = o => (o?.phase === 'development' ? 'development' : 'production')
 export const productionOrders = orders => (orders || []).filter(o => phaseOf(o) === 'production')
 export const developmentOrders = orders => (orders || []).filter(o => phaseOf(o) === 'development')
