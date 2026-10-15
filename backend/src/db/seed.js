@@ -99,7 +99,7 @@ async function seed() {
 
   const dbName = mongoose.connection.name
   if (dbName !== SANDBOX_DB_NAME) {
-    console.error(`[FATAL] seed.js refuses to run against database "${dbName}" — expected "${SANDBOX_DB_NAME}".`)
+    console.error(`[FATAL] seed.js refuses to run against database "${dbName}" - expected "${SANDBOX_DB_NAME}".`)
     console.error('[FATAL] This script deletes every User/Order/Document in the target database.')
     console.error('[FATAL] Run it via `npm run seed:sandbox` (loads backend/.env.sandbox), never `npm run dev`/plain `.env`.')
     await mongoose.disconnect().catch(() => {})
@@ -154,8 +154,8 @@ async function seed() {
         note: '40% knitting complete, on track', updatedAt: new Date('2026-08-16'),
         stages: mkStages(DEFAULT_STAGE_NAMES, 5000, {
           0: { kind: 'checklist', status: 'done', startDate: '2026-07-05', eta: '2026-07-10', baselineEta: '2026-07-10', actualEnd: '2026-07-12',
-               description: 'Single colourway — one round of lab dip needed.',
-               items: [{ name: 'Lab Dip — Approved', status: 'done', plannedDate: '2026-07-10', dueDate: '2026-07-10', doneDate: '2026-07-12' }] },
+               description: 'Single colourway - one round of lab dip needed.',
+               items: [{ name: 'Lab Dip - Approved', status: 'done', plannedDate: '2026-07-10', dueDate: '2026-07-10', doneDate: '2026-07-12' }] },
           1: { kind: 'milestone', status: 'done', startDate: '2026-07-12', eta: '2026-07-20', baselineEta: '2026-07-18', actualEnd: '2026-07-19' },
           2: { status: 'done', unitsDone: 5000, totalUnits: 5000, startDate: '2026-07-15', eta: '2026-07-25', baselineEta: '2026-07-25', actualEnd: '2026-07-24',
                responsibleId: ops._id,
@@ -186,7 +186,7 @@ async function seed() {
       totalQty: 3000, delivery: new Date('2026-11-20'), createdAt: new Date('2026-07-10'),
       baselineDelivery: new Date('2026-11-10'),
       colourways: [{ name: 'Indigo Wash', code: 'IDG' }, { name: 'Black Wash', code: 'BLK' }],
-      callout: 'Lab dip approval on Black Wash delayed a week — delivery pushed from Nov 10 to Nov 20.',
+      callout: 'Lab dip approval on Black Wash delayed a week - delivery pushed from Nov 10 to Nov 20.',
       assignments: [
         {
           mfrId: blr._id, qty: 2000, status: 'Processing', sub: 'M1',
@@ -195,8 +195,8 @@ async function seed() {
             0: { kind: 'checklist', status: 'in_progress', startDate: '2026-08-01', eta: '2026-08-17', baselineEta: '2026-08-10',
                  description: 'One lab dip per colourway.',
                  items: [
-                   { name: 'Lab Dip — Indigo Wash', colourway: 'Indigo Wash', status: 'done',    plannedDate: '2026-08-10', dueDate: '2026-08-10', doneDate: '2026-08-09' },
-                   { name: 'Lab Dip — Black Wash',  colourway: 'Black Wash',  status: 'pending', plannedDate: '2026-08-10', dueDate: '2026-08-17' },
+                   { name: 'Lab Dip - Indigo Wash', colourway: 'Indigo Wash', status: 'done',    plannedDate: '2026-08-10', dueDate: '2026-08-10', doneDate: '2026-08-09' },
+                   { name: 'Lab Dip - Black Wash',  colourway: 'Black Wash',  status: 'pending', plannedDate: '2026-08-10', dueDate: '2026-08-17' },
                  ] },
             1: { kind: 'milestone', startDate: '2026-08-18', eta: '2026-08-25' },
             2: { unitsDone: 800, totalUnits: 2000, status: 'in_progress', startDate: '2026-07-20', eta: '2026-08-05', baselineEta: '2026-08-05',
@@ -224,19 +224,19 @@ async function seed() {
       buyerId: zaraBuyer._id, product: 'Premium Bedsheet', category: 'BEDSH', season: 'SS26',
       totalQty: 2000, delivery: new Date('2026-09-10'), createdAt: new Date('2026-05-20'),
       baselineDelivery: new Date('2026-08-25'),
-      callout: 'Raw material shortage — revised ETA pushed twice.',
+      callout: 'Raw material shortage - revised ETA pushed twice.',
       assignments: [{
         mfrId: blr._id, qty: 2000, status: 'Delayed', sub: 'M1',
-        note: 'Raw material shortage — revised ETA Aug 20', updatedAt: new Date('2026-08-12'),
+        note: 'Raw material shortage - revised ETA Aug 20', updatedAt: new Date('2026-08-12'),
         stages: mkStages(DEFAULT_STAGE_NAMES, 2000, {
           0: { kind: 'milestone', status: 'done', startDate: '2026-06-01', eta: '2026-06-10', baselineEta: '2026-06-10', actualEnd: '2026-06-09' },
           1: { kind: 'milestone', status: 'done', startDate: '2026-06-11', eta: '2026-06-20', baselineEta: '2026-06-18', actualEnd: '2026-06-22' },
           2: { unitsDone: 1000, totalUnits: 2000, status: 'in_progress', blocked: true,
-               blockedReason: 'Cotton yarn shortage from mill — partial delivery only.',
+               blockedReason: 'Cotton yarn shortage from mill - partial delivery only.',
                startDate: '2026-06-21', eta: '2026-08-20', baselineEta: '2026-07-05',
                responsibleId: blr._id,
                materials: [
-                 { name: 'Cotton Percale Fabric', requiredQty: 3000, unit: 'm', supplier: 'Coimbatore Textiles', poNumber: 'PO-BLR-1905', expectedDate: '2026-07-01', status: 'ordered', orderedQty: 3000, receivedQty: 1500, note: 'Second half of the lot delayed by mill — no new ETA yet.' },
+                 { name: 'Cotton Percale Fabric', requiredQty: 3000, unit: 'm', supplier: 'Coimbatore Textiles', poNumber: 'PO-BLR-1905', expectedDate: '2026-07-01', status: 'ordered', orderedQty: 3000, receivedQty: 1500, note: 'Second half of the lot delayed by mill - no new ETA yet.' },
                ],
                updates: [
                  { text: 'Only half the fabric lot arrived. Mill cites raw cotton shortage.', byUser: blr._id, at: new Date('2026-08-05T14:15:00') },
@@ -256,7 +256,7 @@ async function seed() {
         note: 'QC ongoing, results expected tomorrow', updatedAt: new Date('2026-08-16'),
         stages: mkStages(DEFAULT_STAGE_NAMES, 4000, {
           0: { kind: 'checklist', status: 'done', startDate: '2026-06-05', eta: '2026-06-10', baselineEta: '2026-06-10', actualEnd: '2026-06-10',
-               items: [{ name: 'Lab Dip — Approved', status: 'done', plannedDate: '2026-06-10', dueDate: '2026-06-10', doneDate: '2026-06-10' }] },
+               items: [{ name: 'Lab Dip - Approved', status: 'done', plannedDate: '2026-06-10', dueDate: '2026-06-10', doneDate: '2026-06-10' }] },
           1: { kind: 'milestone', status: 'done', unitsDone: 0, startDate: '2026-06-11', eta: '2026-06-18', baselineEta: '2026-06-18', actualEnd: '2026-06-17' },
           2: { status: 'done', unitsDone: 4000, totalUnits: 4000, startDate: '2026-06-19', eta: '2026-06-25', baselineEta: '2026-06-25', actualEnd: '2026-06-24' },
           3: { status: 'done', unitsDone: 4000, totalUnits: 4000, startDate: '2026-06-26', eta: '2026-07-02', baselineEta: '2026-07-02', actualEnd: '2026-07-02' },
@@ -295,7 +295,7 @@ async function seed() {
     { toUser: master._id,     type: 'alert',  msg: 'OEKO-TEX cert expiring in 25 days (Bangalore Fabrics)',  orderId: null, isRead: false, createdAt: new Date(TODAY) },
     { toUser: ops._id,        type: 'alert',  msg: 'OEKO-TEX cert expiring in 25 days (Bangalore Fabrics)',  orderId: null, isRead: false, createdAt: new Date(TODAY) },
     { toUser: hmBuyer._id,    type: 'order',  msg: 'New order assigned: HMX-BLR-JEANS-FW26-001',             orderId: 'HMX-BLR-JEANS-FW26-001',  isRead: false, createdAt: new Date('2026-07-10T11:30:00') },
-    { toUser: blr._id,        type: 'alert',  msg: 'OEKO-TEX Standard 100 expires in 25 days — please renew', orderId: null, isRead: false, createdAt: new Date(TODAY) },
+    { toUser: blr._id,        type: 'alert',  msg: 'OEKO-TEX Standard 100 expires in 25 days - please renew', orderId: null, isRead: false, createdAt: new Date(TODAY) },
   ])
   console.log('Notifications seeded: 6')
 
@@ -305,7 +305,7 @@ async function seed() {
     { byUser: master._id,   action: 'Order Created',     detail: 'HMX-BLR-JEANS-FW26-001 split across 2 manufacturers',              createdAt: new Date('2026-07-10T11:30:00') },
     { byUser: master._id,   action: 'Document Uploaded', detail: 'PO & Tech Pack uploaded for ZAR-TPR-TSHRT-SS26-001',               createdAt: new Date('2026-07-01T09:15:00') },
     { byUser: tiruppur._id, action: 'Status Update',     detail: 'ZAR-TPR-TSHRT-SS26-001-M1: 3500 units knitted',                     createdAt: new Date('2026-08-14T10:30:00') },
-    { byUser: blr._id,      action: 'Status Update',     detail: 'ZAR-BLR-BEDSH-SS26-001-M1: Marked Delayed — raw material shortage',  createdAt: new Date('2026-08-12T14:15:00') },
+    { byUser: blr._id,      action: 'Status Update',     detail: 'ZAR-BLR-BEDSH-SS26-001-M1: Marked Delayed - raw material shortage',  createdAt: new Date('2026-08-12T14:15:00') },
     { byUser: tiruppur._id, action: 'Document Uploaded', detail: 'SA8000 Social Audit uploaded',                                       createdAt: new Date('2025-11-05T10:00:00') },
   ])
   console.log('Audit logs seeded: 6')

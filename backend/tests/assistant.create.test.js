@@ -108,6 +108,40 @@ describe('creating needs a confirmation the server can see', () => {
     const r = await TOOL_HANDLERS.create_order(order(mfr, { masterOrderId: 'MO-ZAR-FW26-001' }), ctx(brand))
     assert.equal(r.ok, true, JSON.stringify(r.data))
     assert.equal(r.data.masterOrderId, 'MO-ZAR-FW26-001')
+    // Asked again (a retry after an error, say): the same style in the same master order is refused.
+    const again = await TOOL_HANDLERS.create_order(order(mfr, { masterOrderId: 'MO-ZAR-FW26-001', product: 'heavy Sweatshirt' }), ctx(brand))
+    assert.equal(again.status, 409)
+    assert.match(again.data.error, /ALREADY EXISTS/)
+    assert.equal(await Order.countDocuments(), 1)
+  })
+
+  test('a confirmation in Hindi script counts, and a no in it does not; a day that does not exist is refused', async () => {
+    const { brand, mfr } = await world()
+    const ask = { role: 'assistant', content: 'मैं 3000 स्वेटशर्ट का ऑर्डर बनाऊँगी। कृपया पुष्टि करें।' }
+    assert.equal((await TOOL_HANDLERS.create_order(order(mfr), ctx(brand, [ask, { role: 'user', content: 'नहीं' }]))).status, 409)
+    assert.equal((await TOOL_HANDLERS.create_order(order(mfr, { delivery: '2026-02-30' }), ctx(brand, [ask, { role: 'user', content: 'हाँ' }]))).status, 400)
+    const r = await TOOL_HANDLERS.create_order(order(mfr), ctx(brand, [ask, { role: 'user', content: 'हाँ, बना दो' }]))
+    assert.equal(r.ok, true, JSON.stringify(r.data))
+  })
+
+  test('native-script words count only as whole words; a master order day that does not exist is refused', async () => {
+    const { brand } = await world()
+    const ask = { role: 'assistant', content: 'कृपया पुष्टि करें (please confirm).' }
+    const make = (reply, i) => TOOL_HANDLERS.create_master_order({ orderName: `Range ${i}`, season: 'FW26' }, ctx(brand, [ask, { role: 'user', content: reply }]))
+    for (const [i, reply] of ['वहाँ quantity 1500 होनी चाहिए', 'कहां बनेगा?', 'ना, ठीक है, बाद में', 'रद्द कर दो', 'ಸರಿಯಲ್ಲ', 'ಮಾಡಿದ್ರೆ ಏನಾಗುತ್ತೆ?'].entries()) assert.equal((await make(reply, i)).status, 409, reply)
+    assert.equal(await MasterOrder.countDocuments(), 0)
+    for (const [i, reply] of ['हाँ, मैं सहमत हूँ', 'হ্যাঁ, বানাও', 'ಹೌದು, ಇಲ್ಲಿ ಮಾಡಿ'].entries()) assert.equal((await make(reply, 10 + i)).ok, true, reply)
+    assert.equal((await TOOL_HANDLERS.create_master_order({ orderName: 'Bad day', shipBy: '2026-02-30' }, ctx(brand))).status, 400)
+  })
+
+  test("the repeat guard never names another company's style", async () => {
+    const { brand, mfr } = await world()
+    await TOOL_HANDLERS.create_master_order({ orderName: 'FW26 core range', season: 'FW26' }, ctx(brand))
+    assert.equal((await TOOL_HANDLERS.create_order(order(mfr, { masterOrderId: 'MO-ZAR-FW26-001' }), ctx(brand))).ok, true)
+    const other = await makeBuyer({ code: 'HMX' })
+    const r = await TOOL_HANDLERS.create_order(order(null, { masterOrderId: 'MO-ZAR-FW26-001' }), ctx(other))
+    assert.doesNotMatch(JSON.stringify(r.data), /ALREADY EXISTS|ZAR-SWTSHT/)
+    assert.equal(await Order.countDocuments(), 1)
   })
 })
 

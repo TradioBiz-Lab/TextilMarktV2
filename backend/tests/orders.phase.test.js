@@ -91,11 +91,20 @@ describe('a style in sampling and development has no delivery date and no Delive
     return { master, mfr, made }
   }
 
-  test('it can be created without a delivery date; production still needs one', async () => {
-    const { master, made } = await dev()
+  test('any style is created without a delivery date; production takes it with its first manufacturer', async () => {
+    const { master, mfr, made } = await dev()
     assert.equal(made.body.delivery, null)
-    const bad = await as(master).post('/api/orders', { id: 'ND-002', buyerId: String(made.body.buyerId), product: 'Prod', category: 'HOODIE', season: 'FW26', totalQty: 10 })
-    assert.equal(bad.status, 400)
+    const prod = await as(master).post('/api/orders', { id: 'ND-002', buyerId: String(made.body.buyerId), product: 'Prod', category: 'HOODIE', season: 'FW26', totalQty: 10 })
+    assert.equal(prod.status, 201, JSON.stringify(prod.body))
+    assert.equal(prod.body.delivery, null)
+    // The first manufacturer needs the date, and the plan's Delivery step stands on it.
+    assert.equal((await as(master).post('/api/orders/ND-002/assignments', { mfrId: String(mfr._id), qty: 10 })).status, 400)
+    const added = await as(master).post('/api/orders/ND-002/assignments', { mfrId: String(mfr._id), qty: 10, delivery: '2027-01-20' })
+    assert.equal(added.status, 201, JSON.stringify(added.body))
+    const o = await Order.findById('ND-002').lean()
+    assert.equal(new Date(o.delivery).toISOString().slice(0, 10), '2027-01-20')
+    assert.equal(new Date(o.baselineDelivery).toISOString().slice(0, 10), '2027-01-20')
+    assert.deepEqual(o.assignments[0].stages.map(s => [s.name, String(s.startDate).slice(0, 10)]), [['Delivery', '2027-01-20']])
   })
 
   test('adding a manufacturer gives the development steps and no Delivery step', async () => {
@@ -157,10 +166,11 @@ describe('moving a style back to sampling and development', () => {
 })
 
 describe('an empty delivery date', () => {
-  test('is refused in production and clears the date in development, never 1 Jan 1970', async () => {
+  test('is refused for a production style with a manufacturer and clears the date otherwise, never 1 Jan 1970', async () => {
     const master = await makeMaster()
     const buyer = await makeBuyer()
-    await as(master).post('/api/orders', { id: 'NL-001', buyerId: String(buyer._id), product: 'P', category: 'HOODIE', season: 'FW26', totalQty: 10, delivery: '2026-12-31' })
+    const mfr = await makeMfr()
+    await as(master).post('/api/orders', orderPayload({ id: 'NL-001', buyerId: buyer._id, mfrId: mfr._id }))
     assert.equal((await as(master).post('/api/orders/NL-001', { delivery: null })).status, 400)
     assert.equal(new Date((await Order.findById('NL-001').lean()).delivery).toISOString().slice(0, 10), '2026-12-31')
     await as(master).post('/api/orders', { id: 'NL-002', buyerId: String(buyer._id), product: 'P', category: 'HOODIE', season: 'FW26', totalQty: 10, delivery: '2026-12-31', phase: 'development' })

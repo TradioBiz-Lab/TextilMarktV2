@@ -12,6 +12,11 @@ const masterOrderSchema = new mongoose.Schema({
   // Role of the creating company's session (see Order.createdByRole). Null on master orders that
   // predate it, which count as Tradio's.
   createdByRole: { type: String, enum: ['admin', 'buyer', 'manufacturer'], default: null },
+  // The customer's own purchase order for this buy, when it should ship, and anything else worth keeping with it.
+  poNumber:  { type: String, default: '', trim: true, maxlength: 60 },
+  poDate:    { type: Date, default: null },
+  shipBy:    { type: Date, default: null },
+  notes:     { type: String, default: '', maxlength: 2000 },
 }, { timestamps: true })
 
 masterOrderSchema.index({ buyerId: 1, createdAt: -1 })

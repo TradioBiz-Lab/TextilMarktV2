@@ -76,7 +76,7 @@ export function KriyaaChatProvider({ children }) {
         refreshActionItems().catch(() => {})
       }
     } catch (err) {
-      setMessages(m => [...m, { role: 'assistant', content: err?.message || 'Something went wrong — please try again.', at: new Date(), isError: true }])
+      setMessages(m => [...m, { role: 'assistant', content: err?.message || 'Something went wrong - please try again.', at: new Date(), isError: true }])
     } finally {
       clearTimeout(slowTimer)
       sendingRef.current = false

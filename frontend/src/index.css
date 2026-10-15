@@ -168,6 +168,11 @@ table { border-collapse: collapse; width: 100%; }
 /* ── Modal ── */
 .modal-inner { border-radius: 14px; }
 .modal-backdrop { align-items: center !important; }
+/* A hand-built dialog taller than the screen scrolls inside its backdrop instead of running off it: the panel's auto
+   margins centre it while it fits and give way to the top edge when it does not, so its header and buttons stay
+   reachable on a short laptop screen or a phone. */
+.dialog-backdrop { overflow-y: auto; overscroll-behavior: contain; }
+.dialog-backdrop > * { margin-top: auto; margin-bottom: auto; flex-shrink: 0; }
 
 /* ── ── Tablet (≤1024px) ── */
 @media (max-width: 1024px) {

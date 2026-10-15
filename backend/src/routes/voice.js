@@ -61,7 +61,7 @@ function decodeAudioPayload(audioDataUrl) {
   // plain file-upload data URLs, this one needs to tolerate an optional
   // ';param=value' segment between the mime type and the 'base64,' marker.
   const match = /^data:([^;,]+)(?:;[^;,]+)*;base64,(.+)$/i.exec(audioDataUrl)
-  if (!match) return { error: 'Invalid audio payload — must be a base64 data URL' }
+  if (!match) return { error: 'Invalid audio payload - must be a base64 data URL' }
   const mimeType = match[1].toLowerCase()
   if (!ALLOWED_AUDIO_MIME.includes(mimeType)) return { error: 'Unsupported audio format' }
   if (Buffer.byteLength(audioDataUrl, 'utf8') > MAX_AUDIO_SIZE * 1.4) return { error: 'Audio payload too large' }
@@ -105,7 +105,7 @@ router.post('/speak', requireAuth, voiceLimiter, async (req, res) => {
   if (typeof text !== 'string' || text.trim().length === 0)
     return res.status(400).json({ error: 'text is required' })
   if (text.length > MAX_TTS_CHARS)
-    return res.status(400).json({ error: `Text too long for speech (max ${MAX_TTS_CHARS} characters) — split it into shorter chunks.` })
+    return res.status(400).json({ error: `Text too long for speech (max ${MAX_TTS_CHARS} characters) - split it into shorter chunks.` })
 
   const resolvedLanguage = SUPPORTED_LANGUAGES.includes(languageCode) ? languageCode : DEFAULT_LANGUAGE
 

@@ -319,7 +319,7 @@ export function ReportingPage({ onOpen, initialMo }) {
     <div>
       <PageHeader
         title="Order Status"
-        subtitle={`Where every order stands right now: what's open, what's stuck, what's next${inDevelopment ? `. ${inDevelopment} ${inDevelopment === 1 ? 'style' : 'styles'} in Sampling & Development not included.` : ''}${onHold ? ` ${onHold} on hold not included.` : ''}`}
+        subtitle={`Where every style stands right now: what's open, what's stuck, what's next${inDevelopment ? `. ${inDevelopment} ${inDevelopment === 1 ? 'style' : 'styles'} in Sampling & Development not included.` : ''}${onHold ? ` ${onHold} on hold not included.` : ''}`}
         action={(
           <FlexRow gap={8}>
             <Btn variant="secondary" icon={<Download size={16} />} onClick={exportExcel} disabled={filtered.length === 0 || exporting}>{exporting ? 'Preparing…' : 'Export to Excel'}</Btn>
@@ -329,7 +329,7 @@ export function ReportingPage({ onOpen, initialMo }) {
       />
 
       <div style={{ gap: 12, marginBottom: 14 }} className="grid-responsive-5">
-        <StatCard icon={<Package size={19} color={T.primary} />} label="Live orders" value={stats.orders} color={T.primary} />
+        <StatCard icon={<Package size={19} color={T.primary} />} label="Live styles" value={stats.orders} color={T.primary} />
         <StatCard icon={<Ban size={19} color={T.danger} />} label="Blocked" value={stats.blocked} color={T.danger} />
         <StatCard icon={<CircleDot size={19} color={T.danger} />} label="Late" value={stats.late} color={T.danger} />
         <StatCard icon={<AlertTriangle size={19} color={T.warning} />} label="At risk" value={stats.risk} color={T.warning} />
@@ -349,13 +349,13 @@ export function ReportingPage({ onOpen, initialMo }) {
           value={healthFilter} onChange={e => setHealthFilter(e.target.value)}
           style={{ border: `1px solid ${T.border}`, borderRadius: 9, padding: '9px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit', cursor: 'pointer' }}
         >
-          <option value="All">All orders</option>
+          <option value="All">All styles</option>
           {Object.entries(HEALTH).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
       </FlexRow>
 
       {groups.length === 0 ? (
-        <Card><EmptyState icon={<BarChart3 size={26} color={T.textLight} />} title={q || healthFilter !== 'All' ? 'No matching orders' : 'No orders'} desc={q || healthFilter !== 'All' ? 'Try adjusting the search or filter' : 'Orders will appear here'} /></Card>
+        <Card><EmptyState icon={<BarChart3 size={26} color={T.textLight} />} title={q || healthFilter !== 'All' ? 'No matching styles' : 'No styles in production yet'} desc={q || healthFilter !== 'All' ? 'Try adjusting the search or filter' : 'Styles show here once a manufacturer is working on them'} /></Card>
       ) : groups.map(g => {
         const isOpen = !!expanded[g.key] || !!q || healthFilter !== 'All'
         return (
@@ -367,10 +367,10 @@ export function ReportingPage({ onOpen, initialMo }) {
             >
               <span style={{ color: T.textMuted, transform: isOpen ? 'none' : 'rotate(-90deg)', display: 'inline-flex' }}><ChevronDown size={13} /></span>
               <span style={{ fontSize: 13, fontWeight: 800, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                <Folder size={13} /> {!isBuyer ? `${g.buyerCompany} — ` : ''}{g.mo?.orderName || (g.moId === '__none__' ? 'Other orders' : g.moId)}
+                <Folder size={13} /> {!isBuyer ? `${g.buyerCompany} - ` : ''}{g.mo?.orderName || (g.moId === '__none__' ? 'Other styles' : g.moId)}
               </span>
               {g.mo?.season && <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', background: '#dbeafe', padding: '1px 7px', borderRadius: 4 }}>{g.mo.season}</span>}
-              <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{g.rows.length} order{g.rows.length !== 1 ? 's' : ''}</span>
+              <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{g.rows.length} style{g.rows.length !== 1 ? 's' : ''}</span>
             </FlexRow>
 
             {isOpen && (

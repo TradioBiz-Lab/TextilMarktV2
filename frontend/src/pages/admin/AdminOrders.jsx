@@ -5,7 +5,7 @@ import {
   isStageDone, stageIsOverdue, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct, fmtStageDate, effectiveEta,
   CELL_STATE, cellState, buildMatrixSpine, withBuyerPrefix, getToday, PHASES, phaseOf, styleOnHold
 } from '../../constants.js'
-import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, FileUpload, LoadingScreen, useToast, fileUploadPayload, ProductThumb, Modal, activateOnKey } from '../../components/ui.jsx'
+import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, Textarea, FileUpload, LoadingScreen, useToast, fileUploadPayload, ProductThumb, Modal, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { capsFor, orderCaps } from '../../caps.js'
 import { usePartners } from '../../lib/usePartners.js'
@@ -39,7 +39,7 @@ function groupDisplayLabel(g) {
   return withBuyerPrefix(base, source)
 }
 
-export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initialPhase, onSubmitReq }) {
+export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initialPhase, openWizardFor, onSubmitReq }) {
   const { orders, users, loading, createOrder, uploadDoc, masterOrders, createMasterOrder, editOrder, currentUser } = useApp()
   // One Orders page for every role; caps decides which actions each sees (see caps.js).
   const caps = capsFor(currentUser)
@@ -90,11 +90,15 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
   const [editTarget, setEditTarget] = useState(null)
 
   // ── Create Style wizard state ──
-  const [showWizard, setShowWizard] = useState(false)
+  const [showWizard, setShowWizard] = useState(!!openWizardFor)
+  // The master order the wizard opens on: the one a page asked for, or one just created from inside the wizard.
+  const [wizardMo, setWizardMo] = useState(openWizardFor || '')
+  const [moFromWizard, setMoFromWizard] = useState(false)
 
   // ── Create Master Order state ──
   const [showMO, setShowMO] = useState(false)
-  const [mo, setMo] = useState({ buyerId: '', orderName: '', season: 'SS26' })
+  const BLANK_MO = { buyerId: '', orderName: '', season: 'SS26', poNumber: '', poDate: '', shipBy: '', notes: '' }
+  const [mo, setMo] = useState(BLANK_MO)
   const [moFile, setMoFile] = useState(null)
   const [moFileErr, setMoFileErr] = useState('')
   const [moErr, setMoErr] = useState('')
@@ -127,11 +131,11 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
     const result = [...groups.entries()].map(([moId, ords]) => ({
       moId, mo: moId !== '__none__' ? masterOrders.find(m => m.id === moId) : null, orders: ords,
     }))
-    // Standalone product: a master order with no styles yet still shows, otherwise one you just
-    // created looks lost and an empty one could never be edited or dropped. Hidden while searching
-    // or filtering, when only matching styles are wanted. (The Tradio portal keeps its list as is.)
-    if (caps.standalone && !q && sfilt === 'All' && phase === 'production') {
-      masterOrders.forEach(m => { if (!groups.has(m.id)) result.push({ moId: m.id, mo: m, orders: [] }) })
+    // A master order with no styles yet still shows, otherwise one you just created looks lost and an
+    // empty one could never be opened or deleted. Hidden while searching or filtering, when only
+    // matching styles are wanted.
+    if (!q && sfilt === 'All' && phase === 'production') {
+      masterOrders.forEach(m => { if (!orders.some(o => o.masterOrderId === m.id)) result.push({ moId: m.id, mo: m, orders: [] }) })
     }
     result.sort((a, b) => {
       if (a.moId === '__none__') return 1
@@ -161,7 +165,7 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
   }, [initialMo, groupedOrders.length])
 
   const resetMoForm = () => {
-    setMo({ buyerId: '', orderName: '', season: 'SS26' })
+    setMo(BLANK_MO)
     setMoFile(null); setMoFileErr(''); setMoErr('')
   }
 
@@ -184,8 +188,9 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
       {showWizard && (
         <CreateStyleWizard
           masterOrders={masterOrders}
-          onClose={() => setShowWizard(false)}
-          onNewMasterOrder={() => setShowMO(true)}
+          presetMasterOrderId={wizardMo}
+          onClose={() => { setShowWizard(false); setWizardMo('') }}
+          onNewMasterOrder={() => { setMoFromWizard(true); setShowMO(true) }}
           onCreated={firstStyleId => {
             setShowWizard(false)
             toast(`Style${firstStyleId ? ` ${firstStyleId}` : ''} created`, 'success')
@@ -196,74 +201,76 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
 
       {/* ── Create Master Order Modal ── */}
       {showMO && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }} onClick={e => e.target === e.currentTarget && (setShowMO(false), resetMoForm())}>
-          <div style={{ background: '#fff', borderRadius: 14, border: `1px solid ${T.border}`, width: '100%', maxWidth: 560, boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '20px 24px 16px', borderBottom: `1px solid ${T.border}` }}>
+        <Modal title="Create Master Order" subtitle="One customer buy, e.g. a season's range. Styles are created under it." onClose={() => { if (!moSaving) { setShowMO(false); setMoFromWizard(false); resetMoForm() } }} size="md">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {caps.isBuyer ? (
               <div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>Create Master Order</div>
-                <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>A master order groups all products for a buyer's order</div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 6 }}>Brand</label>
+                <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{currentUser.company}</div>
               </div>
-              <button onClick={() => { setShowMO(false); resetMoForm() }} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: T.textMuted }} aria-label="Close"><X size={14} /></button>
-            </div>
-            <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {caps.isBuyer ? (
-                <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 6 }}>Brand</label>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{currentUser.company}</div>
-                </div>
-              ) : noConnectedBrands ? (
-                <div style={{ fontSize: 13, color: T.textMuted, background: T.warningBg, border: `1px solid ${T.warningBorder}`, borderRadius: 8, padding: '10px 12px', lineHeight: 1.5 }}>
-                  You are not connected with any brand yet. Ask your Tradio contact to connect you with the brands you work for, then you can set up their orders here.
-                </div>
-              ) : (
-                <Select label={caps.isMfr ? 'Customer (brand) *' : 'Buyer *'} value={mo.buyerId} onChange={e => setMo({ ...mo, buyerId: e.target.value })}>
-                  <option value="">{caps.isMfr ? 'Select customer…' : 'Select buyer…'}</option>
-                  {customerChoices.map(b => <option key={b.id} value={b.id}>{b.company} ({b.code})</option>)}
-                </Select>
-              )}
-              <Input label="Order Name *" value={mo.orderName} onChange={e => setMo({ ...mo, orderName: e.target.value })} placeholder="e.g. H1, H26, Core Series" hint="The buyer name is added automatically wherever this shows — e.g. Cocoblu — H1." />
+            ) : noConnectedBrands ? (
+              <div style={{ fontSize: 13, color: T.textMuted, background: T.warningBg, border: `1px solid ${T.warningBorder}`, borderRadius: 8, padding: '10px 12px', lineHeight: 1.5 }}>
+                You are not connected with any brand yet. Ask your Tradio contact to connect you with the brands you work for, then you can set up their orders here.
+              </div>
+            ) : (
+              <Select label={caps.isMfr ? 'Customer (brand) *' : 'Customer *'} value={mo.buyerId} onChange={e => setMo({ ...mo, buyerId: e.target.value })}>
+                <option value="">Select customer...</option>
+                {customerChoices.map(b => <option key={b.id} value={b.id}>{b.company} ({b.code})</option>)}
+              </Select>
+            )}
+            <div className="form-grid-2" style={{ gap: 12 }}>
+              <Input label="Order Name *" value={mo.orderName} onChange={e => setMo({ ...mo, orderName: e.target.value })} placeholder="e.g. H1, H26, Core Series" hint="Shown with the customer's name, e.g. Cocoblu, H1." />
               <Select label="Season" value={mo.season} onChange={e => setMo({ ...mo, season: e.target.value })}>
                 {SEASONS.map(s => <option key={s}>{s}</option>)}
               </Select>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 8 }}>PO / RFQ Attachment (optional)</label>
-                <FileUpload file={moFile} onFile={f => { setMoFile(f); setMoFileErr('') }} error={moFileErr} onError={setMoFileErr} />
-              </div>
-              <div style={{ fontSize: 12, color: T.textLight }}>The master order number is assigned automatically when you create it.</div>
-              {moErr &&<div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {moErr}</div>}
-              <FlexRow justify="flex-end" gap={8}>
-                <Btn variant="secondary" onClick={() => { setShowMO(false); resetMoForm() }}>Cancel</Btn>
-                <Btn disabled={!moBuyerId || !mo.orderName.trim() || moSaving} onClick={async () => {
-                  setMoErr('')
-                  setMoSaving(true)
-                  try {
-                    // The server numbers it (a new number can never clash with one a teammate just made).
-                    const created = await createMasterOrder({ id: 'auto', buyerId: moBuyerId, orderName: mo.orderName.trim(), season: mo.season })
-                    const moId = created.id
-                    // Upload attached file as PO/RFQ linked to this master order
-                    let fileFailed = null
-                    if (moFile) {
-                      try {
-                        await uploadDoc({
-                          type: 'PO', name: `PO — ${moId}`, issuer: '', issueDate: getToday(),
-                          expiryDate: null, orderId: null, mfrId: null, masterOrderId: moId,
-                          ...fileUploadPayload(moFile),
-                        })
-                      } catch (e) { fileFailed = e?.message || 'upload failed' }
-                    }
-                    // Say so when the attached file did not make it, instead of reporting a clean success.
-                    if (fileFailed) toast(`Master Order ${moId} created, but the attached file did not upload (${fileFailed}). Add it from Documents.`, 'warning')
-                    else toast(`Master Order ${moId} created`, 'success')
-                    setShowMO(false)
-                    resetMoForm()
-                  } catch (err) {
-                    setMoErr(err?.message || 'Failed to create master order')
-                  } finally { setMoSaving(false) }
-                }}>{moSaving ? 'Creating…' : 'Create Master Order'}</Btn>
-              </FlexRow>
             </div>
+            <div className="form-grid-2" style={{ gap: 12 }}>
+              <Input label="Customer PO number" value={mo.poNumber} onChange={e => setMo({ ...mo, poNumber: e.target.value })} maxLength={60} placeholder="As on the customer's PO" />
+              <Input label="PO date" type="date" value={mo.poDate} onChange={e => setMo({ ...mo, poDate: e.target.value })} />
+            </div>
+            <Input label="Ship by" type="date" value={mo.shipBy} onChange={e => setMo({ ...mo, shipBy: e.target.value })} hint="When the customer needs the buy shipped. Each style's own delivery date is set when its manufacturer is added." />
+            <Textarea label="Notes" value={mo.notes} onChange={e => setMo({ ...mo, notes: e.target.value })} rows={2} maxLength={2000} placeholder="Terms, ship-to, anything worth keeping with this buy" />
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 8 }}>Customer PO or RFQ file (optional)</label>
+              <FileUpload file={moFile} onFile={f => { setMoFile(f); setMoFileErr('') }} error={moFileErr} onError={setMoFileErr} />
+              <div style={{ fontSize: 11, color: T.textLight, marginTop: 4 }}>It shows in the PO and Invoice folder of every style in this master order. The number is given when you create it.</div>
+            </div>
+            {moErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {moErr}</div>}
+            <FlexRow justify="flex-end" gap={8}>
+              <Btn variant="secondary" disabled={moSaving} onClick={() => { setShowMO(false); setMoFromWizard(false); resetMoForm() }}>Cancel</Btn>
+              <Btn disabled={!moBuyerId || !mo.orderName.trim() || moSaving} onClick={async () => {
+                setMoErr('')
+                setMoSaving(true)
+                try {
+                  // The server numbers it (a new number can never clash with one a teammate just made).
+                  const created = await createMasterOrder({ id: 'auto', buyerId: moBuyerId, orderName: mo.orderName.trim(), season: mo.season,
+                    poNumber: mo.poNumber.trim(), poDate: mo.poDate || null, shipBy: mo.shipBy || null, notes: mo.notes.trim() })
+                  const moId = created.id
+                  let fileFailed = null
+                  if (moFile) {
+                    try {
+                      await uploadDoc({
+                        type: 'PO', name: `Customer PO, ${moId}`, issuer: '', issueDate: mo.poDate || getToday(),
+                        expiryDate: null, orderId: null, mfrId: null, masterOrderId: moId,
+                        ...fileUploadPayload(moFile),
+                      })
+                    } catch (e) { fileFailed = e?.message || 'upload failed' }
+                  }
+                  // Say so when the attached file did not make it, instead of reporting a clean success.
+                  if (fileFailed) toast(`Master order ${moId} created, but the file did not upload (${fileFailed}). Add it to a style's PO and Invoice folder.`, 'warning')
+                  else toast(`Master order ${moId} created`, 'success')
+                  setShowMO(false)
+                  resetMoForm()
+                  // Made from inside Create Style: back to the wizard with it chosen. Otherwise straight to its page.
+                  if (moFromWizard) { setWizardMo(moId); setMoFromWizard(false) }
+                  else if (onOpenMo) onOpenMo(moId)
+                } catch (err) {
+                  setMoErr(err?.message || 'Failed to create master order')
+                } finally { setMoSaving(false) }
+              }}>{moSaving ? 'Creating...' : 'Create Master Order'}</Btn>
+            </FlexRow>
           </div>
-        </div>
+        </Modal>
       )}
 
       <PageHeader
@@ -276,7 +283,7 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
           : 'Every style assigned to your factory, and where each one stands'}
         action={caps.createOrders ? (
           <FlexRow gap={8}>
-            <Btn variant="secondary" onClick={() => setShowMO(true)} icon={<Folder size={13} />}>New Master Order</Btn>
+            <Btn variant="secondary" onClick={() => { setMoFromWizard(false); setShowMO(true) }} icon={<Folder size={13} />}>New Master Order</Btn>
             <Btn onClick={() => setShowWizard(true)} icon={<Plus size={13} />}>Create Style</Btn>
           </FlexRow>
         ) : (caps.submitRequirement && onSubmitReq ? <Btn onClick={onSubmitReq} icon={<Plus size={13} />}>Submit Requirement</Btn> : null)} />
@@ -308,7 +315,8 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
           setMoving(true)
           let ok = 0
           try {
-            for (const o of chosen) { await editOrder(o.id, { phase: 'production', ...(o.delivery ? {} : { delivery: date }) }); ok++ }
+            // Only a style with a manufacturer takes the date now; one without gets it when the manufacturer is added.
+            for (const o of chosen) { await editOrder(o.id, { phase: 'production', ...(o.delivery || !(o.assignments || []).length ? {} : { delivery: date }) }); ok++ }
             toast(`${ok} ${ok === 1 ? 'style' : 'styles'} moved to production`, 'success')
             setPicked(new Set()); setPromoteOpen(false); setAskDate(false)
           } catch (e) {
@@ -319,7 +327,7 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
         }
         return (
           <div style={{ marginBottom: 14 }}>
-            {askDate && <PromoteModal count={chosen.length} needsDate={chosen.some(o => !o.delivery)} busy={moving} onClose={() => setAskDate(false)} onConfirm={move} />}
+            {askDate && <PromoteModal count={chosen.length} needsDate={chosen.some(o => !o.delivery && (o.assignments || []).length > 0)} busy={moving} onClose={() => setAskDate(false)} onConfirm={move} />}
             <Btn variant="secondary" size="sm" onClick={() => setPromoteOpen(v => !v)} icon={<ArrowRight size={13} />}>
               {promoteOpen ? 'Close' : 'Move styles to production'}
             </Btn>
@@ -461,7 +469,7 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
                             </th>
                             {entries.map(({ order, asgn }) => (
                               <th key={`${order.id}-${asgn?.mid ?? 'unassigned'}`} onClick={() => onOpen(order.id, asgn?.mid)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => onOpen(order.id, asgn?.mid))}
-                                title={`${order.product} — ${order.id}${asgn ? '' : ' (no manufacturer assigned yet)'}`}
+                                title={`${order.product} - ${order.id}${asgn ? '' : ' (no manufacturer assigned yet)'}`}
                                 style={{ padding: '9px 10px', textAlign: 'left', minWidth: 150, cursor: 'pointer', borderLeft: `1px solid ${T.border}` }}>
                                 <FlexRow gap={6}>
                                   <ProductThumb order={order} size="sm" />
@@ -505,7 +513,7 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
                                   // native `title` attribute: browsers delay `title` by ~1s and it's
                                   // easy to move off the cell before it ever appears.
                                   const tipLines = stage ? [
-                                    `${step} — ${st.label}`,
+                                    `${step} - ${st.label}`,
                                     `Start: ${fmtStageDate(stage.startDate)}`,
                                     `Planned: ${fmtStageDate(stage.baselineEta)}  →  Revised: ${stage.eta && stage.eta === stage.baselineEta ? 'NA' : fmtStageDate(stage.eta)}${planVariance != null && planVariance !== 0 ? `  (${planVariance > 0 ? '+' : ''}${planVariance}d)` : ''}`,
                                     `Actual: ${fmtStageDate(stage.actualEnd)}${actualVariance != null && actualVariance !== 0 ? `  (${actualVariance > 0 ? '+' : ''}${actualVariance}d vs plan)` : ''}`,
@@ -561,9 +569,12 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
           become the mouseleave target. */}
       {matrixTip && (
         <div style={{
-          position: 'fixed', left: matrixTip.x + 14, top: matrixTip.y + 16, zIndex: 1000,
+          // Kept on screen: it opens to the left near the right edge and above the cursor near the bottom.
+          position: 'fixed', zIndex: 1000,
+          left: Math.max(8, Math.min(matrixTip.x + 14, window.innerWidth - 336)),
+          top: matrixTip.y + 16 + matrixTip.lines.length * 18 + 18 > window.innerHeight ? Math.max(8, matrixTip.y - 8 - (matrixTip.lines.length * 18 + 18)) : matrixTip.y + 16,
           pointerEvents: 'none', background: '#1e293b', color: '#f1f5f9', borderRadius: 8,
-          padding: '8px 12px', fontSize: 11, lineHeight: 1.6, whiteSpace: 'pre',
+          padding: '8px 12px', fontSize: 11, lineHeight: 1.6, whiteSpace: 'pre-wrap',
           boxShadow: '0 8px 24px rgba(0,0,0,0.25)', maxWidth: 320,
         }}>
           {matrixTip.lines.join('\n')}

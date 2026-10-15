@@ -73,8 +73,8 @@ export const ordersApi = {
     api.post(`/orders/${orderId}/assignments/${mfrId}`, { status, note }),
   // Adds a manufacturer to a style that has none yet (or a second split) —
   // starts with an empty stage list; TNA is built separately afterward.
-  addAssignment: (orderId, { mfrId, qty, sub }) =>
-    api.post(`/orders/${orderId}/assignments`, { mfrId, qty, sub }),
+  addAssignment: (orderId, { mfrId, qty, sub, delivery }) =>
+    api.post(`/orders/${orderId}/assignments`, { mfrId, qty, sub, ...(delivery ? { delivery } : {}) }),
   // Records how many pieces were actually delivered for a split (a whole number, or null to clear).
   setDeliveredQty: (orderId, mfrId, deliveredQty) =>
     api.post(`/orders/${orderId}/assignments/${mfrId}/delivered-qty`, { deliveredQty }),
@@ -113,6 +113,9 @@ export const ordersApi = {
   // responsibleId?, status?, actualEnd?} — index omitted appends to the end.
   insertStage: (orderId, mfrId, data) =>
     api.post(`/orders/${orderId}/assignments/${mfrId}/stages/insert`, data),
+  // Move one step up or down the plan ('up' | 'down'); Delivery stays last.
+  moveStage: (orderId, mfrId, stageIndex, direction) =>
+    api.post(`/orders/${orderId}/assignments/${mfrId}/stages/${stageIndex}/move`, { direction }),
 }
 
 export const documentsApi = {

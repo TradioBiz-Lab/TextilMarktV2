@@ -51,7 +51,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 function validateFilePayload(dataUrl, mimeType, fileSize, fileName) {
   if (typeof dataUrl !== 'string') return 'Invalid file payload'
   const dataUrlMatch = /^data:([^;,]*);base64,/i.exec(dataUrl)
-  if (!dataUrlMatch) return 'Invalid file payload — must be a base64 data URL'
+  if (!dataUrlMatch) return 'Invalid file payload - must be a base64 data URL'
   const embeddedMime = dataUrlMatch[1].toLowerCase()
   const extFallbackOk = EXT_FALLBACK_ALLOWED.some(ext => (fileName || '').toLowerCase().endsWith(ext))
   const mimeOk = m => !!m && (ALLOWED_MIME.includes(m) || (extFallbackOk && (m === '' || m === 'application/octet-stream')))
@@ -95,7 +95,7 @@ function validateExternalUrl(externalUrl) {
     }
     return { url: u.toString() }
   } catch {
-    return { error: 'Invalid link — must be a valid URL' }
+    return { error: 'Invalid link - must be a valid URL' }
   }
 }
 
@@ -520,7 +520,7 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
     await AuditLog.create({
       byUser: req.user.id,
       action: 'Document Uploaded',
-      detail: `${name} (${type})${orderId ? ' — order ' + orderId : ''}`,
+      detail: `${name} (${type})${orderId ? ' - order ' + orderId : ''}`,
     })
 
     // Document uploaded to an order: tell its buyer and every admin (not the uploader).
@@ -609,7 +609,7 @@ router.post('/:id', requireAuth, uploadLimiter, async (req, res) => {
     } else if (removeFile) {
       const isStage = doc.stageIndex != null
       if (!(isStage && doc.notes))
-        return res.status(400).json({ error: 'Cannot remove the file/link — a file, link, or stage-evidence notes are required' })
+        return res.status(400).json({ error: 'Cannot remove the file/link - a file, link, or stage-evidence notes are required' })
       doc.dataUrl = null; doc.externalUrl = null; doc.fileName = null; doc.fileSize = null; doc.mimeType = null
     } else {
       // No file/link change requested — the doc must still satisfy the invariant
@@ -625,7 +625,7 @@ router.post('/:id', requireAuth, uploadLimiter, async (req, res) => {
     await AuditLog.create({
       byUser: req.user.id,
       action: 'Document Updated',
-      detail: `${doc.name} (${doc.type})${doc.orderId ? ' — order ' + doc.orderId : ''}`,
+      detail: `${doc.name} (${doc.type})${doc.orderId ? ' - order ' + doc.orderId : ''}`,
     })
 
     res.json(mapDoc(doc.toObject(), false))
@@ -656,7 +656,7 @@ router.post('/:id/delete', requireAuth, async (req, res) => {
     await AuditLog.create({
       byUser: req.user.id,
       action: 'Document Deleted',
-      detail: `${doc.name} (${doc.type})${doc.orderId ? ' — order ' + doc.orderId : ''}`,
+      detail: `${doc.name} (${doc.type})${doc.orderId ? ' - order ' + doc.orderId : ''}`,
     })
 
     res.json({ ok: true })

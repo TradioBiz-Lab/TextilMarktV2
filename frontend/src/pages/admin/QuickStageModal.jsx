@@ -87,9 +87,10 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
     ...(caps.isAdmin
       ? [
           ...(users || []).filter(u => u.isActive && u.role === 'admin').map(u => ({ value: u.id, label: `Tradio: ${u.name}` })),
-          ...(users || []).filter(u => u.isActive && u.role === 'manufacturer').map(u => ({ value: u.id, label: `Factory: ${u.company}` })),
+          // The factory listed is the one making this split; another factory could not see the step it was given.
+          ...(users || []).filter(u => u.isActive && u.role === 'manufacturer' && String(u.id) === String(mfrId)).map(u => ({ value: u.id, label: `Factory: ${u.company}` })),
         ]
-      : (order?.assignments || []).map(a => ({ value: String(a.mid), label: `Factory: ${a.mfrCompany}` }))),
+      : (order?.assignments || []).filter(a => String(a.mid) === String(mfrId)).map(a => ({ value: String(a.mid), label: `Factory: ${a.mfrCompany}` }))),
   ]
   const saveOwner = async value => {
     if (savingOwner) return
@@ -597,7 +598,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
               return (
                 <FlexRow key={mi} gap={8} style={{ background: '#fff', borderRadius: 6, padding: '6px 10px', border: `1px solid ${T.border}` }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: T.text }}>{m.name} — {m.requiredQty}{m.unit ? ` ${m.unit}` : ''}</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: T.text }}>{m.name} - {m.requiredQty}{m.unit ? ` ${m.unit}` : ''}</div>
                     {(m.supplier || m.poNumber) && (
                       <div style={{ fontSize: 10, color: T.textLight, marginTop: 1 }}>
                         {[m.supplier, m.poNumber, m.poId && m.orderedQty ? `${m.receivedQty || 0} of ${m.orderedQty} received` : ''].filter(Boolean).join(' · ')}
@@ -657,10 +658,10 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
     </Modal>
 
     {showStageDocs && (
-      <Modal title="Upload Stage Evidence" subtitle={`${stage?.name || `Stage ${stageIndex + 1}`} — Evidence Documents`} onClose={() => setShowStageDocs(false)} size="lg">
+      <Modal title="Upload Stage Evidence" subtitle={`${stage?.name || `Stage ${stageIndex + 1}`} - Evidence Documents`} onClose={() => setShowStageDocs(false)} size="lg">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ fontSize: 12, color: T.textMuted, background: '#f0f7ff', border: `1px solid #dbeafe`, borderRadius: 8, padding: '8px 12px' }}>
-            Linked to the {stage?.name || `Stage ${stageIndex + 1}`} stage. Attach a file/link, or add SOP notes only — either is sufficient.
+            Linked to the {stage?.name || `Stage ${stageIndex + 1}`} stage. Attach a file/link, or add SOP notes only - either is sufficient.
             {productDocForStep(stage?.name) && ` It is also filed under "${productDocForStep(stage?.name).label}" in this product's documents, so there is no need to upload it again.`}
           </div>
           {sdItems.map((item, idx) => (
@@ -672,7 +673,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
                 <Input label="Document Name *" value={item.name} onChange={e => updateSdItem(idx, { name: e.target.value, fileErr: '' })} placeholder={`e.g. ${stage?.name || `Stage ${stageIndex + 1}`} GRN - Batch ${idx + 1}`} />
                 <FileUpload file={item.file} onFile={f => updateSdItem(idx, { file: f, fileErr: '' })} error={item.fileErr} onError={err => updateSdItem(idx, { fileErr: err })} />
                 <Textarea
-                  label="Notes (optional — text evidence)"
+                  label="Notes (optional - text evidence)"
                   value={item.notes}
                   onChange={e => updateSdItem(idx, { notes: e.target.value, fileErr: '' })}
                   placeholder="Add SOP context, observations, or text-only stage evidence…"
@@ -682,7 +683,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
             </div>
           ))}
           {sdErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500 }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {sdErr}</div>}
-          <FlexRow justify="space-between" gap={8}>
+          <FlexRow justify="space-between" gap={8} style={{ flexWrap: 'wrap' }}>
             <Btn variant="secondary" size="sm" onClick={addSdItem} icon={<Plus size={12} />}>Add Another Document</Btn>
             <FlexRow gap={8}>
               <Btn variant="secondary" onClick={() => setShowStageDocs(false)}>Cancel</Btn>

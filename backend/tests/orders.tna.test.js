@@ -144,7 +144,7 @@ describe('checklist items', () => {
     const s = (await readStages())[0]
     assert.equal(s.itemsTotal, 3)
     assert.equal(s.itemsDone, 0)
-    assert.deepEqual(s.items.map(i => i.name), ['Lab Dip — Peacot', 'Lab Dip — Brown', 'Lab Dip — Olivine'])
+    assert.deepEqual(s.items.map(i => i.name), ['Lab Dip - Peacot', 'Lab Dip - Brown', 'Lab Dip - Olivine'])
     assert.deepEqual(s.items.map(i => i.colourway), ['Peacot', 'Brown', 'Olivine'])
   })
 

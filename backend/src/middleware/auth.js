@@ -58,7 +58,7 @@ export async function requireAuth(req, res, next) {
     if (!dbUser || !dbUser.isActive) return res.status(401).json({ error: 'Unauthorized' })
     if (dbUser.passwordChangedAt && req.user.iat) {
       if (req.user.iat * 1000 < dbUser.passwordChangedAt.getTime()) {
-        return res.status(401).json({ error: 'Session expired — please log in again' })
+        return res.status(401).json({ error: 'Session expired - please log in again' })
       }
     }
     // A buyer or manufacturer belongs to an organization. Deactivating the organization signs out

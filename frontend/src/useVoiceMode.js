@@ -81,7 +81,7 @@ export function useVoiceMode() {
       // fixes, and "didn't hear anything" alone can't tell them apart.
       const d = rec.getDiag?.()
       setPhase('error')
-      setErrorMsg(`Didn't hear anything${d ? ` (mic level ${d.peak.toFixed(3)}, audio ${d.ctx})` : ''} — try again or exit.`)
+      setErrorMsg(`Didn't hear anything${d ? ` (mic level ${d.peak.toFixed(3)}, audio ${d.ctx})` : ''} - try again or exit.`)
       return
     }
     emptyStreakRef.current = 0
@@ -93,7 +93,7 @@ export function useVoiceMode() {
         emptyStreakRef.current += 1
         if (emptyStreakRef.current < MAX_EMPTY_STREAK) { startListening(); return }
         setPhase('error')
-        setErrorMsg("Didn't catch that — try again or exit.")
+        setErrorMsg("Didn't catch that - try again or exit.")
         return
       }
       setLastTranscript(transcript)

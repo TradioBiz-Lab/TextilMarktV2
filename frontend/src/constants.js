@@ -134,7 +134,8 @@ export const deliveryDocsOf = (orders, docs) => (docs || []).filter(d => {
   if (d.type !== 'dispatch_docs') return false
   if (d.stageIndex == null) return true
   const s = stageForDoc(orders, d)
-  return !!s && (!!s.isDelivery || /^\s*delivery\s*$/i.test(s.name || ''))
+  // Filed on the Delivery step, or on a Dispatch step (packing lists are often uploaded when the goods leave).
+  return !!s && (!!s.isDelivery || /^\s*delivery\s*$/i.test(s.name || '') || /dispatch/i.test(s.name || ''))
 })
 
 export const productDocForStep = stageName => PRODUCT_DOC_BY_STEP.find(p => p.re.test(String(stageName || ''))) || null
@@ -253,7 +254,7 @@ export const fmtN = n => n?.toLocaleString?.() ?? n
 // catch-all "no master order" bucket can span several, so it stays bare).
 export const withBuyerPrefix = (base, orders) => {
   const buyers = new Set((orders || []).map(o => o.buyerCompany).filter(Boolean))
-  return buyers.size === 1 ? `${[...buyers][0]} — ${base}` : base
+  return buyers.size === 1 ? `${[...buyers][0]} - ${base}` : base
 }
 
 // ── Stage derivation ────────────────────────────────────────────────────────
@@ -319,6 +320,56 @@ export const planProgress = stages => {
  * to the customer becomes a milestone. Steps that are already milestones or checklists stay as they are.
  */
 export const kindForCustomerOwner = stage => (stageKindOf(stage) === 'quantity' ? { kind: 'milestone' } : {})
+
+/** The step names of the standard production TNA, offered when a step is added (any name is still allowed). */
+export const STANDARD_STEP_NAMES = [
+  'Fit Sample Approved', 'Lab Dip/Cutting Shared', 'Lab Dip Approval', 'Greige Fabric (Inhouse)', 'Trims Order', 'Fabric Order',
+  'Dyeing Start', 'Final Fabric Inhouse', 'Trims (Inhouse)', 'PP/Fit Sample Sent', 'FPT Sent', 'FPT Approval', 'GPT Sent',
+  'GPT Approval', 'PP Approval', 'Production Start', 'Production End', 'Inspection',
+]
+
+/**
+ * Who a new step belongs to unless someone picks otherwise: approvals sit with the customer, Tradio's own steps
+ * (matching, pricing, inspection, ready for production) are left for Tradio to pick, and everything else is the
+ * work of the factory on that split. Returns a user id, or null for unassigned.
+ */
+export const defaultStepOwner = (name, order, mfrId, options) => {
+  const n = String(name || '')
+  let id = null
+  if (/inspect|\bqc\b|request received|matching|pricing|ready for production/i.test(n)) id = null
+  else if (/approv/i.test(n)) id = order?.buyerId ? String(order.buyerId) : null
+  else id = mfrId ? String(mfrId) : null
+  // With the owner list given, someone not on it (an inactive account) is no default: the server would refuse them.
+  return id && options && !options.some(o => o.value === id) ? null : id
+}
+
+/**
+ * Who may own a step on one split: the style's customer (never the Delivery step, which only Tradio or the factory
+ * closes), Tradio staff, and the factory making that split. Anyone already set as owner stays listed, so the picker
+ * shows the truth even for an older plan. Returns [{ value, label, role }].
+ */
+export const stepOwnerOptions = (users, order, mfrId, { isDelivery = false, currentId = null } = {}) => {
+  const active = (users || []).filter(u => u.isActive !== false)
+  // Someone without the user list (a factory running its own plan) still gets the two companies from the order itself.
+  // A company that is on the list but inactive is left out: the server refuses an inactive owner.
+  const listed = id => (users || []).some(u => String(u.id) === String(id))
+  const asgn = (order?.assignments || []).find(a => String(a.mid) === String(mfrId))
+  const customer = active.find(u => u.role === 'buyer' && String(u.id) === String(order?.buyerId))
+    || (order?.buyerId && order?.buyerCompany && !listed(order.buyerId) ? { id: order.buyerId, company: order.buyerCompany } : null)
+  const factory = active.find(u => u.role === 'manufacturer' && String(u.id) === String(mfrId))
+    || (mfrId && asgn?.mfrCompany && !listed(mfrId) ? { id: mfrId, company: asgn.mfrCompany } : null)
+  const out = [
+    ...(customer && !isDelivery ? [{ value: String(customer.id), label: `Customer: ${customer.company || customer.name}`, role: 'buyer' }] : []),
+    ...active.filter(u => u.role === 'admin').map(u => ({ value: String(u.id), label: `Tradio: ${u.name}`, role: 'admin' })),
+    ...(factory ? [{ value: String(factory.id), label: `Factory: ${factory.company}`, role: 'manufacturer' }] : []),
+  ]
+  if (currentId && !out.some(o => o.value === String(currentId))) {
+    const u = (users || []).find(x => String(x.id) === String(currentId))
+    if (u) out.push({ value: String(u.id), label: `${u.role === 'buyer' ? 'Customer' : u.role === 'admin' ? 'Tradio' : 'Factory'}: ${u.company || u.name} (not on this split)`, role: u.role })
+  }
+  return out
+}
+
 
 /**
  * Whether a split has been delivered, and the date to show for it. A split is delivered once its

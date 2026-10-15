@@ -69,7 +69,7 @@ export function KriyaaWidget() {
           <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0 }}>
             {messages.length === 0 && (
               <div style={{ fontSize: 12, color: T.textLight, textAlign: 'center', padding: '24px 12px' }}>
-                Ask what's pending, narrate a status change, or ask about delivery risk — in plain language.
+                Ask what's pending, narrate a status change, or ask about delivery risk - in plain language.
               </div>
             )}
             {messages.map((m, i) => (
@@ -97,7 +97,7 @@ export function KriyaaWidget() {
             {busy && (
               <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
                 <div style={{ padding: '9px 12px', borderRadius: 11, background: T.bg, border: `1px solid ${T.border}`, fontSize: 12.5, color: T.textMuted }}>
-                  {slow ? 'Still working — cross-order questions can take a bit longer…' : 'Thinking…'}
+                  {slow ? 'Still working - cross-order questions can take a bit longer…' : 'Thinking…'}
                 </div>
               </div>
             )}
@@ -107,7 +107,7 @@ export function KriyaaWidget() {
           <div style={{ borderTop: `1px solid ${T.border}`, flexShrink: 0 }}>
             {(voice.recState === 'recording' || voice.transcribing || voice.recErrorMsg || voice.voiceError) && (
               <div style={{ padding: '6px 12px 0', fontSize: 10.5, color: voice.recErrorMsg || voice.voiceError ? T.danger : T.textMuted }}>
-                {voice.recState === 'recording' ? 'Recording — tap the mic again to stop'
+                {voice.recState === 'recording' ? 'Recording - tap the mic again to stop'
                   : voice.transcribing ? 'Transcribing…'
                   : (voice.recErrorMsg || voice.voiceError)}
               </div>
@@ -149,7 +149,7 @@ export function KriyaaWidget() {
       <button
         className="kriyaa-fab"
         onClick={() => setOpen(p => !p)}
-        title="Kriyaa — AI assistant"
+        title="Kriyaa - AI assistant"
         style={{
           position: 'fixed', bottom: 'var(--kriyaa-bottom, 24px)', right: 24, zIndex: 500,
           width: 52, height: 52, borderRadius: '50%', border: 'none', cursor: 'pointer',

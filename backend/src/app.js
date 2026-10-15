@@ -60,16 +60,16 @@ if (process.env.JWT_SECRET === 'change_this_to_a_long_random_secret_key') {
     console.error('[FATAL] JWT_SECRET must not use the default placeholder in production')
     process.exit(1)
   }
-  console.warn('[WARN] JWT_SECRET is set to the default placeholder — change before deploying to production')
+  console.warn('[WARN] JWT_SECRET is set to the default placeholder - change before deploying to production')
 }
 if (!process.env.RESEND_API_KEY && !isTest) {
-  console.warn('[WARN] RESEND_API_KEY not set — all emails will be silently skipped')
+  console.warn('[WARN] RESEND_API_KEY not set - all emails will be silently skipped')
 }
 if (!process.env.ANTHROPIC_API_KEY && !isTest) {
-  console.warn('[WARN] ANTHROPIC_API_KEY not set — AI assistant endpoint will be unavailable')
+  console.warn('[WARN] ANTHROPIC_API_KEY not set - AI assistant endpoint will be unavailable')
 }
 if (!process.env.SARVAM_API_KEY && !isTest) {
-  console.warn('[WARN] SARVAM_API_KEY not set — voice input/output will be unavailable')
+  console.warn('[WARN] SARVAM_API_KEY not set - voice input/output will be unavailable')
 }
 
 const app = express()

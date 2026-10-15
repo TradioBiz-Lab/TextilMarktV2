@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, ArrowRight, Folder, Package, Truck, Scissors, FlaskConical, PauseCircle, Trash2, Factory, Calendar, ChevronRight, Building2, BarChart3, LayoutGrid, Pencil } from '../../icons.jsx'
+import { ArrowLeft, ArrowRight, Folder, Package, Truck, Scissors, FlaskConical, PauseCircle, Trash2, Factory, Calendar, ChevronRight, Building2, BarChart3, LayoutGrid, Pencil, Plus, FileText, StickyNote } from '../../icons.jsx'
 import { T, phaseOf, deliveryStatus, planProgress, styleOnHold, dayNumber, getToday, effectiveEta } from '../../constants.js'
 import { Btn, Card, FlexRow, Mono, ProductThumb, EmptyState, LoadingScreen } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -184,7 +184,9 @@ export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
   }
 
   // Headline numbers. Pieces count live styles only; a style on hold is still part of the order, so it counts.
-  const pieces = styles.reduce((n, o) => n + (o.totalQty || 0), 0)
+  // A factory sees only its own splits, so its pieces are its splits' quantities, not the styles' totals.
+  const isMfr = currentUser?.role === 'manufacturer'
+  const pieces = styles.reduce((n, o) => n + (isMfr ? (o.assignments || []).reduce((m, a) => m + (a.qty || 0), 0) : (o.totalQty || 0)), 0)
   const deliveredPieces = styles.reduce((n, o) => n + (o.assignments || []).reduce((m, a) => m + (deliveryStatus(o, a).delivered ? (a.deliveredQty ?? a.qty ?? 0) : 0), 0), 0)
   const deliveredPct = pieces ? Math.min(100, Math.round((deliveredPieces / pieces) * 100)) : 0
   const factories = [...new Set(styles.flatMap(o => (o.assignments || []).map(a => a.mfrCompany)).filter(Boolean))]
@@ -211,12 +213,14 @@ export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
       `}</style>
 
       {/* Rename, re-season, drop styles from or delete the master order. Deleting it leaves the page on "not found". */}
-      {editing && <EditMasterOrderModal mo={mo} onClose={() => setEditing(false)} />}
+      {editing && <EditMasterOrderModal mo={mo} onClose={() => setEditing(false)} onDeleted={() => onNavigate('orders')} />}
       <FlexRow gap={8} style={{ flexWrap: 'wrap' }}>
         <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
         <div style={{ flex: 1 }} />
-        <Btn variant="secondary" size="sm" onClick={() => onNavigate('orders', { mo: moId })} icon={<LayoutGrid size={13} />}>Open in TNA</Btn>
-        <Btn variant="secondary" size="sm" onClick={() => onNavigate('reports', { mo: moId })} icon={<BarChart3 size={13} />}>Open in Reports</Btn>
+        {/* The TNA tab the styles are on; Reports only covers styles in production. */}
+        {styles.length > 0 && <Btn variant="secondary" size="sm" onClick={() => onNavigate('orders', { mo: moId, phase: grouped.development.length && !grouped.production.length && !grouped.delivered.length ? 'development' : undefined })} icon={<LayoutGrid size={13} />}>Open in TNA</Btn>}
+        {(grouped.production.length > 0 || grouped.delivered.length > 0) && <Btn variant="secondary" size="sm" onClick={() => onNavigate('reports', { mo: moId })} icon={<BarChart3 size={13} />}>Open in Reports</Btn>}
+        {caps.createOrders && <Btn variant="secondary" size="sm" onClick={() => onNavigate('orders', { mo: moId, newStyle: true })} icon={<Plus size={13} />}>Create Style</Btn>}
         {canEditMasterOrder(currentUser, mo) && <Btn size="sm" onClick={() => setEditing(true)} icon={<Pencil size={13} />}>Edit</Btn>}
       </FlexRow>
 
@@ -259,7 +263,7 @@ export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
         {/* Every style, by section. */}
         <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 18 }}>
           {styles.length === 0 && droppedRows.length === 0 && (
-            <Card><EmptyState icon={<Package size={26} color={T.textLight} />} title="No styles yet" desc={caps.createOrders ? 'Create a style from the Orders page and pick this master order.' : 'Styles show up here once they are added.'} /></Card>
+            <Card><EmptyState icon={<Package size={26} color={T.textLight} />} title="No styles yet" desc={caps.createOrders ? 'Use Create Style above to add the first one.' : 'Styles show up here once they are added.'} /></Card>
           )}
           {SECTIONS.map(s => {
             const list = s.id === 'dropped' ? droppedRows : grouped[s.id]
@@ -289,6 +293,8 @@ export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
         <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
           <Card>
             <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', marginBottom: 4 }}>Order details</div>
+            {(mo.poNumber || mo.poDate) && <InfoRow icon={FileText} label="Customer PO">{mo.poNumber || 'No number'}{mo.poDate ? <span style={{ color: T.textMuted, fontWeight: 500 }}> · {fmtDate(mo.poDate)}</span> : null}</InfoRow>}
+            {mo.shipBy && <InfoRow icon={Calendar} label="Ship by">{fmtDate(mo.shipBy)}</InfoRow>}
             <InfoRow icon={Building2} label="Customer">{mo.buyerCompany || '-'}{mo.buyerName ? <span style={{ color: T.textMuted, fontWeight: 500 }}> · {mo.buyerName}</span> : null}</InfoRow>
             <InfoRow icon={Factory} label={factories.length === 1 ? 'Manufacturer' : 'Manufacturers'}>{factories.length ? factories.join(', ') : 'None assigned yet'}</InfoRow>
             <InfoRow icon={Calendar} label="Delivery window">{dates.length ? (dates.length === 1 || fmtDate(dates[0]) === fmtDate(dates[dates.length - 1]) ? fmtDate(dates[0]) : `${fmtDate(dates[0])} to ${fmtDate(dates[dates.length - 1])}`) : 'No delivery dates yet'}</InfoRow>
@@ -298,6 +304,7 @@ export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
                 : 'Nothing due'}
             </InfoRow>
             <InfoRow icon={Package} label="Quantity">{pieces.toLocaleString('en-IN')} pcs across {styles.length} style{styles.length === 1 ? '' : 's'}</InfoRow>
+            {mo.notes && <InfoRow icon={StickyNote} label="Notes"><span style={{ fontWeight: 500, whiteSpace: 'pre-wrap' }}>{mo.notes}</span></InfoRow>}
           </Card>
         </div>
       </div>

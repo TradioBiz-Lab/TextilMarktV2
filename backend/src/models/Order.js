@@ -26,7 +26,7 @@ const stageUpdateSchema = new mongoose.Schema({
 const stageMaterialSchema = new mongoose.Schema({
   name:         { type: String, required: true, maxlength: 200 },
   requiredQty:  { type: Number, required: true, min: 0 },
-  unit:         { type: String, default: '' },   // 'm', 'pcs', 'kg' — free text
+  unit:         { type: String, default: '' },   // 'm', 'pcs', 'kg' - free text
   supplier:     { type: String, default: '' },   // the supplier's name, as text: kept in step with supplierId when a PO is sent
   poNumber:     { type: String, default: '' },
   // Set when the line is bought on a purchase order (lib/poSync.js): the supplier and PO it is on.
@@ -57,7 +57,7 @@ const stageItemSchema = new mongoose.Schema({
   // `dueDate` is revised (see the items update route) — same pattern as
   // stage.baselineEta vs stage.eta.
   plannedDate: { type: String, default: null },
-  dueDate:   { type: String, default: null }, // ISO date string or 'NA' — the CURRENT (revised) due date
+  dueDate:   { type: String, default: null }, // ISO date string or 'NA' - the CURRENT (revised) due date
   doneDate:  { type: String, default: null },
   note:      { type: String, default: '' },
 }, { _id: false })
@@ -67,8 +67,8 @@ const stageSchema = new mongoose.Schema({
   name:       { type: String, required: true },
   unitsDone:  { type: Number, default: 0, min: 0 },
   totalUnits: { type: Number, required: true, min: 0 },
-  startDate:  { type: String, default: null }, // ISO date string or 'NA' — required at creation (routes/orders.js), null only on legacy pre-existing data
-  eta:        { type: String, default: null }, // ISO date string or 'NA' — the CURRENT (revised) end date. Required at creation; null only on legacy pre-existing data.
+  startDate:  { type: String, default: null }, // ISO date string or 'NA' - required at creation (routes/orders.js), null only on legacy pre-existing data
+  eta:        { type: String, default: null }, // ISO date string or 'NA' - the CURRENT (revised) end date. Required at creation; null only on legacy pre-existing data.
   // The originally planned end date, frozen. Set at creation, and — for stages
   // predating this field — captured lazily the first time `eta` is revised (see
   // the /eta route). Slippage is `eta - baselineEta`; overwriting `eta` without
@@ -80,7 +80,7 @@ const stageSchema = new mongoose.Schema({
   actualEnd:  { type: String, default: null },
   stageDate:  { type: String, default: null }, // date set by manufacturer for this stage
   note:       { type: String, default: '' },
-  description: { type: String, default: '', maxlength: 1000 }, // static description of what this stage involves — separate from `note`, which is the transient last-progress-update note
+  description: { type: String, default: '', maxlength: 1000 }, // static description of what this stage involves - separate from `note`, which is the transient last-progress-update note
   responsibleId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // admin, manufacturer, or buyer accountable for this stage
   // null on documents predating these fields — read through stageKindOf() /
   // deriveStageStatus(), never raw, so legacy stages report the truth rather
@@ -242,7 +242,7 @@ const stylePhotoSchema = new mongoose.Schema({
 // One fabric used on this style — a shirt might carry a shell fabric and a
 // separate rib/trim fabric, so this is a list, not a single spec.
 const fabricSchema = new mongoose.Schema({
-  name:        { type: String, required: true, maxlength: 100 }, // e.g. "Shell Fabric — Single Jersey"
+  name:        { type: String, required: true, maxlength: 100 }, // e.g. "Shell Fabric - Single Jersey"
   composition: { type: String, default: '', maxlength: 100 },    // e.g. "100% Cotton"
   gsm:         { type: String, default: '', maxlength: 20 },
   supplier:    { type: String, default: '', maxlength: 100 },
@@ -277,7 +277,7 @@ const orderSchema = new mongoose.Schema({
   // Order-level risk/escalation note — the "Callouts" column the team maintains
   // by hand today (e.g. "delayed by a week due to lab dip submission delay").
   callout:  { type: String, default: '', maxlength: 500 },
-  imageDataUrl: { type: String, default: null }, // base64 data URL — uploaded photo, capped at 1MB (see MAX_PRODUCT_PHOTO_SIZE)
+  imageDataUrl: { type: String, default: null }, // base64 data URL - uploaded photo, capped at 1MB (see MAX_PRODUCT_PHOTO_SIZE)
   imageUrl:     { type: String, default: null, trim: true }, // optional external link fallback, e.g. a pasted public URL
   // Who created the order: the creating company's party id (not the person; the audit log names
   // them) and its role. It decides who may later edit or delete the order in the standalone

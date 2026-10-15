@@ -57,7 +57,7 @@ export function useVoicePlayback() {
   // this). Same ref-not-state reasoning as useVoiceRecorder's ampRef.
   const audioCtxRef = useRef(null)
   const analyserRef = useRef(null)
-  const mediaSourceRef = useRef(null) // guards createMediaElementSource — throws if called twice on the same element
+  const mediaSourceRef = useRef(null) // guards createMediaElementSource - throws if called twice on the same element
   const rafRef = useRef(null)
   const ampRef = useRef(0)
 

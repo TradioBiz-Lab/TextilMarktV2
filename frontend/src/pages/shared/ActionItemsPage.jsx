@@ -297,7 +297,7 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
     <div>
       <PageHeader
         title="Action Items"
-        subtitle="Every open step by line item — update the status and leave today's note, all in one place"
+        subtitle="Every open step by line item - update the status and leave today's note, all in one place"
         action={
           <FlexRow gap={8}>
             {isAdmin && <Btn variant="secondary" onClick={() => setShowCreate(true)} icon={<Plus size={13} />}>New Action Item</Btn>}
@@ -497,7 +497,7 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
                                 <tr>
                                   <td colSpan={9} style={{ padding: '8px 14px 12px', background: '#f8fafc', borderTop: `1px solid ${T.border}` }}>
                                     <div style={{ fontSize: 9, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
-                                      Update history — {r.stage.name}
+                                      Update history - {r.stage.name}
                                     </div>
                                     {thread.length === 0 ? (
                                       <div style={{ fontSize: 11, color: T.textLight, fontStyle: 'italic' }}>Nothing posted yet. Type above and hit Post.</div>
@@ -544,7 +544,7 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
                               }} icon={<Check size={12} strokeWidth={3} />}>Done</Btn>
                             </FlexRow>
                             {(it.updates || []).slice(-1).map((u, ui) => (
-                              <div key={ui} style={{ fontSize: 10, color: T.textLight, marginTop: 4, display: 'flex', alignItems: 'flex-start', gap: 3 }}><MessageCircle size={9} style={{ flexShrink: 0, marginTop: 1 }} /> {u.text} — {u.byUserName}</div>
+                              <div key={ui} style={{ fontSize: 10, color: T.textLight, marginTop: 4, display: 'flex', alignItems: 'flex-start', gap: 3 }}><MessageCircle size={9} style={{ flexShrink: 0, marginTop: 1 }} /> {u.text} - {u.byUserName}</div>
                             ))}
                             <FlexRow gap={6} style={{ marginTop: 6 }}>
                               <input value={customDrafts[it.id] || ''} onChange={ev => setCustomDrafts(d => ({ ...d, [it.id]: ev.target.value }))}
@@ -593,13 +593,13 @@ function CreateActionItemModal({ users, onClose, onCreate }) {
   }
 
   return (
-    <Modal title="New Action Item" subtitle="For work that isn't a production step — pricing, commercial, follow-ups" size="lg" onClose={onClose}>
+    <Modal title="New Action Item" subtitle="For work that isn't a production step - pricing, commercial, follow-ups" size="lg" onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <Input label="Title *" value={f.title} onChange={e => setF({ ...f, title: e.target.value })} placeholder="e.g. Close pricing for Poplin Lycra" />
         <Textarea label="Detail" value={f.detail} onChange={e => setF({ ...f, detail: e.target.value })} />
         <div className="form-grid-2" style={{ gap: 12 }}>
           <Select label="Assignee *" value={f.assigneeId} onChange={e => setF({ ...f, assigneeId: e.target.value })}>
-            <option value="">— Select —</option>
+            <option value="">Select</option>
             {admins.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
           </Select>
           <Select label="Customer" value={f.buyerId} onChange={e => setF({ ...f, buyerId: e.target.value })}>
