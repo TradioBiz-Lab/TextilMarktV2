@@ -328,7 +328,8 @@ describe('bills of materials: a company\'s BOMs and shopping list are its own (s
     assert.deepEqual(seenByA.versions.map(v => v.id), [dataA.bom.id])
     assert.deepEqual(seenByB.versions.map(v => v.id), [dataB.bom.id])
     assert.ok(!JSON.stringify(seenByA).includes('B secret fleece'))
-    assert.ok(!JSON.stringify(seenByA).includes('395'))
+    // B's rate as a value, not the digits anywhere: an id or a timestamp's milliseconds can contain "395" by chance.
+    assert.doesNotMatch(JSON.stringify(seenByA), /[:,[]395(\.0+)?[,}\]]/)
     assert.ok(!JSON.stringify(seenByB).includes('A secret fleece'))
     assert.ok(!JSON.stringify(seenByB).includes('A Mills'))
   })
