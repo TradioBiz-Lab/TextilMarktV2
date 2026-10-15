@@ -1,23 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, Check, ArrowRight, ArrowLeft, Trash2 } from '../icons.jsx'
-import { T, ST, deliveryStatus } from '../constants.js'
+import { T, ST, deliveryStatus, styleStatus, factoriesOnHold } from '../constants.js'
 import { Btn, FlexRow, Modal, Textarea, useToast } from './ui.jsx'
 import { useApp } from '../context.jsx'
 
 // Everything about where a style stands, in one place: its status (applied to every manufacturer split at once), its
-// stage (New Product Development or Production) and dropping it. Delivered is never picked here: it follows the
-// Delivery step, which is closed on the plan.
-const SETTABLE = ['Processing', 'On Hold', 'Delayed']
-
-export function styleStatus(order) {
-  const splits = order.assignments || []
-  if (!splits.length) return 'Not assigned'
-  if (splits.every(a => deliveryStatus(order, a).delivered)) return 'Delivered'
-  const open = splits.filter(a => !deliveryStatus(order, a).delivered)
-  if (open.some(a => a.status === 'Delayed')) return 'Delayed'
-  if (open.every(a => a.status === 'On Hold')) return 'On Hold'
-  return 'Processing'
-}
+// stage (New Product Development or Production) and dropping it. Only On Hold (with a reason) and back to Processing
+// are picked here: Delivered follows the Delivery step, and Delayed shows by itself once a step or the delivery date
+// has passed (constants.js styleStatus is the one rule every screen uses).
+const SETTABLE = ['Processing', 'On Hold']
+export { styleStatus }
 
 export function StyleStatusMenu({ order, canStatus, canStage, canDrop, onPromote, onDrop }) {
   const { updateAssignment, editOrder } = useApp()
@@ -40,6 +32,7 @@ export function StyleStatusMenu({ order, canStatus, canStage, canDrop, onPromote
   const splits = order.assignments || []
   const live = splits.filter(a => !deliveryStatus(order, a).delivered)
   const current = styleStatus(order)
+  const held = factoriesOnHold(order)
   const anyDelivered = splits.some(a => deliveryStatus(order, a).delivered)
   const dev = order.phase === 'development'
   const showStatus = canStatus && splits.length > 0
@@ -79,6 +72,7 @@ export function StyleStatusMenu({ order, canStatus, canStage, canDrop, onPromote
         style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 10px 6px 12px', fontSize: 12, fontWeight: 700, borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.text, cursor: 'pointer', fontFamily: 'inherit' }}>
         Status
         <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 999, background: st.bg, color: st.c }}>{current}</span>
+        {held > 0 && <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#f1f5f9', color: '#475569' }}>{held} {held === 1 ? 'factory' : 'factories'} on hold</span>}
         <ChevronDown size={13} color={T.textMuted} />
       </button>
       {open && (
@@ -88,7 +82,7 @@ export function StyleStatusMenu({ order, canStatus, canStage, canDrop, onPromote
             {current === 'Delivered'
               ? <div style={{ padding: '6px 12px 8px', fontSize: 12, color: T.textMuted }}>Delivered. Reopen the Delivery step on the plan to change it.</div>
               : SETTABLE.map(s => item(s, { active: current === s, disabled: current === s, onClick: () => { setPick(s); setNote('') } }))}
-            {current !== 'Delivered' && <div style={{ padding: '2px 12px 8px', fontSize: 11, color: T.textLight }}>Delivered follows the Delivery step.</div>}
+            {current !== 'Delivered' && <div style={{ padding: '2px 12px 8px', fontSize: 11, color: T.textLight }}>Delayed shows by itself when a step or the delivery date passes. Delivered follows the Delivery step.</div>}
           </>)}
           {canStage && (<>
             <div style={{ height: 1, background: T.border, margin: '4px 0' }} />
@@ -108,10 +102,10 @@ export function StyleStatusMenu({ order, canStatus, canStage, canDrop, onPromote
         <Modal title={`Set ${order.product} to ${pick}`} subtitle={live.length > 1 ? `Applies to all ${live.length} open manufacturer splits` : undefined} onClose={() => { if (!busy) setPick(null) }} size="sm">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {pick === 'On Hold' && <div style={{ fontSize: 12, color: T.textMuted }}>A style on hold leaves the TNA and Reports. Its master order page still lists it.</div>}
-            <Textarea label="Note (optional)" value={note} onChange={e => setNote(e.target.value)} placeholder="Why? It goes into the audit log." rows={3} />
+            <Textarea label={pick === 'On Hold' ? 'Reason *' : 'Note (optional)'} value={note} onChange={e => setNote(e.target.value)} placeholder="Why? It goes into the audit log." rows={3} />
             <FlexRow justify="flex-end" gap={8}>
               <Btn variant="secondary" disabled={busy} onClick={() => setPick(null)}>Cancel</Btn>
-              <Btn disabled={busy} onClick={apply}>{busy ? 'Saving...' : `Set to ${pick}`}</Btn>
+              <Btn disabled={busy || (pick === 'On Hold' && !note.trim())} onClick={apply}>{busy ? 'Saving...' : `Set to ${pick}`}</Btn>
             </FlexRow>
           </div>
         </Modal>

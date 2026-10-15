@@ -58,9 +58,9 @@ describe('stage and status notifications', () => {
 
   test('a manufacturer status change tells the buyer and admins', async () => {
     const { master, buyer, base, inbox, m } = await arrange()
-    assert.equal((await m.post(base, { status: 'Delayed' })).status, 200)
-    assert.ok((await inbox(buyer)).some(x => x.includes('Delayed')))
-    assert.ok((await inbox(master)).some(x => x.includes('Delayed')))
+    assert.equal((await m.post(base, { status: 'On Hold', note: 'Fabric short' })).status, 200)
+    assert.ok((await inbox(buyer)).some(x => x.includes('On Hold')))
+    assert.ok((await inbox(master)).some(x => x.includes('On Hold')))
   })
 })
 

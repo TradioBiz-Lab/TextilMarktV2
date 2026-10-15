@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, ArrowRight, Folder, Package, Truck, Scissors, FlaskConical, PauseCircle, Trash2, Factory, Calendar, ChevronRight, Building2, BarChart3, LayoutGrid, Pencil, Plus, FileText, StickyNote } from '../../icons.jsx'
-import { T, phaseOf, deliveryStatus, planProgress, styleOnHold, dayNumber, getToday, effectiveEta } from '../../constants.js'
+import { T, phaseOf, deliveryStatus, planProgress, styleOnHold, dayNumber, getToday, effectiveEta, fmtDate, dueText, dueDates, factoriesOnHold } from '../../constants.js'
 import { Btn, Card, FlexRow, Mono, ProductThumb, EmptyState, LoadingScreen } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { capsFor, canEditMasterOrder } from '../../caps.js'
@@ -9,13 +9,6 @@ import { masterOrdersApi } from '../../api.js'
 
 // The master order's own page: who it is for, how far along it is, and every style that was ever in it, the ones
 // on hold and the dropped ones too (they leave the TNA, not the record). Each live style opens its own page.
-
-const fmtDate = d => {
-  if (!d) return '-'
-  const dt = new Date(d)
-  if (isNaN(dt.getTime())) return '-'
-  return dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-}
 
 // The sections a style can sit in, in reading order. Colours follow the dashboard tiles.
 const SECTIONS = [
@@ -89,7 +82,7 @@ function StyleRow({ order, section, onOpen }) {
   const stages = splits.flatMap(a => a.stages || [])
   const { done, total, pct } = planProgress(stages)
   const factories = [...new Set(splits.map(a => a.mfrCompany).filter(Boolean))]
-  const heldSplits = splits.filter(a => a.status === 'On Hold').length
+  const heldSplits = factoriesOnHold(order)
   const delayed = splits.some(a => a.status === 'Delayed')
   const open = () => onOpen(order.id)
   return (
@@ -102,7 +95,7 @@ function StyleRow({ order, section, onOpen }) {
           <span style={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}>{order.product}</span>
           {order.styleNumber && <span style={{ fontSize: 12, fontWeight: 600, color: T.textMuted }}>{order.styleNumber}</span>}
           {delayed && <Chip fg="#991b1b" bg="#fee2e2" bd="#fca5a5">Delayed</Chip>}
-          {heldSplits > 0 && section !== 'hold' && <Chip fg="#475569" bg="#f1f5f9" bd="#cbd5e1">{heldSplits} split{heldSplits > 1 ? 's' : ''} on hold</Chip>}
+          {heldSplits > 0 && section !== 'hold' && <Chip fg="#475569" bg="#f1f5f9" bd="#cbd5e1">{heldSplits} {heldSplits > 1 ? 'factories' : 'factory'} on hold</Chip>}
         </FlexRow>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 4, fontSize: 12, color: T.textMuted }}>
           <Mono style={{ fontSize: 11 }}>{order.id}</Mono>
@@ -110,7 +103,7 @@ function StyleRow({ order, section, onOpen }) {
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Factory size={12} /> {factories.length ? factories.join(', ') : 'No manufacturer yet'}</span>
           {section === 'delivered'
             ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#166534', fontWeight: 600 }}><Truck size={12} color="#166534" /> {deliveredOn(order) ? `Delivered on ${fmtDate(deliveredOn(order))}` : 'Delivered'}</span>
-            : planDue(order) && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Calendar size={12} /> Due {fmtDate(planDue(order))}</span>}
+            : dueText(order) && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: dueDates(order).slipped ? T.danger : undefined }}><Calendar size={12} /> {dueText(order)}</span>}
         </div>
       </div>
       {total > 0 && (

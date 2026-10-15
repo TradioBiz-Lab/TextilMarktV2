@@ -2,15 +2,9 @@ import { useState, useEffect } from 'react'
 import { DashboardSummary } from '../../components/DashboardSummary.jsx'
 import { capsFor } from '../../caps.js'
 import { ShoppingBag, Factory, Package, Siren, Target, Check, Shirt, Layers, ClipboardList, Megaphone, ChevronRight, Building2, Truck, FlaskConical, Scissors } from '../../icons.jsx'
-import { T, ST, productionMetrics, productionOrders, developmentOrders, isExpiringSoon, isExpired, getToday, dayNumber, effectiveEta, withBuyerPrefix } from '../../constants.js'
+import { T, ST, productionMetrics, productionOrders, developmentOrders, isExpiringSoon, isExpired, getToday, dayNumber, effectiveEta, withBuyerPrefix, fmtDate, styleStatus, masterOrderStatus } from '../../constants.js'
 import { StatCard, Card, Grid, EmptyState, Mono, PageHeader, Badge, Btn, FlexRow, Modal, Select, Textarea, Input, Alert, LoadingScreen, DocCard } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
-
-const fmtDate = d => {
-  if (!d) return '—'
-  const dt = new Date(d)
-  return `${String(dt.getDate()).padStart(2, '0')}-${String(dt.getMonth() + 1).padStart(2, '0')}-${dt.getFullYear()}`
-}
 
 // Orders grouped by their Master Order (in the master orders' own list order), with
 // orders lacking a masterOrderId collected into a trailing "No Master Order" group.
@@ -32,30 +26,6 @@ function buildOrdersByMasterOrder(orders, masterOrders) {
       season: mo?.season || null,
       orders: groups[key],
     }
-  })
-}
-
-function flattenTxns(orders) {
-  return orders.flatMap(o => (o.assignments || []).length > 0
-    ? (o.assignments || []).map(a => ({ orderId: o.id, sub: a.sub, status: a.status }))
-    : [{ orderId: o.id, sub: null, status: 'Processing' }]
-  )
-}
-
-// An order reads as delayed even if nobody has manually flipped its status: if the
-// active (first not-yet-complete) stage's planned ETA has already passed, the
-// deadline has silently slipped. Skips assignments already On Hold or Delivered —
-// a deliberate pause isn't the same thing as a missed deadline.
-function isScheduleOverdue(order, todayNum) {
-  return (order.assignments || []).some(a => {
-    if (a.status === 'On Hold' || a.status === 'Delivered') return false
-    // Any open stage past its end date counts (stages run in parallel, so the first open one
-    // is not the only one that can be late), using the baseline date until a stage is revised.
-    return (a.stages || []).some(s => {
-      if ((s.unitsDone || 0) >= (s.totalUnits || 0)) return false
-      const e = effectiveEta(s)
-      return !!e && dayNumber(e) - todayNum < 0
-    })
   })
 }
 
@@ -115,13 +85,9 @@ export function AdminDashboard({ onNavigate, onOpen }) {
     ? new Set(orders.flatMap(o => (o.assignments || []).map(a => a.mid))).size
     : new Set(orders.map(o => o.buyerId)).size
   const mfrs = users.filter(u => u.role === 'manufacturer' && u.isActive)
-  const delayed = orders.filter(o => (o.assignments || []).some(a => a.status === 'Delayed' || a.status === 'On Hold'))
+  // Alerts: styles that are Delayed, or wholly on hold. One factory on hold while the others work is not an alert.
+  const delayed = orders.filter(o => ['Delayed', 'On Hold'].includes(styleStatus(o)))
   const expDocs = docs.filter(d => d.isActive !== false && (isExpiringSoon(d.expiryDate) || isExpired(d.expiryDate)))
-  // Flatten to individual buyer-mfr transactions (matches AdminOrders row count)
-  const allTxns = orders.flatMap(o => (o.assignments || []).length > 0
-    ? (o.assignments || []).map(a => ({ orderId: o.id, sub: a.sub, status: a.status }))
-    : [{ orderId: o.id, sub: null, status: 'Processing' }]
-  )
   const prod = productionMetrics(orders)
   const ordersByMO = buildOrdersByMasterOrder(orders, masterOrders)
 
@@ -296,24 +262,18 @@ export function AdminDashboard({ onNavigate, onOpen }) {
             {ordersByMO.length === 0 ? <EmptyState icon={<Package size={26} color={T.textLight} />} title="No orders yet" desc="" /> : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {ordersByMO.map(group => {
-                  const groupTxns = flattenTxns(group.orders)
-                  // Rollup priority (matches the buyer-facing 4-value overlay): any Delayed
-                  // (manually flagged, or a stage deadline that's silently slipped) wins,
-                  // then any On Hold, then all-Delivered, else Processing.
-                  const overallStatus = (groupTxns.some(t => t.status === 'Delayed') || group.orders.some(o => isScheduleOverdue(o, todayNum))) ? 'Delayed'
-                    : groupTxns.some(t => t.status === 'On Hold') ? 'On Hold'
-                    : (groupTxns.length > 0 && groupTxns.every(t => t.status === 'Delivered')) ? 'Delivered'
-                    : 'Processing'
+                  // The same rule as every screen: Delayed if any style is, On Hold only if every live style is.
+                  const overallStatus = masterOrderStatus(group.orders)
                   const st = ST[overallStatus] || { bg: '#f1f5f9', c: '#475569' }
                   return (
                     <div key={group.key}
-                      onClick={() => onNavigate && onNavigate('reports', { mo: group.key === '__unassigned__' ? '__none__' : group.key })}
+                      onClick={() => onNavigate && (group.key === '__unassigned__' ? onNavigate('orders', { mo: '__none__' }) : onNavigate('master_order', { mo: group.key }))}
                       style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: '12px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, transition: 'all 0.15s', background: T.surface }}
                       onMouseEnter={e => { e.currentTarget.style.background = st.bg; e.currentTarget.style.borderColor = st.c + '55' }}
                       onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.borderColor = T.border }}
                     >
                       <span style={{ fontSize: 13, fontWeight: 700, color: T.text, flex: 1 }}>{group.label}{group.season ? ` · ${group.season}` : ''}</span>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, whiteSpace: 'nowrap' }}>{groupTxns.length} order{groupTxns.length !== 1 ? 's' : ''}</span>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, whiteSpace: 'nowrap' }}>{group.orders.length} style{group.orders.length !== 1 ? 's' : ''}</span>
                       <span style={{ padding: '3px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: st.bg, color: st.c, border: `1px solid ${st.c}22`, whiteSpace: 'nowrap' }}>{overallStatus}</span>
                     </div>
                   )
@@ -389,7 +349,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
               {delayed.map(o => (
                 <div key={o.id} style={{ background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}>
                   <Mono style={{ fontSize: 10 }}>{o.id}</Mono>
-                  <div style={{ fontSize: 12, color: T.danger, marginTop: 2 }}>{o.product} - {o.assignments.find(a => a.status === 'Delayed' || a.status === 'On Hold')?.status}</div>
+                  <div style={{ fontSize: 12, color: T.danger, marginTop: 2 }}>{o.product} - {styleStatus(o)}</div>
                 </div>
               ))}
               {expDocs.map(d => (

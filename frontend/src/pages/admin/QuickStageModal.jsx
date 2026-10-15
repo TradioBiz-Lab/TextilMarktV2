@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { ArrowRight, X, AlertTriangle, Paperclip, Plus } from '../../icons.jsx'
-import { T, evidenceTypesFor, productDocForStep, kindForCustomerOwner, stageKindOf, stageStatusOf, stageVariance, stageActualVariance, STAGE_STATUS_LABELS, fmtStageDate, getToday } from '../../constants.js'
+import { T, evidenceTypesFor, productDocForStep, kindForCustomerOwner, stageKindOf, stageStatusOf, stageVariance, stageActualVariance, STAGE_STATUS_LABELS, fmtStageDate, getToday, fmtDateTime } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, FlexRow, Input, FileUpload, DocCard, useToast, fileUploadPayload, SectionLabel } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { capsFor, canWriteStage, canEditPlan } from '../../caps.js'
@@ -15,16 +15,6 @@ function dateToInput(d) {
   return isNaN(t.getTime()) ? '' : t.toISOString().slice(0, 10) // a stored date that will not parse shows blank, not a crash
 }
 
-function fmtDateTime(d) {
-  if (!d) return ''
-  const dt = new Date(d)
-  if (isNaN(dt.getTime())) return ''
-  const dd = String(dt.getDate()).padStart(2, '0')
-  const mm = String(dt.getMonth() + 1).padStart(2, '0')
-  const hh = String(dt.getHours()).padStart(2, '0')
-  const mi = String(dt.getMinutes()).padStart(2, '0')
-  return `${dd}-${mm}-${dt.getFullYear()} ${hh}:${mi}`
-}
 
 // The one stage-update modal, used from both the Order Management page
 // (clicking a matrix date cell — no navigation, saving leaves you exactly

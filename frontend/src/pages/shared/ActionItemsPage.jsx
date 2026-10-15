@@ -3,8 +3,7 @@ import { AlertTriangle, Plus, RotateCw, Ban, CircleDot, CalendarClock, Search, U
 import {
   T, dayNumber, getToday, fmtN, effectiveEta,
   stageKindOf, stageStatusOf, stageIsOverdue, stageVariance, inFlightStages,
-  deliveryOverrunDays, STAGE_STATUS_LABELS,
-} from '../../constants.js'
+  deliveryOverrunDays, STAGE_STATUS_LABELS, fmtDate, fmtDateTime } from '../../constants.js'
 import {
   Btn, Card, EmptyState, FlexRow, LoadingScreen, Modal, Mono, PageHeader,
   Select, Input, Textarea, StatCard, useToast, activateOnKey,
@@ -35,26 +34,8 @@ const WINDOWS = [
   { days: 3650, label: 'Everything open' },
 ]
 
-function fmtWhen(d) {
-  if (!d) return ''
-  const dt = new Date(d)
-  if (isNaN(dt.getTime())) return ''
-  const dd = String(dt.getDate()).padStart(2, '0')
-  const mm = String(dt.getMonth() + 1).padStart(2, '0')
-  const hh = String(dt.getHours()).padStart(2, '0')
-  const mi = String(dt.getMinutes()).padStart(2, '0')
-  return `${dd}-${mm}-${dt.getFullYear()} ${hh}:${mi}`
-}
+const fmtWhen = fmtDateTime
 
-function fmtDate(d) {
-  if (!d || d === 'NA') return '—'
-  const s = typeof d === 'string' && /^\d{4}-\d{2}-\d{2}/.test(d) ? d.slice(0, 10) : null
-  const [y, m, day] = s ? s.split('-') : (() => {
-    const dt = new Date(d)
-    return isNaN(dt.getTime()) ? [] : [dt.getFullYear(), String(dt.getMonth() + 1).padStart(2, '0'), String(dt.getDate()).padStart(2, '0')]
-  })()
-  return y ? `${day}-${m}-${y}` : '—'
-}
 
 const cellInput = {
   width: '100%', border: `1px solid ${T.border}`, borderRadius: 6,

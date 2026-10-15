@@ -1,18 +1,11 @@
 import { useState } from 'react'
 import { Crown, Check, AlertTriangle, Plus, Search, KeyRound, Pencil, Users, Circle } from '../../icons.jsx'
-import { T, getToday } from '../../constants.js'
+import { T, getToday, fmtDate } from '../../constants.js'
 import { Modal, Input, Select, Btn, Card, Alert, EmptyState, FlexRow, PageHeader, RoleBadge, Mono, LoadingScreen, FileUpload, useToast, fileUploadPayload } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { capsFor } from '../../caps.js'
 import { CompaniesAdmin } from './CompaniesAdmin.jsx'
 
-function fmtDate(d) {
-  if (!d) return '—'
-  const dt = new Date(d)
-  const dd = String(dt.getDate()).padStart(2, '0')
-  const mm = String(dt.getMonth() + 1).padStart(2, '0')
-  return `${dd}-${mm}-${dt.getFullYear()}`
-}
 
 // `initialTab` opens a tab directly (the dashboard's Customers and Manufacturers tiles).
 export function UserSetup({ initialTab } = {}) {

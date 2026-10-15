@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { AlertTriangle, X, Plus } from '../../icons.jsx'
-import { T, phaseOf, SEASONS, CATEGORIES, resolveNamedColor } from '../../constants.js'
+import { T, phaseOf, SEASONS, CATEGORIES, resolveNamedColor, pastDateNote } from '../../constants.js'
 import { swatchHex, normalisePantone, PANTONE_HINT, PANTONE_PLACEHOLDER } from '../../colours.js'
 import { Btn, FlexRow, Input, Select } from '../../components/ui.jsx'
 
@@ -141,10 +141,11 @@ export function EditOrderModal({ order, onClose, onSave }) {
                 : (order.assignments || []).length > 1 ? (order.totalQty === splitSum ? `Split across ${(order.assignments || []).length} manufacturers, so the total is the sum of their quantities.` : `The splits add up to ${splitSum}. Set the total to ${splitSum} to match them.`) : undefined}
             />
             <Input
-              label={f.phase !== 'development' && (order.assignments || []).length > 0 ? 'Expected Delivery *' : 'Expected Delivery'}
+              label={f.phase !== 'development' && (order.assignments || []).length > 0 && order.delivery ? 'Promised delivery date *' : 'Promised delivery date'}
               type="date"
               value={f.delivery}
               onChange={set('delivery')}
+              hint={pastDateNote(f.delivery) || 'The date agreed with the customer.'}
             />
           </div>
 

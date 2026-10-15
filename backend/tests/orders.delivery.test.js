@@ -23,7 +23,7 @@ after(async () => {
 beforeEach(clearDb)
 
 const ORDER_ID = 'DLV-TEST-001'
-const DELIVERY = '2026-12-20'
+const DELIVERY = '2027-12-20'
 
 async function arrange({ stageNames = ['One', 'Two'], delivery = DELIVERY, extra = {} } = {}) {
   const admin = await makeAdmin()
@@ -32,8 +32,8 @@ async function arrange({ stageNames = ['One', 'Two'], delivery = DELIVERY, extra
   const api = as(admin)
   const res = await api.post('/api/orders', orderPayload({
     id: ORDER_ID, buyerId: buyer._id, mfrId: mfr._id, stageNames, delivery,
-    stageStartDates: stageNames.map(() => '2026-07-01'),
-    stageEtas: stageNames.map(() => '2026-07-15'),
+    stageStartDates: stageNames.map(() => '2027-07-01'),
+    stageEtas: stageNames.map(() => '2027-07-15'),
     ...extra,
   }))
   assert.equal(res.status, 201, `arrange failed: ${JSON.stringify(res.body)}`)
@@ -93,7 +93,7 @@ describe('creation', () => {
     const names = ['One', 'Delivery', 'Two']
     const res = await as(admin).post('/api/orders', orderPayload({
       id: ORDER_ID, buyerId: buyer._id, mfrId: mfr._id, stageNames: names,
-      stageStartDates: names.map(() => '2026-07-01'), stageEtas: names.map(() => '2026-07-15'),
+      stageStartDates: names.map(() => '2027-07-01'), stageEtas: names.map(() => '2027-07-15'),
     }))
     assert.equal(res.status, 400)
     assert.match(res.body.error, /Delivery step must be the last/)
@@ -104,7 +104,7 @@ describe('creation', () => {
     const n = DEFAULT_STAGE_NAMES.length
     const payload = orderPayload({
       id: ORDER_ID, buyerId: buyer._id, mfrId: mfr._id,
-      stageStartDates: Array(n).fill('2026-07-01'), stageEtas: Array(n).fill('2026-07-15'),
+      stageStartDates: Array(n).fill('2027-07-01'), stageEtas: Array(n).fill('2027-07-15'),
     })
     delete payload.stageNames   // no custom list: the server falls back to the default plan
     const res = await as(admin).post('/api/orders', payload)
@@ -122,7 +122,7 @@ describe('creation', () => {
     const n = DEFAULT_STAGE_NAMES.length - 1
     const payload = orderPayload({
       id: ORDER_ID, buyerId: buyer._id, mfrId: mfr._id, delivery: DELIVERY,
-      stageStartDates: Array(n).fill('2026-07-01'), stageEtas: Array(n).fill('2026-07-15'),
+      stageStartDates: Array(n).fill('2027-07-01'), stageEtas: Array(n).fill('2027-07-15'),
     })
     delete payload.stageNames
     const res = await as(admin).post('/api/orders', payload)
@@ -227,13 +227,13 @@ describe('completing and reopening', () => {
     assert.ok(await AuditLog.findOne({ action: 'Delivery Reopened' }))
   })
 
-  test('moving the step between open states leaves a manual Delayed status alone', async () => {
+  test('moving the step between open states leaves an On Hold status alone', async () => {
     const { api, base, status, last } = await arrange()
     const i = await last()
     const mid = (await api.get(`/api/orders/${ORDER_ID}`)).body.assignments[0].mid
-    await api.post(`/api/orders/${ORDER_ID}/assignments/${mid}`, { status: 'Delayed' })
+    await api.post(`/api/orders/${ORDER_ID}/assignments/${mid}`, { status: 'On Hold', note: 'Customer asked to pause' })
     await api.post(`${base}/stages/${i}`, { status: 'in_progress' })
-    assert.equal(await status(), 'Delayed')
+    assert.equal(await status(), 'On Hold')
   })
 
   test('the bulk route closes and reopens it the same way', async () => {
@@ -258,7 +258,7 @@ describe('completing and reopening', () => {
     const names = ['One']
     const res = await api.post('/api/orders', orderPayload({
       id: ORDER_ID, buyerId: buyer._id, mfrId: m1._id, totalQty: 200, stageNames: names,
-      stageStartDates: ['2026-07-01'], stageEtas: ['2026-07-15'],
+      stageStartDates: ['2027-07-01'], stageEtas: ['2027-07-15'],
       assignments: [{ mid: String(m1._id), qty: 100 }, { mid: String(m2._id), qty: 100 }],
     }))
     assert.equal(res.status, 201, JSON.stringify(res.body))

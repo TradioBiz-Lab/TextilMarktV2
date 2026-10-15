@@ -35,6 +35,7 @@ export const ST = {
   'Delivered':  { bg: '#dcfce7', c: '#15803d' },
   'On Hold':    { bg: '#f1f5f9', c: '#475569' },
   'Delayed':    { bg: '#fee2e2', c: '#b91c1c' },
+  'Not assigned': { bg: '#f1f5f9', c: '#475569' },
   // Reporting page — schedule-derived status per line item (distinct from the 4-value overlay above)
   'On Track':   { bg: '#dcfce7', c: '#15803d' },
   'In Progress':{ bg: '#dbeafe', c: '#1d4ed8' },
@@ -273,13 +274,29 @@ export const STAGE_STATUS_LABELS = {
 
 export const stageKindOf = s => s?.kind ?? 'quantity'
 
-// Stage dates are 'YYYY-MM-DD' strings or the literal 'NA' — never a bare
-// Date, so this is deliberately separate from a generic date formatter.
-export function fmtStageDate(d) {
+// One date format on every screen: 15 Dec 2026. A plain 'YYYY-MM-DD' (stage dates, ship-by) is read as that day
+// with no timezone shift; a full timestamp is shown on the viewer's own calendar. 'NA' and nothing show a dash.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+export function fmtDate(d) {
   if (!d || d === 'NA') return '—'
-  const [y, m, day] = d.slice(0, 10).split('-')
-  return y && m && day ? `${day}-${m}-${y}` : '—'
+  if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
+    const [y, m, day] = d.split('-').map(Number)
+    return MONTHS[m - 1] ? `${day} ${MONTHS[m - 1]} ${y}` : '—'
+  }
+  const dt = d instanceof Date ? d : new Date(d)
+  return isNaN(dt.getTime()) ? '—' : `${dt.getDate()} ${MONTHS[dt.getMonth()]} ${dt.getFullYear()}`
 }
+/** A moment with its time: 15 Dec 2026 14:05 (the viewer's own clock). */
+export function fmtDateTime(d) {
+  if (!d) return ''
+  const dt = d instanceof Date ? d : new Date(d)
+  if (isNaN(dt.getTime())) return ''
+  return `${fmtDate(dt)} ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`
+}
+/** Stage dates are 'YYYY-MM-DD' or 'NA'; same format as every other date. */
+export const fmtStageDate = fmtDate
+/** A note for a date field when the date chosen has already passed (allowed: old orders are entered late). */
+export const pastDateNote = iso => (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso) && iso < getToday() ? 'This date has already passed.' : undefined)
 
 // Mirrors backend/src/lib/stageMath.js. `eta` starts unset at creation — it's
 // only written once someone explicitly revises the schedule — so overdue/
@@ -401,6 +418,55 @@ export const productionOrders = orders => (orders || []).filter(o => phaseOf(o) 
 export const developmentOrders = orders => (orders || []).filter(o => phaseOf(o) === 'development')
 /** A style is on hold when it has manufacturer splits and every one of them is On Hold. It leaves the TNA. */
 export const styleOnHold = o => (o?.assignments || []).length > 0 && o.assignments.every(a => a.status === 'On Hold')
+
+// ── Where a style stands: one rule for every screen ─────────────────────────────────────────────────────────────
+// A split's status comes from the server, which works Delayed out from the plan (an open step or the delivery date
+// past due); nobody sets it by hand. A style is Delivered once every split is, Delayed if any open split is, On Hold
+// only when every open split is, and otherwise Processing (one factory on hold shows as a tag, not as the status).
+export function styleStatus(order) {
+  const splits = order?.assignments || []
+  if (!splits.length) return 'Not assigned'
+  const open = splits.filter(a => !deliveryStatus(order, a).delivered)
+  if (!open.length) return 'Delivered'
+  if (open.some(a => a.status === 'Delayed')) return 'Delayed'
+  if (open.every(a => a.status === 'On Hold')) return 'On Hold'
+  return 'Processing'
+}
+/** How many of a style's factories are on hold while the style itself goes on (shown as "N factories on hold"). */
+export const factoriesOnHold = order => (styleStatus(order) === 'On Hold' ? 0
+  : (order?.assignments || []).filter(a => a.status === 'On Hold' && !deliveryStatus(order, a).delivered).length)
+/** A group of styles (a master order): Delayed if any is, Delivered once all are, On Hold only if all live ones are. */
+export function masterOrderStatus(orders) {
+  const st = (orders || []).map(styleStatus)
+  if (!st.length) return 'Not assigned'
+  if (st.includes('Delayed')) return 'Delayed'
+  if (st.every(s => s === 'Delivered')) return 'Delivered'
+  const live = st.filter(s => s !== 'Delivered' && s !== 'Not assigned')
+  if (live.length && live.every(s => s === 'On Hold')) return 'On Hold'
+  return 'Processing'
+}
+
+// ── Due: two dates, named ────────────────────────────────────────────────────────────────────────────────────────
+// Promised is the date agreed with the customer (the style's delivery date). Expected is where the plan now lands:
+// the latest Delivery step date across its factories. They differ once a plan slips.
+const isoDay = v => (!v ? null : typeof v === 'string' ? v.slice(0, 10) : new Date(v).toISOString().slice(0, 10))
+export const promisedDate = order => isoDay(order?.delivery)
+export function expectedDate(order) {
+  const dates = (order?.assignments || []).map(a => effectiveEta((a.stages || []).find(st => st.isDelivery))).filter(Boolean).map(isoDay).sort()
+  return dates.length ? dates[dates.length - 1] : null
+}
+/** { promised, expected, slipped } where slipped means the plan now lands after the promise. */
+export function dueDates(order) {
+  const promised = promisedDate(order), expected = expectedDate(order)
+  return { promised, expected, slipped: !!(promised && expected && expected > promised) }
+}
+/** "Expected 20 Dec 2026 · Promised 15 Dec 2026", or one of them when they match or only one is known. */
+export function dueText(order) {
+  const { promised, expected } = dueDates(order)
+  if (expected && promised && expected !== promised) return `Expected ${fmtDate(expected)} · Promised ${fmtDate(promised)}`
+  if (promised) return `Promised ${fmtDate(promised)}`
+  return expected ? `Expected ${fmtDate(expected)}` : ''
+}
 
 /**
  * Production headline numbers for the admin dashboard. A product is a piece: delivered pieces use the

@@ -50,10 +50,10 @@ describe('delivered quantity', () => {
   })
 
   test('the summary says how short or over the delivery was', () => {
-    expect(rowCallout(rowFor({ qty: 453, deliveredQty: 430, stages }))).toBe('Delivered on 6 Oct, due 21 Aug. 430 of 453 pcs delivered (23 short).')
-    expect(rowCallout(rowFor({ qty: 453, deliveredQty: 460, stages }))).toBe('Delivered on 6 Oct, due 21 Aug. 460 of 453 pcs delivered (7 over).')
-    expect(rowCallout(rowFor({ qty: 453, deliveredQty: 453, stages }))).toBe('Delivered on 6 Oct, due 21 Aug. Full quantity delivered (453 pcs).')
-    expect(rowCallout(rowFor({ qty: 453, stages }))).toBe('Delivered on 6 Oct, due 21 Aug.')
+    expect(rowCallout(rowFor({ qty: 453, deliveredQty: 430, stages }))).toBe('Delivered on 6 Oct 2026, due 21 Aug 2026. 430 of 453 pcs delivered (23 short).')
+    expect(rowCallout(rowFor({ qty: 453, deliveredQty: 460, stages }))).toBe('Delivered on 6 Oct 2026, due 21 Aug 2026. 460 of 453 pcs delivered (7 over).')
+    expect(rowCallout(rowFor({ qty: 453, deliveredQty: 453, stages }))).toBe('Delivered on 6 Oct 2026, due 21 Aug 2026. Full quantity delivered (453 pcs).')
+    expect(rowCallout(rowFor({ qty: 453, stages }))).toBe('Delivered on 6 Oct 2026, due 21 Aug 2026.')
   })
 })
 
@@ -61,7 +61,7 @@ describe('rowCallout for a delivered split', () => {
   test('names the delivery day and any step left open', () => {
     const stages = [open('Fit Sample'), done('Delivery', { isDelivery: true, actualEnd: '2026-10-06' })]
     const text = rowCallout({ order, stages, live: [], blocked: [], late: [], working: [], upcoming: null, health: 'done', doneCount: 1, daysToDelivery: null, delivery: deliveryStatus(order, { stages }) })
-    expect(text).toBe('Delivered on 6 Oct, due 21 Aug. 1 step left open in the plan.')
+    expect(text).toBe('Delivered on 6 Oct 2026, due 21 Aug 2026. 1 step left open in the plan.')
   })
 })
 
@@ -76,16 +76,16 @@ describe('rowCallout for a delayed split', () => {
   const at = fn => { vi.useFakeTimers(); vi.setSystemTime(FIXED_TODAY); try { return fn() } finally { vi.useRealTimers() } }
 
   test('gives the planned and revised dates of the late step', () => {
-    at(() => expect(rowCallout(row([late(), deliveryStep]))).toMatch(/3 days behind at Stitching \(planned 12 Oct, revised to 17 Oct\)/))
+    at(() => expect(rowCallout(row([late(), deliveryStep]))).toMatch(/3 days behind at Stitching \(planned 12 Oct 2026, revised to 17 Oct 2026\)/))
   })
 
   test('an unrevised late step shows its due date', () => {
-    at(() => expect(rowCallout(row([late({ eta: null, baselineEta: '2026-10-17' }), deliveryStep]))).toMatch(/behind at Stitching \(due 17 Oct\)\. Delivery 21 Oct \(1d\) at risk\./))
+    at(() => expect(rowCallout(row([late({ eta: null, baselineEta: '2026-10-17' }), deliveryStep]))).toMatch(/behind at Stitching \(due 17 Oct 2026\)\. Delivery 21 Oct 2026 \(1d\) at risk\./))
   })
 
   test('states the new expected delivery date when the plan now runs past the promise', () => {
     const pushed = { ...deliveryStep, eta: '2026-10-28' }
-    at(() => expect(rowCallout(row([late(), pushed]))).toMatch(/Now expected 28 Oct, 7 days past the 21 Oct delivery date\./))
+    at(() => expect(rowCallout(row([late(), pushed]))).toMatch(/Now expected 28 Oct 2026, 7 days past the 21 Oct 2026 delivery date\./))
   })
 })
 
