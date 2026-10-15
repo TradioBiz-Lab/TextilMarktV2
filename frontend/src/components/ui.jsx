@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, createContext, useContext, isValidElement, cloneElement } from 'react'
 import { Folder, Link2, Package, Factory, Eye, Download, FileText, StickyNote, AlertTriangle, CheckCircle2, Info, X, Image as ImageIcon, Paperclip, Upload, ChevronLeft, ChevronRight, Crown, Check, Pencil, Trash2 } from '../icons.jsx'
-import { T, ST, DOC_TYPES, STAGE_DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired, stageNameForDoc } from '../constants.js'
+import { T, ST, DOC_TYPES, STAGE_DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired, stageNameForDoc, fmtDate } from '../constants.js'
 import { useApp } from '../context.jsx'
 import * as pdfjsLib from 'pdfjs-dist'
 import { CsvTable, XlsxTable, DxfPreview, AudioPlayer, Msg } from './fileViewers.jsx'
@@ -632,14 +632,7 @@ export function ProductThumb({ order, size = 'sm', onClick }) {
   )
 }
 
-const fmtShort = d => {
-  if (!d) return '—'
-  const dt = new Date(d)
-  const dd = String(dt.getDate()).padStart(2, '0')
-  const mm = String(dt.getMonth() + 1).padStart(2, '0')
-  const yyyy = dt.getFullYear()
-  return `${dd}-${mm}-${yyyy}`
-}
+const fmtShort = d => fmtDate(d)
 
 // Inline edit form for a document — name, notes (stage-evidence text), and an
 // optional file/link replacement. Shared by both DocCard layouts (stage evidence

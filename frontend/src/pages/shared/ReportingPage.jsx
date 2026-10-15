@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useRef } from 'react'
 import { CalendarClock, AlertTriangle, Package, Ban, CircleDot, CheckCircle2, Search, BarChart3, Folder, MessageCircle, Calendar, ChevronDown, ChevronRight, Play, Download, ArrowRight, Sparkles } from '../../icons.jsx'
 import {
   T, dayNumber, getToday, fmtN, effectiveEta, planProgress, deliveryStatus,
-  stageStatusOf, stageIsOverdue, isStageDone, inFlightStages, stageProgressLabel, stageVariance, productionOrders, developmentOrders, styleOnHold,
+  stageStatusOf, stageIsOverdue, isStageDone, inFlightStages, stageProgressLabel, stageVariance, productionOrders, developmentOrders, styleOnHold, fmtDate, dueDates,
 } from '../../constants.js'
 import { toCsvCell } from '../../csvCell.js'
 import { Btn, Card, EmptyState, FlexRow, Modal, Mono, LoadingScreen, PageHeader, ProductThumb, StatCard, activateOnKey } from '../../components/ui.jsx'
@@ -15,15 +15,6 @@ import { reportModel, summaryCsvRows, reportXlsxBlob } from '../../reportExport.
 // It follows the live action items — the steps actually in play — rather than
 // laying out the plan. The full TNA grid lives on the order detail page, which
 // is where you go when you want the plan itself.
-
-function fmtDate(d) {
-  if (!d || d === 'NA') return '—'
-  const dt = new Date(d)
-  if (isNaN(dt.getTime())) return '—'
-  const dd = String(dt.getDate()).padStart(2, '0')
-  const mm = String(dt.getMonth() + 1).padStart(2, '0')
-  return `${dd}-${mm}-${dt.getFullYear()}`
-}
 
 function saveBlob(blob, filename) {
   const url = URL.createObjectURL(blob)
@@ -44,7 +35,7 @@ function downloadCsv(rows, filename) {
 
 const HEALTH = {
   blocked: { label: 'Blocked', bg: '#fee2e2', fg: '#b91c1c' },
-  late:    { label: 'Late',    bg: '#fee2e2', fg: '#b91c1c' },
+  late:    { label: 'Delayed', bg: '#fee2e2', fg: '#b91c1c' },
   risk:    { label: 'At risk', bg: '#fef3c7', fg: '#b45309' },
   ontrack: { label: 'On track', bg: '#d1fae5', fg: '#047857' },
   done:    { label: 'Complete', bg: '#e0e7ff', fg: '#4338ca' },
@@ -221,8 +212,7 @@ export function ReportingPage({ onOpen, initialMo }) {
 
       const health = delivery.delivered ? 'done'
         : blocked.length ? 'blocked'
-        : late.length ? 'late'
-        : (daysToDelivery != null && daysToDelivery < 0) ? 'late'
+        : a.status === 'Delayed' ? 'late'   // the server's rule: an open step or the delivery date has passed
         : (daysToDelivery != null && daysToDelivery <= 7) ? 'risk'
         : 'ontrack'
 
@@ -249,13 +239,20 @@ export function ReportingPage({ onOpen, initialMo }) {
     })
   }, [rows, q, healthFilter])
 
-  const stats = useMemo(() => ({
-    orders: rows.length,
-    blocked: rows.filter(r => r.health === 'blocked').length,
-    late: rows.filter(r => r.health === 'late').length,
-    risk: rows.filter(r => r.health === 'risk').length,
-    ontrack: rows.filter(r => r.health === 'ontrack' || r.health === 'done').length,
-  }), [rows])
+  // Counted in styles, never factory splits: a style takes its worst factory's state.
+  const stats = useMemo(() => {
+    const rank = { blocked: 0, late: 1, risk: 2, ontrack: 3, done: 4 }
+    const worst = new Map()
+    for (const r of rows) { const w = worst.get(r.order.id); if (!w || rank[r.health] < rank[w]) worst.set(r.order.id, r.health) }
+    const h = [...worst.values()]
+    return {
+      orders: worst.size,
+      blocked: h.filter(x => x === 'blocked').length,
+      late: h.filter(x => x === 'late').length,
+      risk: h.filter(x => x === 'risk').length,
+      ontrack: h.filter(x => x === 'ontrack' || x === 'done').length,
+    }
+  }, [rows])
 
   const groups = useMemo(() => {
     const map = new Map()
@@ -331,7 +328,7 @@ export function ReportingPage({ onOpen, initialMo }) {
       <div style={{ gap: 12, marginBottom: 14 }} className="grid-responsive-5">
         <StatCard icon={<Package size={19} color={T.primary} />} label="Live styles" value={stats.orders} color={T.primary} />
         <StatCard icon={<Ban size={19} color={T.danger} />} label="Blocked" value={stats.blocked} color={T.danger} />
-        <StatCard icon={<CircleDot size={19} color={T.danger} />} label="Late" value={stats.late} color={T.danger} />
+        <StatCard icon={<CircleDot size={19} color={T.danger} />} label="Delayed" value={stats.late} color={T.danger} />
         <StatCard icon={<AlertTriangle size={19} color={T.warning} />} label="At risk" value={stats.risk} color={T.warning} />
         <StatCard icon={<CheckCircle2 size={19} color={T.success} />} label="On track" value={stats.ontrack} color={T.success} />
       </div>
@@ -370,7 +367,7 @@ export function ReportingPage({ onOpen, initialMo }) {
                 <Folder size={13} /> {!isBuyer ? `${g.buyerCompany} - ` : ''}{g.mo?.orderName || (g.moId === '__none__' ? 'Other styles' : g.moId)}
               </span>
               {g.mo?.season && <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', background: '#dbeafe', padding: '1px 7px', borderRadius: 4 }}>{g.mo.season}</span>}
-              <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{g.rows.length} style{g.rows.length !== 1 ? 's' : ''}</span>
+              <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{(n => `${n} style${n !== 1 ? 's' : ''}`)(new Set(g.rows.map(r => r.order.id)).size)}</span>
             </FlexRow>
 
             {isOpen && (
@@ -430,7 +427,8 @@ export function ReportingPage({ onOpen, initialMo }) {
                           </td>
 
                           <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
-                            <div style={{ fontSize: 12, color: T.text, fontFamily: "'JetBrains Mono',monospace" }}>{fmtDate(r.delivery.date)}</div>
+                            <div title={r.health === 'done' ? 'Delivered on' : 'Promised to the customer'} style={{ fontSize: 12, color: T.text, fontFamily: "'JetBrains Mono',monospace" }}>{fmtDate(r.delivery.date)}</div>
+                            {r.health !== 'done' && dueDates(r.order).slipped && <div title="Where the plan's Delivery step now lands" style={{ fontSize: 11, fontWeight: 700, color: T.danger }}>Expected {fmtDate(dueDates(r.order).expected)}</div>}
                             {r.health === 'done' && <div style={{ fontSize: 11, fontWeight: 700, color: T.success }}>Delivered</div>}
                             {r.health === 'done' && r.delivery.deliveredQty != null && (
                               <div title="Delivered quantity against the order quantity" style={{ fontSize: 11, fontWeight: 700, color: r.delivery.diff ? '#b45309' : T.textMuted }}>

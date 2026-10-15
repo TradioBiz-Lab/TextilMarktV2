@@ -96,7 +96,7 @@ export function summaryCsvRows(model) {
 
 // ── Excel ──────────────────────────────────────────────────────────────────
 const HEAD = { fontWeight: 'bold', backgroundColor: '#e2e8f0', textColor: '#0f172a', borderColor: '#94a3b8', bottomBorderStyle: 'thin', alignVertical: 'center', wrap: true }
-const HEALTH_FILL = { Blocked: '#fee2e2', Late: '#fee2e2', 'At risk': '#fef3c7', 'On track': '#dcfce7', Complete: '#dcfce7' }
+const HEALTH_FILL = { Blocked: '#fee2e2', Delayed: '#fee2e2', Late: '#fee2e2', 'At risk': '#fef3c7', 'On track': '#dcfce7', Complete: '#dcfce7' }
 const STATUS_FILL = { Done: '#dcfce7', 'In progress': '#dbeafe', Blocked: '#fee2e2' }
 
 // 'YYYY-MM-DD' as a UTC date: the writer stores the calendar day, so it shows the same day in every time zone.

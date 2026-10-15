@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { X, Plus, Trash2, ChevronLeft, ChevronRight, AlertTriangle, Camera } from '../../icons.jsx'
-import { T, PHASES, CATEGORIES, PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, getToday } from '../../constants.js'
+import { T, PHASES, CATEGORIES, PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, getToday, pastDateNote } from '../../constants.js'
 import { swatchHex, normalisePantone, PANTONE_HINT, PANTONE_PLACEHOLDER, photoFromFile } from '../../colours.js'
 import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload, useToast } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -187,7 +187,7 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
                       <Select label="Stage" value={s.phase} onChange={e => updateStyle(s._key, { phase: e.target.value })}>
                         {PHASES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                       </Select>
-                      {s.phase === 'production' && <Input label="Expected delivery date" type="date" value={s.delivery} onChange={e => updateStyle(s._key, { delivery: e.target.value })} hint="Optional. It can be added later." />}
+                      {s.phase === 'production' && <Input label="Promised delivery date" type="date" value={s.delivery} onChange={e => updateStyle(s._key, { delivery: e.target.value })} hint={pastDateNote(s.delivery) || 'Optional. It can be added later.'} />}
                     </div>
                   </div>
                 )

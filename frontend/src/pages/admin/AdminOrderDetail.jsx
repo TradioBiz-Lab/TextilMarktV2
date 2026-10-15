@@ -6,6 +6,7 @@ import {
   stageKindOf, kindForCustomerOwner, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
   stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber, getToday, planProgress,
   PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, stageNameForDoc, PO_INVOICE_DOC_TYPES, deliveryDocsOf, defaultStepOwner, stepOwnerOptions,
+  fmtDate, styleStatus, dueDates, dueText, pastDateNote,
 } from '../../constants.js'
 import { PromoteModal } from '../../components/PromoteModal.jsx'
 import { StyleGallery } from '../../components/StyleGallery.jsx'
@@ -22,13 +23,6 @@ import { EditOrderModal } from './EditOrderModal.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
 import { QuickStageModal } from './QuickStageModal.jsx'
 
-function fmtDate(d) {
-  if (!d) return '—'
-  const dt = new Date(d)
-  const dd = String(dt.getDate()).padStart(2, '0')
-  const mm = String(dt.getMonth() + 1).padStart(2, '0')
-  return `${dd}-${mm}-${dt.getFullYear()}`
-}
 
 // Bulk Edit row: step, start, end, responsible, target qty, description, evidence, NA / Undo.
 const BULK_EDIT_COLS = '170px 168px 168px 150px 78px minmax(120px, 1fr) 30px 64px'
@@ -514,7 +508,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
   // ── Status Override ──
   const openStatusOverride = (mfrId, currentStatus) => {
     setStTarget(mfrId)
-    setStStatus(currentStatus)
+    setStStatus(currentStatus === 'Delayed' ? 'Processing' : currentStatus)   // Delayed is never set by hand
     setStNote('')
     setShowSt(true)
   }
@@ -658,12 +652,8 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
     finally { setMovingStage(false) }
   }
 
-  const overallStatus = () => {
-    if (order.assignments.some(a => a.status === 'Delayed')) return 'Delayed'
-    if (order.assignments.some(a => a.status === 'On Hold')) return 'On Hold'
-    if (order.assignments.length > 0 && order.assignments.every(a => a.status === 'Delivered')) return 'Delivered'
-    return 'Processing'
-  }
+  // The same rule as every other screen (constants.js): one factory on hold does not put the style on hold.
+  const overallStatus = () => styleStatus(order)
 
   const mfrUsers = users.filter(u => u.role === 'manufacturer' && u.isActive)
   const refDocLabels = { measurements: 'Measurements', tech_pack: 'Tech Pack', pattern: 'Patterns / DXF', lab_dip: 'Lab Dip Receipts', test_report: 'Test Reports (FPT/GPT)' }
@@ -841,7 +831,10 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                   ['Season', order.season || '—'],
                   ['Buyer', order.buyerCompany ? `${order.buyerCompany}${order.buyerCode ? ` (${order.buyerCode})` : ''}` : '—'],
                   ['Quantity', `${order.totalQty?.toLocaleString()} pcs`],
-                  ['Delivery', fmtDate(order.delivery)],
+                  // Promised: agreed with the customer. Expected: where the plan's Delivery step now lands.
+                  ['Promised delivery', fmtDate(dueDates(order).promised)],
+                  ['Expected delivery', <span key="exp" style={{ color: dueDates(order).slipped ? T.danger : undefined }}>{fmtDate(dueDates(order).expected)}</span>],
+                  ['Factories', [...new Set((order.assignments || []).map(a => a.mfrCompany).filter(Boolean))].join(', ') || 'None yet'],
                   ['Created', fmtDate(order.createdAt)],
                 ].map(([label, value], i) => (
                   <div key={label} style={{ padding: '8px 12px', borderTop: i > 1 ? `1px solid ${T.border}` : 'none', borderLeft: i % 2 === 1 ? `1px solid ${T.border}` : 'none', background: i % 2 === 0 ? '#fbfcfe' : '#fff' }}>
@@ -1133,7 +1126,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
               </Select>
               <Input label="Quantity *" type="number" value={newMfrQty ?? String(order.totalQty || '')} onChange={e => setNewMfrQty(e.target.value)} />
               {order.phase !== 'development' && !order.delivery && (
-                <Input label="Expected delivery date" type="date" value={newMfrDelivery} onChange={e => setNewMfrDelivery(e.target.value)} hint="Optional. The plan's Delivery step is dated with it." />
+                <Input label="Promised delivery date" type="date" value={newMfrDelivery} onChange={e => setNewMfrDelivery(e.target.value)} hint={pastDateNote(newMfrDelivery) || "Optional. The plan's Delivery step is dated with it."} />
               )}
             </div>
             <FlexRow justify="flex-end" style={{ marginTop: 12 }}>
@@ -1170,7 +1163,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
               <Badge status={overallStatus()} />
             </FlexRow>
             <div style={{ fontSize: 13, color: T.textMuted, marginTop: 3 }}>
-              {order.product}{order.styleNumber ? ` - ${order.styleNumber}` : ''} · {order.buyerCompany || '—'} · {order.totalQty?.toLocaleString()} pcs · Due {fmtDate(order.delivery)}
+              {order.product}{order.styleNumber ? ` - ${order.styleNumber}` : ''} · {order.buyerCompany || '—'} · {order.totalQty?.toLocaleString()} pcs{dueText(order) ? ` · ${dueText(order)}` : ''}
             </div>
           </div>
           <Btn variant="secondary" onClick={() => setShowUp(true)} icon={<Paperclip size={13} />}>Upload Document</Btn>
@@ -1251,7 +1244,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
           <Alert type="warning" style={{ marginBottom: 14 }}>All admin overrides are permanently logged with your name and timestamp.</Alert>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <Select label="New Status" value={stStatus} onChange={e => setStStatus(e.target.value)}>
-              {ORDER_STATUSES.filter(s => s !== 'Delivered' || stStatus === 'Delivered').map(s => <option key={s}>{s}</option>)}
+              {ORDER_STATUSES.filter(s => s !== 'Delayed' && (s !== 'Delivered' || stStatus === 'Delivered')).map(s => <option key={s}>{s}</option>)}
             </Select>
             <Textarea label="Reason for Override *" value={stNote} onChange={e => setStNote(e.target.value)} placeholder="Explain why this override is needed…" />
             <FlexRow justify="flex-end" gap={8}>

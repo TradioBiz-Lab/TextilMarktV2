@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { Package, RotateCw, Paperclip, User, Ban, Check, KeyRound, Zap, Search, Crown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X } from '../../icons.jsx'
-import { T } from '../../constants.js'
+import { T, fmtDate } from '../../constants.js'
 import { Card, PageHeader, EmptyState, FlexRow, LoadingScreen, Btn } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { DroppedRecords } from './DroppedRecords.jsx'
@@ -18,13 +18,8 @@ const ACTION_META = {
 
 const PAGE_SIZE = 20
 
-function fmtDDMMYYYY(d) {
-  if (!d) return '—'
-  const dt = new Date(d)
-  const dd = String(dt.getDate()).padStart(2, '0')
-  const mm = String(dt.getMonth() + 1).padStart(2, '0')
-  return `${dd}-${mm}-${dt.getFullYear()}`
-}
+// The app's one date format (15 Dec 2026).
+const fmtDDMMYYYY = fmtDate
 
 function fmtTimestamp(d) {
   if (!d) return '—'

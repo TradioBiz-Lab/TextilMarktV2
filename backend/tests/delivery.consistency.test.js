@@ -62,16 +62,16 @@ describe('manual status cannot contradict the Delivery step', () => {
     assert.equal((await api.post(`${base}/stages/${d}`, { status: 'done' })).status, 200)
     assert.equal((await api.post(base, { status: 'Delivered', note: 'received' })).status, 200)
     assert.equal((await api.post(base, { status: 'Processing' })).status, 400)
-    assert.equal((await api.post(base, { status: 'On Hold' })).status, 400)
+    assert.equal((await api.post(base, { status: 'On Hold', note: 'Customer asked to pause' })).status, 400)
 
     assert.equal((await api.post(`${base}/stages/${d}`, { status: 'not_started' })).status, 200)
-    assert.equal((await api.post(base, { status: 'On Hold' })).status, 200)
+    assert.equal((await api.post(base, { status: 'On Hold', note: 'Customer asked to pause' })).status, 200)
   })
 
   test('a manufacturer is held to the same rule', async () => {
     const { base, mfrApi } = await arrange()
     assert.equal((await mfrApi.post(base, { status: 'Delivered' })).status, 400)
-    assert.equal((await mfrApi.post(base, { status: 'Delayed' })).status, 200)
+    assert.equal((await mfrApi.post(base, { status: 'On Hold', note: 'Fabric short' })).status, 200)
   })
 })
 

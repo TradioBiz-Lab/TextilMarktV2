@@ -1,14 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Folder, Package, ChevronDown } from '../../icons.jsx'
-import { T } from '../../constants.js'
+import { T, fmtDateTime } from '../../constants.js'
 import { Card, Btn, FlexRow, Mono, useToast } from '../../components/ui.jsx'
 import { droppedApi } from '../../api.js'
 
-const fmt = d => {
-  if (!d) return ''
-  const dt = new Date(d)
-  return `${String(dt.getDate()).padStart(2, '0')}-${String(dt.getMonth() + 1).padStart(2, '0')}-${dt.getFullYear()} ${dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`
-}
+const fmt = d => (d ? fmtDateTime(d) : '')
 
 /**
  * The permanent record of dropped styles and master orders, newest first. Each row

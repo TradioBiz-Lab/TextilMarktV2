@@ -1,4 +1,4 @@
-import { dayNumber, getToday, isStageDone, deliveryStatus, stageStatusOf, stageIsOverdue, effectiveEta, inFlightStages } from './constants.js'
+import { dayNumber, getToday, isStageDone, deliveryStatus, stageStatusOf, stageIsOverdue, effectiveEta, inFlightStages, fmtDate } from './constants.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dashboard "AI summary" - PLACEHOLDER GENERATOR.
@@ -15,11 +15,8 @@ import { dayNumber, getToday, isStageDone, deliveryStatus, stageStatusOf, stageI
 // ─────────────────────────────────────────────────────────────────────────────
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + 's')}`
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const shortDate = d => {
-  const dt = new Date(d)
-  return Number.isNaN(dt.getTime()) ? '' : `${dt.getUTCDate()} ${MONTHS[dt.getUTCMonth()]}`
-}
+// Dates read the same as on every screen (15 Dec 2026).
+const shortDate = d => (d ? fmtDate(d) : '')
 const list = items => items.length <= 1 ? items.join('') : items.slice(0, -1).join(', ') + ' and ' + items[items.length - 1]
 
 // The step's date has been moved off its original plan (a revised ETA exists and differs).
@@ -42,6 +39,7 @@ function buildRows(orders, role, userId, todayNum) {
   for (const o of orders || []) {
     for (const a of o.assignments || []) {
       if (role === 'manufacturer' && String(a.mid) !== String(userId)) continue
+      if (a.status === 'On Hold') continue   // paused work is not late work
       const stages = a.stages || []
       const live = inFlightStages(a, { windowDays: 3650 })
       const blocked = live.filter(({ stage }) => stage.blocked)
@@ -57,7 +55,7 @@ function buildRows(orders, role, userId, todayNum) {
       const daysLate = worstLate ? lateBy(worstLate) : 0
       const health = delivered ? 'delivered'
         : blocked.length ? 'blocked'
-        : (late.length || (deliveryDay != null && deliveryDay < todayNum)) ? 'late'
+        : a.status === 'Delayed' ? 'late'   // the server's rule: an open step or the delivery date has passed
         : 'ontrack'
       rows.push({ order: o, asgn: a, stages, live, blocked, late, worstLate, working, upcoming, delivered, health, daysLate, deliveryDay })
     }
@@ -87,7 +85,7 @@ function groupByOrder(rows) {
 
 function attentionLine(rows, role) {
   const bad = rows.filter(r => r.health === 'blocked' || r.health === 'late').sort((a, b) => severity(b) - severity(a))
-  if (!bad.length) return 'Nothing is late or blocked right now, every live order is on plan.'
+  if (!bad.length) return 'Nothing is delayed or blocked right now, every live order is on plan.'
   const bits = bad.slice(0, 2).map(r => {
     const who = role === 'admin' ? ` (${r.order.buyerCompany || 'unknown customer'})` : ''
     if (r.health === 'blocked') {
@@ -137,7 +135,7 @@ function build({ role, user, orders, actionItems }) {
     return lines
   }
 
-  const mix = `${count('ontrack')} on track, ${count('late')} late, ${count('blocked')} blocked`
+  const mix = `${count('ontrack')} on track, ${count('late')} delayed, ${count('blocked')} blocked`
   if (role === 'admin') {
     const customers = new Set(live.map(r => r.order.buyerCompany)).size
     const factories = new Set(liveSplits.map(r => r.asgn.mfrCompany)).size

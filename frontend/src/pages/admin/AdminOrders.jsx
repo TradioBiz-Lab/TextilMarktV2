@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Plus, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, ChevronUp, ArrowRight, X } from '../../icons.jsx'
 import {
   T, SEASONS, ORDER_STATUSES,
-  isStageDone, stageIsOverdue, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct, fmtStageDate, effectiveEta,
+  isStageDone, stageIsOverdue, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct, fmtStageDate, effectiveEta, styleStatus,
   CELL_STATE, cellState, buildMatrixSpine, withBuyerPrefix, getToday, PHASES, phaseOf, styleOnHold
 } from '../../constants.js'
 import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, Textarea, FileUpload, LoadingScreen, useToast, fileUploadPayload, ProductThumb, Modal, activateOnKey } from '../../components/ui.jsx'
@@ -13,14 +13,6 @@ import { PromoteModal } from '../../components/PromoteModal.jsx'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { QuickStageModal } from './QuickStageModal.jsx'
 import { CreateStyleWizard } from './CreateStyleWizard.jsx'
-
-function fmtDate(d) {
-  if (!d) return '—'
-  const dt = new Date(d)
-  const dd = String(dt.getDate()).padStart(2, '0')
-  const mm = String(dt.getMonth() + 1).padStart(2, '0')
-  return `${dd}-${mm}-${dt.getFullYear()}`
-}
 
 // ── Matrix view: styles across the top, TNA steps down the side ────────────
 // The shape the team already keeps by hand in the Summary TNA sheet — one
@@ -105,7 +97,8 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
 
   const filtered = orders.filter(o => {
     const qm = !q || [o.id, o.product, o.styleNumber].some(v => (v || '').toLowerCase().includes(q.toLowerCase()))
-    const sm = sfilt === 'All' || (o.assignments || []).some(a => a.status === sfilt)
+    // The style's own status, by the same rule as every screen (one factory on hold does not make it On Hold).
+    const sm = sfilt === 'All' || styleStatus(o) === sfilt
     return qm && sm && phaseOf(o) === phase
   })
 
@@ -419,7 +412,7 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
                     <span style={{ color: T.textMuted, transform: isOpen ? 'none' : 'rotate(-90deg)', display: 'inline-flex' }}><ChevronDown size={13} /></span>
                     <span style={{ fontSize: 13, fontWeight: 800, color: T.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Folder size={13} /> {groupLabel}</span>
                     {g.mo?.season && <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', background: '#dbeafe', padding: '1px 7px', borderRadius: 4 }}>{g.mo.season}</span>}
-                    <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{entries.length} style{entries.length !== 1 ? 's' : ''} · {spine.length} steps</span>
+                    <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{(n => `${n} style${n !== 1 ? 's' : ''}`)(new Set(entries.map(e => e.order.id)).size)} · {spine.length} steps</span>
                     {held > 0 && (
                       <span title="Styles on hold are not shown in the TNA. Open Details to see them." style={{ fontSize: 10, fontWeight: 800, color: '#475569', background: '#e2e8f0', padding: '1px 8px', borderRadius: 999, whiteSpace: 'nowrap' }}>{held} on hold</span>
                     )}

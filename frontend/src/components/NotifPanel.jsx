@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { Bell, AlertTriangle, RefreshCw, Package, X } from '../icons.jsx'
-import { T } from '../constants.js'
+import { T, fmtDate } from '../constants.js'
 import { EmptyState, activateOnKey } from './ui.jsx'
 import { useApp } from '../context.jsx'
 
@@ -10,7 +10,7 @@ function fmtAge(at) {
   if (diff < 60000)     return 'Just now'
   if (diff < 3600000)   return `${Math.floor(diff / 60000)}m ago`
   if (diff < 86400000)  return `${Math.floor(diff / 3600000)}h ago`
-  return new Date(at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+  return fmtDate(at)
 }
 
 export function NotifPanel({ onClose, onOpenOrder }) {

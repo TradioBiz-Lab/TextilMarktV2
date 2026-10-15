@@ -23,9 +23,12 @@ describe('dashboard summary', () => {
     expect(text).not.toMatch(/No orders yet/)
   })
 
-  test('a stage past its baseline date counts as late even though it was never revised', async () => {
-    const late = order({ assignments: [{ mid: 'm1', qty: 100, mfrCompany: 'T', status: 'Processing', stages: [stage({ baselineEta: '2026-10-01' })] }] })
-    expect(await run([late])).toMatch(/1 late/)
+  // The server works Delayed out from the plan (an open step past its date, revised or not); the summary reads it.
+  test('a split the server reports as Delayed is counted as delayed, and a held one is left out', async () => {
+    const late = order({ assignments: [{ mid: 'm1', qty: 100, mfrCompany: 'T', status: 'Delayed', stages: [stage({ baselineEta: '2026-10-01' })] }] })
+    expect(await run([late])).toMatch(/1 delayed/)
+    const held = order({ id: 'ORD-H', assignments: [{ mid: 'm1', qty: 100, mfrCompany: 'T', status: 'On Hold', stages: [stage({ baselineEta: '2026-10-01' })] }] })
+    expect(await run([held])).not.toMatch(/1 delayed/)
   })
 
   test('a missing customer name does not print "(null)"', async () => {

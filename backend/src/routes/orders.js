@@ -16,6 +16,7 @@ import {
 import { dayNumber, getToday, effectiveEta, DELIVERY_STEP_NAME, isDeliveryName, deliveryStageIndex, makeDeliveryStage, makeDevelopmentStages, statusAfterDeliveryStep } from '../lib/stageMath.js'
 import { notify, notifyOrderChange } from '../lib/notify.js'
 import { nextStyleId } from '../lib/ids.js'
+import { splitStatus } from '../lib/splitStatus.js'
 
 // Categories are now free-text — no validation needed
 const VALID_SEASONS    = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
@@ -176,7 +177,8 @@ const enrichOrder = (o, viewerMfrId = null) => {
       mfrName:    mfr?.name     ?? null,
       qty:        a.qty,
       deliveredQty: a.deliveredQty ?? null,
-      status:     a.status,
+      // Delayed is worked out from the plan, never stored by hand (lib/splitStatus.js).
+      status:     splitStatus(o, a),
       sub:        a.sub,
       note:       a.note,
       updatedAt:  a.updatedAt,
@@ -773,6 +775,11 @@ router.post('/:orderId/assignments/:mfrId', requireAuth, updateLimiter, async (r
       return res.status(400).json({ error: `Invalid status. Must be one of: ${ORDER_STATUS_VALUES.join(', ')}` })
     if (note !== undefined && note !== null && typeof note === 'string' && note.length > 1000)
       return res.status(400).json({ error: 'Note too long (max 1000 characters)' })
+    // Delayed follows the plan: it shows by itself when an open step or the delivery date has passed.
+    if (status === 'Delayed')
+      return res.status(400).json({ error: 'Delayed is set automatically when a step or the delivery date has passed. To record a delay, move that step\'s date.' })
+    if (status === 'On Hold' && !(typeof note === 'string' && note.trim()))
+      return res.status(400).json({ error: 'Give the reason for putting it on hold' })
 
     // The Delivery step is the single source of truth for "delivered": a split is
     // Delivered exactly when its Delivery step is done. A manual status must not
