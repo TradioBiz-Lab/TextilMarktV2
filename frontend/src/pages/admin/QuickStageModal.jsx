@@ -509,6 +509,19 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
           </FlexRow>}
         </div>
 
+        <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
+          <SectionLabel>Evidence</SectionLabel>
+          {uploadedStageDocs.length === 0 && <div style={{ fontSize: 11, color: T.textLight, marginBottom: 8 }}>No evidence uploaded yet.</div>}
+          {uploadedStageDocs.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              {uploadedStageDocs.map(d => (
+                <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} stageName={stage?.name} />
+              ))}
+            </div>
+          )}
+          {canEvidence && <Btn size="sm" variant="outline" onClick={openStageDocUpload} icon={<Paperclip size={12} />}>Upload Evidence</Btn>}
+        </div>
+
         {canPlan && (
           <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
             <SectionLabel>Owner and type</SectionLabel>
@@ -578,19 +591,6 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
             </>}
             <Btn size="sm" disabled={saving || !matDraft.name.trim() || !matDraft.requiredQty} onClick={addMaterial} icon={<Plus size={12} />}>Add</Btn>
           </FlexRow>}
-        </div>
-
-        <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
-          <SectionLabel>Evidence</SectionLabel>
-          {uploadedStageDocs.length === 0 && <div style={{ fontSize: 11, color: T.textLight, marginBottom: 8 }}>No evidence uploaded yet.</div>}
-          {uploadedStageDocs.length > 0 && (
-            <div style={{ marginBottom: 8 }}>
-              {uploadedStageDocs.map(d => (
-                <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} stageName={stage?.name} />
-              ))}
-            </div>
-          )}
-          {canEvidence && <Btn size="sm" variant="outline" onClick={openStageDocUpload} icon={<Paperclip size={12} />}>Upload Evidence</Btn>}
         </div>
 
         <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
