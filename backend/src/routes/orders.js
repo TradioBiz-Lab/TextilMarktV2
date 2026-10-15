@@ -1756,8 +1756,12 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
         return res.status(400).json({ error: 'Stage name too long (max 200 characters)' })
     }
 
-    if ((hasBaselineEta || hasActualEnd) && !(req.user.role === 'admin' && req.user.adminType === 'master'))
-      return res.status(403).json({ error: 'Only the master admin can set the planned or actual date directly' })
+    // The actual date is the master admin's to correct. The planned date any admin may correct until the step has
+    // started (an import typo should not stand as slippage for good); after that only the master admin, since a
+    // change to the plan is what the revised date is for. The started check needs the stage, below.
+    const isMasterAdmin = req.user.role === 'admin' && req.user.adminType === 'master'
+    if (hasActualEnd && !isMasterAdmin)
+      return res.status(403).json({ error: 'Only the master admin can set the actual date directly' })
 
     if (hasKind && !STAGE_KINDS.includes(kind))
       return res.status(400).json({ error: `Invalid kind - must be one of: ${STAGE_KINDS.join(', ')}` })
@@ -1789,6 +1793,8 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
     }
 
     const currentStage = existingAsgn.stages[stageIndex]
+    if (hasBaselineEta && !isMasterAdmin && (deriveStageStatus(currentStage) !== 'not_started' || (currentStage.unitsDone || 0) > 0))
+      return res.status(403).json({ error: 'This step has started, so its planned date stays as it was. Change its revised date instead.' })
 
     // The Delivery step is a plain milestone with a target of one. Reshaping it
     // would let it stop meaning "delivered".

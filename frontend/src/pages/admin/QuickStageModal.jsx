@@ -46,6 +46,9 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
   // historical dates into the system. See saveEta().
   const [baselineEtaDraft, setBaselineEtaDraft] = useState(dateToInput(stage?.baselineEta))
   const [actualEndDraft, setActualEndDraft] = useState(dateToInput(stage?.actualEnd))
+  const [startDraft, setStartDraft] = useState(dateToInput(stage?.startDate))
+  // The description is set once, so it sits at the bottom as text with an Edit link.
+  const [editingDesc, setEditingDesc] = useState(false)
   const [updateText, setUpdateText] = useState('')
   const [matDraft, setMatDraft] = useState({ name: '', requiredQty: '', unit: '', supplierId: '' })
   // A factory in the standalone product picks a material's supplier from its own supplier book.
@@ -174,6 +177,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
       eta: dateToInput(stage.eta),
       baseline: dateToInput(stage.baselineEta),
       actualEnd: dateToInput(stage.actualEnd),
+      start: dateToInput(stage.startDate),
     }
     const prev = synced.current
     const follow = (key, set) => set(cur => (!prev || cur === prev[key]) ? next[key] : cur)
@@ -183,12 +187,19 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
     follow('eta', setEtaDraft)
     follow('baseline', setBaselineEtaDraft)
     follow('actualEnd', setActualEndDraft)
+    follow('start', setStartDraft)
     synced.current = next
-  }, [stage?.description, stage?.unitsDone, stage?.status, stage?.eta, stage?.baselineEta, stage?.actualEnd])
+  }, [stage?.description, stage?.unitsDone, stage?.status, stage?.eta, stage?.baselineEta, stage?.actualEnd, stage?.startDate])
 
   if (!order || !asgn || !stage) return null
   const kind = stageKindOf(stage)
   const isDone = stageStatusOf(stage) === 'done'
+  const notStarted = stageStatusOf(stage) === 'not_started' && !((stage.unitsDone || 0) > 0)
+  const canEditPlanned = isMaster || (canPlan && notStarted)
+  const datesDirty = (canPlan && !!startDraft && startDraft !== dateToInput(stage.startDate))
+    || etaDraft !== dateToInput(stage.eta)
+    || (canEditPlanned && baselineEtaDraft !== dateToInput(stage.baselineEta))
+    || (isMaster && !!actualEndDraft && actualEndDraft !== dateToInput(stage.actualEnd))
   // A customer may only set status on a stage assigned to them, never close a quantity stage.
   const canProgress = writable && !(caps.isBuyer && kind === 'quantity')
   const canMaterials = caps.manageMaterials && writable
@@ -200,6 +211,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
       await ordersApi.updateStageDates(orderId, mfrId, stageIndex, { description })
       await refreshOrders()
       toast('Description updated', 'success')
+      setEditingDesc(false)
     } catch (err) {
       toast(err?.message || 'Failed to update description', 'error')
     } finally { setSaving(false) }
@@ -284,10 +296,10 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
   // Order Detail renders, never a second copy that can drift out of sync.
   const saveEta = async () => {
     const dates = {}
+    if (canPlan && startDraft && startDraft !== dateToInput(stage.startDate)) dates.startDate = startDraft
     if (etaDraft !== dateToInput(stage.eta)) dates.eta = etaDraft === 'NA' ? 'NA' : (etaDraft || null)
-    // Master-only overrides — the backend rejects these from anyone else, but
-    // don't even offer to send them from a non-master session.
-    if (isMaster && baselineEtaDraft !== dateToInput(stage.baselineEta)) {
+    // The planned end: whoever runs the plan until the step starts, the master admin at any time (the server checks the same).
+    if (canEditPlanned && baselineEtaDraft !== dateToInput(stage.baselineEta)) {
       dates.baselineEta = baselineEtaDraft === 'NA' ? 'NA' : (baselineEtaDraft || null)
     }
     if (isMaster && actualEndDraft && actualEndDraft !== dateToInput(stage.actualEnd)) {
@@ -298,7 +310,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
     try {
       await ordersApi.updateStageDates(orderId, mfrId, stageIndex, dates)
       await refreshOrders()
-      toast('Date updated', 'success')
+      toast('Dates updated', 'success')
     } catch (err) {
       toast(err?.message || 'Failed to update date', 'error')
     } finally { setSavingEta(false) }
@@ -349,20 +361,47 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
     <Modal title={stage.name} subtitle={`${order.product} · ${asgn.mfrCompany || 'Manufacturer'}`} size="lg" onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div>
-          <SectionLabel>Description</SectionLabel>
-          {canPlan ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="What does this stage involve? (optional)" />
-              <FlexRow justify="flex-end">
-                <Btn size="sm" variant="secondary" disabled={saving} onClick={saveDescription}>{saving ? 'Saving…' : 'Save Description'}</Btn>
-              </FlexRow>
-            </div>
-          ) : (
-            <div style={{ fontSize: 12, color: stage.description ? T.text : T.textLight }}>{stage.description || 'No description.'}</div>
-          )}
+          <SectionLabel>Dates</SectionLabel>
+          {(() => {
+            const field = { flex: 1, minWidth: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box' }
+            const cell = (label, hint, draft, setDraft, editable, saved, { na = true } = {}) => (
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{label}</div>
+                {editable ? (
+                  <FlexRow gap={4}>
+                    <input type={draft === 'NA' ? 'text' : 'date'} value={draft} readOnly={draft === 'NA'} aria-label={label}
+                      onChange={e => setDraft(e.target.value)} style={{ ...field, color: draft === 'NA' ? T.textLight : T.text }} />
+                    {na && <button type="button" onClick={() => setDraft(draft === 'NA' ? '' : 'NA')}
+                      style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 700, color: T.primary, padding: '0 2px' }}>{draft === 'NA' ? 'Set date' : 'N/A'}</button>}
+                  </FlexRow>
+                ) : (
+                  <div style={{ fontSize: 13, fontWeight: 700, color: T.text, padding: '6px 0' }}>{fmtStageDate(saved)}</div>
+                )}
+                {hint && <div style={{ fontSize: 10, color: T.textLight, marginTop: 3 }}>{hint}</div>}
+              </div>
+            )
+            const av = stageActualVariance(stage)
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
+                {cell('Start', 'From this day it shows in Action Items.', startDraft, setStartDraft, canPlan, stage.startDate)}
+                {cell('Planned end', canEditPlanned ? (isMaster ? undefined : 'Can be corrected until the step starts.') : (canPlan ? 'Fixed once the step started. Use the revised end.' : undefined), baselineEtaDraft, setBaselineEtaDraft, canEditPlanned, stage.baselineEta)}
+                {cell('Revised end', canPlan ? 'Move this when the plan slips.' : undefined, etaDraft, setEtaDraft, canPlan, stage.eta)}
+                {cell(av != null && av !== 0 ? `Actual end (${av > 0 ? '+' : ''}${av}d)` : 'Actual end', isMaster ? undefined : 'Set when the step is done.', actualEndDraft, setActualEndDraft, isMaster, stage.actualEnd, { na: false })}
+              </div>
+            )
+          })()}
+          <FlexRow justify="space-between" style={{ marginTop: 10, alignItems: 'center' }}>
+            {(() => {
+              const v = stageVariance(stage)
+              return v != null && v !== 0
+                ? <span style={{ fontSize: 11, color: v > 0 ? T.danger : T.success, fontWeight: 700 }}>{v > 0 ? '+' : ''}{v}d against the planned end</span>
+                : <span />
+            })()}
+            {canPlan && <Btn size="sm" disabled={savingEta || !datesDirty} onClick={saveEta}>{savingEta ? 'Saving…' : 'Save dates'}</Btn>}
+          </FlexRow>
         </div>
 
-        <div>
+        <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
           <SectionLabel>Progress</SectionLabel>
           {stage.isDelivery && (
             <div style={{ marginBottom: 10, padding: '9px 12px', borderRadius: 8, background: '#f0fdf4', border: '1px solid #bbf7d0', fontSize: 12, lineHeight: 1.5, color: '#166534' }}>
@@ -448,113 +487,6 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
           )}
         </div>
 
-        {canPlan && (
-          <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
-            <SectionLabel>Assignment</SectionLabel>
-            <div style={{ fontSize: 11, color: T.textMuted, margin: '2px 0 8px' }}>
-              {stage.responsibleRole === 'buyer'
-                ? 'With the customer: they can mark this step done or blocked, and are told when it is assigned.'
-                : 'Hand an approval step (Lab Dip, PP Sample) to the customer and they will see it in their action items. A quantity step becomes a single approval step.'}
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
-              <Select label="Owner" value={stage.responsibleId || ''} disabled={savingOwner} onChange={e => saveOwner(e.target.value)}>
-                <option value="">Unassigned</option>
-                {ownerOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </Select>
-              {!stage.isDelivery && kind !== 'checklist' && (
-                <Select label="Step type" value={kind} disabled={savingType} onChange={e => saveStepType(e.target.value)}>
-                  <option value="quantity">Tracked by quantity</option>
-                  <option value="milestone">Approval (one decision)</option>
-                </Select>
-              )}
-            </div>
-          </div>
-        )}
-
-        <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
-          <SectionLabel>Dates</SectionLabel>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
-            <div>
-              <div style={{ fontSize: 10, color: T.textLight, marginBottom: 4 }}>Planned date</div>
-              {isMaster ? (
-                <FlexRow gap={4}>
-                  <input
-                    type={baselineEtaDraft === 'NA' ? 'text' : 'date'}
-                    value={baselineEtaDraft}
-                    readOnly={baselineEtaDraft === 'NA'}
-                    onChange={e => setBaselineEtaDraft(e.target.value)}
-                    style={{ flex: 1, minWidth: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: baselineEtaDraft === 'NA' ? T.textLight : T.text, boxSizing: 'border-box' }}
-                  />
-                  <button
-                    onClick={() => setBaselineEtaDraft(baselineEtaDraft === 'NA' ? '' : 'NA')}
-                    style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 700, color: T.primary, padding: '0 2px' }}
-                  >{baselineEtaDraft === 'NA' ? 'Set date' : 'N/A'}</button>
-                </FlexRow>
-              ) : (
-                <div style={{ fontSize: 12, fontWeight: 700, color: T.text, padding: '5px 0' }}>{fmtStageDate(stage.baselineEta)}</div>
-              )}
-            </div>
-            <div>
-              <div style={{ fontSize: 10, color: T.textLight, marginBottom: 4 }}>{canPlan ? 'New planned date' : 'Current planned date'}</div>
-              {!canPlan ? <div style={{ fontSize: 12, fontWeight: 700, color: T.text, padding: '5px 0' }}>{fmtStageDate(stage.eta)}</div> : <FlexRow gap={4}>
-                <input
-                  type={etaDraft === 'NA' ? 'text' : 'date'}
-                  value={etaDraft}
-                  readOnly={etaDraft === 'NA'}
-                  onChange={e => setEtaDraft(e.target.value)}
-                  style={{ flex: 1, minWidth: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: etaDraft === 'NA' ? T.textLight : T.text, boxSizing: 'border-box' }}
-                />
-                <button
-                  onClick={() => setEtaDraft(etaDraft === 'NA' ? '' : 'NA')}
-                  style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 700, color: T.primary, padding: '0 2px' }}
-                >{etaDraft === 'NA' ? 'Set date' : 'N/A'}</button>
-              </FlexRow>}
-            </div>
-            <div>
-              <div style={{ fontSize: 10, color: T.textLight, marginBottom: 4 }}>Actual date</div>
-              {isMaster ? (
-                <FlexRow gap={4}>
-                  <input
-                    type="date"
-                    value={actualEndDraft}
-                    onChange={e => setActualEndDraft(e.target.value)}
-                    style={{ flex: 1, minWidth: 0, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: T.text, boxSizing: 'border-box' }}
-                  />
-                  {(() => {
-                    const av = stageActualVariance(stage)
-                    return av != null && av !== 0 ? (
-                      <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, color: av > 0 ? T.danger : T.success }}>
-                        {av > 0 ? '+' : ''}{av}d
-                      </span>
-                    ) : null
-                  })()}
-                </FlexRow>
-              ) : (
-                <div style={{ fontSize: 12, fontWeight: 700, color: T.text, padding: '5px 0' }}>{fmtStageDate(stage.actualEnd)}</div>
-              )}
-            </div>
-          </div>
-          {canPlan && <FlexRow justify="flex-end" style={{ marginTop: 10 }}>
-            <Btn
-              size="sm"
-              disabled={savingEta || (
-                etaDraft === dateToInput(stage.eta)
-                && (!isMaster || baselineEtaDraft === dateToInput(stage.baselineEta))
-                && (!isMaster || !actualEndDraft || actualEndDraft === dateToInput(stage.actualEnd))
-              )}
-              onClick={saveEta}
-            >{savingEta ? 'Saving…' : 'Save Date'}</Btn>
-          </FlexRow>}
-          {(() => {
-            const v = stageVariance(stage)
-            return v != null && v !== 0 ? (
-              <div style={{ fontSize: 10, color: v > 0 ? T.danger : T.success, marginTop: 6, fontWeight: 700 }}>
-                {v > 0 ? '+' : ''}{v}d vs plan
-              </div>
-            ) : null
-          })()}
-        </div>
-
         <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
           <SectionLabel>Updates</SectionLabel>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8, maxHeight: 180, overflowY: 'auto' }}>
@@ -576,6 +508,29 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
             <Btn size="sm" disabled={saving || !updateText.trim()} onClick={postUpdate}>Post</Btn>
           </FlexRow>}
         </div>
+
+        {canPlan && (
+          <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
+            <SectionLabel>Owner and type</SectionLabel>
+            <div style={{ fontSize: 11, color: T.textMuted, margin: '2px 0 8px' }}>
+              {stage.responsibleRole === 'buyer'
+                ? 'With the customer: they can mark this step done or blocked, and are told when it is assigned.'
+                : 'Hand an approval step (Lab Dip, PP Sample) to the customer and they will see it in their action items. A quantity step becomes a single approval step.'}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+              <Select label="Owner" value={stage.responsibleId || ''} disabled={savingOwner} onChange={e => saveOwner(e.target.value)}>
+                <option value="">Unassigned</option>
+                {ownerOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </Select>
+              {!stage.isDelivery && kind !== 'checklist' && (
+                <Select label="Step type" value={kind} disabled={savingType} onChange={e => saveStepType(e.target.value)}>
+                  <option value="quantity">Tracked by quantity</option>
+                  <option value="milestone">Approval (one decision)</option>
+                </Select>
+              )}
+            </div>
+          </div>
+        )}
 
         <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
           <SectionLabel>Materials / PO</SectionLabel>
@@ -636,6 +591,24 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
             </div>
           )}
           {canEvidence && <Btn size="sm" variant="outline" onClick={openStageDocUpload} icon={<Paperclip size={12} />}>Upload Evidence</Btn>}
+        </div>
+
+        <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>
+          <FlexRow justify="space-between" style={{ alignItems: 'center' }}>
+            <SectionLabel>Description</SectionLabel>
+            {canPlan && !editingDesc && <button type="button" onClick={() => setEditingDesc(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, color: T.primary, padding: 0 }}>{stage.description ? 'Edit' : 'Add a description'}</button>}
+          </FlexRow>
+          {editingDesc ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="What does this step involve?" />
+              <FlexRow justify="flex-end" gap={8}>
+                <Btn size="sm" variant="secondary" disabled={saving} onClick={() => { setDescription(stage.description || ''); setEditingDesc(false) }}>Cancel</Btn>
+                <Btn size="sm" disabled={saving} onClick={saveDescription}>{saving ? 'Saving…' : 'Save description'}</Btn>
+              </FlexRow>
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: stage.description ? T.text : T.textLight }}>{stage.description || 'No description.'}</div>
+          )}
         </div>
 
         <FlexRow justify="flex-end" gap={8}>
