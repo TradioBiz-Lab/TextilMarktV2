@@ -122,7 +122,7 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
         const docUploads = [
           [s.measurementsFile, 'measurements', 'Measurements'],
           [s.techPackFile, 'tech_pack', 'Tech Pack'],
-          [s.patternFile, 'pattern', 'Pattern / DXF'],
+          [s.patternFile, 'pattern', 'Pattern'],
         ]
         for (const [file, type, label] of docUploads) {
           if (!file) continue
@@ -388,7 +388,7 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
                       <FileUpload file={s.techPackFile} onFile={f => updateStyle(s._key, { techPackFile: f, techPackErr: '' })} error={s.techPackErr} onError={e => updateStyle(s._key, { techPackErr: e })} />
                     </div>
                     <div>
-                      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Patterns / DXF</label>
+                      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Patterns</label>
                       <FileUpload {...PATTERN_FILE_PROPS} file={s.patternFile} onFile={f => updateStyle(s._key, { patternFile: f, patternErr: '' })} error={s.patternErr} onError={e => updateStyle(s._key, { patternErr: e })} />
                     </div>
                   </div>

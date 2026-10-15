@@ -17,12 +17,12 @@ import { seasonError } from '../lib/seasons.js'
 const router = Router()
 
 // A factory never sees the customer's purchase order (documents.js keeps the PO file from it too), so the PO number and
-// date and the notes stay with Tradio and the customer, and with a factory that created the master order itself. The
+// date, the notes, and the price, currency and payment terms stay with Tradio and the customer, and with a factory that created the master order itself. The
 // ship-by date is the factory's deadline as well, so it stays.
 const detailsFor = (mo, viewer) => {
   const d = masterOrderDetailsOut(mo)
   const ownMo = mo.createdByRole === 'manufacturer' && String(mo.createdBy?._id ?? mo.createdBy) === String(viewer?.id)
-  return viewer?.role === 'manufacturer' && !ownMo ? { ...d, poNumber: '', poDate: null, notes: '' } : d
+  return viewer?.role === 'manufacturer' && !ownMo ? { ...d, poNumber: '', poDate: null, notes: '', currency: '', price: null, paymentTerms: '' } : d
 }
 
 const enrich = (mo, viewer) => ({

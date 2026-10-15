@@ -1,13 +1,14 @@
 import { useState, useMemo } from 'react' // useMemo kept for myReqDocs
-import { AlertTriangle, ClipboardList, UploadCloud, Search, Package } from '../../icons.jsx'
-import { T, DOC_TYPES, getToday } from '../../constants.js'
+import { AlertTriangle, ClipboardList, UploadCloud, Search, Package, Check, Clock } from '../../icons.jsx'
+import { T, DOC_TYPES, getToday, fmtDate } from '../../constants.js'
 import { Card, EmptyState, PageHeader, Btn, Modal, Select, Input, FileUpload, FlexRow, LoadingScreen, DocCard, useToast, fileUploadPayload } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
-const REQ_DOC_TYPES = DOC_TYPES.filter(t => ['RFQ', 'tech_pack', 'buyer_order'].includes(t.v))
+const REQ_TYPES = ['RFQ', 'tech_pack', 'PO']
+const REQ_DOC_TYPES = DOC_TYPES.filter(t => REQ_TYPES.includes(t.v))
 
 export function BuyerSubmitReq() {
-  const { docs, currentUser: user, users, loading, getDocData, uploadDoc, loadError } = useApp()
+  const { docs, orders, masterOrders, currentUser: user, users, loading, getDocData, uploadDoc, loadError } = useApp()
   const toast = useToast()
   const [showUpload, setShowUpload] = useState(false)
   const [uf, setUf] = useState(() => ({ type: 'RFQ', name: '', issuer: '', issueDate: getToday() }))
@@ -21,7 +22,7 @@ export function BuyerSubmitReq() {
     (docs || []).filter(d =>
       d.isActive !== false &&
       String(d.uploadedBy) === String(user.id) &&
-      ['RFQ', 'tech_pack', 'buyer_order'].includes(d.type)
+      REQ_TYPES.includes(d.type)
     ).sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt)),
     [docs, user]
   )
@@ -87,7 +88,7 @@ export function BuyerSubmitReq() {
           {[
             { step: '1', icon: UploadCloud, title: 'Upload Document', desc: 'Upload your RFQ, Tech Pack, or PO' },
             { step: '2', icon: Search, title: 'Tradio Reviews', desc: 'Our team reviews and matches manufacturers' },
-            { step: '3', icon: Package, title: 'Order Created', desc: 'Approved requirements become tracked orders' },
+            { step: '3', icon: Package, title: 'Filed to your style', desc: 'Each file moves onto its style, and shows here where it went' },
           ].map(s => (
             <div key={s.step} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
               <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, flexShrink: 0 }}>{s.step}</div>
@@ -113,7 +114,22 @@ export function BuyerSubmitReq() {
         <div>
           <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 10 }}>Your Submissions ({myReqDocs.length})</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {myReqDocs.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} />)}
+            {myReqDocs.map(d => {
+              // Where it stands: still with Tradio, or filed onto one of the customer's styles (or its master order).
+              const style = d.orderId ? (orders || []).find(o => String(o.id) === String(d.orderId)) : null
+              const mo = !d.orderId && d.masterOrderId ? (masterOrders || []).find(m => m.id === d.masterOrderId) : null
+              const filed = !!(d.orderId || d.masterOrderId)
+              const text = d.orderId ? `${d.filedAt ? 'Filed into' : 'On'} ${style?.product || 'the style'} (${d.orderId})${d.filedAt ? `, ${fmtDate(d.filedAt)}` : ''}`
+                : mo ? `On the master order ${mo.orderName}` : 'With Tradio, not yet filed into a style'
+              return (
+                <div key={d.id}>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 10, marginBottom: 4, ...(filed ? { background: '#dcfce7', color: '#166534', border: '1px solid #86efac' } : { background: '#ffedd5', color: '#9a3412', border: '1px solid #fdba74' }) }}>
+                    {filed ? <Check size={11} /> : <Clock size={11} />} {text}
+                  </div>
+                  <DocCard doc={d} users={users} onGetData={getDocData} />
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

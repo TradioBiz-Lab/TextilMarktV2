@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, createContext, useContext, isValidElement, cloneElement } from 'react'
 import { Folder, Link2, Package, Factory, Eye, Download, FileText, StickyNote, AlertTriangle, CheckCircle2, Info, X, Image as ImageIcon, Paperclip, Upload, ChevronLeft, ChevronRight, Crown, Check, Pencil, Trash2, Camera } from '../icons.jsx'
-import { T, ST, DOC_TYPES, STAGE_DOC_TYPES, SYSTEM_DOC_TYPES, isSystemDoc, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired, stageNameForDoc, fmtDate } from '../constants.js'
+import { T, ST, DOC_TYPES, STAGE_DOC_TYPES, SYSTEM_DOC_TYPES, isSystemDoc, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired, stageNameForDoc, fmtDate, fileUploadPropsFor, PO_INVOICE_DOC_TYPES } from '../constants.js'
 import { useApp } from '../context.jsx'
 import { compressImage } from '../lib/imageCompress.js'
 import * as pdfjsLib from 'pdfjs-dist'
@@ -768,7 +768,7 @@ function DocEditModal({ doc, onClose, onSaved }) {
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
-  const currentFileLabel = doc.externalUrl ? `🔗 ${doc.externalUrl}` : (doc.fileName || doc.name)
+  const currentFileLabel = doc.externalUrl ? `Link: ${doc.externalUrl}` : (doc.fileName || doc.name)
 
   const save = async () => {
     if (!name.trim()) { setErr('Document name is required.'); return }
@@ -787,7 +787,7 @@ function DocEditModal({ doc, onClose, onSaved }) {
   }
 
   return (
-    <Modal title="Edit Evidence" subtitle={doc.name} onClose={onClose}>
+    <Modal title={isStageDoc ? 'Edit Evidence' : 'Edit Document'} subtitle={doc.name} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <Input label="Document Name *" value={name} onChange={e => setName(e.target.value)} />
         {isStageDoc && (
@@ -802,7 +802,8 @@ function DocEditModal({ doc, onClose, onSaved }) {
             </FlexRow>
           ) : (
             <>
-              <FileUpload file={newFile} onFile={f => { setNewFile(f); setFileErr('') }} error={fileErr} onError={setFileErr} />
+              <FileUpload {...fileUploadPropsFor(doc.type)} file={newFile} onFile={f => { setNewFile(f); setFileErr('') }} error={fileErr} onError={setFileErr} />
+              <div style={{ fontSize: 11.5, color: T.textMuted, marginTop: 6 }}>The current file is kept, under Earlier versions on the document.</div>
               <div style={{ marginTop: 6 }}>
                 <Btn size="sm" variant="ghost" onClick={() => { setReplacing(false); setNewFile(null); setFileErr('') }}>Cancel replace - keep current file</Btn>
               </div>
@@ -824,10 +825,41 @@ const READABLE_DOC_TYPE = { test_report: 'Test report', lab_dip: 'Lab dip', meas
 
 // compact: for a list already grouped under its step heading, so the card drops the stage / order / manufacturer bar it would only repeat.
 export function DocCard({ doc, users, onGetData, stageName: stageNameProp, compact = false }) {
-  const { currentUser, deleteDoc, orders } = useApp()
+  const { currentUser, deleteDoc, orders, getDocVersions } = useApp()
   const toast = useToast()
   const [showEdit, setShowEdit] = useState(false)
-  const canManage = !!currentUser && !isSystemDoc(doc) && (currentUser.role === 'admin' || String(doc.uploadedBy) === String(currentUser.id))
+  // An earlier version is a record of what was there: it is viewed and downloaded, never edited or deleted on its own.
+  const isEarlier = !!doc.versionOf
+  const canManage = !isEarlier && !!currentUser && !isSystemDoc(doc) && (currentUser.role === 'admin' || String(doc.uploadedBy) === String(currentUser.id))
+
+  // Earlier versions: a document whose file was replaced keeps the old files. Any edit raises the version number (a rename
+  // too), so the list is fetched on demand and may turn out empty.
+  const [versions, setVersions] = useState(null)   // null while folded away
+  const [loadingVersions, setLoadingVersions] = useState(false)
+  const mayHaveVersions = !isEarlier && (doc.version || 1) > 1
+  const toggleVersions = async e => {
+    e?.stopPropagation?.()
+    if (versions) { setVersions(null); return }
+    setLoadingVersions(true)
+    try { setVersions(await getDocVersions(doc.id)) }
+    catch (err) { toast(err?.message || 'Could not load the earlier versions', 'error') }
+    finally { setLoadingVersions(false) }
+  }
+  const versionsButton = mayHaveVersions && (
+    <Btn size="sm" variant="ghost" disabled={loadingVersions} onClick={toggleVersions}>{versions ? 'Hide earlier versions' : loadingVersions ? 'Loading…' : 'Earlier versions'}</Btn>
+  )
+  const versionsList = versions && (
+    <div style={{ margin: '-2px 0 10px 24px', paddingLeft: 12, borderLeft: `2px solid ${T.border}` }}>
+      {versions.length === 0
+        ? <div style={{ fontSize: 12, color: T.textMuted, padding: '4px 0 8px' }}>No earlier files. Only the document's details were edited.</div>
+        : versions.map(v => <DocCard key={v.id} doc={v} users={users} onGetData={onGetData} compact />)}
+    </div>
+  )
+  const earlierChip = isEarlier && (
+    <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10, background: '#f1f5f9', color: '#475569', border: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>
+      Earlier version{doc.replacedAt ? `, replaced ${fmtDate(doc.replacedAt)}` : ''}
+    </span>
+  )
 
   // An in-page confirmation, not the browser's popup: embedded browsers and some settings swallow window.confirm,
   // which made the Delete button look dead.
@@ -963,7 +995,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp, compa
   // Inside a folder (compact) the card takes the folder's deeper colour, drops what the folder already says, and puts its
   // buttons on their own row so a narrow column never squeezes the name down to "Invoice NBCB-000…".
   const tone = !compact ? null
-    : ['PO', 'buyer_order', 'invoice'].includes(doc.type) ? { accent: '#ea580c', title: '#7c2d12', bg: '#ffedd5', fg: '#9a3412', bd: '#fdba74', tile: '#fff1e0' }
+    : PO_INVOICE_DOC_TYPES.includes(doc.type) ? { accent: '#ea580c', title: '#7c2d12', bg: '#ffedd5', fg: '#9a3412', bd: '#fdba74', tile: '#fff1e0' }
     : doc.type === 'dispatch_docs' ? { accent: '#2563eb', title: '#1e3a8a', bg: '#dbeafe', fg: '#1e3a8a', bd: '#93c5fd', tile: '#e8f0ff' }
     : { accent: '#475569', title: '#0f172a', bg: '#e2e8f0', fg: '#1e293b', bd: '#cbd5e1', tile: '#f1f5f9' }
   const metaColor = compact ? '#334155' : T.textLight
@@ -1031,6 +1063,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp, compa
               <div style={{ fontSize: 13, fontWeight: 700, color: tone ? tone.title : T.text, ...(compact ? { wordBreak: 'break-word' } : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }) }}>{doc.name}</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 4 }}>
                 <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10, background: tone ? tone.bg : '#eff6ff', color: tone ? tone.fg : '#1d4ed8', border: `1px solid ${tone ? tone.bd : '#bfdbfe'}`, whiteSpace: 'nowrap' }}>{typLabel}</span>
+                {earlierChip}
                 <span style={{ fontSize: 11, color: metaColor, fontWeight: compact ? 600 : 400, whiteSpace: 'nowrap' }}>{fmtShort(doc.issueDate || doc.uploadedAt)}</span>
                 {uploaderName && (
                   <span style={{ fontSize: 11, color: metaColor, fontWeight: compact ? 600 : 400 }}>
@@ -1051,6 +1084,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp, compa
               ) : (
                 <span style={{ fontSize: 11, color: T.textLight, fontStyle: 'italic' }}>Seed data</span>
               )}
+              {versionsButton}
               {manageButtons}
             </div>
           </div>
@@ -1062,6 +1096,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp, compa
             </div>
           )}
         </div>
+        {versionsList}
       </>
     )
   }
@@ -1077,6 +1112,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp, compa
           <div onClick={hasFile ? openFile : undefined} role={hasFile ? 'button' : undefined} tabIndex={hasFile ? 0 : undefined} onKeyDown={hasFile ? activateOnKey(openFile) : undefined} style={{ fontSize: 13, fontWeight: 700, color: tone ? tone.title : (hasFile ? T.primary : T.text), ...(compact ? { wordBreak: 'break-word' } : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }), cursor: hasFile ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 5 }} title={hasFile ? (hasExternal ? 'Click to open link' : 'Click to view') : undefined}>{doc.name}{hasExternal && <Link2 size={11} style={{ opacity: 0.7, flexShrink: 0 }} />}</div>
           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center', marginTop: 5 }}>
             <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10, background: tone ? tone.bg : '#f1f5f9', color: tone ? tone.fg : T.textMuted, border: `1px solid ${tone ? tone.bd : T.border}`, whiteSpace: 'nowrap' }}>{typLabel}</span>
+            {earlierChip}
             {!compact && doc.orderId && <span style={{ fontSize: 11, color: T.primary, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Package size={11} /> {doc.orderId}</span>}
             {!compact && !doc.orderId && doc.masterOrderId && <span title="Attached to the whole master order" style={{ fontSize: 11, color: T.primary, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Folder size={11} /> {doc.masterOrderId}</span>}
             {!compact && mfr && <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Factory size={11} /> {mfr.company}</span>}
@@ -1107,9 +1143,11 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp, compa
           ) : (
             <span style={{ fontSize: 11, color: T.textLight, fontStyle: 'italic' }}>Seed data</span>
           )}
+          {versionsButton}
           {manageButtons}
         </div>
       </div>
+      {versionsList}
     </>
   )
 }

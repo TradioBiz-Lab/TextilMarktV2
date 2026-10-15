@@ -14,7 +14,7 @@ import {
   stageKindOf, deriveStageStatus, mirroredUnits, reconcileForTotal, stageEtaVarianceDays, deriveActualEnd, deliveryVarianceDays,
 } from '../models/Order.js'
 import { dayNumber, getToday, effectiveEta, DELIVERY_STEP_NAME, isDeliveryName, deliveryStageIndex, makeDeliveryStage, makeDevelopmentStages, statusAfterDeliveryStep } from '../lib/stageMath.js'
-import { notify, notifyOrderChange } from '../lib/notify.js'
+import { notify, notifyOrderChange, adminIds } from '../lib/notify.js'
 import { userKey } from '../lib/limiterKey.js'
 import { isStandalone } from '../lib/platform.js'
 import {
@@ -28,6 +28,7 @@ import { splitStatus } from '../lib/splitStatus.js'
 import { seasonError } from '../lib/seasons.js'
 import { planSteps, stagesFromSibling, stagesFromTemplate } from '../lib/planCopy.js'
 import { PlanTemplate } from '../models/PlanTemplate.js'
+import { materialDetails, newMaterialDetails } from '../lib/materialFields.js'
 
 // Categories are now free-text — no validation needed
 const ORDER_PHASES    = ['development', 'production']
@@ -54,6 +55,25 @@ function stylePhotoImage(value, label) {
 const colourwayFor = (name, colourways) => {
   const n = typeof name === 'string' ? name.trim().toLowerCase() : ''
   return (n && (colourways || []).find(c => c.name.toLowerCase() === n)?.name) || ''
+}
+
+/** A style's photo list from a request: { photos } (empty entries dropped, each tied to one of `colourways` or none), or { error }. */
+function stylePhotos(photos, colourways) {
+  if (!Array.isArray(photos)) return { error: 'Photos must be a list' }
+  if (photos.length > MAX_STYLE_PHOTOS) return { error: `Too many photos (max ${MAX_STYLE_PHOTOS})` }
+  const next = []
+  for (const [i, p] of photos.entries()) {
+    const r = stylePhotoImage(p && typeof p === 'object' ? p.image : p, `Photo ${i + 1}`)
+    if (r.error) return { error: r.error }
+    if (r.image) next.push({ image: r.image, colourway: colourwayFor(p?.colourway, colourways) })
+  }
+  return { photos: next }
+}
+
+/** The style's main photo fields, following the first photo. */
+const mainPhotoFields = photos => {
+  const main = photos[0]?.image || null
+  return { imageDataUrl: main && main.startsWith('data:') ? main : null, imageUrl: main && !main.startsWith('data:') ? main : null }
 }
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 // Email triggers for orders are intentionally suppressed — order activity is portal-notifications only
@@ -2386,6 +2406,8 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials', require
     if (!name?.trim()) return res.status(400).json({ error: 'Material name is required' })
     const reqQty = parseFloat(requiredQty)
     if (isNaN(reqQty) || reqQty < 0) return res.status(400).json({ error: 'Required quantity must be a non-negative number' })
+    const details = materialDetails({ unit, supplier, poNumber, expectedDate })
+    if (details.error) return res.status(400).json({ error: details.error })
 
     const existingOrder = await Order.findById(orderId).lean()
     if (!existingOrder) return res.status(404).json({ error: 'Order not found' })
@@ -2411,10 +2433,9 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials', require
       chosen = r.supplier
     }
     const line = {
-      name: name.trim().slice(0, 200), requiredQty: reqQty,
-      unit: unit || '', supplier: chosen ? chosen.name : (supplier || ''), poNumber: poNumber || '',
-      ...(chosen ? { supplierId: chosen._id } : {}),
-      expectedDate: expectedDate || null, status: 'pending', orderedQty: 0, receivedQty: 0, note: '',
+      name: name.trim().slice(0, 200), requiredQty: reqQty, ...newMaterialDetails(details.set),
+      ...(chosen ? { supplier: chosen.name, supplierId: chosen._id } : {}),
+      status: 'pending', orderedQty: 0, receivedQty: 0, note: '',
     }
 
     const order = await Order.findOneAndUpdate(
@@ -2485,16 +2506,16 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineInde
       if (isNaN(q) || q < 0) return res.status(400).json({ error: 'Required quantity must be a non-negative number' })
       setFields[`${prefix}.requiredQty`] = q
     }
-    if (unit !== undefined) setFields[`${prefix}.unit`] = unit
+    const details = materialDetails({ unit, supplier, poNumber, expectedDate })
+    if (details.error) return res.status(400).json({ error: details.error })
+    if (details.set.unit !== undefined) setFields[`${prefix}.unit`] = details.set.unit
     if (supplierId !== undefined) {
       const r = await resolveSupplier(supplierId, mfrId)
       if (!r.ok) return res.status(400).json({ error: r.error })
       setFields[`${prefix}.supplierId`] = r.supplier ? r.supplier._id : null
       if (supplier === undefined) setFields[`${prefix}.supplier`] = r.supplier ? r.supplier.name : ''
     }
-    if (supplier !== undefined) setFields[`${prefix}.supplier`] = supplier
-    if (poNumber !== undefined) setFields[`${prefix}.poNumber`] = poNumber
-    if (expectedDate !== undefined) setFields[`${prefix}.expectedDate`] = expectedDate
+    for (const k of ['supplier', 'poNumber', 'expectedDate']) if (details.set[k] !== undefined) setFields[`${prefix}.${k}`] = details.set[k]
     if (status !== undefined) setFields[`${prefix}.status`] = status
     if (orderedQty !== undefined) {
       const q = parseFloat(orderedQty)
@@ -2646,10 +2667,11 @@ router.post('/materials/bulk', requireAuth, requireAdmin, materialsBulkLimiter, 
         const stageIndex = (asgn.stages || []).findIndex(s => s.name?.toLowerCase() === String(stageName).toLowerCase())
         if (stageIndex === -1) { failed++; results.push({ row: i, success: false, error: `Stage "${stageName}" not found on this order/manufacturer` }); continue }
 
+        const details = materialDetails({ unit, supplier, poNumber, expectedDate })
+        if (details.error) { failed++; results.push({ row: i, success: false, error: details.error }); continue }
         const line = {
-          name: String(name).trim().slice(0, 200), requiredQty: reqQty,
-          unit: unit || '', supplier: supplier || '', poNumber: poNumber || '',
-          expectedDate: expectedDate || null, status: 'pending', orderedQty: 0, receivedQty: 0, note: '',
+          name: String(name).trim().slice(0, 200), requiredQty: reqQty, ...newMaterialDetails(details.set),
+          status: 'pending', orderedQty: 0, receivedQty: 0, note: '',
         }
         await Order.updateOne(
           { _id: orderId, 'assignments.mfrId': mfrUser._id },
@@ -2676,6 +2698,29 @@ router.post('/materials/bulk', requireAuth, requireAdmin, materialsBulkLimiter, 
     res.status(500).json({ error: 'Server error' })
   }
 })
+
+// POST /api/orders/:id/photos - the customer's own style: set its product photos (the whole list, main photo first, each
+// tied to a colourway or none). Tradio edits photos with the rest of the style through POST /:id.
+router.post('/:id/photos', requireAuth, orderWriteGuard, updateLimiter, async (req, res) => {
+  try {
+    // Standalone: the company that created the order edits its photos through POST /:id.
+    if (isStandalone()) return res.status(404).json({ error: 'Not found' })
+    if (req.user.role !== 'buyer') return res.status(403).json({ error: 'Tradio edits photos from Edit Style' })
+    const existing = await Order.findById(req.params.id, 'buyerId colourways').lean()
+    if (!existing || String(existing.buyerId) !== String(req.user.id)) return res.status(404).json({ error: 'Order not found' })
+    const r = stylePhotos(req.body?.photos, existing.colourways || [])
+    if (r.error) return res.status(400).json({ error: r.error })
+    const order = await Order.findByIdAndUpdate(existing._id, { $set: { photos: r.photos, ...mainPhotoFields(r.photos) } }, { new: true })
+      .populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+    await AuditLog.create({ byUser: req.user.id, action: 'Style Photos Updated', detail: `${existing._id}: ${r.photos.length} photo${r.photos.length === 1 ? '' : 's'}, by the customer` })
+    await notify(await adminIds(), { type: 'order', msg: `${req.user.company || 'The customer'} updated the photos of ${existing._id}`, orderId: existing._id }, { exceptUserId: req.user.id })
+    res.json(enrichFor(order, req))
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
 
 // PATCH /api/orders/:id — edit order top-level fields (admin only)
 router.post('/:id', requireAuth, requireOrderOwner, updateLimiter, async (req, res) => {
@@ -2853,20 +2898,10 @@ router.post('/:id', requireAuth, requireOrderOwner, updateLimiter, async (req, r
     // follows it. A colourway that was renamed or removed leaves its photos untied rather than pointing at nothing.
     const colourwaysAfter = updates.colourways || existing.colourways || []
     if (photos !== undefined) {
-      if (!Array.isArray(photos)) return res.status(400).json({ error: 'Photos must be a list' })
-      if (photos.length > MAX_STYLE_PHOTOS) return res.status(400).json({ error: `Too many photos (max ${MAX_STYLE_PHOTOS})` })
-      const next = []
-      for (const [i, p] of photos.entries()) {
-        const r = stylePhotoImage(p && typeof p === 'object' ? p.image : p, `Photo ${i + 1}`)
-        if (r.error) return res.status(400).json({ error: r.error })
-        if (r.image) next.push({ image: r.image, colourway: colourwayFor(p?.colourway, colourwaysAfter) })
-      }
-      updates.photos = next
-      if (imageDataUrl === undefined && imageUrl === undefined) {
-        const main = next[0]?.image || null
-        updates.imageDataUrl = main && main.startsWith('data:') ? main : null
-        updates.imageUrl = main && !main.startsWith('data:') ? main : null
-      }
+      const r = stylePhotos(photos, colourwaysAfter)
+      if (r.error) return res.status(400).json({ error: r.error })
+      updates.photos = r.photos
+      if (imageDataUrl === undefined && imageUrl === undefined) Object.assign(updates, mainPhotoFields(r.photos))
     } else if (updates.colourways && (existing.photos || []).some(p => p.colourway)) {
       updates.photos = existing.photos.map(p => ({ image: p.image, colourway: colourwayFor(p.colourway, colourwaysAfter) }))
     }

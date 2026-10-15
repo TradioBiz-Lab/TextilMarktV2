@@ -67,6 +67,8 @@ export const ordersApi = {
   get: id => api.get(`/orders/${id}`),
   create: data => api.post('/orders', data),
   update: (id, data) => api.post(`/orders/${id}`, data),
+  // The customer's own style: its product photos (Tradio uses update).
+  setPhotos: (id, photos) => api.post(`/orders/${id}/photos`, { photos }),
   // `reason` is optional and is kept, with a full copy of the style, in the dropped record.
   delete: (id, reason) => api.post(`/orders/${id}/delete`, reason ? { reason } : {}),
   updateAssignment: (orderId, mfrId, status, note) =>
@@ -126,6 +128,8 @@ export const documentsApi = {
   getData: id => api.get(`/documents/${id}/data`),
   upload: data => api.post('/documents', data),
   update: (id, data) => api.post(`/documents/${id}`, data),
+  versions: id => api.get(`/documents/${id}/versions`),
+  fileInto: (id, orderId) => api.post(`/documents/${id}/file`, { orderId }),
   remove: id => api.post(`/documents/${id}/delete`),
   checkCertExpiry: () => api.post('/documents/cert-expiry-check'),
 }

@@ -3,7 +3,7 @@ import { Plus, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, 
 import {
   T, SEASONS, ORDER_STATUSES, seasonsFor,
   isStageDone, stageIsOverdue, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct, fmtStageDate, effectiveEta, styleStatus,
-  CELL_STATE, cellState, buildMatrixSpine, withBuyerPrefix, getToday, PHASES, phaseOf, styleOnHold
+  CELL_STATE, cellState, buildMatrixSpine, withBuyerPrefix, getToday, PHASES, phaseOf, styleOnHold, moDetailsForm, moDetailsPayload
 } from '../../constants.js'
 import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, Textarea, FileUpload, LoadingScreen, useToast, fileUploadPayload, ProductThumb, Modal, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -15,6 +15,7 @@ import { PromoteModal } from '../../components/PromoteModal.jsx'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { QuickStageModal } from './QuickStageModal.jsx'
 import { CreateStyleWizard } from './CreateStyleWizard.jsx'
+import { MasterOrderTermsFields } from './MasterOrderTermsFields.jsx'
 
 // ── Matrix view: styles across the top, TNA steps down the side ────────────
 // The shape the team already keeps by hand in the Summary TNA sheet — one
@@ -89,7 +90,7 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
 
   // ── Create Master Order state ──
   const [showMO, setShowMO] = useState(false)
-  const BLANK_MO = { buyerId: '', orderName: '', season: '', poNumber: '', poDate: '', shipBy: '', notes: '' }
+  const BLANK_MO = { buyerId: '', orderName: '', season: '', ...moDetailsForm({}) }
   const [mo, setMo] = useState(BLANK_MO)
   const [moFile, setMoFile] = useState(null)
   const [moFileErr, setMoFileErr] = useState('')
@@ -223,7 +224,8 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
               <Input label="PO date" type="date" value={mo.poDate} onChange={e => setMo({ ...mo, poDate: e.target.value })} />
             </div>
             <Input label="Ship by" type="date" value={mo.shipBy} onChange={e => setMo({ ...mo, shipBy: e.target.value })} hint="When the customer needs the buy shipped. Each style's own delivery date is set when its manufacturer is added." />
-            <Textarea label="Notes" value={mo.notes} onChange={e => setMo({ ...mo, notes: e.target.value })} rows={2} maxLength={2000} placeholder="Terms, ship-to, anything worth keeping with this buy" />
+            <MasterOrderTermsFields details={mo} setDetail={k => e => setMo(m => ({ ...m, [k]: e.target.value }))} />
+            <Textarea label="Notes" value={mo.notes} onChange={e => setMo({ ...mo, notes: e.target.value })} rows={2} maxLength={2000} placeholder="Anything else worth keeping with this buy" />
             <div>
               <label style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 8 }}>Customer PO or RFQ file (optional)</label>
               <FileUpload file={moFile} onFile={f => { setMoFile(f); setMoFileErr('') }} error={moFileErr} onError={setMoFileErr} />
@@ -237,8 +239,7 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
                 setMoSaving(true)
                 try {
                   // The server numbers it (a new number can never clash with one a teammate just made).
-                  const created = await createMasterOrder({ id: 'auto', buyerId: moBuyerId, orderName: mo.orderName.trim(), season: mo.season,
-                    poNumber: mo.poNumber.trim(), poDate: mo.poDate || null, shipBy: mo.shipBy || null, notes: mo.notes.trim() })
+                  const created = await createMasterOrder({ id: 'auto', buyerId: moBuyerId, orderName: mo.orderName.trim(), season: mo.season, ...moDetailsPayload(mo) })
                   const moId = created.id
                   let fileFailed = null
                   if (moFile) {

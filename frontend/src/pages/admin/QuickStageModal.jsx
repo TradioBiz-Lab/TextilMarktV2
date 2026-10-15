@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ArrowRight, X, AlertTriangle, Paperclip, Plus } from '../../icons.jsx'
+import { ArrowRight, X, AlertTriangle, Paperclip, Plus, Pencil } from '../../icons.jsx'
 import { T, evidenceTypesFor, productDocForStep, kindForCustomerOwner, stageKindOf, stageStatusOf, stageVariance, stageActualVariance, STAGE_STATUS_LABELS, fmtStageDate, getToday, fmtDateTime } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, FlexRow, Input, FileUpload, DocCard, useToast, fileUploadPayload, SectionLabel } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -15,6 +15,34 @@ function dateToInput(d) {
   return isNaN(t.getTime()) ? '' : t.toISOString().slice(0, 10) // a stored date that will not parse shows blank, not a crash
 }
 
+
+// A material line as the form holds it, and as the API takes it (lib/materialFields.js on the server).
+// A standalone factory picks the supplier from its own supplier book (supplierId); the server then writes the name.
+const BLANK_MATERIAL = { name: '', requiredQty: '', unit: '', supplier: '', supplierId: '', poNumber: '', expectedDate: '' }
+const materialBody = d => ({
+  name: d.name.trim(), requiredQty: parseFloat(d.requiredQty), unit: d.unit.trim(),
+  ...(d.supplierId ? { supplierId: d.supplierId } : { supplier: d.supplier.trim() }),
+  poNumber: d.poNumber.trim(), expectedDate: d.expectedDate || null,
+})
+const matInput = { width: '100%', boxSizing: 'border-box', border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit', minWidth: 0 }
+function MaterialFields({ draft, setDraft, suppliers = null }) {
+  const field = (k, props) => <input value={draft[k]} onChange={e => setDraft(d => ({ ...d, [k]: e.target.value }))} style={matInput} {...props} />
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6 }}>
+      <div style={{ gridColumn: '1 / -1' }}>{field('name', { placeholder: 'Material name', 'aria-label': 'Material name', maxLength: 200 })}</div>
+      {field('requiredQty', { type: 'number', min: '0', placeholder: 'Qty', 'aria-label': 'Quantity' })}
+      {field('unit', { placeholder: 'Unit (m, kg, pcs)', 'aria-label': 'Unit', maxLength: 30 })}
+      {suppliers
+        ? <select value={draft.supplierId} onChange={e => setDraft(d => ({ ...d, supplierId: e.target.value }))} aria-label="Supplier" style={{ ...matInput, background: T.surface, color: draft.supplierId ? T.text : T.textLight }}>
+            <option value="">Supplier (optional)</option>
+            {suppliers.map(sp => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
+          </select>
+        : field('supplier', { placeholder: 'Supplier', 'aria-label': 'Supplier', maxLength: 200 })}
+      {field('poNumber', { placeholder: 'PO number', 'aria-label': 'PO number', maxLength: 60 })}
+      {field('expectedDate', { type: 'date', 'aria-label': 'Expected date', title: 'Expected date' })}
+    </div>
+  )
+}
 
 // The one stage-update modal, used from both the Order Management page
 // (clicking a matrix date cell — no navigation, saving leaves you exactly
@@ -56,7 +84,9 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
   const [blocking, setBlocking] = useState(false)
   const [blockReason, setBlockReason] = useState('')
   const [updateText, setUpdateText] = useState('')
-  const [matDraft, setMatDraft] = useState({ name: '', requiredQty: '', unit: '', supplierId: '' })
+  const [matDraft, setMatDraft] = useState(BLANK_MATERIAL)
+  const [matEditing, setMatEditing] = useState(null)   // the line whose details are open for editing
+  const [matEdit, setMatEdit] = useState(BLANK_MATERIAL)
   // A factory in the standalone product picks a material's supplier from its own supplier book.
   const [suppliers, setSuppliers] = useState([])
   const wantsSuppliers = caps.manageProcurement && caps.manageMaterials
@@ -363,14 +393,23 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
     if (!matDraft.name.trim() || !matDraft.requiredQty) return
     setSaving(true)
     try {
-      await addStageMaterial(orderId, mfrId, stageIndex, {
-        name: matDraft.name.trim(), requiredQty: parseFloat(matDraft.requiredQty),
-        ...(matDraft.unit.trim() ? { unit: matDraft.unit.trim() } : {}), ...(matDraft.supplierId ? { supplierId: matDraft.supplierId } : {}),
-      })
-      setMatDraft({ name: '', requiredQty: '', unit: '', supplierId: '' })
+      await addStageMaterial(orderId, mfrId, stageIndex, materialBody(matDraft))
+      setMatDraft(BLANK_MATERIAL)
     } catch (err) {
       toast(err?.message || 'Failed to add material', 'error')
     } finally { setSaving(false) }
+  }
+
+  const editMaterial = (mi, m) => {
+    setMatEditing(mi)
+    setMatEdit({ name: m.name || '', requiredQty: String(m.requiredQty ?? ''), unit: m.unit || '', supplier: m.supplier || '', supplierId: m.supplierId ? String(m.supplierId) : '', poNumber: m.poNumber || '', expectedDate: m.expectedDate || '' })
+  }
+  const saveMaterial = async mi => {
+    if (!matEdit.name.trim() || matEdit.requiredQty === '') return
+    setSaving(true)
+    try { await updateStageMaterial(orderId, mfrId, stageIndex, mi, materialBody(matEdit)); setMatEditing(null) }
+    catch (err) { toast(err?.message || 'Failed to save the material', 'error') }
+    finally { setSaving(false) }
   }
 
   const advanceMaterial = async (mi, current) => {
@@ -614,16 +653,27 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
                 : m.status === 'ordered' ? { bg: T.warningBg, c: T.warning }
                 : { bg: '#f1f5f9', c: T.textMuted }
               return (
+                matEditing === mi ? (
+                  <div key={mi} style={{ background: '#fff', borderRadius: 6, padding: 8, border: `1px solid ${T.primary}` }}>
+                    <MaterialFields draft={matEdit} setDraft={setMatEdit} suppliers={wantsSuppliers ? suppliers : null} />
+                    <FlexRow justify="flex-end" gap={6} style={{ marginTop: 6 }}>
+                      <Btn size="sm" variant="secondary" disabled={saving} onClick={() => setMatEditing(null)}>Cancel</Btn>
+                      <Btn size="sm" disabled={saving || !matEdit.name.trim() || matEdit.requiredQty === ''} onClick={() => saveMaterial(mi)}>Save</Btn>
+                    </FlexRow>
+                  </div>
+                ) :
                 <FlexRow key={mi} gap={8} style={{ background: '#fff', borderRadius: 6, padding: '6px 10px', border: `1px solid ${T.border}` }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: T.text }}>{m.name} - {m.requiredQty}{m.unit ? ` ${m.unit}` : ''}</div>
-                    {(m.supplier || m.poNumber) && (
-                      <div style={{ fontSize: 10, color: T.textLight, marginTop: 1 }}>
-                        {[m.supplier, m.poNumber, m.poId && m.orderedQty ? `${m.receivedQty || 0} of ${m.orderedQty} received` : ''].filter(Boolean).join(' · ')}
+                    {(m.supplier || m.poNumber || m.expectedDate || (m.poId && m.orderedQty)) && (
+                      <div style={{ fontSize: 10.5, color: T.textMuted, marginTop: 2 }}>
+                        {[m.supplier, m.poNumber && `PO ${m.poNumber}`, m.expectedDate && `expected ${fmtStageDate(m.expectedDate)}`, m.poId && m.orderedQty ? `${m.receivedQty || 0} of ${m.orderedQty} received` : ''].filter(Boolean).join(' · ')}
                       </div>
                     )}
                   </div>
-                  {/* A line bought on a purchase order is moved by that PO (sending it, receiving goods), not by hand. */}
+                  {/* A line bought on a purchase order is moved, and described, by that PO; it is not edited by hand. */}
+                  {canMaterials && !m.poId && <button onClick={() => editMaterial(mi, m)} aria-label={`Edit ${m.name}`} title="Edit details"
+                    style={{ background: '#f1f5f9', border: 'none', borderRadius: 6, cursor: 'pointer', width: 20, height: 20, color: T.textMuted, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}><Pencil size={11} /></button>}
                   <button onClick={canMaterials && !m.poId ? () => advanceMaterial(mi, m.status) : undefined} disabled={!canMaterials || !!m.poId}
                     title={m.poId ? 'Updated from the purchase order' : undefined}
                     style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: sStyle.bg, color: sStyle.c, border: 'none', cursor: m.poId || !canMaterials ? 'default' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
@@ -635,22 +685,12 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
               )
             })}
           </div>
-          {canMaterials && <FlexRow gap={6} style={{ flexWrap: 'wrap' }}>
-            <input value={matDraft.name} placeholder="Material name" onChange={e => setMatDraft(d => ({ ...d, name: e.target.value }))}
-              style={{ flex: '1 1 140px', border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit' }} />
-            <input type="number" value={matDraft.requiredQty} placeholder="Qty" onChange={e => setMatDraft(d => ({ ...d, requiredQty: e.target.value }))}
-              style={{ width: 70, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit' }} />
-            {wantsSuppliers && <>
-              <input value={matDraft.unit} placeholder="Unit" maxLength={20} onChange={e => setMatDraft(d => ({ ...d, unit: e.target.value }))}
-                style={{ width: 60, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit' }} />
-              <select value={matDraft.supplierId} onChange={e => setMatDraft(d => ({ ...d, supplierId: e.target.value }))} aria-label="Supplier"
-                style={{ flex: '1 1 130px', border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontFamily: 'inherit', color: matDraft.supplierId ? T.text : T.textLight, background: T.surface }}>
-                <option value="">Supplier (optional)</option>
-                {suppliers.map(sp => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
-              </select>
-            </>}
-            <Btn size="sm" disabled={saving || !matDraft.name.trim() || !matDraft.requiredQty} onClick={addMaterial} icon={<Plus size={12} />}>Add</Btn>
-          </FlexRow>}
+          {canMaterials && <div>
+            <MaterialFields draft={matDraft} setDraft={setMatDraft} suppliers={wantsSuppliers ? suppliers : null} />
+            <FlexRow justify="flex-end" style={{ marginTop: 6 }}>
+              <Btn size="sm" disabled={saving || !matDraft.name.trim() || !matDraft.requiredQty} onClick={addMaterial} icon={<Plus size={12} />}>Add</Btn>
+            </FlexRow>
+          </div>}
         </div>
 
         <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 14 }}>

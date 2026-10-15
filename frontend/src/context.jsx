@@ -337,6 +337,16 @@ export function AppProvider({ children }) {
     return doc
   }, [])
 
+  // A document's earlier files (kept when its file is replaced), newest first.
+  const getDocVersions = useCallback(id => documentsApi.versions(id), [])
+
+  // Tradio files a requirement the customer sent in into one of its styles.
+  const fileDocInto = useCallback(async (id, orderId) => {
+    const doc = await documentsApi.fileInto(id, orderId)
+    setDocs(p => p.map(d => d.id === id ? doc : d))
+    return doc
+  }, [])
+
   const deleteDoc = useCallback(async (id) => {
     await documentsApi.remove(id)
     setDocs(p => p.filter(d => d.id !== id))
@@ -422,6 +432,13 @@ export function AppProvider({ children }) {
 
   const editOrder = useCallback(async (id, data) => {
     const updated = await ordersApi.update(id, data)
+    setOrders(p => p.map(o => o.id === id ? updated : o))
+    return updated
+  }, [])
+
+  // The customer sets the photos of its own style.
+  const setStylePhotos = useCallback(async (id, photos) => {
+    const updated = await ordersApi.setPhotos(id, photos)
     setOrders(p => p.map(o => o.id === id ? updated : o))
     return updated
   }, [])
@@ -598,7 +615,7 @@ export function AppProvider({ children }) {
       login, logout,
       updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
       bulkUpdateStages, addStageItem, updateStageItem, removeStageItem,
-      updateAssignment, addAssignment, reassignAssignment, setDeliveredQty, insertStage, moveStage, startPlan, uploadDoc, updateDoc, deleteDoc, createOrder, createMasterOrder, updateMasterOrder, deleteMasterOrder,
+      updateAssignment, addAssignment, reassignAssignment, setDeliveredQty, insertStage, moveStage, startPlan, uploadDoc, updateDoc, deleteDoc, getDocVersions, fileDocInto, setStylePhotos, createOrder, createMasterOrder, updateMasterOrder, deleteMasterOrder,
       editOrder, deleteOrder,
       createUser, updateUser, toggleUser, resetUserPw,
       markAllRead, markOneRead, getDocData, refreshAudit, loadMoreAudit,

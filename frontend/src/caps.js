@@ -48,7 +48,8 @@ export function capsFor(user) {
     // Shipping the daily work
     manageMaterials: w(isAdmin || isMfr), manageChecklist: w(isAdmin || isMfr),
     uploadStageEvidence: w(isAdmin || isMfr),
-    uploadProductPhoto: w(isAdmin),
+    // Tradio portal: a customer on its own styles too (POST /orders/:id/photos). Standalone: per order (the company that created it).
+    uploadProductPhoto: w(isAdmin || (!standalone && isBuyer)),
     uploadReferenceDocs: w(isAdmin || isBuyer || (standalone && isMfr)),   // tech pack, measurements, pattern, lab dip
     // The customer's PO and Tradio's invoice: Tradio and the customer only, never a factory (server rule; standalone differs).
     seePoInvoice: standalone || !isMfr,
@@ -103,7 +104,9 @@ export function orderCaps(user, order) {
   const mine = createdByUser(user, order)
   const edit = !isViewOnly(user) && (user.role === 'admin' || mine)
   return {
-    edit, remove: edit, uploadPhoto: edit, createdByYou: mine,
+    // Tradio portal: the style's own customer manages its photos too (POST /orders/:id/photos).
+    edit, remove: edit, createdByYou: mine,
+    uploadPhoto: edit || (!isViewOnly(user) && !isStandalone(user) && user.role === 'buyer' && sameId(order.buyerId, user.id)),
     assign: !isViewOnly(user) && (user.role === 'admin' || (mine && user.role === 'buyer')),
   }
 }

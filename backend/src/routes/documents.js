@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import mongoose from 'mongoose'
 import rateLimit from 'express-rate-limit'
 import { Document, Order, User, Notification, AuditLog, MasterOrder } from '../db/index.js'
 import { PO_HIDDEN_FROM_BRANDS } from '../models/Document.js'
@@ -22,9 +23,9 @@ const uploadLimiter = rateLimit({
 
 const CERT_TYPES = ['compliance_cert', 'factory_audit', 'chemical_cert', 'environmental_cert', 'insurance']
 // What the customer pays Tradio, and what Tradio charges, is not a factory's business: in the Tradio portal a factory
-// never lists, opens or uploads a customer's purchase order or Tradio's invoice. (Standalone, where factories and
+// never lists, opens or uploads a customer's purchase order, Tradio's invoice, the cost sheet or the terms and conditions. (Standalone, where factories and
 // brands deal directly, keeps its own rules.)
-const HIDDEN_FROM_FACTORIES = ['PO', 'buyer_order', 'invoice']
+const HIDDEN_FROM_FACTORIES = ['PO', 'buyer_order', 'invoice', 'cost_sheet', 'terms']
 const ALLOWED_MIME = [
   'application/pdf', 'image/jpeg', 'image/png', 'image/jpg',
   // Pattern files (DXF) — there is no registered MIME type for DXF, so
@@ -126,7 +127,7 @@ async function assertDocAccess(user, { orderId, mfrId, type, masterOrderId }) {
   }
   if (user.role === 'manufacturer') {
     if (!isStandalone() && HIDDEN_FROM_FACTORIES.includes(type))
-      throw Object.assign(new Error('Only Tradio and the customer handle purchase orders and invoices'), { status: 403 })
+      throw Object.assign(new Error('Only Tradio and the customer handle purchase orders, invoices, cost sheets and terms'), { status: 403 })
     if (mfrId && String(mfrId) !== String(user.id))
       throw Object.assign(new Error('You can only upload documents for yourself'), { status: 403 })
     // An order document may only go on an order this manufacturer is assigned to.
@@ -146,7 +147,7 @@ const mapDoc = (d, includeData = false) => {
     ? d.uploadedBy
     : null
   return {
-    id: d._id, type: d.type, name: d.name,
+    id: d._id, type: d.type === 'buyer_order' ? 'PO' : d.type, name: d.name,
     mfrId: d.mfrId ? d.mfrId.toString() : null,
     orderId: d.orderId ? d.orderId.toString() : null,
     masterOrderId: d.masterOrderId || null,
@@ -161,6 +162,9 @@ const mapDoc = (d, includeData = false) => {
     fileName: d.fileName, fileSize: d.fileSize, mimeType: d.mimeType,
     externalUrl: d.externalUrl || null,
     notes: d.notes || null,
+    versionOf: d.versionOf ? d.versionOf.toString() : null,
+    replacedAt: d.replacedAt || null,
+    filedAt: d.filedAt || null,
     ...(includeData ? { dataUrl: d.dataUrl } : {}),
   }
 }
@@ -344,51 +348,76 @@ router.get('/cert-summary', requireAuth, requireAdmin, async (req, res) => {
   }
 })
 
+// Whether `user` may open `doc` (a current document, or an earlier version of one, which carries the same links).
+// Returns { status, error } when not, or null.
+async function readError(user, doc) {
+  // A company that switched Tradio's view access off does not exist as far as Tradio staff can tell.
+  if (user.role === 'admin' && !(await adminMayViewDoc(doc))) return { status: 404, error: 'Document not found' }
+
+  if (user.role === 'buyer') {
+    if (isStandalone() && PO_HIDDEN_FROM_BRANDS.includes(doc.type)) return { status: 404, error: 'Document not found' }
+    // Allow access to docs they uploaded themselves (e.g. via Submit Requirement)
+    if (doc.uploadedBy && doc.uploadedBy.toString() === user.id) {
+      // permitted
+    } else {
+      const buyerOrders = await Order.find({ buyerId: user.id }, { _id: 1, 'assignments.mfrId': 1 }).lean()
+      const orderIds = buyerOrders.map(o => o._id.toString())
+      const mfrIds   = [...new Set(buyerOrders.flatMap(o => (o.assignments || []).map(a => a.mfrId?.toString()).filter(Boolean)))]
+      const ownMaster = doc.masterOrderId && await MasterOrder.exists({ _id: doc.masterOrderId, buyerId: user.id })
+      const allowed  = (doc.orderId && orderIds.includes(doc.orderId.toString())) || !!ownMaster ||
+                       // mfrId match only for standalone compliance certs (no orderId)
+                       (!doc.orderId && doc.mfrId && mfrIds.includes(doc.mfrId.toString()))
+      if (!allowed) return { status: 403, error: 'Access denied' }
+    }
+  }
+
+  if (user.role === 'manufacturer') {
+    if (!isStandalone() && HIDDEN_FROM_FACTORIES.includes(doc.type)) return { status: 403, error: 'Access denied' }
+    // Manufacturer can access: (A) docs they own (mfrId === their ID)
+    // or (B) general order docs (no mfrId) on orders they're assigned to
+    // NOT docs uploaded by a competing manufacturer on the same split order
+    const ownDoc = doc.mfrId && doc.mfrId.toString() === user.id
+    if (!ownDoc) {
+      if (doc.mfrId) {
+        // Doc belongs to a different manufacturer: deny
+        return { status: 403, error: 'Access denied' }
+      }
+      // No mfrId, so a general order doc: check the mfr is assigned to that order
+      const mfrOrders = await Order.find({ 'assignments.mfrId': user.id }, { _id: 1 }).lean()
+      const orderIds  = mfrOrders.map(o => o._id.toString())
+      const allowed   = doc.orderId && orderIds.includes(doc.orderId.toString())
+      if (!allowed) return { status: 403, error: 'Access denied' }
+    }
+  }
+
+  return null
+}
+
 // GET /api/documents/:id/data  (includes the actual file payload)
 router.get('/:id/data', requireAuth, async (req, res) => {
   try {
     const doc = await Document.findById(req.params.id).lean()
-    if (!doc || !doc.isActive) return res.status(404).json({ error: 'Document not found' })
-    // A company that switched Tradio's view access off does not exist as far as Tradio staff can tell.
-    if (req.user.role === 'admin' && !(await adminMayViewDoc(doc))) return res.status(404).json({ error: 'Document not found' })
-
-    if (req.user.role === 'buyer') {
-      if (isStandalone() && PO_HIDDEN_FROM_BRANDS.includes(doc.type)) return res.status(404).json({ error: 'Document not found' })
-      // Allow access to docs they uploaded themselves (e.g. via Submit Requirement)
-      if (doc.uploadedBy && doc.uploadedBy.toString() === req.user.id) {
-        // permitted
-      } else {
-        const buyerOrders = await Order.find({ buyerId: req.user.id }, { _id: 1, 'assignments.mfrId': 1 }).lean()
-        const orderIds = buyerOrders.map(o => o._id.toString())
-        const mfrIds   = [...new Set(buyerOrders.flatMap(o => (o.assignments || []).map(a => a.mfrId?.toString()).filter(Boolean)))]
-        const ownMaster = doc.masterOrderId && await MasterOrder.exists({ _id: doc.masterOrderId, buyerId: req.user.id })
-        const allowed  = (doc.orderId && orderIds.includes(doc.orderId.toString())) || !!ownMaster ||
-                         // mfrId match only for standalone compliance certs (no orderId)
-                         (!doc.orderId && doc.mfrId && mfrIds.includes(doc.mfrId.toString()))
-        if (!allowed) return res.status(403).json({ error: 'Access denied' })
-      }
-    }
-
-    if (req.user.role === 'manufacturer') {
-      if (!isStandalone() && HIDDEN_FROM_FACTORIES.includes(doc.type)) return res.status(403).json({ error: 'Access denied' })
-      // Manufacturer can access: (A) docs they own (mfrId === their ID)
-      // or (B) general order docs (no mfrId) on orders they're assigned to
-      // NOT docs uploaded by a competing manufacturer on the same split order
-      const ownDoc = doc.mfrId && doc.mfrId.toString() === req.user.id
-      if (!ownDoc) {
-        if (doc.mfrId) {
-          // Doc belongs to a different manufacturer — deny
-          return res.status(403).json({ error: 'Access denied' })
-        }
-        // No mfrId — general order doc: check if mfr is assigned to that order
-        const mfrOrders = await Order.find({ 'assignments.mfrId': req.user.id }, { _id: 1 }).lean()
-        const orderIds  = mfrOrders.map(o => o._id.toString())
-        const allowed   = doc.orderId && orderIds.includes(doc.orderId.toString())
-        if (!allowed) return res.status(403).json({ error: 'Access denied' })
-      }
-    }
-
+    // An earlier version is not active itself; it opens while the document it belongs to is still live.
+    const live = doc && (doc.isActive || (doc.versionOf && await Document.exists({ _id: doc.versionOf, isActive: true })))
+    if (!live) return res.status(404).json({ error: 'Document not found' })
+    const denied = await readError(req.user, doc)
+    if (denied) return res.status(denied.status).json({ error: denied.error })
     res.json(mapDoc(doc, true))
+  } catch (err) {
+    console.error('[documents]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// GET /api/documents/:id/versions - the earlier files of a document that was replaced, newest first (no payloads).
+router.get('/:id/versions', requireAuth, async (req, res) => {
+  try {
+    const doc = await Document.findById(req.params.id).lean()
+    if (!doc || !doc.isActive) return res.status(404).json({ error: 'Document not found' })
+    const denied = await readError(req.user, doc)
+    if (denied) return res.status(denied.status).json({ error: denied.error })
+    const versions = await Document.find({ versionOf: doc._id }).select('-dataUrl').populate('uploadedBy', 'name role adminType company').sort({ version: -1, replacedAt: -1 }).lean()
+    res.json(versions.map(v => mapDoc(v, false)))
   } catch (err) {
     console.error('[documents]', err)
     res.status(500).json({ error: 'Server error' })
@@ -398,7 +427,9 @@ router.get('/:id/data', requireAuth, async (req, res) => {
 // POST /api/documents
 router.post('/', requireAuth, uploadLimiter, async (req, res) => {
   try {
-    const { type, name, mfrId, orderId, masterOrderId, stageIndex, materialLineIndex, issueDate, expiryDate, issuer, dataUrl, externalUrl, fileName, fileSize, mimeType, notes } = req.body
+    const { type: sentType, name, mfrId, orderId, masterOrderId, stageIndex, materialLineIndex, issueDate, expiryDate, issuer, dataUrl, externalUrl, fileName, fileSize, mimeType, notes } = req.body
+    // "Buyer Order" was the same paper as the customer's purchase order, filed under a second name: it is a PO now.
+    const type = sentType === 'buyer_order' ? 'PO' : sentType
     if (!type || !name || !name.trim()) return res.status(400).json({ error: 'type and name required' })
     if (typeof type !== 'string' || typeof name !== 'string') return res.status(400).json({ error: 'Invalid input types' })
     if (name.length > 300 || type.length > 50) return res.status(400).json({ error: 'Input too long' })
@@ -412,11 +443,12 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
     if (masterOrderId != null && masterOrderId !== '') {
       if (typeof masterOrderId !== 'string') return res.status(400).json({ error: 'Master order not found' })
       const mo = await MasterOrder.findById(masterOrderId, 'buyerId createdBy createdByRole').lean()
-      const mayAttach = !isStandalone() || !mo ? req.user.role === 'admin'
+      // Tradio portal: Tradio attaches any file, and the customer its own purchase order for the buy.
+      const mayAttach = !isStandalone() || !mo ? req.user.role === 'admin' || (req.user.role === 'buyer' && type === 'PO' && !!mo && String(mo.buyerId) === String(req.user.id))
         : req.user.role === 'admin' ? await adminMayManageMasterOrder(mo)
         : (req.user.role === 'buyer' && String(mo.buyerId) === String(req.user.id))
           || (String(mo.createdBy) === String(req.user.id) && mo.createdByRole === req.user.role)
-      if (!mayAttach) return res.status(403).json({ error: isStandalone() ? 'You cannot attach a file to this master order' : 'Only an admin can attach a file to a master order' })
+      if (!mayAttach) return res.status(403).json({ error: isStandalone() ? 'You cannot attach a file to this master order' : 'Only Tradio, or the customer with its own purchase order, can attach a file to a master order' })
       if (!mo) return res.status(400).json({ error: 'Master order not found' })
     }
     if (issuer && typeof issuer === 'string' && issuer.length > 200)
@@ -562,6 +594,8 @@ router.post('/:id', requireAuth, uploadLimiter, async (req, res) => {
     if (req.user.role === 'admin' && !(await adminMayWriteDoc(doc))) return res.status(403).json(NOT_ENABLED)
 
     const { name, notes, issuer, issueDate, expiryDate, dataUrl, externalUrl, fileName, fileSize, mimeType, removeFile } = req.body
+    // The file as it was, kept as an earlier version below if this edit replaces it.
+    const before = doc.toObject()
 
     if (name != null) {
       if (typeof name !== 'string' || !name.trim()) return res.status(400).json({ error: 'name required' })
@@ -619,16 +653,48 @@ router.post('/:id', requireAuth, uploadLimiter, async (req, res) => {
         return res.status(400).json({ error: 'Either a file, a drive link, or stage-evidence notes are required' })
     }
 
+    const fileReplaced = (hasFile || hasUrl || removeFile) && (before.dataUrl || before.externalUrl)
+    if (fileReplaced) {
+      // Written as stored, without today's checks, so an old record of a since-renamed type still keeps its history.
+      const { _id, __v, ...was } = before
+      await Document.collection.insertOne({ ...was, isActive: false, versionOf: doc._id, replacedAt: new Date(), replacedByUser: new mongoose.Types.ObjectId(req.user.id) })
+    }
     doc.version = (doc.version || 1) + 1
     await doc.save()
 
     await AuditLog.create({
       byUser: req.user.id,
       action: 'Document Updated',
-      detail: `${doc.name} (${doc.type})${doc.orderId ? ' - order ' + doc.orderId : ''}`,
+      detail: `${doc.name} (${doc.type})${doc.orderId ? ' - order ' + doc.orderId : ''}${fileReplaced ? `, new file (version ${doc.version}); the earlier one is kept` : ''}`,
     })
 
     res.json(mapDoc(doc.toObject(), false))
+  } catch (err) {
+    console.error('[documents]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/documents/:id/file - Tradio files a requirement the customer sent in (no style yet) into one of that
+// customer's styles: the document moves onto the style, and the customer sees where it went. Admin only.
+router.post('/:id/file', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    if (isStandalone()) return res.status(404).json({ error: 'Not found' })
+    const { orderId } = req.body || {}
+    if (typeof orderId !== 'string' || !orderId.trim() || orderId.length > 100) return res.status(400).json({ error: 'Choose the style to file it into' })
+    const doc = await Document.findById(req.params.id).populate('uploadedBy', 'role company').lean()
+    if (!doc || !doc.isActive) return res.status(404).json({ error: 'Document not found' })
+    if (doc.uploadedBy?.role !== 'buyer') return res.status(400).json({ error: 'Only a file a customer sent in can be filed this way' })
+    if (doc.orderId || doc.masterOrderId || doc.stageIndex != null) return res.status(400).json({ error: 'This file is already on a style or master order' })
+    const order = await Order.findById(orderId.trim(), 'buyerId product').lean()
+    if (!order) return res.status(404).json({ error: 'Style not found' })
+    if (String(order.buyerId) !== String(doc.uploadedBy._id)) return res.status(400).json({ error: "That style belongs to another customer" })
+
+    await Document.updateOne({ _id: doc._id }, { $set: { orderId: order._id, filedAt: new Date(), filedBy: req.user.id } })
+    await AuditLog.create({ byUser: req.user.id, action: 'Document Filed', detail: `${doc.name} (${doc.type}) from ${doc.uploadedBy.company || 'the customer'} filed into ${order._id}` })
+    await notify([order.buyerId], { type: 'order', msg: `Your file "${doc.name}" is now on ${order.product || 'the style'} (${order._id})`, orderId: order._id }, { exceptUserId: req.user.id })
+    const saved = await Document.findById(doc._id).select('-dataUrl').populate('uploadedBy', 'name role adminType company').lean()
+    res.json(mapDoc(saved, false))
   } catch (err) {
     console.error('[documents]', err)
     res.status(500).json({ error: 'Server error' })

@@ -409,6 +409,11 @@ Optional grouping of related orders for the same buyer (e.g. one season's full p
   shipBy    Date | null       when the customer needs the buy shipped (each style's own delivery
                               date is set when its manufacturer is added)
   notes     String            default "", max 2000
+  currency  String            default "", a 3-letter code (INR, USD, ...)
+  price     Number | null     min 0, at most 2 decimals - the order value
+  paymentTerms String         default "", max 200
+  incoterm  String            default "", one of EXW FCA FAS FOB CFR CIF CPT CIP DAP DPU DDP
+  shipTo    String            default "", max 500 - where the goods ship to
   createdBy ObjectId → users  required — the creating company's party id
   createdByRole String | null enum: ["admin","buyer","manufacturer"] — null on older rows (Tradio's)
   createdAt Date              auto
@@ -425,7 +430,7 @@ Optional grouping of related orders for the same buyer (e.g. one season's full p
 - A manufacturer lists only the master orders its own orders belong to, plus any it created
   itself. In the standalone product a brand or manufacturer may create, edit and delete its own
   master orders; the creating company owns them.
-- A manufacturer gets `shipBy` but not the customer's `poNumber`, `poDate` or `notes` (they come
+- A manufacturer gets `shipBy` but not the customer's `poNumber`, `poDate`, `notes`, `price`, `currency` or `paymentTerms` (they come
   back blank), unless it created the master order itself.
 
 ---
@@ -816,6 +821,11 @@ manufacturer, an order, or both — or is stage-evidence tied to a specific stag
   issuer      String | null       issuing authority (e.g. "BSCI Global")
   version     Number              document version, default: 1
   isActive    Boolean             soft-delete flag, default: true
+  versionOf   ObjectId → documents nullable - set on an earlier version: replacing a document's file or link
+                                  copies the old one into its own record (isActive false, versionOf = the live
+                                  document). It opens under the same rules as the live one, while that is live
+  replacedAt  Date | null         when that earlier version was replaced
+  replacedByUser ObjectId → users nullable - who replaced it
 
   stageIndex  Number | null       min: 0 — index into the relevant assignment's stages[],
                                   null for non-stage documents
@@ -841,7 +851,10 @@ manufacturer, an order, or both — or is stage-evidence tied to a specific stag
 > documents (`stageIndex != null`) may have neither if `notes` alone captures the evidence.
 
 **Document Types** (`type` enum):
-- General: `PO`, `buyer_order`, `tech_pack`, `cost_sheet`, `RFQ`, `terms`
+- General: `PO`, `tech_pack`, `cost_sheet`, `RFQ`, `terms`. `buyer_order` is the old name for the
+  customer's PO: old records read back as `PO`, and an upload sent with it is saved as `PO`
+- Commercial (`PO`, `invoice`, `cost_sheet`, `terms`): Tradio and the customer only. In the Tradio portal a
+  factory never lists, opens or uploads them
 - Certifications: `compliance_cert`, `factory_audit`, `chemical_cert`,
   `environmental_cert`, `insurance`
 - Manufacturer profile: `mfr_profile`
@@ -857,6 +870,7 @@ The frontend offers evidence types per stage from `STAGE_DOC_TYPES` in `frontend
 - `{ mfrId: 1, isActive: 1 }` — manufacturer cert queries
 - `{ orderId: 1, isActive: 1 }` — order document queries
 - `{ masterOrderId: 1 }` — files attached to a master order
+- `{ versionOf: 1 }` (partial, set rows only): a document's earlier versions (`GET /api/documents/:id/versions`)
 - `{ expiryDate: 1 }` — expiry alert cron jobs
 - `{ uploadedBy: 1 }` — audit queries
 - `{ createdAt: -1 }` — list sort (avoids in-memory sort on Atlas)
@@ -1074,7 +1088,7 @@ removed. Nothing in the app updates or deletes these. Admin-only read access via
 Action items and notifications that mention a dropped style's order ID are left as they were.
 
 Master orders can be edited with `POST /api/master-orders/:id` (admin only): `orderName`, `season`,
-`poNumber`, `poDate`, `shipBy` and `notes` (`""` or null clears one). Sending `id: 'auto'` on create lets the
+`poNumber`, `poDate`, `shipBy`, `notes`, `currency`, `price`, `paymentTerms`, `incoterm` and `shipTo` (`""` or null clears one). Sending `id: 'auto'` on create lets the
 server number it; a number that belonged to a deleted master order is never given out again. The id, buyer and creator never change, and the styles under it keep
 their own season.
 

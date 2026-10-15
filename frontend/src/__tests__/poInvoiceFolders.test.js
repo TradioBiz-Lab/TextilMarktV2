@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { deliveryDocsOf, stageForDoc, PO_INVOICE_DOC_TYPES } from '../constants.js'
+import { deliveryDocsOf, stageForDoc, PO_INVOICE_DOC_TYPES, COMMERCIAL_DOC_TYPES, PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, fileUploadPropsFor } from '../constants.js'
 import { capsFor } from '../caps.js'
 
 const orders = [{
@@ -27,8 +27,13 @@ describe('Delivery documents folder', () => {
 
 describe('who sees and uploads POs and invoices', () => {
   const caps = role => capsFor({ role })
-  test('POs, buyer orders and invoices are the PO and Invoice folder', () => {
-    expect(PO_INVOICE_DOC_TYPES).toEqual(['PO', 'buyer_order', 'invoice'])
+  test('POs and invoices are the PO and Invoice folder; cost sheets and terms are commercial too', () => {
+    expect(PO_INVOICE_DOC_TYPES).toEqual(['PO', 'invoice'])
+    expect(COMMERCIAL_DOC_TYPES).toEqual(['PO', 'invoice', 'cost_sheet', 'terms'])
+  })
+  test('the customer manages the photos of its own styles', () => {
+    expect(caps('buyer').uploadProductPhoto).toBe(true)
+    expect(caps('manufacturer').uploadProductPhoto).toBe(false)
   })
   test('a factory does not see the folder; Tradio and the customer do', () => {
     expect(caps('manufacturer').seePoInvoice).toBe(false)
@@ -45,5 +50,14 @@ describe('who sees and uploads POs and invoices', () => {
     expect(caps('admin').uploadDeliveryDocs).toBe(true)
     expect(caps('manufacturer').uploadDeliveryDocs).toBe(true)
     expect(caps('buyer').uploadDeliveryDocs).toBe(false)
+  })
+})
+
+describe('measurement and pattern slots', () => {
+  test('take PDF as well as their own formats, and a replacement follows the same rule', () => {
+    expect(PATTERN_FILE_PROPS.extensions).toEqual(['.dxf', '.pdf'])
+    expect(MEASUREMENTS_FILE_PROPS.accept).toBe('.xlsx,.xls,.csv,.pdf')
+    expect(fileUploadPropsFor('pattern')).toBe(PATTERN_FILE_PROPS)
+    expect(fileUploadPropsFor('tech_pack')).toEqual({})
   })
 })

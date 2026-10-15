@@ -4,10 +4,12 @@ import { T, DOC_TYPES, getToday } from '../../constants.js'
 import { Modal, Select, Input, Btn, Card, EmptyState, FlexRow, PageHeader, DocCard, FileUpload, LoadingScreen, useToast, fileUploadPayload, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { capsFor } from '../../caps.js'
+import { FileIntoStyle } from '../../components/FileIntoStyle.jsx'
 
 // This page holds the factory-level files only: who a manufacturer is, and the proof it is compliant. Everything
-// about a style (tech packs, POs, test reports, evidence) lives on the style itself.
-const FACTORY_TYPES = ['mfr_profile', 'compliance_cert', 'factory_audit']
+// about a style (tech packs, POs, test reports, evidence) lives on the style itself. Certificates keep their own types.
+const FACTORY_TYPES = ['mfr_profile', 'compliance_cert', 'chemical_cert', 'environmental_cert', 'insurance', 'factory_audit']
+const CERT_LABEL = { compliance_cert: 'Upload Compliance Certificate', chemical_cert: 'Upload Chemical Test Certificate', environmental_cert: 'Upload Environmental Certification', insurance: 'Upload Insurance Certificate' }
 
 export function AdminDocuments() {
   const { docs, users, loading, uploadDoc, getDocData, currentUser } = useApp()
@@ -15,7 +17,7 @@ export function AdminDocuments() {
   // Same repository for every role; what each may upload follows the server's rules (caps.js).
   const caps = capsFor(currentUser)
   const defaultIssuer = caps.isAdmin ? 'Tradio' : (currentUser?.company || '')
-  // Admins upload any of the three for any manufacturer; a factory uploads its own. A customer only reads.
+  // Admins upload any of these for any manufacturer; a factory uploads its own. A customer only reads.
   const uploadTypes = DOC_TYPES.filter(t => FACTORY_TYPES.includes(t.v))
   const [show, setShow] = useState(false)
   const [filt, setFilt] = useState('all')
@@ -53,8 +55,11 @@ export function AdminDocuments() {
     { v: 'all', l: `All (${nonStageDocs.length})` },
     { v: 'mfr_profile', l: 'Manufacturer Profiles', Icon: Factory },
     { v: 'compliance_cert', l: 'Compliance' },
+    { v: 'chemical_cert', l: 'Chemical' },
+    { v: 'environmental_cert', l: 'Environmental' },
+    { v: 'insurance', l: 'Insurance' },
     { v: 'factory_audit', l: 'Audit Reports' },
-  ]
+  ].filter(fb => fb.v === 'all' || fb.v === 'mfr_profile' || nonStageDocs.some(d => d.type === fb.v) || ['compliance_cert', 'factory_audit'].includes(fb.v))
 
   // Hooks above must run on every render, so the loading gate sits after them.
   if (loading) return <LoadingScreen />
@@ -63,7 +68,7 @@ export function AdminDocuments() {
     <div>
       {show && (() => {
         const isMfrProfile = uf.type === 'mfr_profile'
-        const modalTitle = isMfrProfile ? 'Upload Manufacturer Profile' : uf.type === 'factory_audit' ? 'Upload Audit Report' : 'Upload Compliance Certificate'
+        const modalTitle = isMfrProfile ? 'Upload Manufacturer Profile' : uf.type === 'factory_audit' ? 'Upload Audit Report' : (CERT_LABEL[uf.type] || 'Upload Certificate')
         const modalSub = isMfrProfile ? 'PDF profile visible to all users working with this manufacturer' : 'Document will be automatically distributed to relevant parties'
         const canSubmit = uf.name && fileData && !saving && (caps.isAdmin ? !!uf.mfrId : true)
         return (
@@ -124,9 +129,9 @@ export function AdminDocuments() {
             })).sort((a, b) => a.id === '__none__' ? 1 : b.id === '__none__' ? -1 : a.label.localeCompare(b.label))
             const typeCount = list => FACTORY_TYPES
               .map(t => [DOC_TYPES.find(x => x.v === t)?.l || t, list.filter(d => d.type === t).length]).filter(([, n]) => n > 0)
-            // Customer Requests: requirement documents (RFQ, tech pack, PO) uploaded by customers, for Tradio to sort
-            // into the right style. Whatever type they are, they stay here until someone files them.
-            const customerDocs = caps.isAdmin && filt === 'all' ? active.filter(d => d.uploadedByRole === 'buyer' && !FACTORY_TYPES.includes(d.type)) : []
+            // Customer Requests: requirement documents (RFQ, tech pack, PO) customers sent in with no style, for Tradio to
+            // file into the right one. Whatever type they are, they stay here until someone files them.
+            const customerDocs = caps.isAdmin && filt === 'all' ? active.filter(d => d.uploadedByRole === 'buyer' && !FACTORY_TYPES.includes(d.type) && !d.orderId && !d.masterOrderId && d.stageIndex == null) : []
             const requestsOpen = openGroups.has('__customer_requests__')
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -142,7 +147,7 @@ export function AdminDocuments() {
                     </FlexRow>
                     {requestsOpen && (
                       <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6, borderTop: `1px solid ${T.border}` }}>
-                        {customerDocs.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} />)}
+                        {customerDocs.map(d => <div key={d.id}><DocCard doc={d} users={users} onGetData={getDocData} /><FileIntoStyle doc={d} /></div>)}
                       </div>
                     )}
                   </div>
