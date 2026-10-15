@@ -314,12 +314,16 @@ describe('delivery baseline', () => {
 // bypassing the normal system-managed capture/auto-stamp — for getting real
 // historical dates into the system. Master-only; a regular admin is refused.
 describe('master-only planned/actual date override', () => {
-  test('a regular admin cannot set baselineEta or actualEnd directly', async () => {
-    const { api, base } = await arrange({ stageNames: ['A'], stageKinds: ['milestone'] })
+  test('a regular admin may correct the planned date until the step starts, and never sets actualEnd directly', async () => {
+    const { api, base, readStages } = await arrange({ stageNames: ['A'], stageKinds: ['milestone'] })
     const r1 = await api.post(`${base}/stages/0/eta`, { baselineEta: '2026-07-01' })
-    assert.equal(r1.status, 403)
+    assert.equal(r1.status, 200, JSON.stringify(r1.body))
+    assert.equal((await readStages())[0].baselineEta, '2026-07-01')
     const r2 = await api.post(`${base}/stages/0/eta`, { actualEnd: '2026-07-01' })
     assert.equal(r2.status, 403)
+    // Once the step has started, the plan stands: the change goes into the revised date.
+    assert.equal((await api.post(`${base}/stages/0`, { status: 'in_progress' })).status, 200)
+    assert.equal((await api.post(`${base}/stages/0/eta`, { baselineEta: '2026-07-05' })).status, 403)
   })
 
   test('master admin can set the planned date directly', async () => {
