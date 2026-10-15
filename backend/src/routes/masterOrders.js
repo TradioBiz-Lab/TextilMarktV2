@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import mongoose from 'mongoose'
-import { MasterOrder, SEASONS } from '../models/MasterOrder.js'
+import { MasterOrder } from '../models/MasterOrder.js'
 import { DroppedRecord } from '../models/DroppedRecord.js'
 import { parseDropReason } from '../lib/dropRecord.js'
 import { Order }        from '../models/Order.js'
@@ -12,6 +12,7 @@ import { isStandalone } from '../lib/platform.js'
 import { canCreateOrders, requireMasterOrderOwner, adminMayManageBuyer, NOT_ENABLED } from '../lib/authz.js'
 import { allocateMasterOrderId } from '../lib/counters.js'
 import { unpartneredMfrs, privatePartyIds } from '../lib/orgs.js'
+import { seasonError } from '../lib/seasons.js'
 
 const router = Router()
 
@@ -87,8 +88,8 @@ router.post('/', requireAuth, canCreateOrders, async (req, res) => {
       return res.status(400).json({ error: 'Order name too long' })
     if (!mongoose.Types.ObjectId.isValid(buyerId))
       return res.status(400).json({ error: 'Invalid buyer ID' })
-    if (season && !SEASONS.includes(season))
-      return res.status(400).json({ error: `Invalid season. Must be one of: ${SEASONS.join(', ')}` })
+    const badSeason = await seasonError(buyerId, season)
+    if (badSeason) return res.status(400).json({ error: badSeason })
     const details = parseMasterOrderDetails(req.body || {})
     if (details.error) return res.status(400).json({ error: details.error })
 
@@ -160,8 +161,11 @@ router.post('/:id', requireAuth, requireMasterOrderOwner, async (req, res) => {
     }
     if (Object.prototype.hasOwnProperty.call(body, 'season')) {
       if (body.season === '' || body.season === null) set.season = null
-      else if (!SEASONS.includes(body.season)) return res.status(400).json({ error: `Invalid season. Must be one of: ${SEASONS.join(', ')}` })
-      else set.season = body.season
+      else {
+        const badSeason = await seasonError(mo.buyerId, body.season, mo.season)
+        if (badSeason) return res.status(400).json({ error: badSeason })
+        set.season = body.season
+      }
     }
     const details = parseMasterOrderDetails(body)
     if (details.error) return res.status(400).json({ error: details.error })

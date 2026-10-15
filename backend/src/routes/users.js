@@ -6,6 +6,7 @@ import { User, AuditLog, Organization } from '../db/index.js'
 import { requireAuth, requireAdmin, requireMaster } from '../middleware/auth.js'
 import { sendEmail, emailUserCreated, emailPasswordReset } from '../lib/email.js'
 import { ensureOrgForUser } from '../lib/orgs.js'
+import { parseSeasonList } from '../lib/seasons.js'
 
 // User creation is admin-only and low-volume; still cap to prevent bulk-create abuse
 const createUserLimiter = rateLimit({
@@ -27,6 +28,7 @@ const mapUser = u => ({
   company: u.company, name: u.name, phone: u.phone, code: u.code,
   isActive: u.isActive, createdAt: u.createdAt, mustChangePw: u.mustChangePw,
   orgId: u.orgId ? String(u.orgId) : null, orgRole: u.orgRole || null,
+  ...(u.role === 'buyer' ? { seasons: u.seasons || [] } : {}),
 })
 
 // GET /api/users
@@ -43,7 +45,7 @@ router.get('/', requireAuth, requireAdmin, async (req, res) => {
 // POST /api/users
 router.post('/', requireAuth, requireMaster, createUserLimiter, async (req, res) => {
   try {
-    const { email, password, role, adminType, company, name, phone, code } = req.body
+    const { email, password, role, adminType, company, name, phone, code, seasons } = req.body
     if (!email || !password || !role || !company || !name) {
       return res.status(400).json({ error: 'Missing required fields' })
     }
@@ -81,7 +83,16 @@ router.post('/', requireAuth, requireMaster, createUserLimiter, async (req, res)
       if (codeExists) return res.status(409).json({ error: `Company code "${normalizedCode}" is already in use` })
     }
 
+    // A customer's own seasons; none means the standard SS/FW list.
+    let seasonList
+    if (role === 'buyer' && seasons !== undefined && seasons !== null && seasons !== '') {
+      const parsed = parseSeasonList(seasons)
+      if (parsed.error) return res.status(400).json({ error: parsed.error })
+      seasonList = parsed.list
+    }
+
     const user = await User.create({
+      ...(seasonList?.length ? { seasons: seasonList } : {}),
       email,
       passwordHash: await bcrypt.hash(password, 10),
       role,
@@ -128,7 +139,7 @@ router.post('/', requireAuth, requireMaster, createUserLimiter, async (req, res)
 // PATCH /api/users/:id (edit user details — master admin only)
 router.post('/:id', requireAuth, requireMaster, async (req, res) => {
   try {
-    const { name, email, phone } = req.body
+    const { name, email, phone, seasons } = req.body
     const user = await User.findById(req.params.id)
     if (!user) return res.status(404).json({ error: 'User not found' })
 
@@ -151,6 +162,12 @@ router.post('/:id', requireAuth, requireMaster, async (req, res) => {
     if (phone !== undefined) {
       if (phone !== null && phone !== '' && typeof phone !== 'string') return res.status(400).json({ error: 'Invalid phone' })
       user.phone = phone || null
+    }
+    if (seasons !== undefined) {
+      if (user.role !== 'buyer') return res.status(400).json({ error: 'Only a customer has its own seasons' })
+      const parsed = parseSeasonList(seasons ?? [])
+      if (parsed.error) return res.status(400).json({ error: parsed.error })
+      user.seasons = parsed.list.length ? parsed.list : undefined
     }
 
     await user.save()

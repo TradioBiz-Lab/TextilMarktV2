@@ -110,8 +110,10 @@ Uses a human-readable custom string `_id` for traceability.
   category      String            free-text (trimmed) — NOT enum-restricted server-side;
                                   frontend suggests: TSHRT, JEANS, BEDSH, SHIRT, DRESS,
                                   JACKET, POLO, SHORTS, HOODIE
-  season        String            enum: ["SS26","FW26","SS27","FW27","SS28"]
-  totalQty      Number            required, min: 1
+  season        String            the customer's own season code (users.seasons, else SS26..SS28);
+                                  checked by lib/seasons.js, not a schema enum
+  totalQty      Number | null     min: 1. Required, except for a style in New Product Development with no
+                                  manufacturer yet; it must be given before moving to production
   delivery      Date | null       the expected delivery date, optional: at creation, with the first
                                   manufacturer or later. A plan's Delivery step is dated with it; made
                                   without one it is undated (NA) and takes the date once it is given
@@ -401,7 +403,7 @@ Optional grouping of related orders for the same buyer (e.g. one season's full p
   _id       String            custom — format: MO-{BuyerCode}-{Season}-{NNN}
   buyerId   ObjectId → users  required
   orderName String            required, trim, max 200 chars
-  season    String            enum: ["SS26","FW26","SS27","FW27","SS28"]
+  season    String            the customer's own season code (see orders.season)
   poNumber  String            default "", max 60 - the customer's own PO number for this buy
   poDate    Date | null       the customer's PO date
   shipBy    Date | null       when the customer needs the buy shipped (each style's own delivery
@@ -1075,6 +1077,33 @@ Master orders can be edited with `POST /api/master-orders/:id` (admin only): `or
 `poNumber`, `poDate`, `shipBy` and `notes` (`""` or null clears one). Sending `id: 'auto'` on create lets the
 server number it; a number that belonged to a deleted master order is never given out again. The id, buyer and creator never change, and the styles under it keep
 their own season.
+
+---
+
+## 11. `plantemplates`
+
+A customer's standard production plan, saved from a real style's plan (Save as template on the style page) so a
+new plan for that customer can start from it. One per customer.
+
+```
+{
+  buyerId       ObjectId → users  required, unique
+  steps         [{ name, kind, startOffset, endOffset, owner, adminId, description, fixedUnits }]
+                startOffset/endOffset: days from the plan's first day (null = NA). owner: 'buyer' |
+                'manufacturer' | 'admin' | null, mapped onto the new style's customer, its split's factory, or the
+                named admin. fixedUnits: a quantity target that is not the split quantity (3 lab dips)
+  sourceOrderId String            the style it was saved from
+  savedBy       ObjectId → users
+  savedByName   String
+}
+```
+
+Applied with `POST /api/orders/:id/assignments/:mfrId/stages/start-plan` `{ from: 'template', startDate }`; the
+same route with `{ from: 'style', fromOrderId }` copies a sibling style's plan in the same master order on its
+own dates. Either one only fills an empty plan (nothing but the Delivery step).
+
+`users.seasons` ([String], customers only): the customer's own season codes (e.g. H1, H2), set in User Setup.
+Empty means the standard SS/FW list.
 
 ---
 

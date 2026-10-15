@@ -89,6 +89,7 @@ import {
   SpeakerHigh as P_SpeakerHigh,
   Square as P_Square,
   SquaresFour as P_SquaresFour,
+  Copy as P_Copy,
   Stack as P_Stack,
   Storefront as P_Storefront,
   TShirt as P_TShirt,
@@ -219,6 +220,7 @@ export const Info = make(P_Info, 'Info')
 export const KeyRound = make(P_Key, 'KeyRound')
 export const Layers = make(P_Stack, 'Layers')
 export const LayoutGrid = make(P_SquaresFour, 'LayoutGrid')
+export const Copy = make(P_Copy, 'Copy')
 export const Leaf = make(P_Leaf, 'Leaf')
 export const Link2 = make(P_LinkSimple, 'Link2')
 export const List = make(P_ListBullets, 'List')

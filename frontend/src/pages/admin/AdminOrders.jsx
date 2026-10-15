@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Plus, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, ChevronUp, ArrowRight, X } from '../../icons.jsx'
 import {
-  T, SEASONS, ORDER_STATUSES,
+  T, SEASONS, ORDER_STATUSES, seasonsFor,
   isStageDone, stageIsOverdue, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct, fmtStageDate, effectiveEta, styleStatus,
   CELL_STATE, cellState, buildMatrixSpine, withBuyerPrefix, getToday, PHASES, phaseOf, styleOnHold
 } from '../../constants.js'
@@ -89,7 +89,7 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
 
   // ── Create Master Order state ──
   const [showMO, setShowMO] = useState(false)
-  const BLANK_MO = { buyerId: '', orderName: '', season: 'SS26', poNumber: '', poDate: '', shipBy: '', notes: '' }
+  const BLANK_MO = { buyerId: '', orderName: '', season: '', poNumber: '', poDate: '', shipBy: '', notes: '' }
   const [mo, setMo] = useState(BLANK_MO)
   const [moFile, setMoFile] = useState(null)
   const [moFileErr, setMoFileErr] = useState('')
@@ -214,7 +214,8 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
             <div className="form-grid-2" style={{ gap: 12 }}>
               <Input label="Order Name *" value={mo.orderName} onChange={e => setMo({ ...mo, orderName: e.target.value })} placeholder="e.g. H1, H26, Core Series" hint="Shown with the customer's name, e.g. Cocoblu, H1." />
               <Select label="Season" value={mo.season} onChange={e => setMo({ ...mo, season: e.target.value })}>
-                {SEASONS.map(s => <option key={s}>{s}</option>)}
+                <option value="">No season</option>
+                {seasonsFor(users.find(u => u.id === mo.buyerId)).map(s => <option key={s}>{s}</option>)}
               </Select>
             </div>
             <div className="form-grid-2" style={{ gap: 12 }}>
@@ -309,7 +310,7 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
           let ok = 0
           try {
             // Only a style with a manufacturer takes the date now; one without gets it when the manufacturer is added.
-            for (const o of chosen) { await editOrder(o.id, { phase: 'production', ...(o.delivery || !(o.assignments || []).length ? {} : { delivery: date }) }); ok++ }
+            for (const o of chosen) { await editOrder(o.id, { phase: 'production', ...(o.delivery || !(o.assignments || []).length || !date ? {} : { delivery: date }) }); ok++ }
             toast(`${ok} ${ok === 1 ? 'style' : 'styles'} moved to production`, 'success')
             setPicked(new Set()); setPromoteOpen(false); setAskDate(false)
           } catch (e) {
@@ -329,7 +330,7 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
                 <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', marginBottom: 8 }}>Tick the styles that are ready for production</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {[...byMo.entries()].map(([k, list]) => {
-                    const ids = list.map(o => o.id)
+                    const ids = list.filter(o => o.totalQty).map(o => o.id)
                     const label = groupDisplayLabel({ mo: masterOrders.find(m => m.id === k) || null, moId: k, orders: list })
                     return (
                       <div key={k}>
@@ -338,9 +339,9 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
                           {label}
                         </label>
                         {list.map(o => (
-                          <label key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0 5px 24px', fontSize: 13, color: T.text, cursor: 'pointer' }}>
-                            <input type="checkbox" checked={picked.has(o.id)} onChange={() => toggle([o.id])} style={{ accentColor: T.primaryDeep }} />
-                            <span>{o.product}</span>
+                          <label key={o.id} title={o.totalQty ? undefined : 'Give it a quantity first (Edit Style)'} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0 5px 24px', fontSize: 13, color: o.totalQty ? T.text : T.textLight, cursor: o.totalQty ? 'pointer' : 'default' }}>
+                            <input type="checkbox" disabled={!o.totalQty} checked={picked.has(o.id)} onChange={() => toggle([o.id])} style={{ accentColor: T.primaryDeep }} />
+                            <span>{o.product}{o.totalQty ? '' : ' (needs a quantity first)'}</span>
                           </label>
                         ))}
                       </div>

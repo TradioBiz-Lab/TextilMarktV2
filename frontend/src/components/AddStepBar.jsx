@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Plus, X } from '../icons.jsx'
-import { T, STANDARD_STEP_NAMES, defaultStepOwner, stepOwnerOptions } from '../constants.js'
+import { T, STANDARD_STEP_NAMES, defaultStepOwner, stepOwnerOptions, siblingStepNames, stepNameWarning } from '../constants.js'
 import { Btn, FlexRow, DateOrNA, useToast } from './ui.jsx'
 import { useApp } from '../context.jsx'
 
@@ -10,7 +10,9 @@ import { useApp } from '../context.jsx'
 // Once open it stays open for the next step until closed, and a chosen position moves on past the step just added,
 // so several steps typed in a row land in that order. `onInserted(index)` is told where each step went.
 export function AddStepBar({ order, asgn, users, onInserted }) {
-  const { insertStage } = useApp()
+  const { insertStage, orders } = useApp()
+  // The names this master order's other styles already use come first, so the plans line up in the matrix.
+  const sibling = siblingStepNames(orders, order)
   const toast = useToast()
   const stages = asgn.stages || []
   const steps = stages.filter(s => !s.isDelivery)
@@ -66,7 +68,8 @@ export function AddStepBar({ order, asgn, users, onInserted }) {
         <div style={{ flex: '2 1 180px' }}>
           <label style={label}>Step</label>
           <input list={`std-steps-${asgn.mid}`} value={d.name} onChange={e => set({ name: e.target.value })} placeholder="e.g. Lab Dip Approval" style={field} />
-          <datalist id={`std-steps-${asgn.mid}`}>{STANDARD_STEP_NAMES.filter(n => !stages.some(s => s.name === n)).map(n => <option key={n} value={n} />)}</datalist>
+          <datalist id={`std-steps-${asgn.mid}`}>{[...new Set([...sibling, ...STANDARD_STEP_NAMES])].filter(n => !stages.some(s => s.name === n)).map(n => <option key={n} value={n} />)}</datalist>
+          {stepNameWarning(d.name, sibling) && <div style={{ fontSize: 10, color: '#b45309', marginTop: 3 }}>{stepNameWarning(d.name, sibling)}</div>}
         </div>
         <div style={{ flex: '1 1 130px' }}>
           <label style={label}>Start</label>

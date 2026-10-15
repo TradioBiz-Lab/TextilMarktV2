@@ -197,9 +197,10 @@ const WRITE_TOOLS = new Set([
 
 // What an order or master order may be created with. The ID is never the model's to choose: the
 // server numbers it ('auto').
+// A season is the customer's own code; the server checks it against that customer's list.
+const SEASON_RE = /^[A-Z0-9][A-Z0-9-]{0,9}$/
 const MASTER_ORDER_KEYS = ['orderName', 'season', 'buyerId', 'poNumber', 'poDate', 'shipBy', 'notes']
 const ORDER_KEYS = ['product', 'styleNumber', 'category', 'season', 'totalQty', 'delivery', 'masterOrderId', 'buyerId', 'callout']
-const SEASONS = ['SS26', 'FW26', 'SS27', 'FW27', 'SS28']
 
 // Purchase orders (standalone manufacturers). A PO number names one, and only this shape is let into a
 // loopback URL. A line is rebuilt from an allowlist like every other body.
@@ -324,7 +325,7 @@ export const TOOL_HANDLERS = {
 
   create_master_order: async (input, ctx) => {
     if (typeof input?.orderName !== 'string' || !input.orderName.trim() || input.orderName.length > 200) return badInput('orderName')
-    if (input.season !== undefined && !SEASONS.includes(input.season)) return badInput('season')
+    if (input.season !== undefined && !SEASON_RE.test(String(input.season))) return badInput('season')
     if (input.buyerId !== undefined && !OBJECT_ID_RE.test(String(input.buyerId))) return badInput('buyerId')
     for (const k of ['poDate', 'shipBy']) if (input[k] !== undefined && !isoDay(input[k])) return badInput(k)
     if (input.poNumber !== undefined && (typeof input.poNumber !== 'string' || input.poNumber.length > 60)) return badInput('poNumber')
@@ -338,7 +339,7 @@ export const TOOL_HANDLERS = {
     if (!Number.isInteger(input.totalQty) || input.totalQty < 1) return badInput('totalQty')
     // The delivery date belongs with a manufacturer (its plan ends in a Delivery step on it); without one it comes later.
     if (input.delivery !== undefined && !isoDay(input.delivery)) return badInput('delivery')
-    if (input.season !== undefined && !SEASONS.includes(input.season)) return badInput('season')
+    if (input.season !== undefined && !SEASON_RE.test(String(input.season))) return badInput('season')
     for (const k of ['buyerId', 'manufacturerId']) if (input[k] !== undefined && !OBJECT_ID_RE.test(String(input[k]))) return badInput(k)
     if (input.masterOrderId !== undefined && !ORDER_ID_RE.test(String(input.masterOrderId))) return badInput('masterOrderId')
     if (input.colourways !== undefined && !(Array.isArray(input.colourways) && input.colourways.every(c => typeof c === 'string' && c.length <= 60))) return badInput('colourways')
@@ -757,7 +758,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         orderName: { type: 'string', maxLength: 200, description: "e.g. 'Zara FW26 core range'." },
-        season: { type: 'string', enum: SEASONS },
+        season: { type: 'string', maxLength: 10, description: "One of the customer's seasons." },
         buyerId: { type: 'string', description: "The customer's id (from list_partners). Omit when you are the customer." },
         poNumber: { type: 'string', maxLength: 60, description: "The customer's purchase order number, if known." },
         poDate: { type: 'string', description: "ISO date 'YYYY-MM-DD' of the customer's PO, if known." },
@@ -778,7 +779,7 @@ const TOOLS = [
         totalQty: { type: 'integer', minimum: 1 },
         delivery: { type: 'string', description: "ISO date 'YYYY-MM-DD'. Needed when the style gets a manufacturer now (manufacturerId, or a manufacturer creating its own)." },
         category: { type: 'string', maxLength: 50, description: "Free text, e.g. 'SWTSHT' or 'Sweatshirt'. It becomes part of the order number." },
-        season: { type: 'string', enum: SEASONS },
+        season: { type: 'string', maxLength: 10, description: "One of the customer's seasons." },
         styleNumber: { type: 'string', maxLength: 60, description: "The customer's style ID (their own code for the style), if they give one." },
         masterOrderId: { type: 'string', description: "From list_master_orders." },
         buyerId: { type: 'string', description: "The customer's id (from list_partners). Omit when you are the customer." },
