@@ -143,6 +143,15 @@ export function canWriteStage(user, asgn, stage) {
   return false
 }
 
+/**
+ * May this user manage a step's materials and checklist items? Tradio on any step (Tradio buys fabric too); a factory
+ * only on the steps assigned to it, the same rule the server applies.
+ */
+export function canManageStepLists(user, asgn, stage) {
+  if (user?.role === 'admin') return true
+  return user?.role === 'manufacturer' && String(asgn?.mid) === String(user.id) && !!stage?.responsibleId && String(stage.responsibleId) === String(user.id)
+}
+
 /** May this user change this assignment's overall status (Processing / On Hold / Delayed / Delivered)? */
 export function canSetAssignmentStatus(user, asgn) {
   if (!user || isViewOnly(user)) return false

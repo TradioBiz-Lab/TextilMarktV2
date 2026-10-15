@@ -59,6 +59,14 @@ describe('setting the status', () => {
     assert.equal((await as(master).post(base, { status: 'On Hold', note: 'Customer paused the range' })).status, 200)
   })
 
+  test('only Tradio marks a step blocked; the factory cannot', async () => {
+    const { master, mfr } = await arrange()
+    const step = `/api/orders/ST-001/assignments/${mfr._id}/stages/0`
+    assert.equal((await as(mfr).post(step, { blocked: true, blockedReason: 'no trims' })).status, 403)
+    assert.equal((await as(master).post(step, { blocked: true, blockedReason: 'no trims' })).status, 200)
+    assert.equal((await as(mfr).post(step, { blocked: false })).status, 403)
+  })
+
   test('the API reports the split as Delayed once a step is past its date', async () => {
     const { master } = await arrange()
     const o = (await as(master).get('/api/orders/ST-001')).body

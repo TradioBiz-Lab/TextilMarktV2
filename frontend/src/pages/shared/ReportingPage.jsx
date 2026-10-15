@@ -39,6 +39,7 @@ const HEALTH = {
   risk:    { label: 'At risk', bg: '#fef3c7', fg: '#b45309' },
   ontrack: { label: 'On track', bg: '#d1fae5', fg: '#047857' },
   done:    { label: 'Complete', bg: '#e0e7ff', fg: '#4338ca' },
+  unassigned: { label: 'Not yet assigned', bg: '#f1f5f9', fg: '#475569' },
 }
 
 const Chip = ({ tone, children, title }) => (
@@ -227,6 +228,14 @@ export function ReportingPage({ onOpen, initialMo }) {
     }))
   }, [orders, todayNum])
 
+  // Styles in production with no manufacturer yet have no plan to report on, but they are part of what was ordered.
+  const unassigned = useMemo(() => {
+    const m = q.trim().toLowerCase()
+    if (healthFilter !== 'All' && healthFilter !== 'unassigned') return []
+    return (orders || []).filter(o => !(o.assignments || []).length)
+      .filter(o => !m || o.id.toLowerCase().includes(m) || o.product.toLowerCase().includes(m) || (o.buyerCompany || '').toLowerCase().includes(m))
+  }, [orders, q, healthFilter])
+
   const filtered = useMemo(() => {
     const m = q.trim().toLowerCase()
     return rows.filter(r => {
@@ -246,7 +255,7 @@ export function ReportingPage({ onOpen, initialMo }) {
     for (const r of rows) { const w = worst.get(r.order.id); if (!w || rank[r.health] < rank[w]) worst.set(r.order.id, r.health) }
     const h = [...worst.values()]
     return {
-      orders: worst.size,
+      orders: worst.size + (orders || []).filter(o => !(o.assignments || []).length).length,
       blocked: h.filter(x => x === 'blocked').length,
       late: h.filter(x => x === 'late').length,
       risk: h.filter(x => x === 'risk').length,
@@ -269,6 +278,12 @@ export function ReportingPage({ onOpen, initialMo }) {
       }
       map.get(key).rows.push(r)
     }
+    for (const o of unassigned) {
+      const moId = o.masterOrderId || '__none__'
+      const key = `${o.buyerId || '__none__'}:${moId}`
+      if (!map.has(key)) map.set(key, { key, moId, buyerCompany: o.buyerCompany || 'Unknown customer', mo: moId !== '__none__' ? (masterOrders || []).find(m => m.id === moId) : null, rows: [] })
+      ;(map.get(key).unassigned ??= []).push(o)
+    }
     const result = [...map.values()]
     // Worst-first inside a group: blocked, then late, then nearest delivery.
     const rank = { blocked: 0, late: 1, risk: 2, ontrack: 3, done: 4 }
@@ -279,7 +294,7 @@ export function ReportingPage({ onOpen, initialMo }) {
     result.sort((a, b) => a.buyerCompany.localeCompare(b.buyerCompany)
       || new Date(b.mo?.createdAt || 0) - new Date(a.mo?.createdAt || 0))
     return result
-  }, [filtered, masterOrders])
+  }, [filtered, unassigned, masterOrders])
 
   const handledMo = useRef(null)
   useEffect(() => {
@@ -367,10 +382,10 @@ export function ReportingPage({ onOpen, initialMo }) {
                 <Folder size={13} /> {!isBuyer ? `${g.buyerCompany} - ` : ''}{g.mo?.orderName || (g.moId === '__none__' ? 'Other styles' : g.moId)}
               </span>
               {g.mo?.season && <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', background: '#dbeafe', padding: '1px 7px', borderRadius: 4 }}>{g.mo.season}</span>}
-              <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{(n => `${n} style${n !== 1 ? 's' : ''}`)(new Set(g.rows.map(r => r.order.id)).size)}</span>
+              <span style={{ fontSize: 11, color: T.textMuted, marginLeft: 'auto' }}>{(n => `${n} style${n !== 1 ? 's' : ''}`)(new Set(g.rows.map(r => r.order.id)).size + (g.unassigned || []).length)}</span>
             </FlexRow>
 
-            {isOpen && (
+            {isOpen && g.rows.length > 0 && (
               <div className="table-scroll">
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 880 }}>
                   <thead>
@@ -462,6 +477,18 @@ export function ReportingPage({ onOpen, initialMo }) {
                 </table>
               </div>
             )}
+            {isOpen && (g.unassigned || []).map(o => (
+              <div key={o.id} role="button" tabIndex={0} onClick={() => onOpen?.(o.id)} onKeyDown={activateOnKey(() => onOpen?.(o.id))}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderTop: `1px solid ${T.border}`, cursor: 'pointer', flexWrap: 'wrap' }}>
+                <ProductThumb order={o} />
+                <div style={{ flex: 1, minWidth: 160 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{o.product}{o.styleNumber ? ` (${o.styleNumber})` : ''}</div>
+                  <div style={{ fontSize: 10, color: T.textLight }}><Mono style={{ fontSize: 10 }}>{o.id}</Mono> · {fmtN(o.totalQty)} pcs · No manufacturer yet</div>
+                </div>
+                <Chip tone={HEALTH.unassigned}>{HEALTH.unassigned.label}</Chip>
+                <span style={{ fontSize: 12, color: T.textMuted, fontFamily: "'JetBrains Mono',monospace" }}>{fmtDate(o.delivery)}</span>
+              </div>
+            ))}
           </Card>
         )
       })}

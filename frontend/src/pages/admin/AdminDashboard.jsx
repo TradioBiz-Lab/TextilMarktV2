@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { DashboardSummary } from '../../components/DashboardSummary.jsx'
 import { capsFor } from '../../caps.js'
 import { ShoppingBag, Factory, Package, Siren, Target, Check, Shirt, Layers, ClipboardList, Megaphone, ChevronRight, Building2, Truck, FlaskConical, Scissors } from '../../icons.jsx'
-import { T, ST, productionMetrics, productionOrders, developmentOrders, isExpiringSoon, isExpired, getToday, dayNumber, effectiveEta, withBuyerPrefix, fmtDate, styleStatus, masterOrderStatus } from '../../constants.js'
+import { T, ST, productionMetrics, productionOrders, developmentOrders, isExpiringSoon, isExpired, getToday, dayNumber, effectiveEta, withBuyerPrefix, fmtDate, styleStatus, masterOrderStatus, inFlightStages } from '../../constants.js'
 import { StatCard, Card, Grid, EmptyState, Mono, PageHeader, Badge, Btn, FlexRow, Modal, Select, Textarea, Input, Alert, LoadingScreen, DocCard } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
@@ -98,12 +98,11 @@ export function AdminDashboard({ onNavigate, onOpen }) {
   // currently active stage only (the first not-yet-complete one), not every future
   // stage still waiting its turn. Surfaced alongside real Action Items in the same
   // widget (see ActionItemsCenter.jsx for the matching read-only view).
-  const myPendingStages = orders.flatMap(o => (o.assignments || []).map((asgn, ai) => {
-      const stages = asgn.stages || []
-      const si = stages.findIndex(s => (s.unitsDone || 0) < (s.totalUnits || 0))
-      return si === -1 ? null : { s: stages[si], o, asgn, ai, si }
-    }))
-    .filter(Boolean)
+  // The same rule as the Action Items page: every step in play (open within 3 days of its dates, overdue, in progress
+  // or blocked) on a split that is not delivered or on hold. Steps run in parallel, so not only the first open one.
+  const myPendingStages = allOrders.flatMap(o => (o.assignments || [])
+    .filter(asgn => asgn.status !== 'Delivered' && asgn.status !== 'On Hold')
+    .flatMap((asgn, ai) => inFlightStages(asgn, { windowDays: 3, includeOverdue: true }).map(({ stage, index }) => ({ s: stage, o, asgn, ai, si: index }))))
     .filter(({ s }) => s.responsibleId && String(s.responsibleId) === String(currentUser?.id))
     .map(({ s, o, asgn, ai, si }) => ({
       id: `stage:${o.id}:${asgn.mid || ai}:${si}`,

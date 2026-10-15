@@ -451,8 +451,8 @@ admin enables them in User Setup.
 - `Order._id` is a custom string, not ObjectId — don't assume `mongoose.Types.ObjectId`.
 - Buyers can never write order status/stage fields — enforced server-side (BRD §3) — **with
   one narrow, deliberate exception**: a buyer who is a stage's `responsibleId` may set that
-  stage's `status`/`blocked`/`blockedReason` and nothing else, because real TNA plans assign
-  the approval steps to the buyer. Materials and items routes carry an *explicit* buyer deny;
+  stage's `status` (approve, or reject back to in progress) and nothing else, because real TNA plans assign
+  the approval steps to the buyer. Only Tradio marks a step blocked. Materials and items routes carry an *explicit* buyer deny;
   do not remove it, as those checks previously excluded buyers only as a side effect of
   buyers never being assignable as `responsibleId`.
 - **Tests run against an ephemeral in-memory mongod, never Atlas.** `backend/tests/helpers/db.js`

@@ -890,10 +890,10 @@ describe('landmine: buyer carve-out is narrow', () => {
     assert.equal((await readStages())[0].status, 'done')
   })
 
-  test('a buyer may flag their own stage blocked', async () => {
+  test('only Tradio marks a step blocked, not the customer even on a step it owns', async () => {
     const { buyerApi, base, readStages } = await buyerOwnsStage0()
-    assert.equal((await buyerApi.post(`${base}/stages/0`, { blocked: true, blockedReason: 'need physical sample' })).status, 200)
-    assert.equal((await readStages())[0].blocked, true)
+    assert.equal((await buyerApi.post(`${base}/stages/0`, { blocked: true, blockedReason: 'need physical sample' })).status, 403)
+    assert.equal((await readStages())[0].blocked, false)
   })
 
   test('a buyer may NOT touch dates, units or notes even on a stage they own', async () => {

@@ -20,7 +20,7 @@ import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input,
 import { useApp } from '../../context.jsx'
 import { BomTab } from '../bom/BomTab.jsx'
 import { normalizeCsvDate } from '../../csvDates.js'
-import { capsFor, canWriteStage, canSetAssignmentStatus, canEditPlan, orderCaps } from '../../caps.js'
+import { capsFor, canWriteStage, canSetAssignmentStatus, canEditPlan, orderCaps, canManageStepLists } from '../../caps.js'
 import { usePartners } from '../../lib/usePartners.js'
 import { stagePoSummary } from '../../lib/procurement.js'
 import { OwnerChip } from '../../components/OwnerChip.jsx'
@@ -1647,7 +1647,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack, onNavi
                           // Per-stage rights: a manufacturer on their own assignment, a customer only on a
                           // stage assigned to them, an admin everywhere (see caps.js).
                           const writable = canWriteStage(currentUser, a, s)
-                          const canItems = caps.manageChecklist && writable
+                          const canItems = caps.manageChecklist && canManageStepLists(currentUser, a, s)
                           return (
                             <Fragment key={i}>
                             <tr onClick={() => openUpdateStage(a.mid, i)} role="button" tabIndex={0} onKeyDown={activateOnKey(() => openUpdateStage(a.mid, i))}
