@@ -17,6 +17,7 @@ import { Attachment } from '../src/models/Attachment.js'
 import { gstinCheckChar } from '../src/lib/gst.js'
 import { fiscalYearCode } from '../src/lib/fiscalYear.js'
 import { setMailerForTests } from '../src/lib/email.js'
+import { getToday } from '../src/lib/stageMath.js'
 
 before(async () => { await startTestDb(); await startServer(); for (const m of [Supplier, InventoryItem, StockLedger, Grn, JobWork]) await m.init() })
 after(async () => { delete process.env.PLATFORM_MODE; setMailerForTests(null); await stopServer(); await stopTestDb() })
@@ -24,6 +25,8 @@ beforeEach(async () => { await clearDb(); process.env.PLATFORM_MODE = 'standalon
 afterEach(() => setMailerForTests(null))
 
 const FY = () => fiscalYearCode()
+// Dates are worked from today (IST, as the server counts it) so these tests do not go stale as the calendar moves.
+const inDays = n => { const d = new Date(`${getToday()}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
 const gstinFor = (state, pan = 'AAPFU0939F') => { const f = `${state}${pan}1Z`; return f + gstinCheckChar(f) }
 const PHOTO = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/2Q=='
 
@@ -62,7 +65,7 @@ describe('who can use job work', () => {
 describe('sending goods to a job worker', () => {
   test('moves the stock to the job worker, numbers the challan and keeps its PDF', async () => {
     const { mfr, d, grey } = await setup()
-    const r = await send(mfr, { supplierId: d.id, process: 'Dyeing', orderId: 'FIT-5117', expectedBack: '2026-10-25', vehicleNo: 'tn30 x 1', note: 'Navy, shade card attached', lines: [{ itemId: grey.id, qty: 100, rate: 200 }] })
+    const r = await send(mfr, { supplierId: d.id, process: 'Dyeing', orderId: 'FIT-5117', expectedBack: inDays(10), vehicleNo: 'tn30 x 1', note: 'Navy, shade card attached', lines: [{ itemId: grey.id, qty: 100, rate: 200 }] })
     assert.equal(r.status, 201, JSON.stringify(r.body))
     assert.deepEqual([r.body.number, r.body.status, r.body.process, r.body.orderId, r.body.vehicleNo], [`JWC-TPR-${FY()}-0001`, 'open', 'Dyeing', 'FIT-5117', 'TN30 X 1'])
     assert.deepEqual([r.body.lines[0].qty, r.body.lines[0].outstanding, r.body.supplierName], [100, 100, 'Salem Dyeing Works'])
@@ -107,7 +110,7 @@ describe('sending goods to a job worker', () => {
     await bad({ lines: [{ itemId: grey.id, qty: 0 }] }, /more than zero/)
     await bad({ lines: [{ itemId: '64b000000000000000000000', qty: 1 }] }, /stock list/)
     await bad({ lines: [{ itemId: grey.id, qty: 1, rate: -5 }] }, /rate/)
-    await bad({ sentOn: '2026-10-12', expectedBack: '2026-10-01' }, /before it is sent/)
+    await bad({ sentOn: inDays(-15), expectedBack: inDays(-26) }, /before it is sent/)
     await bad({ sentOn: 'soon' }, /date/)
     assert.equal(await JobWork.countDocuments({}), 0)
   })
@@ -116,7 +119,7 @@ describe('sending goods to a job worker', () => {
 describe('goods coming back', () => {
   async function sent() {
     const s = await setup()
-    const job = (await send(s.mfr, { supplierId: s.d.id, process: 'Dyeing', expectedBack: '2026-10-25', lines: [{ itemId: s.grey.id, qty: 100, rate: 200 }] })).body
+    const job = (await send(s.mfr, { supplierId: s.d.id, process: 'Dyeing', expectedBack: inDays(10), lines: [{ itemId: s.grey.id, qty: 100, rate: 200 }] })).body
     return { ...s, job }
   }
   const back = (u, job, body) => as(u).post(`/api/jobwork/${job.id}/return`, body)
@@ -217,8 +220,8 @@ describe('who holds what', () => {
   test('lists every job worker with goods still out, what, and which challans are overdue', async () => {
     const { mfr, d, grey } = await setup()
     const other = await dyer(mfr, { name: 'Erode Prints', email: 'p@erode.test' })
-    await send(mfr, { supplierId: d.id, process: 'Dyeing', sentOn: '2026-09-01', expectedBack: '2026-09-10', lines: [{ itemId: grey.id, qty: 30 }] })
-    await send(mfr, { supplierId: d.id, process: 'Dyeing', sentOn: '2026-10-12', expectedBack: '2999-01-01', lines: [{ itemId: grey.id, qty: 20 }] })
+    await send(mfr, { supplierId: d.id, process: 'Dyeing', sentOn: inDays(-60), expectedBack: inDays(-51), lines: [{ itemId: grey.id, qty: 30 }] })
+    await send(mfr, { supplierId: d.id, process: 'Dyeing', sentOn: inDays(-15), expectedBack: '2999-01-01', lines: [{ itemId: grey.id, qty: 20 }] })
     await send(mfr, { supplierId: other.id, process: 'Printing', lines: [{ itemId: grey.id, qty: 10 }] })
     const out = (await as(mfr).get('/api/jobwork/outstanding')).body
     assert.deepEqual(out.map(o => [o.supplierName, o.jobs, o.overdue, o.items.map(i => [i.name, i.qty])]), [
