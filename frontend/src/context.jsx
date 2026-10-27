@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { authApi, ordersApi, documentsApi, usersApi, notificationsApi, auditApi, ribbonsApi, masterOrdersApi, actionItemsApi, partnersApi, setStoredToken, setAuthToken } from './api.js'
+import { authApi, ordersApi, documentsApi, usersApi, notificationsApi, auditApi, ribbonsApi, masterOrdersApi, actionItemsApi, partnerDirectoryApi, setStoredToken, setAuthToken } from './api.js'
 import { emptyQuery } from './partners.js'
 import { isExpiringSoon, isExpired, dayNumber, getToday } from './constants.js'
 
@@ -627,7 +627,7 @@ export function AppProvider({ children }) {
   // ── Partner Directory (admin only; the server refuses everyone else) ──
   const loadPartners = useCallback(async params => {
     const req = ++partnersReq.current
-    const r = await partnersApi.list(params)
+    const r = await partnerDirectoryApi.list(params)
     if (req !== partnersReq.current) return null // a newer search is already on its way
     setPartners(r)
     setPartnersById(p => ({ ...p, ...Object.fromEntries(r.items.map(x => [x.id, x])) }))
@@ -635,13 +635,13 @@ export function AppProvider({ children }) {
   }, [])
 
   const loadPartnerFacets = useCallback(async () => {
-    const f = await partnersApi.facets()
+    const f = await partnerDirectoryApi.facets()
     setPartnerFacets(f)
     return f
   }, [])
 
   const loadPartner = useCallback(async id => {
-    const p = await partnersApi.get(id)
+    const p = await partnerDirectoryApi.get(id)
     setPartnersById(m => ({ ...m, [id]: p }))
     return p
   }, [])
@@ -654,20 +654,20 @@ export function AppProvider({ children }) {
   }, [])
 
   const createPartner = useCallback(async data => {
-    const p = await partnersApi.create(data)
+    const p = await partnerDirectoryApi.create(data)
     setPartnersById(m => ({ ...m, [p.id]: p }))
     loadPartnerFacets().catch(() => {})
     return p
   }, [loadPartnerFacets])
 
   const updatePartner = useCallback(async (id, data) => {
-    const p = await partnersApi.update(id, data)
+    const p = await partnerDirectoryApi.update(id, data)
     loadPartnerFacets().catch(() => {})
     return putPartner(p)
   }, [putPartner, loadPartnerFacets])
 
   const deletePartner = useCallback(async id => {
-    await partnersApi.remove(id)
+    await partnerDirectoryApi.remove(id)
     setPartnersById(m => { const { [id]: _gone, ...rest } = m; return rest })
     setPartners(l => (l ? { ...l, total: Math.max(0, l.total - 1), items: l.items.filter(x => x.id !== id) } : l))
     delete partnerImageCache.current[id]
@@ -675,7 +675,7 @@ export function AppProvider({ children }) {
   }, [loadPartnerFacets])
 
   const setPartnerImage = useCallback(async (id, image) => {
-    const p = await partnersApi.setImage(id, image)
+    const p = await partnerDirectoryApi.setImage(id, image)
     delete partnerImageCache.current[id]
     return putPartner(p)
   }, [putPartner])
@@ -684,16 +684,16 @@ export function AppProvider({ children }) {
   const getPartnerImage = useCallback((id, version) => {
     const hit = partnerImageCache.current[id]
     if (hit && hit.version === version) return hit.promise
-    const promise = partnersApi.image(id).then(r => r.image || null)
+    const promise = partnerDirectoryApi.image(id).then(r => r.image || null)
     partnerImageCache.current[id] = { version, promise }
     promise.catch(() => { if (partnerImageCache.current[id]?.promise === promise) delete partnerImageCache.current[id] })
     return promise
   }, [])
 
-  const previewPartnerCsv = useCallback(csv => partnersApi.csvPreview(csv), [])
+  const previewPartnerCsv = useCallback(csv => partnerDirectoryApi.csvPreview(csv), [])
 
   const importPartners = useCallback(async payload => {
-    const r = await partnersApi.importRows(payload)
+    const r = await partnerDirectoryApi.importRows(payload)
     if (!payload.dryRun) loadPartnerFacets().catch(() => {})
     return r
   }, [loadPartnerFacets])

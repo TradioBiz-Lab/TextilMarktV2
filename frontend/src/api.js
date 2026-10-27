@@ -205,7 +205,7 @@ export const droppedApi = {
 }
 
 // The Partner Directory: Tradio's internal sourcing CRM (admin only; the server refuses everyone else).
-export const partnersApi = {
+export const partnerDirectoryApi = {
   list: params => api.get('/manufacturers', { params }),
   facets: () => api.get('/manufacturers/facets'),
   get: id => api.get(`/manufacturers/${id}`),
