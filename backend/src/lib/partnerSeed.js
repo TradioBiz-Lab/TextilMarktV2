@@ -25,7 +25,7 @@ const FABRIC_WORDS = [
 // is left uncategorised for a person to fill in.
 const CATEGORY_WORDS = [
   ['athleisure', /athleisure|activewear|active wear|sportswear|sports wear|gym wear|gymwear|sports?[\s-]*bras?|legging/i],
-  ['indian', /\bethnic\b|kurta|kurti|saree|sari\b|lehenga|indian wear|indianwear/i],
+  ['indian', /\bethnic(?:wear)?\b|kurta|kurti|saree|sari\b|lehenga|chikankari|salwar|indian wear|indianwear/i],
   ['western', /western|\bjeans\b|\bdenim\b|\bsuits?\b|waistcoat|formal(?:wear| suits)?|resortwear/i],
   ['home_textiles', /home textile|home furnishing|bed ?sheets?|bed ?linen|\btowels?\b|curtain|cushion|\bquilts?\b/i],
 ]
@@ -54,6 +54,9 @@ const sourceWith = (raw, importedOn) => {
 }
 
 const NOTES = parts => parts.filter(Boolean).join('\n')
+
+/** "Shiv Shakti Enterprises (likely)" is filed as "Shiv Shakti Enterprises": the qualifier belongs in the notes, not the name. */
+export const displayName = name => String(name ?? '').replace(/\s*\(likely\)\s*$/i, '').trim()
 
 /** A "Leads" row of Athleisure_LowMOQ_Manufacturer_Plan.xlsx. null for a row without a company. */
 export function leadToPartner(r, { importedOn }) {
@@ -122,18 +125,64 @@ export function vendorToPartner(r, { importedOn }) {
   const address = clear(r['Address'])
   const cluster = normalizeCluster('', city)
   const confidence = text(r['Confidence'])
+  const amazon = text(r['Amazon listing match (27 Oct 2026)'])
   return {
-    name, city, address,
+    name: displayName(name), city, address,
     ...(cluster ? { cluster } : {}),
     type, isActive,
     fabrics, contacts,
     brands: ['Cocoblu'], // every row of the Cocoblu vendor file
-    categories: inferCategories(doing),
+    categories: inferCategories(`${doing} ${text(r['Category'])} ${amazon}`),
     website: websiteOf(r['Website']),
     source: `Cocoblu vendor file (Cocoblu_Vendor_Contacts_Clean.xlsx, deduped 27 Oct 2026); ${importedOn}`,
     priority: isActive ? 'C' : 'D',
     status: isActive ? 'new' : 'off_scope',
     keywords: keywordsFor({ specialised }),
-    notes: NOTES([doing, `Category: ${text(r['Category'])}`, confidence && `Research confidence: ${confidence}`]),
+    notes: NOTES([doing, `Category: ${text(r['Category'])}`, confidence && `Research confidence: ${confidence}`, amazon && `Amazon listing match: ${amazon}`]),
+  }
+}
+
+/** "Ludhiana (Plot 58-59, Mahavir Hosiery Complex)" -> { city: 'Ludhiana', address: the whole text }; "Ghaziabad, UP" -> Ghaziabad; "India (not stated)" -> nothing. */
+export function splitCityAddress(raw) {
+  const t = text(raw)
+  if (!t || /not stated|not listed|^india$/i.test(t)) return { city: '', address: '' }
+  const city = t.replace(/\(.*$/, '').replace(/,.*$/, '').replace(/\s+/g, ' ').trim()
+  return { city, address: t === city ? '' : t }
+}
+
+/**
+ * A row of Amazon_Mined_Manufacturers.xlsx ("Manufacturers (deduped)"): manufacturers declared on the Amazon.in listings of
+ * Cocoblu's brands. Type is garment manufacturer for every row, as asked; the entity assessment (it can be a trader or a
+ * seller-services entity, not the factory) goes into the notes, and `brands` takes the Cocoblu brands it supplies.
+ */
+export function amazonToPartner(r) {
+  const name = text(r['Manufacturer (canonical)'])
+  if (!name) return null
+  const { city, address } = splitCityAddress(r['City / address'])
+  const fromLabel = normalizeCluster(r['Cluster'], city)
+  const fromCity = normalizeCluster('', city)
+  // The sheet files most cities under "Other"; where the city has a cluster of its own (Jaipur), that cluster wins.
+  const cluster = (!fromLabel || fromLabel === 'other') && fromCity ? fromCity : fromLabel
+  const examples = text(r['Example products'])
+  const notesCell = text(r['Notes'])
+  const variants = text(r['Name variants on listings'])
+  const assessment = text(r['Entity assessment'])
+  const evidence = `${examples} ${notesCell} ${variants}`
+  return {
+    name, city, address,
+    ...(cluster ? { cluster } : {}),
+    type: 'garment_manufacturer',
+    fabrics: extractFabrics(evidence),
+    categories: inferCategories(evidence),
+    keywords: keywordsFor({ specialised: extractSpecialisedProducts(evidence) }),
+    brands: splitCell(r['Cocoblu brands supplied'], ',').map(b => b.trim()).filter(Boolean),
+    source: 'Amazon listing mining, 27 Oct 2026',
+    notes: NOTES([
+      assessment && `Entity assessment (Amazon listings): ${assessment}`,
+      notesCell,
+      variants && variants !== name && `Listed as: ${variants}`,
+      text(r['Activewear relevant']) && `Activewear relevant: ${text(r['Activewear relevant'])}`,
+      examples && `Example products: ${examples.length > 220 ? `${examples.slice(0, 217)}...` : examples}`,
+    ]),
   }
 }

@@ -166,3 +166,22 @@ export function matchTileFiles(files, partners) {
   }
   return { matched, unmatchedFiles, partnersWithoutFile: partners.filter(p => !used.has(tileFileName(p.name).replace(/\.png$/, ''))) }
 }
+
+/**
+ * Adds partners to an existing image report (the markdown text), in the same line format and prompt style. A partner already
+ * in the report is skipped. Prompts are numbered on from the lines already there, so the new tiles differ from the old ones
+ * and from each other. Returns { md, added } where added is the names appended.
+ */
+export function appendToImageReport(md, partners, { primary }) {
+  const have = new Set([...md.matchAll(/^- \*\*(.+?)\*\* \|/gm)].map(m => m[1]))
+  const fresh = partners.filter(p => !have.has(p.name))
+  if (fresh.length === 0) return { md, added: [] }
+  const offset = have.size
+  const lines = fresh.map((p, i) => {
+    const place = placeFor(p)
+    return `- **${p.name}** | ${TYPE_LABEL[p.type] || p.type} | ${place || 'city unknown'} | save as \`${tileFileName(p.name)}\`\n  \`${imagePromptFor(p, primary, offset + i)}\``
+  })
+  const total = have.size + fresh.length
+  const body = md.replace(/(\d+) partners? (have|has) no tile yet\./, `${total} partner${total === 1 ? '' : 's'} ${total === 1 ? 'has' : 'have'} no tile yet.`)
+  return { md: `${body.replace(/\n*$/, '')}\n${lines.join('\n')}\n`, added: fresh.map(p => p.name) }
+}

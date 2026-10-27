@@ -808,8 +808,9 @@ Every mutation writes an `auditlogs` entry (`Partner Created`, `Partner Updated`
 
 Scripts (`backend/scripts/`, dry run unless `--apply`, run with `node --env-file=.env.sandbox`; they never read
 `backend/.env` and refuse any database that is not local or `*_sandbox` unless `CONFIRM_DB=<name>` is set):
-`importManufacturers.mjs` (seeds from the two research spreadsheets, idempotent on name, then writes
-`reports/partners_needing_images.md`), `uploadPartnerTiles.mjs` (attaches a folder of generated tiles, named as that report asks, shrinking each to 640px with macOS `sips`), `syncPlatformManufacturers.mjs` (a record for every active manufacturer-role
+`importManufacturers.mjs` (plans, then with --apply writes, from three research spreadsheets: creates new partners, merges into
+existing ones by filling blanks and adding contacts, keywords and brands without replacing anything a person entered, takes the out-of-scope
+entries off the active list with an audit entry, and appends new partners to `reports/partners_needing_images.md`), `uploadPartnerTiles.mjs` (attaches a folder of generated tiles, named as that report asks, shrinking each to 640px with macOS `sips`), `syncPlatformManufacturers.mjs` (a record for every active manufacturer-role
 user, idempotent on `linkedUserId`), `setPartnerBrands.mjs` (fills brands from the Cocoblu vendor file and the platform manufacturers' customers), `partnersImageReport.mjs` (`--all` lists every active partner, to redo the tiles), `uploadPartnerTiles.mjs --replace` swaps tiles already attached.
 
 ---
