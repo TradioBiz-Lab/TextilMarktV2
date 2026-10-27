@@ -204,6 +204,22 @@ export const droppedApi = {
   get: id => api.get(`/dropped/${id}`),
 }
 
+// The Partner Directory: Tradio's internal sourcing CRM (admin only; the server refuses everyone else).
+// (Named partnerDirectoryApi: `partnersApi` below is the brand and manufacturer partnerships of a company.)
+export const partnerDirectoryApi = {
+  list: params => api.get('/manufacturers', { params }),
+  facets: () => api.get('/manufacturers/facets'),
+  get: id => api.get(`/manufacturers/${id}`),
+  create: data => api.post('/manufacturers', data),
+  update: (id, data) => api.post(`/manufacturers/${id}`, data),
+  remove: id => api.post(`/manufacturers/${id}/delete`),
+  // The uploaded tile, fetched by the page itself (an <img> cannot carry the session); lists never carry image bytes.
+  image: id => api.get(`/manufacturers/${id}/image`),
+  setImage: (id, image) => api.post(`/manufacturers/${id}/image`, { image }),
+  csvPreview: csv => api.post('/manufacturers/csv/preview', { csv }, { timeout: 60000 }),
+  importRows: data => api.post('/manufacturers/import', data, { timeout: 90000 }),
+}
+
 // The master admin's way into a company (see backend/src/routes/viewAs.js). Read-only by default in
 // the standalone product; `act: true` switches on "acting for", which the server only allows for a
 // Tradio-enabled manufacturer.

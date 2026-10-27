@@ -67,3 +67,6 @@ catalyst-debug.log
 *.local
 docs/Final BRD-V1.pdf
 docs/tradio (1).html
+
+# ── Generated reports (they name sourcing partners) ──────
+reports/

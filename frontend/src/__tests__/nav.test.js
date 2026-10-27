@@ -8,8 +8,8 @@ describe('the sidebar', () => {
   test('the Tradio portal is exactly as before: six tabs for everyone, three more for admins, user setup for the master', () => {
     expect(ids({ role: 'buyer' })).toEqual(['dashboard', 'reports', 'action_items', 'kriyaa', 'orders', 'documents'])
     expect(ids({ role: 'manufacturer' })).toEqual(['dashboard', 'action_items', 'kriyaa', 'orders', 'documents', 'reports'])
-    expect(ids({ role: 'admin', adminType: 'user' })).toEqual(['dashboard', 'action_items', 'kriyaa', 'orders', 'documents', 'reports', 'audit'])
-    expect(ids({ role: 'admin', adminType: 'master' })).toEqual(['dashboard', 'action_items', 'kriyaa', 'orders', 'documents', 'reports', 'audit', 'users'])
+    expect(ids({ role: 'admin', adminType: 'user' })).toEqual(['dashboard', 'action_items', 'kriyaa', 'orders', 'documents', 'reports', 'audit', 'partners'])
+    expect(ids({ role: 'admin', adminType: 'master' })).toEqual(['dashboard', 'action_items', 'kriyaa', 'orders', 'documents', 'reports', 'audit', 'partners', 'users'])
   })
 
   test('a customer sees Reports second and Orders as Order TnA; everyone else keeps Orders', () => {
@@ -20,11 +20,11 @@ describe('the sidebar', () => {
   })
 
   test('standalone: the master admin lands on companies, with only what a viewer needs', () => {
-    expect(ids({ ...S, role: 'admin', adminType: 'master' })).toEqual(['viewer', 'kriyaa', 'audit', 'users'])
+    expect(ids({ ...S, role: 'admin', adminType: 'master' })).toEqual(['viewer', 'kriyaa', 'audit', 'partners', 'users'])
   })
 
   test('standalone: other admins keep the working tabs; companies gain their Company page', () => {
-    expect(ids({ ...S, role: 'admin', adminType: 'user' })).toEqual(['dashboard', 'action_items', 'kriyaa', 'orders', 'documents', 'reports', 'audit'])
+    expect(ids({ ...S, role: 'admin', adminType: 'user' })).toEqual(['dashboard', 'action_items', 'kriyaa', 'orders', 'documents', 'reports', 'audit', 'partners'])
     expect(ids({ ...S, role: 'manufacturer', orgRole: 'owner' })).toEqual(['dashboard', 'action_items', 'kriyaa', 'orders', 'documents', 'reports', 'shopping_list', 'suppliers', 'purchase_orders', 'inventory', 'costing', 'company'])
     expect(ids({ ...S, role: 'buyer', orgRole: 'owner' })).toEqual(['dashboard', 'reports', 'action_items', 'kriyaa', 'orders', 'documents', 'costing', 'company'])
   })

@@ -33,6 +33,7 @@
 | `stockissues`  | Slips for stock issued to (or returned from) a factory's order | ObjectId |
 | `attachments`  | Evidence photos kept against a record (a GRN's challan, goods or damage), apart from the documents | ObjectId |
 | `jobworks`     | Goods a factory sent to a job worker (dyer, printer, embroiderer) under a delivery challan, and what came back | ObjectId |
+| `manufacturers` | Partner Directory: Tradio's internal sourcing CRM of manufacturers and suppliers (admin only) | ObjectId |
 
 ---
 
@@ -1127,6 +1128,90 @@ Empty means the standard SS/FW list.
 
 ---
 
+## 12. `manufacturers` (the Partner Directory, shown as "Partners")
+
+Tradio's internal sourcing CRM: garment manufacturers, fabric suppliers, trims suppliers and the other partners
+Tradio may source from. **Admin only, enforced on the server for every endpoint** (`routes/manufacturers.js` guards
+the whole router with `requireAuth` + `requireAdmin`, and Kriyaa's `listManufacturers` tool is admin-only too). It is
+strategically sensitive: nothing here is returned by an order, document, notification or audit route that a buyer or
+manufacturer can reach. It is not the same as a manufacturer-role `users` record; the two are only joined through
+`linkedUserId`, and linking changes nothing about what that user can see.
+
+```
+{
+  name              String   required, unique case-insensitive (collation index name_ci_unique), spaces collapsed
+  legalName         String
+  type              enum     garment_manufacturer | fabric_supplier | trims_supplier | dyer_processor | trader |
+                             buying_house | unknown   required
+  categories        [enum]   athleisure | indian | western | fusion | home_textiles. What the partner makes
+                             for; a factory can be in several (default empty). Words like "activewear" or
+                             "indo-western" are accepted on input and stored as the five values
+  cluster           enum     ludhiana | noida_ncr | delhi_ncr | tiruppur | other   (optional)
+  city, address, pincode    String
+
+  -- garment manufacturers only (the form hides them for other types) --
+  products          [String] legacy and no longer written by the UI, CSV import or seed: generic garments are what
+                             `categories` already says. Still stored, searched and filterable through the API
+  machines          { flatlock, coverstitch, overlock, singleNeedle }  Number, 0 = unknown
+  moqPerStyleColour Number   a CLAIM until verification.gstVerified or .sampleApproved is set (the UI tags it
+                             "self-reported")
+  moqNote           String   the partner's own wording ("100 pcs/style")
+  fabrics           [String] fabric experience: poly_spandex, cotton_lycra ...
+  -- fabric suppliers / trims suppliers --
+  fabricTypes       [String]
+  trimCategories    [String]
+
+  priceIndication   String
+  leadTimeDays      Number
+  contacts          [{ name, role, phone, email, whatsapp }]
+  website, gstin, udyam, mcaCin   String
+  verification      { score (0-100, null = not assessed), gstVerified, udyamVerified, referencesChecked,
+                      videoWalkthrough, sampleApproved, siteVisited (Boolean), lastCheckedAt }
+                    lastCheckedAt is stamped by the server whenever a verification field changes
+  status            enum     new | contacted | qualified | pilot | onboarded | rejected | off_scope   (default new)
+  priority          enum     A | B | C | D   (default C)
+  source            String   where the lead came from, with the capture date
+  keywords          [String] lower-case search words. Where a product is named it is a SPECIALISED one (sports bras,
+                             leggings, thermals, socks, innerwear, tracksuits, kidswear); the CSV "products" column and
+                             the seed both feed keywords
+  notes             String
+  isActive          Boolean  false = archived: kept on file, out of the default list
+  imageUrl          String   an http(s) link to the tile
+  imageData         String   an uploaded tile as a data URL (JPEG/PNG/WebP, under 600KB, shrunk to ~640px by the
+                             browser). select:false, so list and detail reads never carry image bytes; the page
+                             fetches it from GET /api/manufacturers/:id/image. Kept inline like style photos
+                             because the app has no separate file store for images
+  imageUploadedAt   Date
+  logoUrl           String   link only
+  linkedUserId      ObjectId → users   set only by scripts/syncPlatformManufacturers.mjs
+  createdBy, updatedBy      ObjectId → users
+  createdAt, updatedAt      Date
+}
+```
+
+The tiles are illustrative (generated drawings, never photos of a partner's premises); the UI says so in a tooltip
+and a corner label.
+
+Indexes: unique case-insensitive `name`; `categories`; one text index over `name, city, products, fabrics, fabricTypes,
+trimCategories, keywords, notes` (weighted); `{ type, cluster, status }`; sparse `linkedUserId`.
+
+API (`/api/manufacturers`, GET and POST only like the rest of the API): `GET /` (filters `search, type, category (any of a comma list), cluster,
+status, priority, product, fabric, minScore, maxScore, verifiedOnly, onPlatform, includeInactive, sort, limit,
+skip`; a search tries the text index first and falls back to a regex over name, city, products, fabrics, fabric
+types, trim categories and keywords for partial words), `GET /facets`, `GET /:id`, `GET /:id/image`, `POST /`,
+`POST /:id`, `POST /:id/delete`, `POST /:id/image`, `POST /csv/preview`, `POST /import` (`{ rows, mapping?,
+dryRun?, defaultType? }`, de-duplicated case-insensitively on name against the directory and within the file).
+Every mutation writes an `auditlogs` entry (`Partner Created`, `Partner Updated`, `Partner Verification Updated`,
+`Partner Image Updated`, `Partner Deleted`, `Partners Imported`).
+
+Scripts (`backend/scripts/`, dry run unless `--apply`, run with `node --env-file=.env.sandbox`; they never read
+`backend/.env` and refuse any database that is not local or `*_sandbox` unless `CONFIRM_DB=<name>` is set):
+`importManufacturers.mjs` (seeds from the two research spreadsheets, idempotent on name, then writes
+`reports/partners_needing_images.md`), `uploadPartnerTiles.mjs` (attaches a folder of generated tiles, named as that report asks, shrinking each to 640px with macOS `sips`), `syncPlatformManufacturers.mjs` (a record for every active manufacturer-role
+user, idempotent on `linkedUserId`), `partnersImageReport.mjs` (`--all` lists every active partner, to redo the tiles), `uploadPartnerTiles.mjs --replace` swaps tiles already attached.
+
+---
+
 ## Relationships Diagram
 
 ```
@@ -1152,6 +1237,7 @@ suppliers → ownerOrgId (organizations);  supplieritems → supplierId (supplie
 purchaseorders → ownerOrgId (organizations), supplierId (suppliers), documentId (documents),
                  lines[].materialRef → orders (orderId + stage + material line)
 grns → ownerOrgId, poId (purchaseorders), supplierId, documentId;  stockledger → itemId (inventoryitems), refId (grn / stock issue)
+manufacturers → linkedUserId (users, optional), createdBy / updatedBy (users)   [admin-only data]
 ```
 
 ---

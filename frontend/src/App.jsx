@@ -27,6 +27,8 @@ import { GrnPage } from './pages/inventory/GrnPage.jsx'
 import { CostingProviders } from './stores/costing.jsx'
 import { CostingPage } from './pages/costing/CostingPage.jsx'
 import { CostSheetPage } from './pages/costing/CostSheetPage.jsx'
+import { PartnersPage } from './pages/admin/PartnersPage.jsx'
+import { PartnerDetailPage } from './pages/admin/PartnerDetailPage.jsx'
 import { LiveRefresh } from './components/LiveRefresh.jsx'
 import { KriyaaChatProvider } from './kriyaaChatContext.jsx'
 import { ReportingPage } from './pages/shared/ReportingPage.jsx'
@@ -103,6 +105,7 @@ function Inner() {
   const [selSupplier, setSelSupplier] = useState(null) // supplier to open on the Suppliers page, or to start a new PO for
   const [selCost, setSelCost] = useState(null)       // cost sheet open on the costing screens
   const [selGrn, setSelGrn] = useState(null)         // goods received note open on the receiving screen (a PO in selPo starts a new one against it)
+  const [selPartner, setSelPartner] = useState(null)  // partner open on its detail page (admins only)
 
   // ── Navigation with real history ──
   // Every screen change is a snapshot pushed onto a stack that is mirrored into the browser's own
@@ -110,11 +113,11 @@ function Inner() {
   // you came from. Before leaving a list for an order, that list's snapshot is stamped with the
   // order's master order, so coming back re-opens (and scrolls to) the group you were in.
   const hist = useRef({ stack: [], idx: -1 })
-  const BLANK = { view: 'dashboard', selOid: null, selMid: null, ordersStatus: null, ordersMo: null, ordersPhase: null, reportsMo: null, selPo: null, selSupplier: null, selCost: null, selGrn: null }
+  const BLANK = { view: 'dashboard', selOid: null, selMid: null, ordersStatus: null, ordersMo: null, ordersPhase: null, reportsMo: null, selPo: null, selSupplier: null, selCost: null, selGrn: null, selPartner: null }
   const apply = useCallback(s => {
     setView(s.view); setSelOid(s.selOid); setSelMid(s.selMid)
     setOrdersStatus(s.ordersStatus); setOrdersMo(s.ordersMo); setOrdersPhase(s.ordersPhase ?? null); setOrdersNewStyle(!!s.ordersNewStyle); setUsersTab(s.usersTab ?? null); setReportsMo(s.reportsMo); setSelMo(s.selMo ?? null)
-    setSelPo(s.selPo ?? null); setSelSupplier(s.selSupplier ?? null); setSelCost(s.selCost ?? null); setSelGrn(s.selGrn ?? null)
+    setSelPo(s.selPo ?? null); setSelSupplier(s.selSupplier ?? null); setSelCost(s.selCost ?? null); setSelGrn(s.selGrn ?? null); setSelPartner(s.selPartner ?? null)
   }, [])
   const go = useCallback(next => {
     const h = hist.current
@@ -195,6 +198,7 @@ function Inner() {
     selSupplier: params?.supplier ?? null,
     selCost: params?.cost ?? null,
     selGrn: params?.grn ?? null,
+    selPartner: v === 'partner_detail' ? (params?.id ?? null) : null,
   })
   const openMo = id => navTo('master_order', { mo: id })
   const openOrder = (id, mid) => {
@@ -267,6 +271,9 @@ function Inner() {
       if (view === 'review') return <ReviewQueuePage />
       if (view === 'audit') return <AdminAuditLog />
       if (view === 'users' && caps.seeUserSetup) return <UserSetup key={usersTab || 'all'} initialTab={usersTab} />
+      // The Partner Directory is admin-only sourcing data; the capability gates it here and the server refuses every other role.
+      if (view === 'partners' && caps.seePartners) return <PartnersPage onNavigate={navTo} />
+      if (view === 'partner_detail' && selPartner && caps.seePartners) return <PartnerDetailPage key={selPartner} partnerId={selPartner} onNavigate={navTo} onBack={() => goBack({ view: 'partners' })} />
     }
     return <div style={{ textAlign: 'center', padding: '60px', color: T.textLight }}>Page not found</div>
   }

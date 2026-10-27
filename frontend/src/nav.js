@@ -17,6 +17,7 @@ export function navSections(user) {
       { id: 'viewer', icon: 'Buildings', label: 'Companies' },
       { id: 'kriyaa', icon: 'Bot', label: 'Kriyaa' },
       { id: 'audit', icon: 'History', label: 'Audit Log' },
+      ...(caps.seePartners ? [{ id: 'partners', icon: 'Factory', label: 'Partners' }] : []),
       { id: 'users', icon: 'Users', label: 'User Setup' },
     ] }]
   }
@@ -35,6 +36,7 @@ export function navSections(user) {
     { id: 'documents', icon: 'Folder', label: 'Documents' },
     ...(caps.isBuyer ? [] : [reports]),
     ...(caps.seeAudit ? [{ id: 'audit', icon: 'History', label: 'Audit Log' }] : []),
+    ...(caps.seePartners ? [{ id: 'partners', icon: 'Factory', label: 'Partners' }] : []),
     ...(caps.seeUserSetup ? [{ id: 'users', icon: 'Users', label: 'User Setup' }] : []),
   ]
   const company = caps.seeCompanyPage ? [{ id: 'company', icon: 'Buildings', label: 'Company' }] : []
@@ -72,5 +74,6 @@ export function navIdForView(view) {
   if (view === 'supplier_detail') return 'suppliers'
   if (view === 'grn') return 'inventory'
   if (view === 'cost_sheet') return 'costing'
+  if (view === 'partner_detail') return 'partners'
   return view
 }

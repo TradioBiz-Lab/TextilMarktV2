@@ -40,6 +40,7 @@ import costSheetsRouter from './routes/costSheets.js'
 import specSheetsRouter from './routes/specSheets.js'
 import viewAsRouter from './routes/viewAs.js'  // on in standalone mode; sandbox-only flag (ENABLE_VIEW_AS) otherwise
 import planTemplatesRouter from './routes/planTemplates.js'
+import manufacturersRouter from './routes/manufacturers.js'
 
 // ── Validate required env vars at startup ──────────────────────────────────
 const isProd = process.env.NODE_ENV === 'production'
@@ -204,6 +205,7 @@ app.use('/api/jobwork',       jobworkRouter)            // standalone product on
 app.use('/api/cost-sheets',   costSheetsRouter)         // standalone product only (404 otherwise)
 app.use('/api/spec-sheets',   specSheetsRouter)         // standalone product only (404 otherwise)
 app.use('/api/plan-templates', planTemplatesRouter)
+app.use('/api/manufacturers', manufacturersRouter)
 
 // ── Health check ────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
