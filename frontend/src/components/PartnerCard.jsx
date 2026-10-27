@@ -1,4 +1,3 @@
-import { MapPin } from '../icons.jsx'
 import { T } from '../constants.js'
 import { Card } from './ui.jsx'
 import { PartnerImage, Chip, CategoryChips, TagChips, StatusPill, ScoreBadge, ClaimTag, LiveBadge } from './PartnerBits.jsx'
@@ -7,10 +6,9 @@ import { CLUSTER_LABEL, TYPE_LABEL, moqVerified, cityName } from '../partners.js
 // One partner in the list page's grid: tile, name, place, what they make, MOQ (a claim until verified), score,
 // and status (Live shows as its own badge).
 export function PartnerCard({ partner: p, onOpen }) {
-  const clusterLabel = p.cluster ? CLUSTER_LABEL[p.cluster] : ''
-  // The cluster sits at the right of the name. The city line is only for a city that says more than the cluster does.
-  const city = cityName(p.city)
-  const showCity = !!city && city.toLowerCase() !== clusterLabel.toLowerCase()
+  // The place is the cluster, at the right of the name, and nothing else. A partner in "Other" (or in no cluster) shows its
+  // city there instead, since "Other" says nothing; with neither, no place is shown.
+  const place = p.cluster && p.cluster !== 'other' ? CLUSTER_LABEL[p.cluster] : cityName(p.city)
   const offers = p.type === 'fabric_supplier' ? { tags: p.fabricTypes, tone: 'fabric' }
     : p.type === 'trims_supplier' ? { tags: p.trimCategories, tone: 'trim' }
     : null
@@ -25,15 +23,10 @@ export function PartnerCard({ partner: p, onOpen }) {
         <div>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
             <div style={{ fontSize: T.fontSize.md, fontWeight: 800, color: T.text, lineHeight: 1.3, overflowWrap: 'anywhere', minWidth: 0 }}>{p.name}</div>
-            {clusterLabel && <span style={{ flexShrink: 0 }}><Chip tone="place">{clusterLabel}</Chip></span>}
+            {place && <span style={{ flexShrink: 0 }}><Chip tone="place">{place}</Chip></span>}
           </div>
           <div style={{ fontSize: T.fontSize.xs, color: T.textLight, marginTop: 2 }}>{TYPE_LABEL[p.type]}{!p.isActive ? ' · archived' : ''}</div>
         </div>
-        {showCity && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: T.fontSize.sm, color: T.textMuted }}>
-            <MapPin size={13} color={T.textLight} /><span>{city}</span>
-          </div>
-        )}
         {p.categories.length > 0 && <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}><CategoryChips categories={p.categories} /></div>}
         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
           {offers ? <TagChips tags={offers.tags} tone={offers.tone} /> : <><TagChips tags={p.keywords} max={3} plain /><TagChips tags={p.fabrics} tone="fabric" max={2} /></>}
