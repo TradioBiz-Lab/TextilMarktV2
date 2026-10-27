@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { authApi, ordersApi, documentsApi, usersApi, notificationsApi, auditApi, ribbonsApi, masterOrdersApi, actionItemsApi, setStoredToken, setAuthToken } from './api.js'
+import { authApi, ordersApi, documentsApi, usersApi, notificationsApi, auditApi, ribbonsApi, masterOrdersApi, actionItemsApi, partnersApi, setStoredToken, setAuthToken } from './api.js'
+import { emptyQuery } from './partners.js'
 import { isExpiringSoon, isExpired, dayNumber, getToday } from './constants.js'
 
 // "Past the delivery date" on the same India-time day boundary as the rest of the app. Comparing
@@ -28,6 +29,12 @@ export function AppProvider({ children }) {
   const [actionItems, setActionItems] = useState([])
   const [loading, setLoading]         = useState(false)
   const [loadError, setLoadError]     = useState(false)
+  // The Partner Directory (admins only): loaded when its page opens, not with the rest at sign-in. The list page's
+  // filters live here so coming Back from a partner restores the same list.
+  const [partners, setPartners]           = useState(null)   // { items, total, mode } for the current query
+  const [partnerFacets, setPartnerFacets] = useState(null)
+  const [partnersById, setPartnersById]   = useState({})
+  const [partnerQuery, setPartnerQuery]   = useState(emptyQuery)
 
   const loadingRef = useRef(false)
   // Bumped on logout. A load that started under an earlier value belongs to a
@@ -35,6 +42,14 @@ export function AppProvider({ children }) {
   const sessionGenRef = useRef(0)
   useEffect(() => { setOrdersAt(Date.now()) }, [orders])
   const docDataCache = useRef({})
+  // Uploaded partner tiles, fetched on demand (id -> { at, promise }), and a counter so a slow older list reply
+  // cannot land over a newer search.
+  const partnerImageCache = useRef({})
+  const partnersReq = useRef(0)
+  const clearPartnerState = useCallback(() => {
+    setPartners(null); setPartnerFacets(null); setPartnersById({}); setPartnerQuery(emptyQuery())
+    partnerImageCache.current = {}; partnersReq.current += 1
+  }, [])
   // The latest orders, for an action that needs the plan as it was before its own write.
   const ordersRef = useRef([])
   ordersRef.current = orders
@@ -115,7 +130,8 @@ export function AppProvider({ children }) {
     setMasterOrders([])
     setActionItems([])
     docDataCache.current = {}
-  }, [])
+    clearPartnerState()
+  }, [clearPartnerState])
 
   // Restore session on page load via httpOnly cookie (no token in JS)
   // If the URL contains ?login=1 (e.g. from a welcome email), force a fresh login by
@@ -175,6 +191,7 @@ export function AppProvider({ children }) {
         setOrders([]); setDocs([]); setNotifs([]); setAudit([])
         setUsers([]); setServerRibbons([]); setMasterOrders([]); setActionItems([])
         docDataCache.current = {}
+        clearPartnerState()
         return
       }
       if (!e.oldValue) {
@@ -189,11 +206,12 @@ export function AppProvider({ children }) {
         setOrders([]); setDocs([]); setNotifs([]); setAudit([])
         setUsers([]); setServerRibbons([]); setMasterOrders([]); setActionItems([])
         docDataCache.current = {}
+        clearPartnerState()
       }
     }
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
-  }, [])
+  }, [clearPartnerState])
 
   // ── Poll server ribbons every 60s so buyers/mfrs see new admin-published ribbons ──
   useEffect(() => {
@@ -606,6 +624,80 @@ export function AppProvider({ children }) {
   }, [])
 
 
+  // ── Partner Directory (admin only; the server refuses everyone else) ──
+  const loadPartners = useCallback(async params => {
+    const req = ++partnersReq.current
+    const r = await partnersApi.list(params)
+    if (req !== partnersReq.current) return null // a newer search is already on its way
+    setPartners(r)
+    setPartnersById(p => ({ ...p, ...Object.fromEntries(r.items.map(x => [x.id, x])) }))
+    return r
+  }, [])
+
+  const loadPartnerFacets = useCallback(async () => {
+    const f = await partnersApi.facets()
+    setPartnerFacets(f)
+    return f
+  }, [])
+
+  const loadPartner = useCallback(async id => {
+    const p = await partnersApi.get(id)
+    setPartnersById(m => ({ ...m, [id]: p }))
+    return p
+  }, [])
+
+  // A saved partner replaces its copy everywhere the page reads it.
+  const putPartner = useCallback(p => {
+    setPartnersById(m => ({ ...m, [p.id]: p }))
+    setPartners(l => (l ? { ...l, items: l.items.map(x => (x.id === p.id ? p : x)) } : l))
+    return p
+  }, [])
+
+  const createPartner = useCallback(async data => {
+    const p = await partnersApi.create(data)
+    setPartnersById(m => ({ ...m, [p.id]: p }))
+    loadPartnerFacets().catch(() => {})
+    return p
+  }, [loadPartnerFacets])
+
+  const updatePartner = useCallback(async (id, data) => {
+    const p = await partnersApi.update(id, data)
+    loadPartnerFacets().catch(() => {})
+    return putPartner(p)
+  }, [putPartner, loadPartnerFacets])
+
+  const deletePartner = useCallback(async id => {
+    await partnersApi.remove(id)
+    setPartnersById(m => { const { [id]: _gone, ...rest } = m; return rest })
+    setPartners(l => (l ? { ...l, total: Math.max(0, l.total - 1), items: l.items.filter(x => x.id !== id) } : l))
+    delete partnerImageCache.current[id]
+    loadPartnerFacets().catch(() => {})
+  }, [loadPartnerFacets])
+
+  const setPartnerImage = useCallback(async (id, image) => {
+    const p = await partnersApi.setImage(id, image)
+    delete partnerImageCache.current[id]
+    return putPartner(p)
+  }, [putPartner])
+
+  // The tile of a partner with an upload: one fetch per partner and edit, shared by every card showing it.
+  const getPartnerImage = useCallback((id, version) => {
+    const hit = partnerImageCache.current[id]
+    if (hit && hit.version === version) return hit.promise
+    const promise = partnersApi.image(id).then(r => r.image || null)
+    partnerImageCache.current[id] = { version, promise }
+    promise.catch(() => { if (partnerImageCache.current[id]?.promise === promise) delete partnerImageCache.current[id] })
+    return promise
+  }, [])
+
+  const previewPartnerCsv = useCallback(csv => partnersApi.csvPreview(csv), [])
+
+  const importPartners = useCallback(async payload => {
+    const r = await partnersApi.importRows(payload)
+    if (!payload.dryRun) loadPartnerFacets().catch(() => {})
+    return r
+  }, [loadPartnerFacets])
+
   const unread = notifs.filter(n => !n.read).length
 
   return (
@@ -621,6 +713,9 @@ export function AppProvider({ children }) {
       markAllRead, markOneRead, getDocData, refreshAudit, loadMoreAudit,
       refreshOrders, refreshDocs, listAllRibbons, createRibbon, updateRibbon, removeRibbon,
       createActionItem, updateActionItem, addActionItemUpdate, refreshActionItems,
+      partners, partnerFacets, partnersById, partnerQuery, setPartnerQuery,
+      loadPartners, loadPartnerFacets, loadPartner, createPartner, updatePartner, deletePartner, setPartnerImage, getPartnerImage,
+      previewPartnerCsv, importPartners,
     }}>
       {children}
     </AppContext.Provider>

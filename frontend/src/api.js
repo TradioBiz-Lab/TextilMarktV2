@@ -204,6 +204,21 @@ export const droppedApi = {
   get: id => api.get(`/dropped/${id}`),
 }
 
+// The Partner Directory: Tradio's internal sourcing CRM (admin only; the server refuses everyone else).
+export const partnersApi = {
+  list: params => api.get('/manufacturers', { params }),
+  facets: () => api.get('/manufacturers/facets'),
+  get: id => api.get(`/manufacturers/${id}`),
+  create: data => api.post('/manufacturers', data),
+  update: (id, data) => api.post(`/manufacturers/${id}`, data),
+  remove: id => api.post(`/manufacturers/${id}/delete`),
+  // The uploaded tile, fetched by the page itself (an <img> cannot carry the session); lists never carry image bytes.
+  image: id => api.get(`/manufacturers/${id}/image`),
+  setImage: (id, image) => api.post(`/manufacturers/${id}/image`, { image }),
+  csvPreview: csv => api.post('/manufacturers/csv/preview', { csv }, { timeout: 60000 }),
+  importRows: data => api.post('/manufacturers/import', data, { timeout: 90000 }),
+}
+
 // SANDBOX ONLY, TEMPORARY (see backend/src/routes/viewAs.js)
 export const viewAsApi = {
   options: () => api.get('/auth/view-as/options'),

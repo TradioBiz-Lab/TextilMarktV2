@@ -53,11 +53,15 @@ backend/src/
   middleware/auth.js  # requireAuth / requireAdmin / requireMaster / sanitizeBody
   middleware/asyncErrors.js # forwards rejected async handlers to the error handler
   models/             # User, Order, Document, Notification, AuditLog, Ribbon, MasterOrder,
-                       # ActionItem, DroppedRecord, InboundMessage
+                       # ActionItem, DroppedRecord, InboundMessage, Manufacturer (Partner Directory)
   routes/             # auth, viewAs, orders, documents, users, notifications, audit, ribbons,
                        # masterOrders, signup, actionItems, assistant (Kriyaa), voice, inbound,
-                       # review, floor, dropped
-  lib/                # email, stageMath, notify, redact, dropRecord, sarvam, ai/, inbound/
+                       # review, floor, dropped, manufacturers (Partner Directory, admin only)
+  lib/                # email, stageMath, notify, redact, dropRecord, sarvam, ai/, inbound/,
+                       # partners (validation, query), partnerImport (CSV + bulk import),
+                       # partnerSeed (spreadsheet mapping), partnerImagePrompts
+backend/scripts/      # one-off admin tools; dry run unless --apply, never read backend/.env:
+                       # importManufacturers, syncPlatformManufacturers, partnersImageReport, uploadPartnerTiles
 frontend/src/
   App.jsx             # top-level view router (hand-rolled, no react-router)
   context.jsx         # AppProvider — single global data/actions store
@@ -66,7 +70,10 @@ frontend/src/
   components/ui.jsx   # shared UI primitives (Btn, Modal, Card, DocCard/PDF viewer, etc.)
   constants.js        # T theme object (design tokens), STATUS_FLOW, DEFAULT_STAGE_NAMES
   pages/admin/...      # the screens ALL roles use (Dashboard, Orders, Order detail, Documents, ...)
+  pages/admin/Partner*.jsx, Partners*.jsx  # Partner Directory (admin only): list, detail, form, CSV import
   pages/shared/...     # Reports, Action Items
+  partners.js         # Partner Directory constants and pure helpers (tabs, score tone, MOQ claim rule, list query)
+  components/Partner*.jsx, TagInput.jsx  # partner card, shared badges/tile/copy chip, tag input
   pages/buyer/BuyerSubmitReq.jsx  # customer-only 'Submit Requirement'
   caps.js              # what each role may do in the shared screens (mirrors the server rules)
 docs/SCHEMA.md         # MongoDB schema reference (kept in sync with models/)
@@ -90,6 +97,13 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   real gate). When adding a button to a shared screen, gate it with `capsFor(user)` /
   `canWriteStage(...)` instead of assuming the viewer is an admin. Kriyaa is open to every
   role with a role-scoped toolset (`toolsFor` in `routes/assistant.js`).
+
+- **The Partner Directory is admin-only sourcing data.** `routes/manufacturers.js` guards its whole router with
+  `requireAuth` + `requireAdmin`; `caps.seePartners` only hides the nav item. Kriyaa's `listManufacturers` tool is in
+  `ADMIN_ONLY_TOOLS` and re-validates its filters with `parsePartnerQuery` before building the loopback URL. Nothing
+  partner-shaped may be added to an order, document, notification or audit response a buyer or manufacturer can read.
+  A MOQ is a claim until `verification.gstVerified` or `sampleApproved` (`moqVerified` in `frontend/src/partners.js`).
+  Partner tiles are illustrative generated images, never scraped photos. See docs/SCHEMA.md `manufacturers`.
 
 - **No router library.** `App.jsx` holds the current view in state and switch-renders the right
   page component per role; navigation is done by calling a passed-down `onNavigate(view, params)`

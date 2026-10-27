@@ -37,6 +37,8 @@ import {
   Receipt as P_Receipt,
   FileXls as P_FileXls,
   Flask as P_Flask,
+  Funnel as P_Funnel,
+  Globe as P_Globe,
   FolderSimple as P_FolderSimple,
   Hexagon as P_Hexagon,
   House as P_House,
@@ -60,6 +62,7 @@ import {
   Paperclip as P_Paperclip,
   PencilLine as P_PencilLine,
   PencilSimple as P_PencilSimple,
+  Phone as P_Phone,
   Play as P_Play,
   Plus as P_Plus,
   Prohibit as P_Prohibit,
@@ -187,6 +190,8 @@ export const FileSpreadsheet = make(P_FileXls, 'FileSpreadsheet')
 export const FileText = make(P_FileText, 'FileText')
 export const Receipt = make(P_Receipt, 'Receipt')
 export const FlaskConical = make(P_Flask, 'FlaskConical')
+export const Filter = make(P_Funnel, 'Filter')
+export const Globe = make(P_Globe, 'Globe')
 export const Folder = make(P_FolderSimple, 'Folder')
 export const Hexagon = make(P_Hexagon, 'Hexagon')
 export const History = make(P_ClockCounterClockwise, 'History')
@@ -217,6 +222,7 @@ export const Palette = make(P_Palette, 'Palette')
 export const Paperclip = make(P_Paperclip, 'Paperclip')
 export const PenLine = make(P_PencilLine, 'PenLine')
 export const Pencil = make(P_PencilSimple, 'Pencil')
+export const Phone = make(P_Phone, 'Phone')
 export const Play = make(P_Play, 'Play')
 export const Plus = make(P_Plus, 'Plus')
 export const RefreshCw = make(P_ArrowsClockwise, 'RefreshCw')

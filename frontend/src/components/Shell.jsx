@@ -1,6 +1,6 @@
 import { Logo } from './Brand.jsx'
 import { useState, useEffect } from 'react'
-import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot, Hexagon, Inbox } from '../icons.jsx'
+import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot, Hexagon, Inbox, Factory } from '../icons.jsx'
 import { T } from '../constants.js'
 import { capsFor } from '../caps.js'
 import { Btn, RibbonBanner } from './ui.jsx'
@@ -70,6 +70,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
     { id: 'documents', icon: Folder, label: 'Documents' },
     ...(isCustomer ? [] : [reportsTab]),
     ...(user.role === 'admin' ? [{ id: 'audit', icon: History, label: 'Audit Log' }] : []),
+    ...(capsFor(user).seePartners ? [{ id: 'partners', icon: Factory, label: 'Partners' }] : []),
     ...(user.role === 'admin' && user.adminType === 'master' ? [{ id: 'users', icon: Users, label: 'User Setup' }] : []),
   ]
 
@@ -127,7 +128,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
 
         <nav style={{ flex: 1, padding: sidebarCollapsed ? '8px 4px' : '8px', display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto' }}>
           {nav.map(n => {
-            const active = view === n.id || (n.id === 'orders' && (view === 'order_detail' || view === 'submit_req'))
+            const active = view === n.id || (n.id === 'orders' && (view === 'order_detail' || view === 'submit_req')) || (n.id === 'partners' && view === 'partner_detail')
             const Icon = n.icon
             return (
               <button key={n.id} onClick={() => handleNav(n.id)} title={sidebarCollapsed ? n.label : undefined}

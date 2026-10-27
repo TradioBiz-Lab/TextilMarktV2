@@ -34,7 +34,7 @@ export function capsFor(user) {
     escalate: isBuyer,   // a customer raises a style with Tradio's master admins (in-app and email)
     manageCertificates: isMfr,
     // Admin-only surfaces
-    seeUsers: isAdmin, seeAudit: isAdmin, seeReviewQueue: false /* retired until the WhatsApp integration; set to isAdmin to bring it back */, seeRibbonsAdmin: isAdmin, seeBuyerRequests: isAdmin,
+    seeUsers: isAdmin, seeAudit: isAdmin, seePartners: isAdmin /* the Partner Directory: Tradio's sourcing CRM, admins only (the server enforces it) */, seeReviewQueue: false /* retired until the WhatsApp integration; set to isAdmin to bring it back */, seeRibbonsAdmin: isAdmin, seeBuyerRequests: isAdmin,
   }
 }
 
