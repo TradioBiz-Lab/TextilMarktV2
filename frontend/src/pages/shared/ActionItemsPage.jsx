@@ -297,7 +297,7 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
       <div className="grid-responsive-4" style={{ gap: 12, marginBottom: 14 }}>
         <StatCard icon={<RotateCw size={19} color={T.primary} />} label="Open items" value={stats.open} color={T.primary} />
         <StatCard icon={<Ban size={19} color={T.danger} />} label="Blocked" value={stats.blocked} color={T.danger} />
-        <StatCard icon={<CircleDot size={19} color={T.danger} />} label="Past deadline" value={stats.overdue} color={T.danger} />
+        <StatCard icon={<CircleDot size={19} color={T.danger} />} label="Late" value={stats.overdue} color={T.danger} />
         <StatCard icon={<CalendarClock size={19} color={T.warning} />} label="Due today" value={stats.dueToday} color={T.warning} />
       </div>
 
@@ -314,7 +314,7 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
           style={{ border: `1px solid ${T.border}`, borderRadius: 9, padding: '9px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit', cursor: 'pointer' }}>
           {WINDOWS.map(w => <option key={w.days} value={w.days}>{w.label}</option>)}
         </select>
-        <Btn variant={includeOverdue ? 'primary' : 'secondary'} onClick={() => setIncludeOverdue(v => !v)} icon={<CircleDot size={13} />}>Past deadline</Btn>
+        <Btn variant={includeOverdue ? 'primary' : 'secondary'} onClick={() => setIncludeOverdue(v => !v)} icon={<CircleDot size={13} />}>Late steps</Btn>
         <Btn variant={onlyMine ? 'primary' : 'secondary'} onClick={() => setOnlyMine(v => !v)} icon={<User size={13} />}>Mine only</Btn>
       </FlexRow>}
 

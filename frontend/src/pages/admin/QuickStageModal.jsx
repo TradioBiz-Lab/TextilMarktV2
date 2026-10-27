@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { ArrowRight, X, AlertTriangle, Paperclip, Plus, Pencil } from '../../icons.jsx'
-import { T, evidenceTypesFor, productDocForStep, kindForCustomerOwner, stepOwnerOptions, stageKindOf, stageStatusOf, stageVariance, stageActualVariance, STAGE_STATUS_LABELS, fmtStageDate, getToday, fmtDateTime } from '../../constants.js'
+import { T, evidenceTypesFor, productDocForStep, kindForCustomerOwner, stepOwnerOptions, stageKindOf, stageStatusOf, stageVariance, stageActualVariance, STAGE_STATUS_LABELS, fmtStageDate, getToday, fmtDateTime, STAGE_KIND_LABELS } from '../../constants.js'
 import { Modal, Select, Textarea, Btn, FlexRow, Input, FileUpload, DocCard, useToast, fileUploadPayload, SectionLabel } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { capsFor, canWriteStage, canManageStepLists } from '../../caps.js'
@@ -597,7 +597,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
             <div style={{ fontSize: 11, color: T.textMuted, margin: '2px 0 8px' }}>
               {stage.responsibleRole === 'buyer'
                 ? 'With the customer: they approve or reject this step, and are told when it is assigned.'
-                : 'Hand an approval step (Lab Dip, PP Sample) to the customer and they will see it in their action items. A quantity step becomes a single approval step.'}
+                : 'Hand an approval step (Lab Dip, PP Sample) to the customer and they will see it in their action items. A step that counts pieces becomes a single tick-when-done step.'}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
               <Select label="Owner" value={stage.responsibleId || ''} disabled={savingOwner} onChange={e => saveOwner(e.target.value)}>
@@ -606,8 +606,8 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
               </Select>
               {!stage.isDelivery && kind !== 'checklist' && (
                 <Select label="Step type" value={kind} disabled={savingType} onChange={e => saveStepType(e.target.value)}>
-                  <option value="quantity">Tracked by quantity</option>
-                  <option value="milestone">Approval (one decision)</option>
+                  <option value="quantity">{STAGE_KIND_LABELS.quantity}</option>
+                  <option value="milestone">{STAGE_KIND_LABELS.milestone}</option>
                 </Select>
               )}
             </div>
