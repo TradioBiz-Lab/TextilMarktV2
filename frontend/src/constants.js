@@ -333,6 +333,8 @@ export const withBuyerPrefix = (base, orders) => {
 // auto-deploys on push, AppSail does not) still renders sensibly.
 
 export const STAGE_KINDS = ['milestone', 'checklist', 'quantity']
+/** What each step type is called on screen. The stored words (milestone, checklist, quantity) and the CSV words stay as they are. */
+export const STAGE_KIND_LABELS = { milestone: 'Tick when done', checklist: 'Checklist', quantity: 'Count pieces' }
 
 export const STAGE_STATUS_LABELS = {
   not_started: 'Not started',
@@ -621,7 +623,7 @@ export const stageActualVariance = s => {
 export const CELL_STATE = {
   done:    { bg: '#d1fae5', fg: '#047857', label: 'Done' },
   blocked: { bg: '#fee2e2', fg: '#b91c1c', label: 'Blocked' },
-  overdue: { bg: '#fee2e2', fg: '#b91c1c', label: 'Overdue' },
+  overdue: { bg: '#fee2e2', fg: '#b91c1c', label: 'Late' },
   active:  { bg: '#dbeafe', fg: '#1d4ed8', label: 'In progress' },
   pending: { bg: '#f1f5f9', fg: '#64748b', label: 'Upcoming' },
 }

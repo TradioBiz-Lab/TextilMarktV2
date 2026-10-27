@@ -457,7 +457,7 @@ export function ReportingPage({ onOpen, initialMo }) {
                             )}
                             {r.health !== 'done' && r.daysToDelivery != null && (
                               <div style={{ fontSize: 11, fontWeight: 700, color: r.daysToDelivery < 0 ? T.danger : r.daysToDelivery <= 7 ? '#b45309' : T.textMuted }}>
-                                {r.daysToDelivery < 0 ? `${Math.abs(r.daysToDelivery)}d overdue` : `${r.daysToDelivery}d left`}
+                                {r.daysToDelivery < 0 ? `Late ${Math.abs(r.daysToDelivery)} day${Math.abs(r.daysToDelivery) === 1 ? '' : 's'}` : `${r.daysToDelivery}d left`}
                               </div>
                             )}
                           </td>

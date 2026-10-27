@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Plus, X } from '../icons.jsx'
-import { T, STANDARD_STEP_NAMES, defaultStepOwner, stepOwnerOptions, siblingStepNames, stepNameWarning } from '../constants.js'
+import { T, STANDARD_STEP_NAMES, defaultStepOwner, stepOwnerOptions, siblingStepNames, stepNameWarning, STAGE_KIND_LABELS } from '../constants.js'
 import { Btn, FlexRow, DateOrNA, useToast } from './ui.jsx'
 import { useApp } from '../context.jsx'
 
@@ -83,9 +83,9 @@ export function AddStepBar({ order, asgn, users, onInserted }) {
         <div style={{ flex: '1 1 120px' }}>
           <label style={label}>Tracked as</label>
           <select value={d.kind} onChange={e => set({ kind: e.target.value })} style={field}>
-            <option value="quantity">Quantity</option>
-            <option value="milestone">One decision</option>
-            <option value="checklist">Checklist</option>
+            <option value="quantity">{STAGE_KIND_LABELS.quantity}</option>
+            <option value="milestone">{STAGE_KIND_LABELS.milestone}</option>
+            <option value="checklist">{STAGE_KIND_LABELS.checklist}</option>
           </select>
         </div>
         <div style={{ flex: '1 1 170px' }}>

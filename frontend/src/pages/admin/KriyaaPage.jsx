@@ -21,7 +21,7 @@ function fmtTime(d) {
 // promise of something Kriyaa can't do.
 const SUGGESTIONS_BY_ROLE = {
   admin: [
-    { icon: ListTodo, label: "What's overdue right now?", desc: 'A quick sweep across every order', prompt: "What's overdue right now, across all orders?" },
+    { icon: ListTodo, label: "What's late right now?", desc: 'A quick sweep across every order', prompt: "What's late right now, across all orders?" },
     { icon: ShieldAlert, label: 'Check delivery risk', desc: 'See if a stage slip threatens the ship date', prompt: 'Check delivery risk on my most urgent order.' },
     { icon: PenLine, label: 'Narrate a status change', desc: 'Mark progress in plain language', prompt: 'Mark the lab dip on the poplin dress done, finished yesterday.' },
     { icon: Sparkles, label: 'Review open action items', desc: "What's still waiting on someone", prompt: 'What action items are still open?' },

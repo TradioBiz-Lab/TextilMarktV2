@@ -163,7 +163,7 @@ function build({ role, user, orders, actionItems }) {
     const total = items.length + ownedSteps.length
     const overdue = etas.filter(e => e && dayNumber(e) < todayNum).length
     const open = liveSplits.reduce((n, r) => n + inFlightStages(r.asgn, { windowDays: 3 }).length, 0)
-    lines.push(`Action items: **${plural(total, 'open item')}** assigned to you${overdue ? ` (${overdue} overdue)` : ''}${ownedSteps.length ? `, of which ${ownedSteps.length} ${ownedSteps.length === 1 ? 'is a production step' : 'are production steps'}` : ''}. ${plural(open, 'step')} across all orders ${open === 1 ? 'is' : 'are'} open or due in the next 3 days.`)
+    lines.push(`Action items: **${plural(total, 'open item')}** assigned to you${overdue ? ` (${overdue} late)` : ''}${ownedSteps.length ? `, of which ${ownedSteps.length} ${ownedSteps.length === 1 ? 'is a production step' : 'are production steps'}` : ''}. ${plural(open, 'step')} across all orders ${open === 1 ? 'is' : 'are'} open or due in the next 3 days.`)
   } else if (role === 'buyer') {
     const waiting = liveSplits.flatMap(r => r.live
       .filter(({ stage }) => String(stage.responsibleId) === String(user?.id) && !stage.blocked)
