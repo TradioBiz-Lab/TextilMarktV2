@@ -157,7 +157,6 @@ export function PartnersPage({ onNavigate }) {
       </RailSection>
       <SwitchRow checked={q.live} onChange={e => patch({ live: e.target.checked })} label="Live only" hint="Has orders at Tradio now" />
       <SwitchRow checked={q.verifiedOnly} onChange={e => patch({ verifiedOnly: e.target.checked })} label="Verified only" hint="GST checked or a sample approved" />
-      <SwitchRow checked={q.onPlatform} onChange={e => patch({ onPlatform: e.target.checked })} label="On platform" hint="Also has a TextilMarkt account" />
       <SwitchRow checked={q.includeInactive} onChange={e => patch({ includeInactive: e.target.checked })} label="Show archived" hint={f?.inactive ? `${f.inactive} kept on file, out of the way` : 'Service providers, brands, individuals'} />
     </div>
   )
@@ -170,7 +169,6 @@ export function PartnersPage({ onNavigate }) {
   if (q.minScore !== '' || q.maxScore !== '') chips.push(['score', `Score ${q.minScore === '' ? 0 : q.minScore} to ${q.maxScore === '' ? 100 : q.maxScore}`, () => patch({ minScore: '', maxScore: '' })])
   if (q.live) chips.push(['live', 'Live only', () => patch({ live: false })])
   if (q.verifiedOnly) chips.push(['verified', 'Verified only', () => patch({ verifiedOnly: false })])
-  if (q.onPlatform) chips.push(['platform', 'On platform', () => patch({ onPlatform: false })])
   if (q.includeInactive) chips.push(['inactive', 'Archived shown', () => patch({ includeInactive: false })])
 
   return (

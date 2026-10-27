@@ -2,11 +2,11 @@ import { useState, useEffect, useMemo } from 'react'
 import { ArrowLeft, Pencil, Trash2, MapPin, Mail, Phone, Globe, MessageCircle, Camera, Check, Eye, EyeOff, AlertTriangle, History } from '../../icons.jsx'
 import { T } from '../../constants.js'
 import { Card, Btn, Modal, Select, Alert, SectionLabel, LoadingScreen, Grid, useToast } from '../../components/ui.jsx'
-import { PartnerImage, Chip, CategoryChips, TagChips, ScoreBadge, ClaimTag, OnPlatformBadge, LiveBadge, CopyChip } from '../../components/PartnerBits.jsx'
+import { PartnerImage, Chip, CategoryChips, TagChips, ScoreBadge, ClaimTag, LiveBadge, CopyChip } from '../../components/PartnerBits.jsx'
 import { PartnerFormModal } from './PartnerFormModal.jsx'
 import { useApp } from '../../context.jsx'
 import { photoFromFile } from '../../colours.js'
-import { TYPE_LABEL, CLUSTER_LABEL, STATUSES, VERIFICATION_CHECKS, fieldsFor, moqVerified } from '../../partners.js'
+import { TYPE_LABEL, CLUSTER_LABEL, STATUSES, VERIFICATION_CHECKS, fieldsFor, moqVerified, canBeLive } from '../../partners.js'
 
 // One partner: who they are, what they can make, what they claim and what has been checked. Admin only.
 
@@ -104,7 +104,6 @@ export function PartnerDetailPage({ partnerId, onBack }) {
               {(p.city || p.cluster) && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: T.fontSize.body, color: T.textMuted }}><MapPin size={13} />{p.city}</span>}
               {p.cluster && <Chip tone="place">{CLUSTER_LABEL[p.cluster]}</Chip>}
               {p.isLive && <LiveBadge />}
-              {p.onPlatform && <OnPlatformBadge />}
               {!p.isActive && <Chip>Archived</Chip>}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -113,7 +112,7 @@ export function PartnerDetailPage({ partnerId, onBack }) {
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
               <div style={{ width: 160 }}>
                 <Select label="Status" value={p.status} disabled={busy} onChange={e => save({ status: e.target.value }, 'Status updated')}>
-                  {STATUSES.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
+                  {STATUSES.map(s => <option key={s.v} value={s.v} disabled={s.v === 'live' && !canBeLive(p)}>{s.label}{s.v === 'live' && !canBeLive(p) ? ' (needs a platform account)' : ''}</option>)}
                 </Select>
               </div>
             </div>
@@ -126,20 +125,14 @@ export function PartnerDetailPage({ partnerId, onBack }) {
         </div>
       </Card>
 
-      {/* Live: what lets Tradio give this manufacturer a style */}
-      <Card style={{ borderColor: p.isLive ? T.successBorder : T.border, background: p.isLive ? T.successBg : T.surface }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 240 }}>
-            <div style={{ fontSize: T.fontSize.md, fontWeight: 800, color: T.text }}>{p.isLive ? 'Live with Tradio' : 'Not live'}</div>
-            <div style={{ fontSize: T.fontSize.sm, color: T.textMuted, marginTop: 3, lineHeight: 1.5 }}>
-              {p.onPlatform
-                ? (p.isLive ? 'This manufacturer has orders with Tradio now and can be given styles. Switch it off to stop new styles going to it; the work it already has stays.' : 'Mark it live once it has orders with Tradio. Until then it cannot be given a style or a split of one.')
-                : 'Only a partner with a manufacturer account on the platform can be live. Create its account in User Setup first; the account then shows up here.'}
-            </div>
-          </div>
-          <Btn variant={p.isLive ? 'secondary' : 'success'} disabled={busy || !p.onPlatform} onClick={() => save({ isLive: !p.isLive }, p.isLive ? 'No longer live' : 'Marked live: it can now be given styles')}>{p.isLive ? 'Switch off live' : 'Mark live'}</Btn>
-        </div>
-      </Card>
+      {/* What the Live status means for this partner */}
+      <div style={{ fontSize: T.fontSize.sm, lineHeight: 1.5, padding: '10px 14px', borderRadius: T.radius.md, border: `1px solid ${p.status === 'live' ? T.successBorder : T.border}`, background: p.status === 'live' ? T.successBg : T.surface, color: T.textMuted }}>
+        {p.status === 'live'
+          ? <><strong style={{ color: T.successDeep }}>Live.</strong> This manufacturer has orders with Tradio now and can be given styles. Change the status to stop new styles going to it; the work it already has stays.</>
+          : canBeLive(p)
+            ? <>It has a manufacturer account. Set the status to <strong>Live</strong> once it has orders with Tradio; until then it cannot be given a style.</>
+            : <>No manufacturer account yet. <strong>Live</strong> needs one: create it in User Setup, and it will show up here.</>}
+      </div>
 
       <Grid cols={2} gap={16}>
         <Section title={show.garment ? 'Capabilities and machines' : show.fabricTypes ? 'Fabrics supplied' : show.trimCategories ? 'Trims supplied' : 'Capabilities'}>

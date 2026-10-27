@@ -101,7 +101,7 @@ async function seed() {
   console.log(`Users seeded: ${users.length}`)
 
   // The demo manufacturers are live in the Partner Directory, so the demo orders can be assigned to them (lib/liveManufacturers.js).
-  await Manufacturer.insertMany([tiruppur, blr].map(u => ({ name: u.company, type: 'garment_manufacturer', status: 'onboarded', linkedUserId: u._id, isLive: true, source: 'Demo seed' })))
+  await Manufacturer.insertMany([tiruppur, blr].map(u => ({ name: u.company, type: 'garment_manufacturer', status: 'live', linkedUserId: u._id, isLive: true, source: 'Demo seed' })))
 
   // ── Orders ─────────────────────────────────────────────────────────────────
   // Dates anchored around Jun–Nov 2026 so the sandbox reads as "live" against

@@ -34,7 +34,7 @@ const serverError = (res, err) => {
 const eq = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 const show = v => (v === undefined || v === null || v === '' ? 'empty' : String(v))
 // What the audit entry says about a field: its values for the small pipeline fields, just its name for the rest.
-const VALUE_FIELDS = new Set(['status', 'priority', 'type', 'cluster', 'isActive', 'isLive'])
+const VALUE_FIELDS = new Set(['status', 'priority', 'type', 'cluster', 'isActive'])
 
 const tally = (rows, key) => {
   const m = new Map()
@@ -125,6 +125,8 @@ router.post('/', writeLimiter, async (req, res) => {
   try {
     const cleaned = cleanPartnerInput(req.body)
     if (cleaned.errors) return res.status(400).json({ error: cleaned.errors.join('. ') })
+    // A new partner has no platform account, so it cannot start Live.
+    if (cleaned.data.status === 'live') return res.status(400).json({ error: 'Only a partner with a manufacturer account on the platform can be Live. Create its account in User Setup first.' })
     const doc = await Manufacturer.create({ ...cleaned.data, createdBy: req.user.id, updatedBy: req.user.id })
     await AuditLog.create({ byUser: req.user.id, action: 'Partner Created', detail: `${doc.name} (${doc.type}${doc.city ? `, ${doc.city}` : ''}) added by ${req.user.name}` })
     res.status(201).json(toPartner(doc.toObject()))
@@ -216,9 +218,9 @@ router.post('/:id', writeLimiter, async (req, res) => {
     if (!doc) return
     const cleaned = cleanPartnerInput(req.body, { partial: true })
     if (cleaned.errors) return res.status(400).json({ error: cleaned.errors.join('. ') })
-    // Only a partner with a manufacturer account on the platform can be live: live is what lets Tradio give it orders.
-    if (cleaned.data.isLive === true && !doc.linkedUserId) {
-      return res.status(400).json({ error: 'Only a partner with a manufacturer account on the platform can be marked live. Create its account in User Setup first.' })
+    // Live is a status, and it needs a manufacturer account on the platform: that is what lets Tradio give it orders.
+    if (cleaned.data.status === 'live' && !doc.linkedUserId) {
+      return res.status(400).json({ error: 'Only a partner with a manufacturer account on the platform can be Live. Create its account in User Setup first.' })
     }
     const before = doc.toObject()
     const changes = []       // [field, from, to] outside verification

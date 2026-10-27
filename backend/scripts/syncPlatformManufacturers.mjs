@@ -1,5 +1,5 @@
 // Gives every active manufacturer-role user on the platform a Partner Directory record, so the directory shows who is
-// already onboarded. Idempotent on linkedUserId: a user that already has a record is left alone, so it is safe to
+// already on the platform. Idempotent on linkedUserId: a user that already has a record is left alone, so it is safe to
 // re-run whenever manufacturers are added. Linking changes nothing about what a manufacturer-role user can see: the
 // directory is admin-only and the user document is not touched.
 //

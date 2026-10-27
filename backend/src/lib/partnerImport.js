@@ -160,6 +160,8 @@ export async function runPartnerImport({ rows, mapping = null, dryRun = false, d
     const label = typeof body?.name === 'string' ? body.name.trim() : ''
     const cleaned = cleanPartnerInput(body, { defaultType })
     if (cleaned.errors) { errors.push({ row, name: label, errors: cleaned.errors }); return }
+    // Live needs a platform account, which a row of a file cannot give.
+    if (cleaned.data.status === 'live') { errors.push({ row, name: label, errors: ['Status Live needs a manufacturer account on the platform; import it as Pilot and mark it Live on its page'] }); return }
     const key = nameKey(cleaned.data.name)
     if (existing.has(key)) { skipped.push({ row, name: cleaned.data.name, reason: 'duplicate_existing' }); return }
     if (seen.has(key)) { skipped.push({ row, name: cleaned.data.name, reason: 'duplicate_in_file', firstRow: seen.get(key) }); return }

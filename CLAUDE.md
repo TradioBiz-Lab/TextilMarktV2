@@ -104,8 +104,8 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   partner-shaped may be added to an order, document, notification or audit response a buyer or manufacturer can read.
   A MOQ is a claim until `verification.gstVerified` or `sampleApproved` (`moqVerified` in `frontend/src/partners.js`).
   Partner tiles are generated images, never scraped photos. **Live gate:** a manufacturer can be given a style (created,
-  added or reassigned) only when its directory record is marked live (`isLive`, `lib/liveManufacturers.js`); a new manufacturer
-  account gets a not-live record automatically, and Tradio marks it live on the partner's page. See docs/SCHEMA.md `manufacturers`.
+  added or reassigned) only when its directory record has the status Live (`status: 'live'`, `lib/liveManufacturers.js`); a new
+  manufacturer account gets a Pilot record automatically, and Tradio sets it to Live on the partner's page. See docs/SCHEMA.md `manufacturers`.
 
 - **No router library.** `App.jsx` holds the current view in state and switch-renders the right
   page component per role; navigation is done by calling a passed-down `onNavigate(view, params)`

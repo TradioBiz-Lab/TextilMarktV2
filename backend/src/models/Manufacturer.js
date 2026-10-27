@@ -8,7 +8,9 @@ export const PARTNER_TYPES = ['garment_manufacturer', 'fabric_supplier', 'trims_
 export const PARTNER_CLUSTERS = ['ludhiana', 'ncr', 'jaipur', 'kolkata', 'tiruppur', 'other']
 // Noida and Delhi were once two clusters; they are one NCR now. The old values are still understood on input.
 export const LEGACY_CLUSTERS = { noida_ncr: 'ncr', delhi_ncr: 'ncr' }
-export const PARTNER_STATUSES = ['new', 'contacted', 'qualified', 'pilot', 'onboarded', 'rejected', 'off_scope']
+// One pipeline. `live` is its last stage: Tradio has orders with this manufacturer now (it needs a platform account, and only a
+// live manufacturer can be given a style: lib/liveManufacturers.js).
+export const PARTNER_STATUSES = ['new', 'contacted', 'qualified', 'pilot', 'live', 'rejected', 'off_scope']
 export const PARTNER_PRIORITIES = ['A', 'B', 'C', 'D']
 // What a partner makes for. A factory can sit in several (an activewear unit that also does fusion wear).
 export const PARTNER_CATEGORIES = ['athleisure', 'indian', 'western', 'fusion', 'home_textiles']
@@ -79,8 +81,7 @@ const manufacturerSchema = new mongoose.Schema({
   keywords: { type: [String], default: [] },
   notes:    { type: String, trim: true, default: '', maxlength: 5000 },
   isActive: { type: Boolean, default: true },
-  // Live = has orders with Tradio now. Only a live manufacturer (one with a platform account, linkedUserId) can be given a
-  // style or a split on an order; Tradio marks it live here. See lib/liveManufacturers.js.
+  // Derived from `status === 'live'` by the hooks below, so lists can put live partners first. Never set it directly.
   isLive: { type: Boolean, default: false },
 
   // Tiles (generated drawings, not factory photos). A link, or an upload kept inline under a small cap like the product
@@ -99,6 +100,15 @@ const manufacturerSchema = new mongoose.Schema({
 }, { timestamps: true })
 
 // One partner per name, whatever its capitalisation.
+// isLive always follows status, however the status is written (save, updateOne, findOneAndUpdate).
+manufacturerSchema.pre('validate', function syncLive(next) { this.isLive = this.status === 'live'; next() })
+manufacturerSchema.pre(['updateOne', 'updateMany', 'findOneAndUpdate'], function syncLiveOnUpdate(next) {
+  const u = this.getUpdate() || {}
+  const status = u.$set && u.$set.status !== undefined ? u.$set.status : u.status
+  if (status !== undefined) { u.$set = { ...(u.$set || {}), isLive: status === 'live' }; this.setUpdate(u) }
+  next()
+})
+
 manufacturerSchema.index({ name: 1 }, { unique: true, name: 'name_ci_unique', collation: { locale: 'en', strength: 2 } })
 manufacturerSchema.index(
   { name: 'text', city: 'text', products: 'text', fabrics: 'text', fabricTypes: 'text', trimCategories: 'text', keywords: 'text', notes: 'text' },

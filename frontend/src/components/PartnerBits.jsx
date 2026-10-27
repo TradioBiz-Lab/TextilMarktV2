@@ -46,19 +46,11 @@ export function ClaimTag() {
   return <span title="The partner's own figure. It stays a claim until GST is verified or a sample is approved." style={{ fontSize: T.fontSize.micro, fontWeight: 700, color: '#92400e', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 5, padding: '1px 6px', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>self-reported</span>
 }
 
-/** Live: the manufacturer has orders with Tradio now. Only a live manufacturer can be given a style. */
+/** Live: the manufacturer has orders with Tradio now (the Live status). Only a live manufacturer can be given a style. */
 export function LiveBadge() {
   return (
     <span title="Live: has orders with Tradio now, and can be given styles" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: T.radius.pill, fontSize: T.fontSize.micro, fontWeight: 800, background: T.successDeep, color: '#fff', whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
       <Zap size={11} fill="#fff" />Live
-    </span>
-  )
-}
-
-export function OnPlatformBadge() {
-  return (
-    <span title="Also has a manufacturer account on TextilMarkt" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: T.radius.pill, fontSize: T.fontSize.micro, fontWeight: 800, background: T.masterBg, color: T.master, border: '1px solid #c4b5fd', whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-      <Link2 size={11} />On platform
     </span>
   )
 }

@@ -23,32 +23,37 @@ const THUMB = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP////////
 const partnerOf = user => Manufacturer.findOne({ linkedUserId: user._id })
 
 describe('marking a partner live', () => {
-  test('only a partner with a platform account can be live; the change is audited', async () => {
+  test('Live is a status: only a partner with a platform account can have it; the change is audited', async () => {
     const admin = await makeAdmin()
     const api = as(admin)
     const lone = (await api.post('/api/manufacturers', { name: 'No Account Mills', type: 'garment_manufacturer' })).body
-    const refused = await api.post(`/api/manufacturers/${lone.id}`, { isLive: true })
+    const refused = await api.post(`/api/manufacturers/${lone.id}`, { status: 'live' })
     assert.equal(refused.status, 400)
     assert.match(refused.body.error, /manufacturer account/)
-    assert.equal((await Manufacturer.findById(lone.id).lean()).isLive, false)
+    assert.equal((await Manufacturer.findById(lone.id).lean()).status, 'new')
+    // nor can a new partner start as Live
+    assert.equal((await api.post('/api/manufacturers', { name: 'Born Live', type: 'garment_manufacturer', status: 'live' })).status, 400)
 
     const mfr = await makeMfr({ live: false })
     const p = await partnerOf(mfr)
-    const ok = await api.post(`/api/manufacturers/${p._id}`, { isLive: true })
+    const ok = await api.post(`/api/manufacturers/${p._id}`, { status: 'live' })
     assert.equal(ok.status, 200, JSON.stringify(ok.body))
+    assert.equal(ok.body.status, 'live')
     assert.equal(ok.body.isLive, true)
-    assert.match((await AuditLog.findOne({ action: 'Partner Updated' }).lean()).detail, /isLive false -> true/)
-    assert.equal((await api.post(`/api/manufacturers/${p._id}`, { isLive: 'yes' })).status, 400)
-    assert.equal((await api.post(`/api/manufacturers/${p._id}`, { isLive: false })).body.isLive, false)
+    assert.match((await AuditLog.findOne({ action: 'Partner Updated' }).lean()).detail, /status pilot -> live/)
+    // a client cannot set the derived flag on its own
+    assert.equal((await api.post(`/api/manufacturers/${p._id}`, { isLive: false })).body.status, 'live')
+    const back = await api.post(`/api/manufacturers/${p._id}`, { status: 'pilot' })
+    assert.equal(back.body.isLive, false)
   })
 
   test('a buyer or manufacturer cannot mark anything live', async () => {
     const mfr = await makeMfr({ live: false })
     const p = await partnerOf(mfr)
     for (const who of [await makeBuyer(), mfr]) {
-      assert.equal((await as(who).post(`/api/manufacturers/${p._id}`, { isLive: true })).status, 403)
+      assert.equal((await as(who).post(`/api/manufacturers/${p._id}`, { status: 'live' })).status, 403)
     }
-    assert.equal((await Manufacturer.findById(p._id).lean()).isLive, false)
+    assert.equal((await Manufacturer.findById(p._id).lean()).status, 'pilot')
   })
 })
 
@@ -60,9 +65,9 @@ describe('live partners come first', () => {
       await api.post('/api/manufacturers', { name, type: 'garment_manufacturer', verification: { score } })
     }
     const m = await makeMfr({ listed: false })
-    await Manufacturer.updateOne({ name: 'Bravo' }, { linkedUserId: m._id, isLive: true })
+    await Manufacturer.updateOne({ name: 'Bravo' }, { linkedUserId: m._id, status: 'live' })
     const m2 = await makeMfr({ listed: false })
-    await Manufacturer.updateOne({ name: 'Charlie' }, { linkedUserId: m2._id, isLive: true })
+    await Manufacturer.updateOne({ name: 'Charlie' }, { linkedUserId: m2._id, status: 'live' })
     return api
   }
   const names = async (api, qs) => (await api.get(`/api/manufacturers?${qs}`)).body.items.map(p => p.name)
@@ -111,7 +116,7 @@ describe('only live manufacturers can be given work', () => {
     const { api, idle, make } = await arrange()
     assert.equal((await make('LV-010', idle)).status, 400)
     const p = await partnerOf(idle)
-    assert.equal((await api.post(`/api/manufacturers/${p._id}`, { isLive: true })).status, 200)
+    assert.equal((await api.post(`/api/manufacturers/${p._id}`, { status: 'live' })).status, 200)
     assert.equal((await make('LV-010', idle)).status, 201)
   })
 
@@ -127,14 +132,14 @@ describe('only live manufacturers can be given work', () => {
     assert.match(re.body.error, /not marked live/)
     assert.equal((await Order.findById('LV-020').lean()).assignments[0].mfrId.toString(), String(live._id))
     // once live, both work
-    await Manufacturer.updateOne({ linkedUserId: idle._id }, { isLive: true })
+    await Manufacturer.updateOne({ linkedUserId: idle._id }, { status: 'live' })
     assert.equal((await api.post(`/api/orders/LV-020/assignments/${live._id}/reassign`, { newMfrId: String(idle._id) })).status, 200)
   })
 
   test('a manufacturer that is switched off live keeps the work it already has', async () => {
     const { api, live, make } = await arrange()
     assert.equal((await make('LV-030', live)).status, 201)
-    await Manufacturer.updateOne({ linkedUserId: live._id }, { isLive: false })
+    await Manufacturer.updateOne({ linkedUserId: live._id }, { status: 'pilot' })
     const order = await api.get('/api/orders/LV-030')
     assert.equal(order.status, 200)
     assert.equal(order.body.assignments.length, 1)
@@ -163,7 +168,7 @@ describe('a new manufacturer account gets a directory record, not live', () => {
     const p = await Manufacturer.findOne({ linkedUserId: res.body.id }).lean()
     assert.equal(p.name, 'Brand New Mills')
     assert.equal(p.isLive, false)
-    assert.equal(p.status, 'onboarded')
+    assert.equal(p.status, 'pilot')
     assert.equal(p.type, 'garment_manufacturer')
     assert.equal(p.contacts[0].email, 'new.mfr@example.com')
     // and cannot be given a style until marked live
@@ -185,7 +190,7 @@ describe('a new manufacturer account gets a directory record, not live', () => {
     assert.equal(r1.action, 'linked')
     assert.equal(await Manufacturer.countDocuments(), 1)
     const linked = await Manufacturer.findOne({ linkedUserId: user._id }).lean()
-    assert.equal(linked.status, 'onboarded')
+    assert.equal(linked.status, 'pilot')
     assert.equal((await ensurePartnerForUser(user.toObject())).action, 'exists')
     assert.equal(await Manufacturer.countDocuments(), 1)
   })
@@ -230,5 +235,42 @@ describe('tiles load as thumbnails, in one request', () => {
     assert.equal((await api.post(`/api/manufacturers/${a.id}/image`, { image: PNG, thumb: `data:image/png;base64,${'A'.repeat(200 * 1024)}` })).status, 400)
     assert.equal((await api.post(`/api/manufacturers/${a.id}/image`, { image: PNG, thumb: 'data:text/html;base64,PGgxPg==' })).status, 400)
     assert.equal((await Manufacturer.findById(a.id).lean()).imageUploadedAt, null)
+  })
+})
+
+describe('one status: Live replaces Onboarded and On platform', () => {
+  test('the status list has Live and no Onboarded; isLive follows the status however it is written', async () => {
+    const { PARTNER_STATUSES } = await import('../src/models/Manufacturer.js')
+    assert.deepEqual(PARTNER_STATUSES, ['new', 'contacted', 'qualified', 'pilot', 'live', 'rejected', 'off_scope'])
+    const admin = await makeAdmin()
+    const api = as(admin)
+    assert.equal((await api.post('/api/manufacturers', { name: 'Old Word', type: 'trader', status: 'onboarded' })).status, 400)
+    const m = await makeMfr({ live: false })
+    const p = await partnerOf(m)
+    await Manufacturer.updateOne({ _id: p._id }, { $set: { status: 'live' } })
+    assert.equal((await Manufacturer.findById(p._id).lean()).isLive, true)
+    await Manufacturer.findOneAndUpdate({ _id: p._id }, { status: 'rejected' })
+    assert.equal((await Manufacturer.findById(p._id).lean()).isLive, false)
+    const doc = await Manufacturer.findById(p._id)
+    doc.status = 'live'; await doc.save()
+    assert.equal((await Manufacturer.findById(p._id).lean()).isLive, true)
+    // the live filter and the status filter agree
+    assert.deepEqual((await api.get('/api/manufacturers?live=1')).body.items.map(x => x.status), ['live'])
+    assert.equal((await api.get('/api/manufacturers?status=live')).body.total, 1)
+  })
+
+  test('a file import cannot make anyone Live, and "onboarded" or "active" in a file reads as Pilot', async () => {
+    const api = as(await makeAdmin())
+    const res = await api.post('/api/manufacturers/import', { rows: [
+      { name: 'Wants Live', type: 'garment_manufacturer', status: 'live' },
+      { Company: 'Says Onboarded', Status: 'Onboarded' },
+    ].slice(0, 1) })
+    assert.equal(res.body.created, 0)
+    assert.match(res.body.errors[0].errors[0], /needs a manufacturer account/)
+    const csv = (await api.post('/api/manufacturers/csv/preview', { csv: 'Company,Status\nSays Onboarded,Onboarded\nSays Active,Active' })).body
+    const imp = await api.post('/api/manufacturers/import', { rows: csv.rows, mapping: csv.suggestedMapping })
+    assert.equal(imp.body.created, 2)
+    assert.equal((await Manufacturer.findOne({ name: 'Says Onboarded' }).lean()).status, 'pilot')
+    assert.equal((await Manufacturer.findOne({ name: 'Says Active' }).lean()).status, 'pilot')
   })
 })

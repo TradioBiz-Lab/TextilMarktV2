@@ -35,7 +35,7 @@ router.get('/', requireAuth, requireAdmin, async (req, res) => {
   try {
     const users = await User.find().sort({ createdAt: 1 }).lean()
     // Which manufacturers are marked live in the Partner Directory: only those may be given a style (lib/liveManufacturers.js).
-    const live = new Set((await Manufacturer.find({ linkedUserId: { $ne: null }, isLive: true }, 'linkedUserId').lean()).map(p => String(p.linkedUserId)))
+    const live = new Set((await Manufacturer.find({ linkedUserId: { $ne: null }, status: 'live' }, 'linkedUserId').lean()).map(p => String(p.linkedUserId)))
     res.json(users.map(u => ({ ...mapUser(u), ...(u.role === 'manufacturer' ? { live: live.has(String(u._id)) } : {}) })))
   } catch (err) {
     console.error('[users]', err)

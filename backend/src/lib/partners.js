@@ -85,7 +85,10 @@ export function normalizeStatus(text) {
   if (!t) return null
   if (PARTNER_STATUSES.includes(t)) return t
   if (/^(existing_contact|in_touch)$/.test(t)) return 'contacted'
-  if (/^(active|live)$/.test(t)) return 'onboarded'
+  if (t === 'live') return 'live'
+  // "Onboarded" and "active" used to be a status of their own; being on the platform now shows as Live, which needs a
+  // platform account a spreadsheet row cannot have, so these read as the stage before it.
+  if (/^(active|onboarded)$/.test(t)) return 'pilot'
   if (/^(excluded|excluded_for_now|dropped|not_interested)$/.test(t)) return 'rejected'
   if (/^off_?scope$/.test(t)) return 'off_scope'
   return null
@@ -321,9 +324,7 @@ export function cleanPartnerInput(body, { partial = false, defaultType = null } 
   if (has('isActive')) {
     if (typeof body.isActive !== 'boolean') fail('isActive must be true or false'); else data.isActive = body.isActive
   }
-  if (has('isLive')) {
-    if (typeof body.isLive !== 'boolean') fail('isLive must be true or false'); else data.isLive = body.isLive
-  }
+
 
   return errors.length ? { errors } : { data }
 }
@@ -421,7 +422,7 @@ export function partnerMongoFilter(f) {
   // "Verified" is one idea everywhere: GST checked or a sample approved. It is also what lifts the MOQ "self-reported" tag.
   if (f.verifiedOnly) and.push({ $or: [{ 'verification.gstVerified': true }, { 'verification.sampleApproved': true }] })
   if (f.onPlatform) and.push({ linkedUserId: { $type: 'objectId' } })
-  if (f.live) and.push({ isLive: true })
+  if (f.live) and.push({ status: 'live' })
   return and.length ? { $and: and } : {}
 }
 

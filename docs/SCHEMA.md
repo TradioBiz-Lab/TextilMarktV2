@@ -759,7 +759,10 @@ manufacturer can reach. It is not the same as a manufacturer-role `users` record
   verification      { score (0-100, null = not assessed), gstVerified, udyamVerified, referencesChecked,
                       videoWalkthrough, sampleApproved, siteVisited (Boolean), lastCheckedAt }
                     lastCheckedAt is stamped by the server whenever a verification field changes
-  status            enum     new | contacted | qualified | pilot | onboarded | rejected | off_scope   (default new)
+  status            enum     new | contacted | qualified | pilot | live | rejected | off_scope   (default new). One
+                             pipeline: Live is its last stage and means Tradio has orders with this manufacturer now. It needs
+                             a platform account (linkedUserId), so a partner cannot be created or imported as Live. There is no
+                             separate Onboarded or On platform: both are Live
   priority          enum     A | B | C | D   (default C). Not shown or edited in the UI for now: partners are ranked by
                              verification score. The field and API filter remain
   source            String   where the lead came from, with the capture date
@@ -768,10 +771,10 @@ manufacturer can reach. It is not the same as a manufacturer-role `users` record
                              the seed both feed keywords
   notes             String
   isActive          Boolean  false = archived: kept on file, out of the default list
-  isLive            Boolean  Tradio has orders with this manufacturer now. Only a live manufacturer (one with a platform
-                             account, linkedUserId) can be given a style or a split: the server refuses assignments to any
-                             other (lib/liveManufacturers.js, applied when a style is created, a manufacturer added, a split
-                             reassigned). Set by Tradio on the partner's page; live partners sort first in the directory
+  isLive            Boolean  derived from status === 'live' by the model's hooks (never set directly), so lists put live
+                             partners first. Only a live manufacturer can be given a style or a split: the server refuses
+                             assignments to any other (lib/liveManufacturers.js: creating a style, adding a manufacturer,
+                             reassigning a split). Live partners sort first in the directory
   imageUrl          String   an http(s) link to the tile
   imageData         String   an uploaded tile as a data URL (JPEG/PNG/WebP, under 600KB, shrunk to ~640px by the
                              browser). select:false, so list and detail reads never carry image bytes; the page

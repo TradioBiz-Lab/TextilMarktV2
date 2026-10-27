@@ -48,11 +48,14 @@ export const STATUSES = [
   { v: 'contacted', label: 'Contacted', bg: '#dbeafe', fg: '#1d4ed8' },
   { v: 'qualified', label: 'Qualified', bg: '#ede9fe', fg: '#6d28d9' },
   { v: 'pilot', label: 'Pilot', bg: '#fef9c3', fg: '#92400e' },
-  { v: 'onboarded', label: 'Onboarded', bg: '#dcfce7', fg: '#15803d' },
+  { v: 'live', label: 'Live', bg: '#dcfce7', fg: '#15803d' }, // has orders with Tradio now; needs a platform account
   { v: 'rejected', label: 'Rejected', bg: '#fee2e2', fg: '#b91c1c' },
   { v: 'off_scope', label: 'Off scope', bg: '#f1f5f9', fg: '#64748b' },
 ]
 export const STATUS_BY = Object.fromEntries(STATUSES.map(s => [s.v, s]))
+
+/** Live needs a manufacturer account on the platform; a partner without one cannot be set to it. */
+export const canBeLive = p => !!p?.onPlatform
 
 export const SORTS = [
   { v: 'score', label: 'Verification score' },
@@ -120,7 +123,7 @@ export const PAGE_SIZE = 120
 
 export const emptyQuery = () => ({
   search: '', tab: 'all', category: [], cluster: [], fabric: [], status: [],
-  minScore: '', maxScore: '', verifiedOnly: false, onPlatform: false, live: false, includeInactive: false, sort: 'score', limit: PAGE_SIZE,
+  minScore: '', maxScore: '', verifiedOnly: false, live: false, includeInactive: false, sort: 'score', limit: PAGE_SIZE,
 })
 
 /** The query as the API's parameters: empty filters left out, lists joined with commas. */
@@ -131,7 +134,7 @@ export function queryToParams(q) {
   if (q.search?.trim()) p.search = q.search.trim()
   for (const k of ['category', 'cluster', 'fabric', 'status']) if (q[k]?.length) p[k] = q[k].join(',')
   for (const k of ['minScore', 'maxScore']) if (q[k] !== '' && q[k] !== null && q[k] !== undefined) p[k] = q[k]
-  for (const k of ['verifiedOnly', 'onPlatform', 'live', 'includeInactive']) if (q[k]) p[k] = 1
+  for (const k of ['verifiedOnly', 'live', 'includeInactive']) if (q[k]) p[k] = 1
   p.sort = q.sort === 'relevance' && !p.search ? 'score' : q.sort
   p.limit = q.limit || PAGE_SIZE
   return p
@@ -142,7 +145,7 @@ export function activeFilterCount(q) {
   let n = 0
   for (const k of ['category', 'cluster', 'fabric', 'status']) n += q[k]?.length || 0
   if (q.minScore !== '' || q.maxScore !== '') n++
-  for (const k of ['verifiedOnly', 'onPlatform', 'live', 'includeInactive']) if (q[k]) n++
+  for (const k of ['verifiedOnly', 'live', 'includeInactive']) if (q[k]) n++
   return n
 }
 
@@ -159,7 +162,6 @@ export function describeQuery(q) {
   if (q.maxScore !== '') bits.push(`verification score at most ${q.maxScore}`)
   if (q.verifiedOnly) bits.push('verified (GST checked or sample approved)')
   if (q.live) bits.push('live (orders at Tradio now)')
-  if (q.onPlatform) bits.push('already on the platform')
   return bits.join(', ')
 }
 

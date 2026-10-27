@@ -1,11 +1,11 @@
 import { MapPin } from '../icons.jsx'
 import { T } from '../constants.js'
 import { Card } from './ui.jsx'
-import { PartnerImage, Chip, CategoryChips, TagChips, StatusPill, ScoreBadge, ClaimTag, OnPlatformBadge, LiveBadge } from './PartnerBits.jsx'
+import { PartnerImage, Chip, CategoryChips, TagChips, StatusPill, ScoreBadge, ClaimTag, LiveBadge } from './PartnerBits.jsx'
 import { CLUSTER_LABEL, TYPE_LABEL, moqVerified } from '../partners.js'
 
 // One partner in the list page's grid: tile, name, place, what they make, MOQ (a claim until verified), score,
-// status and the "On platform" badge.
+// and status (Live shows as its own badge).
 export function PartnerCard({ partner: p, onOpen }) {
   const clusterLabel = p.cluster ? CLUSTER_LABEL[p.cluster] : ''
   const showCluster = clusterLabel && !p.city.toLowerCase().includes(clusterLabel.toLowerCase().split(' ')[0])
@@ -41,8 +41,7 @@ export function PartnerCard({ partner: p, onOpen }) {
           </div>
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <StatusPill status={p.status} />
-          {p.onPlatform && <OnPlatformBadge />}
+          {p.status !== 'live' && <StatusPill status={p.status} />}
         </div>
       </div>
     </Card>

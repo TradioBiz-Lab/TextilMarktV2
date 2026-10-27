@@ -2,7 +2,7 @@ import { describe, test, expect } from 'vitest'
 import { capsFor } from '../caps.js'
 import {
   scoreTone, moqVerified, initialsOf, snakeOf, labelOf, fieldsFor, emptyQuery, queryToParams, activeFilterCount,
-  describeQuery, kriyaaPromptFor, sortsFor, TYPE_TABS, CATEGORIES, CLUSTERS, SORTS,
+  describeQuery, kriyaaPromptFor, sortsFor, TYPE_TABS, CATEGORIES, CLUSTERS, SORTS, STATUSES, canBeLive,
 } from '../partners.js'
 
 describe('who sees the Partner Directory', () => {
@@ -114,6 +114,20 @@ describe('clusters and ranking', () => {
     expect('priority' in queryToParams({ ...q, priority: ['A'] })).toBe(false)
     expect(SORTS.map(s => s.v)).toEqual(['score', 'updated', 'name'])
     expect(queryToParams(q).sort).toBe('score')
+  })
+})
+
+describe('one status: Live', () => {
+  test('Live is a status, there is no Onboarded, and no On platform filter', () => {
+    expect(STATUSES.map(s => s.v)).toEqual(['new', 'contacted', 'qualified', 'pilot', 'live', 'rejected', 'off_scope'])
+    expect('onPlatform' in emptyQuery()).toBe(false)
+    expect('onPlatform' in queryToParams({ ...emptyQuery(), onPlatform: true })).toBe(false)
+  })
+
+  test('only a partner with a platform account can be set to Live', () => {
+    expect(canBeLive({ onPlatform: true })).toBe(true)
+    expect(canBeLive({ onPlatform: false })).toBe(false)
+    expect(canBeLive(null)).toBe(false)
   })
 })
 

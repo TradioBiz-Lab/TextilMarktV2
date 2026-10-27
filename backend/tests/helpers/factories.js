@@ -23,7 +23,7 @@ async function passwordHash() {
 }
 
 // A manufacturer can only be given a style once its Partner Directory record is marked live (lib/liveManufacturers.js),
-// so a test manufacturer gets one by default. `live: false` leaves it unlisted-as-live, `listed: false` gives it no
+// so a test manufacturer gets one by default. `live: false` makes it a pilot (not live), `listed: false` gives it no
 // record at all (the Partner Directory's own tests count records).
 export async function makeUser({ role = 'admin', adminType = null, company, name, email, code, isActive = true, live = true, listed = true } = {}) {
   const seq = ++codeSeq
@@ -38,7 +38,7 @@ export async function makeUser({ role = 'admin', adminType = null, company, name
     isActive,
   })
   if (role === 'manufacturer' && listed) {
-    await Manufacturer.create({ name: `${user.company} [${seq}]`, type: 'garment_manufacturer', linkedUserId: user._id, isLive: live, status: 'onboarded' })
+    await Manufacturer.create({ name: `${user.company} [${seq}]`, type: 'garment_manufacturer', linkedUserId: user._id, status: live ? 'live' : 'pilot' })
   }
   return user
 }

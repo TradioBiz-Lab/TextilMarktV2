@@ -92,7 +92,7 @@ export function PartnerFormModal({ partner, initialType, onClose, onSaved }) {
             <Input label="Legal name" value={f.legalName} onChange={e => set('legalName', e.target.value)} maxLength={200} />
             <Input label="Website" value={f.website} onChange={e => set('website', e.target.value)} placeholder="example.com" maxLength={300} />
             <Select label="Status" value={f.status} onChange={e => set('status', e.target.value)}>
-              {STATUSES.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
+              {STATUSES.map(s => <option key={s.v} value={s.v} disabled={s.v === 'live' && !(editing && partner.onPlatform)}>{s.label}{s.v === 'live' && !(editing && partner.onPlatform) ? ' (needs a platform account)' : ''}</option>)}
             </Select>
           </Grid>
           <div style={{ marginTop: 12 }}>
