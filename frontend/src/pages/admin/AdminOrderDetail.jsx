@@ -24,6 +24,7 @@ import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
 import { QuickStageModal } from './QuickStageModal.jsx'
+import { ownerForSplit, ownerCopyLabel } from '../../ownerCopy.js'
 
 
 // Bulk Edit row: step, start, end, responsible, target qty, description, evidence, NA / Undo.
@@ -340,7 +341,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
           if (totalUnitsChanged) row.totalUnits = parseInt(totalUnitsValues[i], 10)
           if (descriptionChanged) row.description = descriptionValues[i] || ''
           rows.push(row)
-          if (responsibleChanged && stage?.name) respChanges.push({ stageName: stage.name, responsibleId: responsibleValues[i] || null })
+          if (responsibleChanged && stage?.name) respChanges.push({ stageName: stage.name, responsibleId: responsibleValues[i] || null, role: responsibleUsers.find(u => u.id === responsibleValues[i])?.role || null })
         }
       }
       if (rows.length > 0) await bulkUpdateStages(order.id, etaTarget, rows)
@@ -398,8 +399,11 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
           const rows = []
           ;(sAsgn.stages || []).forEach((sStage, idx) => {
             const match = pendingRespChanges.find(c => c.stageName.trim().toLowerCase() === (sStage.name || '').trim().toLowerCase())
-            if (match && (sStage.responsibleId || null) !== (match.responsibleId || null))
-              rows.push({ index: idx, responsibleId: match.responsibleId })
+            if (!match) return
+            // By role, never the raw id: Factory A's id on Factory B's split would give A access to it.
+            const owner = ownerForSplit(match.responsibleId ? { id: match.responsibleId, role: match.role } : null, sib, sAsgn)
+            if ((sStage.responsibleId || null) !== (owner || null))
+              rows.push({ index: idx, responsibleId: owner })
           })
           if (rows.length === 0) continue
           // One atomic request per split, not one per stage.
@@ -1534,7 +1538,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, background: '#f8fafc', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px' }}>
                 <span style={{ color: T.text, fontWeight: 600 }}>{c.stageName}</span>
                 <span style={{ color: T.textMuted }}>
-                  {c.responsibleId ? (responsibleUsers.find(u => u.id === c.responsibleId)?.name || responsibleUsers.find(u => u.id === c.responsibleId)?.company || 'Unknown') : 'Unassigned'}
+                  {ownerCopyLabel(c.responsibleId ? { id: c.responsibleId, role: c.role } : null, id => responsibleUsers.find(u => u.id === id)?.name || responsibleUsers.find(u => u.id === id)?.company)}
                 </span>
               </div>
             ))}

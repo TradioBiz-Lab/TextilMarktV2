@@ -41,3 +41,22 @@ export async function notifyOrderChange(order, actor, { type = 'status', msg, or
   if (actor?.role === 'manufacturer') recipients.push(...await adminIds())
   await notify(recipients, { type, msg, orderId }, { exceptUserId: actor?.id })
 }
+
+/** Ids of every active master admin (Tradio's decision makers); empty on failure. */
+export async function masterAdminIds() {
+  try {
+    return (await User.find({ role: 'admin', adminType: 'master', isActive: true }, '_id').lean()).map(u => u._id)
+  } catch (err) {
+    console.error('[notify]', err)
+    return []
+  }
+}
+
+/**
+ * Tell the people on one split: its factory and every active master admin, never the actor. Used for what a
+ * customer or a factory says on a step (a note, an approval), which would otherwise reach nobody. A factory only
+ * ever hears about its own split.
+ */
+export async function notifySplit(mfrId, actor, { type = 'status', msg, orderId }) {
+  await notify([mfrId, ...await masterAdminIds()], { type, msg, orderId }, { exceptUserId: actor?.id })
+}
