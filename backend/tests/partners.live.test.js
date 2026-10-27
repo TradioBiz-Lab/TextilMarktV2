@@ -87,6 +87,36 @@ describe('live partners come first', () => {
   })
 })
 
+describe('rejected partners come last', () => {
+  const setup = async () => {
+    const api = as(await makeAdmin())
+    for (const [name, score] of [['Alpha', 90], ['Bravo', 10], ['Charlie', 50], ['Delta', 70], ['Echo', 95]]) {
+      await api.post('/api/manufacturers', { name, type: 'garment_manufacturer', verification: { score } })
+    }
+    await Manufacturer.updateOne({ name: 'Echo' }, { status: 'rejected' })
+    await Manufacturer.updateOne({ name: 'Alpha' }, { status: 'rejected' })
+    return api
+  }
+  const names = async (api, qs) => (await api.get(`/api/manufacturers?${qs}`)).body.items.map(p => p.name)
+
+  test('under every sort, with a search, and the best score does not lift them', async () => {
+    const api = await setup()
+    assert.deepEqual(await names(api, 'sort=score'), ['Delta', 'Charlie', 'Bravo', 'Echo', 'Alpha'])
+    assert.deepEqual(await names(api, 'sort=name'), ['Bravo', 'Charlie', 'Delta', 'Alpha', 'Echo'])
+    assert.deepEqual(await names(api, 'search=a&sort=score'), ['Delta', 'Charlie', 'Bravo', 'Alpha'])
+    assert.deepEqual(await names(api, 'search=ech&sort=name'), ['Echo'])
+  })
+
+  test('paging runs on through the rejected group and the total counts both', async () => {
+    const api = await setup()
+    const second = (await api.get('/api/manufacturers?sort=score&limit=2&skip=2')).body
+    assert.deepEqual(second.items.map(p => p.name), ['Bravo', 'Echo'])
+    assert.equal(second.total, 5)
+    const third = (await api.get('/api/manufacturers?sort=score&limit=2&skip=4')).body
+    assert.deepEqual(third.items.map(p => p.name), ['Alpha'])
+  })
+})
+
 describe('only live manufacturers can be given work', () => {
   const arrange = async () => {
     const admin = await makeAdmin()

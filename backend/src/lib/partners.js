@@ -467,32 +467,43 @@ const SORTS = {
 }
 
 /**
+ * One page of a list, with the rejected partners always after everyone else whatever the sort. They are two groups read one
+ * after the other (the others first, then the rejected), so paging crosses from one into the next without a schema field.
+ * `find(extra)` builds the sorted query for the filter plus `extra`; `total` is both groups together.
+ */
+async function pageSunkLast(Manufacturer, filter, f, find) {
+  const open = { $and: [filter, { status: { $ne: 'rejected' } }] }
+  const rejected = { $and: [filter, { status: 'rejected' }] }
+  const [nOpen, nRejected] = await Promise.all([Manufacturer.countDocuments(open), Manufacturer.countDocuments(rejected)])
+  let items = []
+  if (f.skip < nOpen) items = await find(open).skip(f.skip).limit(f.limit).lean()
+  const room = f.limit - items.length
+  if (room > 0 && nRejected > 0) items = items.concat(await find(rejected).skip(Math.max(0, f.skip - nOpen)).limit(room).lean())
+  return { items, total: nOpen + nRejected }
+}
+
+/**
  * Runs a list query. A search goes to the text index first (ranked, stemmed: "legging" finds "leggings"); when that
- * finds nothing, to a regex over the same fields so partial words ("ludh", "sports br") still work.
+ * finds nothing, to a regex over the same fields so partial words ("ludh", "sports br") still work. Rejected partners
+ * come last in every case.
  * @returns {{ items: object[], total: number, mode: 'text'|'regex'|'filter' }}
  */
 export async function findPartners(Manufacturer, f) {
   const base = partnerMongoFilter(f)
   const tokens = searchTokens(f.search)
-  const page = q => q.skip(f.skip).limit(f.limit).lean()
-  const sorted = (sort, q) => q.sort(sort)
+  const byRelevance = !f.sort || f.sort === 'relevance'
 
   if (tokens.length) {
     const textFilter = { $and: [base, { $text: { $search: tokens.join(' ') } }] }
-    const total = await Manufacturer.countDocuments(textFilter)
-    if (total > 0) {
-      const sort = !f.sort || f.sort === 'relevance' ? { _ts: { $meta: 'textScore' }, name: 1 } : SORTS[f.sort]
-      const items = await page(sorted(sort, Manufacturer.find(textFilter, { _ts: { $meta: 'textScore' } })))
-      return { items: items.map(({ _ts, ...rest }) => rest), total, mode: 'text' }
-    }
+    const sort = byRelevance ? { _ts: { $meta: 'textScore' }, name: 1 } : SORTS[f.sort]
+    const text = await pageSunkLast(Manufacturer, textFilter, f, extra => Manufacturer.find(extra, { _ts: { $meta: 'textScore' } }).sort(sort))
+    if (text.total > 0) return { items: text.items.map(({ _ts, ...rest }) => rest), total: text.total, mode: 'text' }
     const regexFilter = { $and: [base, partnerRegexFilter(tokens)] }
-    const rtotal = await Manufacturer.countDocuments(regexFilter)
-    const items = await page(sorted(!f.sort || f.sort === 'relevance' ? SORTS.score : SORTS[f.sort], Manufacturer.find(regexFilter)))
-    return { items, total: rtotal, mode: 'regex' }
+    const hit = await pageSunkLast(Manufacturer, regexFilter, f, extra => Manufacturer.find(extra).sort(byRelevance ? SORTS.score : SORTS[f.sort]))
+    return { ...hit, mode: 'regex' }
   }
-  const total = await Manufacturer.countDocuments(base)
-  const items = await page(sorted(SORTS[f.sort] || SORTS.score, Manufacturer.find(base)).collation({ locale: 'en', strength: 2 }))
-  return { items, total, mode: 'filter' }
+  const hit = await pageSunkLast(Manufacturer, base, f, extra => Manufacturer.find(extra).sort(SORTS[f.sort] || SORTS.score).collation({ locale: 'en', strength: 2 }))
+  return { ...hit, mode: 'filter' }
 }
 
 // ── Response shape ─────────────────────────────────────────────────────────────────────────────────────────────
