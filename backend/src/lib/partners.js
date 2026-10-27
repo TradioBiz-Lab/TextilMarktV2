@@ -207,6 +207,24 @@ export function cleanPartnerInput(body, { partial = false, defaultType = null } 
   tagList('fabricTypes', true)
   tagList('trimCategories', true)
   tagList('keywords', false)
+  if (has('brands')) {
+    let v = body.brands
+    if (blank(v)) v = []
+    if (typeof v === 'string') v = splitCell(v)
+    if (!Array.isArray(v)) fail('Brands must be a list')
+    else {
+      const out = []
+      for (const raw of v) {
+        if (typeof raw !== 'string') { fail('Brands must be a list of text'); break }
+        const t = raw.replace(/\s+/g, ' ').trim()
+        if (!t) continue
+        if (t.length > MAX_TAG_LEN) { fail(`A brand name is too long (max ${MAX_TAG_LEN} characters)`); break }
+        if (!out.some(b => b.toLowerCase() === t.toLowerCase())) out.push(t)
+      }
+      if (out.length > MAX_TAGS) fail(`Too many brands (max ${MAX_TAGS})`)
+      else data.brands = out
+    }
+  }
   if (has('categories')) {
     let v = body.categories
     if (blank(v)) v = []
@@ -365,6 +383,11 @@ export function parsePartnerQuery(raw = {}) {
     if (list.length === 0 || list.length > PARTNER_CATEGORIES.length || list.some(c => !c)) return { error: 'Invalid category' }
     f.category = [...new Set(list)]
   }
+  if (!blank(q.brand)) {
+    const list = (Array.isArray(q.brand) ? q.brand : String(q.brand).split(',')).map(x => String(x).replace(/\s+/g, ' ').trim()).filter(Boolean)
+    if (list.length === 0 || list.length > 10 || list.some(x => x.length > MAX_TAG_LEN)) return { error: 'Invalid brand' }
+    f.brand = [...new Set(list)]
+  }
   for (const key of ['product', 'fabric']) {
     if (blank(q[key])) continue
     const list = csvOf(q[key]).map(x => normTag(x, true)).filter(Boolean)
@@ -415,6 +438,8 @@ export function partnerMongoFilter(f) {
   if (!f.includeInactive) and.push({ isActive: { $ne: false } })
   for (const k of ['type', 'cluster', 'status', 'priority']) if (f[k]) and.push({ [k]: { $in: f[k] } })
   if (f.category) and.push({ categories: { $in: f.category } }) // any of the chosen categories
+  // a brand matches whatever its capitalisation, and exactly (so "Cocoblu" does not match "Cocoblu Kids")
+  if (f.brand) and.push({ brands: { $in: f.brand.map(b => new RegExp(`^${escapeRe(b)}$`, 'i')) } })
   if (f.product) and.push({ products: { $in: f.product } })
   if (f.fabric) and.push({ $or: [{ fabrics: { $in: f.fabric } }, { fabricTypes: { $in: f.fabric } }] })
   if (f.minScore !== undefined) and.push({ 'verification.score': { $gte: f.minScore } })
@@ -426,7 +451,7 @@ export function partnerMongoFilter(f) {
   return and.length ? { $and: and } : {}
 }
 
-const SEARCH_FIELDS = ['name', 'legalName', 'city', 'products', 'fabrics', 'fabricTypes', 'trimCategories', 'keywords']
+const SEARCH_FIELDS = ['name', 'legalName', 'city', 'products', 'fabrics', 'fabricTypes', 'trimCategories', 'keywords', 'brands']
 
 /** The regex fallback for partial words: every word must appear in some searchable field. */
 export function partnerRegexFilter(tokens) {
@@ -478,6 +503,7 @@ export function toPartner(p) {
     id: String(p._id),
     name: p.name, legalName: p.legalName || '', type: p.type,
     categories: p.categories || [],
+    brands: p.brands || [],
     cluster: p.cluster || null, city: p.city || '', address: p.address || '', pincode: p.pincode || '',
     products: p.products || [],
     machines: { flatlock: 0, coverstitch: 0, overlock: 0, singleNeedle: 0, ...(p.machines || {}) },

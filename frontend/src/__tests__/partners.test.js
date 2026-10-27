@@ -131,6 +131,16 @@ describe('one status: Live', () => {
   })
 })
 
+describe('brands', () => {
+  test('the brand filter is sent as a comma list and counted', () => {
+    const q = { ...emptyQuery(), brand: ['Cocoblu', 'Fitleasure'] }
+    expect(queryToParams(q).brand).toBe('Cocoblu,Fitleasure')
+    expect(queryToParams(emptyQuery()).brand).toBeUndefined()
+    expect(activeFilterCount(q)).toBe(2)
+    expect(describeQuery(q)).toBe('working with Cocoblu or Fitleasure')
+  })
+})
+
 describe('live manufacturers', () => {
   test('the live switch is a filter and is sent as a flag', () => {
     const q = { ...emptyQuery(), live: true }

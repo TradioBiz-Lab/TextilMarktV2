@@ -18,6 +18,7 @@ export const PARTNER_CSV_FIELDS = [
   { key: 'name', label: 'Name', aliases: ['name', 'company', 'companyname', 'partner', 'partnername', 'vendor', 'vendorname', 'manufacturer', 'firm', 'supplier'] },
   { key: 'legalName', label: 'Legal name', aliases: ['legalname', 'registeredname'] },
   { key: 'type', label: 'Type', aliases: ['type', 'category', 'partnertype', 'kind'] },
+  { key: 'brands', label: 'Brands they work with', aliases: ['brands', 'brand', 'clients', 'customers', 'workswith', 'workingwith'] },
   { key: 'categories', label: 'Categories', aliases: ['categories', 'segment', 'segments', 'market', 'markets', 'productcategory', 'productcategories'] },
   { key: 'cluster', label: 'Cluster', aliases: ['cluster', 'region', 'hub'] },
   { key: 'city', label: 'City', aliases: ['city', 'town', 'location'] },
@@ -51,7 +52,7 @@ export const PARTNER_CSV_FIELDS = [
   { key: 'notes', label: 'Notes', aliases: ['notes', 'note', 'remarks', 'comments', 'confidence', 'nextaction'] },
 ]
 const FIELD_KEYS = new Set(PARTNER_CSV_FIELDS.map(f => f.key))
-const LIST_FIELDS = new Set(['products', 'fabrics', 'fabricTypes', 'trimCategories', 'keywords', 'categories'])
+const LIST_FIELDS = new Set(['products', 'fabrics', 'fabricTypes', 'trimCategories', 'keywords', 'categories', 'brands'])
 
 const fold = s => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
 const cellText = v => (v === undefined || v === null ? '' : String(v).trim())

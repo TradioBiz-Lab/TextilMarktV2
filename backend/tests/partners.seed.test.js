@@ -68,6 +68,11 @@ describe('Leads rows', () => {
     assert.equal(parseMoq('10 pcs').moqPerStyleColour, 10)
   })
 
+  test('a lead from the Cocoblu vendor file works with Cocoblu; the others have no brand yet', () => {
+    assert.deepEqual(leadToPartner(lead({ Source: 'Existing contact (Cocoblu vendor file)' }), { importedOn }).brands, ['Cocoblu'])
+    assert.deepEqual(leadToPartner(lead(), { importedOn }).brands, [])
+  })
+
   test('a website cell that is not an address is dropped; a source without a date gets the import date', () => {
     const p = leadToPartner(lead({ Website: 'via TradeIndia listing', Source: 'Existing contact (Cocoblu vendor file)' }), { importedOn })
     assert.equal(p.website, '')
@@ -116,6 +121,11 @@ describe('Vendors rows', () => {
     assert.equal(p.isActive, false)
     assert.equal(p.status, 'off_scope')
     assert.equal(p.priority, 'D')
+  })
+
+  test('every row of the Cocoblu vendor file works with Cocoblu', () => {
+    assert.deepEqual(vendorToPartner(vendor(), { importedOn }).brands, ['Cocoblu'])
+    assert.equal(cleanPartnerInput(vendorToPartner(vendor(), { importedOn })).errors, undefined)
   })
 
   test('"Not found" cities and an unidentified company are handled', () => {

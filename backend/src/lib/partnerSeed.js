@@ -75,6 +75,8 @@ export function leadToPartner(r, { importedOn }) {
     ...(cluster ? { cluster } : {}),
     type: normalizeType(r['Type']) || 'unknown',
     fabrics,
+    // The Cocoblu vendor file is Cocoblu's own list of vendors: these are brands they work with Cocoblu for.
+    brands: /Cocoblu vendor file/i.test(text(r['Source'])) ? ['Cocoblu'] : [],
     categories: inferCategories(capability),
     ...parseMoq(r['MOQ claim (self-reported)']),
     contacts,
@@ -125,6 +127,7 @@ export function vendorToPartner(r, { importedOn }) {
     ...(cluster ? { cluster } : {}),
     type, isActive,
     fabrics, contacts,
+    brands: ['Cocoblu'], // every row of the Cocoblu vendor file
     categories: inferCategories(doing),
     website: websiteOf(r['Website']),
     source: `Cocoblu vendor file (Cocoblu_Vendor_Contacts_Clean.xlsx, deduped 27 Oct 2026); ${importedOn}`,

@@ -610,3 +610,53 @@ describe('clusters: Ludhiana, NCR, Jaipur, Kolkata, Tiruppur', () => {
     assert.equal(moved.body.cluster, 'ncr')
   })
 })
+
+describe('brands they work with', () => {
+  const rows = [
+    { name: 'Cocoblu Vendor One', brands: ['Cocoblu'] },
+    { name: 'Two Brand Mills', brands: ['Cocoblu', 'Fitleasure'] },
+    { name: 'Kids Only', brands: ['Cocoblu Kids'] },
+    { name: 'No Brands' },
+  ]
+  const setup = async () => { const admin = await makeAdmin(); await seed(admin, rows); return as(admin) }
+  const q = async (api, qs) => (await api.get(`/api/manufacturers?${qs}&sort=name`)).body.items.map(p => p.name)
+
+  test('brand names are kept as typed, de-duplicated whatever their capitalisation, and listed in the response', async () => {
+    const api = as(await makeAdmin())
+    const res = await api.post('/api/manufacturers', P({ name: 'Brand Test', brands: ['  Cocoblu ', 'cocoblu', 'Fit  Leisure', 'H&M'] }))
+    assert.equal(res.status, 201, JSON.stringify(res.body))
+    assert.deepEqual(res.body.brands, ['Cocoblu', 'Fit Leisure', 'H&M'])
+    assert.deepEqual((await api.post('/api/manufacturers', P({ name: 'No Brand Test' }))).body.brands, [])
+    assert.equal((await api.post('/api/manufacturers', P({ name: 'Bad Brand', brands: [5] }))).status, 400)
+    assert.equal((await api.post('/api/manufacturers', P({ name: 'Long Brand', brands: ['x'.repeat(61)] }))).status, 400)
+    const edit = await api.post(`/api/manufacturers/${res.body.id}`, { brands: ['Fitleasure'] })
+    assert.deepEqual(edit.body.brands, ['Fitleasure'])
+    assert.match((await AuditLog.findOne({ action: 'Partner Updated' }).lean()).detail, /brands/)
+  })
+
+  test('the brand filter matches the exact brand, in any capitalisation, or any of several', async () => {
+    const api = await setup()
+    assert.deepEqual(await q(api, 'brand=Cocoblu'), ['Cocoblu Vendor One', 'Two Brand Mills'])
+    assert.deepEqual(await q(api, 'brand=cocoblu'), ['Cocoblu Vendor One', 'Two Brand Mills'])
+    assert.deepEqual(await q(api, 'brand=Fitleasure'), ['Two Brand Mills'])
+    assert.deepEqual(await q(api, 'brand=Fitleasure,Cocoblu Kids'), ['Kids Only', 'Two Brand Mills'])
+    assert.deepEqual(await q(api, 'brand=.*'), [], 'a pattern is not a brand')
+    assert.equal((await api.get(`/api/manufacturers?brand=${'x'.repeat(61)}`)).status, 400)
+  })
+
+  test('a search finds a brand, and the facets count each brand', async () => {
+    const api = await setup()
+    assert.deepEqual(await q(api, 'search=fitleas'), ['Two Brand Mills'])
+    const f = (await api.get('/api/manufacturers/facets')).body
+    assert.deepEqual(f.brands.map(b => [b.value, b.count]), [['Cocoblu', 2], ['Cocoblu Kids', 1], ['Fitleasure', 1]])
+  })
+
+  test('CSV and bulk import read a brands column', async () => {
+    const api = as(await makeAdmin())
+    const csv = 'Company,Clients\nA Co,"Cocoblu; Fitleasure"\nB Co,Cocoblu'
+    const pre = (await api.post('/api/manufacturers/csv/preview', { csv })).body
+    assert.equal(pre.suggestedMapping.Clients, 'brands')
+    await api.post('/api/manufacturers/import', { rows: pre.rows, mapping: pre.suggestedMapping })
+    assert.deepEqual((await Manufacturer.findOne({ name: 'A Co' }).lean()).brands, ['Cocoblu', 'Fitleasure'])
+  })
+})

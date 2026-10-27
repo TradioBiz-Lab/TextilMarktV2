@@ -45,7 +45,7 @@ const tally = (rows, key) => {
 // GET /api/manufacturers/facets - counts and the tags in use, for the filter rail, the tab counts and tag suggestions.
 router.get('/facets', async (req, res) => {
   try {
-    const rows = await Manufacturer.find({}, 'type cluster status priority categories products fabrics fabricTypes trimCategories keywords isActive linkedUserId').lean()
+    const rows = await Manufacturer.find({}, 'type cluster status priority categories brands products fabrics fabricTypes trimCategories keywords isActive linkedUserId').lean()
     const active = rows.filter(r => r.isActive !== false)
     res.json({
       total: active.length, inactive: rows.length - active.length,
@@ -58,6 +58,7 @@ router.get('/facets', async (req, res) => {
       fabrics: tally(active.map(r => ({ f: [...(r.fabrics || []), ...(r.fabricTypes || [])] })), 'f'),
       trimCategories: tally(active, 'trimCategories'),
       keywords: tally(rows, 'keywords'),
+      brands: tally(active, 'brands'),
     })
   } catch (err) { serverError(res, err) }
 })

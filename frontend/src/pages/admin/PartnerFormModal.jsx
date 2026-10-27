@@ -25,7 +25,7 @@ function initialForm(p, initialType) {
     priceIndication: p?.priceIndication || '', leadTimeDays: num(p?.leadTimeDays),
     contacts: p?.contacts?.length ? p.contacts.map(c => ({ ...blankContact(), ...c })) : [],
     website: p?.website || '', logoUrl: p?.logoUrl || '', gstin: p?.gstin || '', udyam: p?.udyam || '', mcaCin: p?.mcaCin || '',
-    source: p?.source || '', keywords: p?.keywords || [], notes: p?.notes || '',
+    source: p?.source || '', keywords: p?.keywords || [], brands: p?.brands || [], notes: p?.notes || '',
   }
 }
 
@@ -41,6 +41,7 @@ export function PartnerFormModal({ partner, initialType, onClose, onSaved }) {
   const sugg = useMemo(() => ({
     fabrics: [...new Set([...(partnerFacets?.fabrics.map(x => x.value) || []), ...COMMON_FABRICS])],
     trims: partnerFacets?.trimCategories.map(x => x.value) || [],
+    brands: partnerFacets?.brands.map(x => x.value) || [],
     keywords: [...new Set([...(partnerFacets?.keywords.map(x => x.value) || []), ...SPECIALISED_SUGGESTIONS])],
   }), [partnerFacets])
 
@@ -54,7 +55,7 @@ export function PartnerFormModal({ partner, initialType, onClose, onSaved }) {
       cluster: f.cluster || null, city: f.city, address: f.address, pincode: f.pincode,
       priceIndication: f.priceIndication, leadTimeDays: f.leadTimeDays === '' ? null : Number(f.leadTimeDays),
       contacts: f.contacts, website: f.website, logoUrl: f.logoUrl, gstin: f.gstin, udyam: f.udyam, mcaCin: f.mcaCin,
-      source: f.source, keywords: f.keywords, notes: f.notes,
+      source: f.source, keywords: f.keywords, brands: f.brands, notes: f.notes,
     }
     // A hidden section is left as it was (editing) or empty (adding); it is never sent blank over saved data.
     if (show.garment) {
@@ -147,6 +148,9 @@ export function PartnerFormModal({ partner, initialType, onClose, onSaved }) {
 
         <div>
           <SectionLabel>Commercial</SectionLabel>
+          <div style={{ marginBottom: 12 }}>
+            <TagInput label="Brands they work with" value={f.brands} onChange={v => set('brands', v)} suggestions={sugg.brands} keepCase placeholder="Cocoblu, Fitleasure" hint="Tradio's own customers and any other brand. Used to judge the partner later." />
+          </div>
           <Grid cols={2} gap={12}>
             {show.garment && <Input label="MOQ per style per colour (pieces)" type="number" min={0} value={f.moqPerStyleColour} onChange={e => set('moqPerStyleColour', e.target.value)} hint="Recorded as the partner's own claim until verified." />}
             {show.garment && <Input label="MOQ note" value={f.moqNote} onChange={e => set('moqNote', e.target.value)} placeholder="e.g. 100 pcs/style, 3 colours" maxLength={500} />}

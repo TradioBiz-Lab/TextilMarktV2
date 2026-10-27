@@ -6,19 +6,22 @@ import { snakeOf, labelOf } from '../partners.js'
 // A list of short tags typed one at a time: Enter or a comma adds one, Backspace on an empty box takes the last
 // away, and the tags already used elsewhere in the directory are offered as you type. `snake` keeps product, fabric
 // and category tags in the one form the server stores them in (sports_bra); keywords stay plain lower-case words.
-export function TagInput({ label, value, onChange, suggestions = [], placeholder, snake = false, hint }) {
+export function TagInput({ label, value, onChange, suggestions = [], placeholder, snake = false, keepCase = false, hint }) {
   const [text, setText] = useState('')
   const [focus, setFocus] = useState(false)
-  const norm = t => (snake ? snakeOf(t) : String(t).trim().toLowerCase().replace(/\s+/g, ' '))
+  // `keepCase` is for names (brands) that are shown as typed; otherwise tags are lower-case.
+  const norm = t => (snake ? snakeOf(t) : keepCase ? String(t).trim().replace(/\s+/g, ' ') : String(t).trim().toLowerCase().replace(/\s+/g, ' '))
+  const sameTag = (a, b) => (keepCase ? a.toLowerCase() === b.toLowerCase() : a === b)
   const show = t => (snake ? labelOf(t) : t)
 
   const add = raw => {
-    const fresh = String(raw).split(/[,;]/).map(norm).filter(t => t && t.length <= 60 && !value.includes(t))
-    if (fresh.length) onChange([...value, ...[...new Set(fresh)]].slice(0, 40))
+    const fresh = String(raw).split(/[,;]/).map(norm).filter(t => t && t.length <= 60 && !value.some(v => sameTag(v, t)))
+    const unique = fresh.filter((t, i) => fresh.findIndex(u => sameTag(u, t)) === i)
+    if (unique.length) onChange([...value, ...unique].slice(0, 40))
     setText('')
   }
-  const needle = norm(text)
-  const matches = suggestions.filter(s => !value.includes(s) && (!needle || s.includes(needle))).slice(0, 8)
+  const needle = norm(text).toLowerCase()
+  const matches = suggestions.filter(s => !value.some(v => sameTag(v, s)) && (!needle || s.toLowerCase().includes(needle))).slice(0, 8)
 
   return (
     <div style={{ position: 'relative' }}>

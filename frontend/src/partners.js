@@ -122,7 +122,7 @@ export function fieldsFor(type) {
 export const PAGE_SIZE = 120
 
 export const emptyQuery = () => ({
-  search: '', tab: 'all', category: [], cluster: [], fabric: [], status: [],
+  search: '', tab: 'all', category: [], brand: [], cluster: [], fabric: [], status: [],
   minScore: '', maxScore: '', verifiedOnly: false, live: false, includeInactive: false, sort: 'score', limit: PAGE_SIZE,
 })
 
@@ -132,7 +132,7 @@ export function queryToParams(q) {
   const tab = TYPE_TABS.find(t => t.id === q.tab)
   if (tab?.types.length) p.type = tab.types.join(',')
   if (q.search?.trim()) p.search = q.search.trim()
-  for (const k of ['category', 'cluster', 'fabric', 'status']) if (q[k]?.length) p[k] = q[k].join(',')
+  for (const k of ['category', 'brand', 'cluster', 'fabric', 'status']) if (q[k]?.length) p[k] = q[k].join(',')
   for (const k of ['minScore', 'maxScore']) if (q[k] !== '' && q[k] !== null && q[k] !== undefined) p[k] = q[k]
   for (const k of ['verifiedOnly', 'live', 'includeInactive']) if (q[k]) p[k] = 1
   p.sort = q.sort === 'relevance' && !p.search ? 'score' : q.sort
@@ -143,7 +143,7 @@ export function queryToParams(q) {
 /** How many filters (not counting the search words and the tab) are narrowing the list. */
 export function activeFilterCount(q) {
   let n = 0
-  for (const k of ['category', 'cluster', 'fabric', 'status']) n += q[k]?.length || 0
+  for (const k of ['category', 'brand', 'cluster', 'fabric', 'status']) n += q[k]?.length || 0
   if (q.minScore !== '' || q.maxScore !== '') n++
   for (const k of ['verifiedOnly', 'live', 'includeInactive']) if (q[k]) n++
   return n
@@ -155,6 +155,7 @@ export function describeQuery(q) {
   const tab = TYPE_TABS.find(t => t.id === q.tab)
   if (tab && tab.id !== 'all') bits.push(tab.label.toLowerCase())
   if (q.category.length) bits.push(`for ${q.category.map(c => CATEGORY_LABEL[c] || c).join(' or ').toLowerCase()}`)
+  if (q.brand.length) bits.push(`working with ${q.brand.join(' or ')}`)
   if (q.cluster.length) bits.push(`in ${q.cluster.map(c => CLUSTER_LABEL[c] || c).join(' or ')}`)
   if (q.fabric.length) bits.push(`with ${q.fabric.map(labelOf).join(' or ').toLowerCase()} fabric`)
   if (q.status.length) bits.push(`status ${q.status.map(s => STATUS_BY[s]?.label || s).join(' or ').toLowerCase()}`)

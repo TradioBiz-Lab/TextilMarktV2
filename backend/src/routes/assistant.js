@@ -195,7 +195,7 @@ const WRITE_TOOLS = new Set([
 // customer of a style is always its master order's, and nothing is created until the admin's own reply confirms it.
 // A season is the customer's own code (list_companies shows each customer's list); the server checks it.
 // The filters listManufacturers accepts; anything else the model sends is dropped before validation.
-const LIST_PARTNERS_KEYS = ['search', 'type', 'category', 'cluster', 'status', 'fabric', 'minScore', 'maxScore', 'verifiedOnly', 'live', 'includeInactive', 'sort', 'limit']
+const LIST_PARTNERS_KEYS = ['search', 'type', 'category', 'brand', 'cluster', 'status', 'fabric', 'minScore', 'maxScore', 'verifiedOnly', 'live', 'includeInactive', 'sort', 'limit']
 const SEASON_RE = /^[A-Z0-9][A-Z0-9-]{0,9}$/
 const MASTER_ORDER_KEYS = ['orderName', 'season', 'buyerId', 'poNumber', 'poDate', 'shipBy', 'notes']
 const ORDER_KEYS = ['product', 'styleNumber', 'category', 'season', 'totalQty', 'delivery', 'masterOrderId', 'phase', 'callout']
@@ -328,7 +328,7 @@ export const TOOL_HANDLERS = {
       total: result.data.total, shown: result.data.items.length,
       partners: result.data.items.map(p => ({
         name: p.name, type: p.type, categories: p.categories, cluster: p.cluster || undefined, city: p.city || undefined,
-        keywords: p.keywords, fabrics: p.fabrics, fabricTypes: p.fabricTypes, trimCategories: p.trimCategories,
+        brands: p.brands, keywords: p.keywords, fabrics: p.fabrics, fabricTypes: p.fabricTypes, trimCategories: p.trimCategories,
         moqClaim: p.moqPerStyleColour ?? undefined, moqNote: p.moqNote || undefined,
         moqVerified: p.verification.gstVerified || p.verification.sampleApproved,
         verificationScore: p.verification.score, gstVerified: p.verification.gstVerified, sampleApproved: p.verification.sampleApproved,
@@ -610,6 +610,7 @@ const TOOLS = [
         search: { type: 'string', maxLength: 100, description: 'Words to look for in name, city, products, fabrics and keywords. Partial words work.' },
         type: { type: 'string', enum: ['garment_manufacturer', 'fabric_supplier', 'trims_supplier', 'dyer_processor', 'trader', 'buying_house', 'unknown'] },
         category: { type: 'string', enum: ['athleisure', 'indian', 'western', 'fusion', 'home_textiles'], description: 'What the partner makes for. A partner can be in several categories; this matches any partner that has it.' },
+        brand: { type: 'string', maxLength: 60, description: "A brand the manufacturer works with, e.g. 'Cocoblu' or 'Fitleasure' (exact name)." },
         cluster: { type: 'string', enum: ['ludhiana', 'ncr', 'jaipur', 'kolkata', 'tiruppur', 'other'] },
         status: { type: 'string', enum: ['new', 'contacted', 'qualified', 'pilot', 'live', 'rejected', 'off_scope'] },
         fabric: { type: 'string', maxLength: 60, description: "A fabric, snake_case: 'poly_spandex', 'cotton_lycra'." },

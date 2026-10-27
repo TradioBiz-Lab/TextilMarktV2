@@ -136,7 +136,8 @@ export function PartnerDetailPage({ partnerId, onBack }) {
 
       <Grid cols={2} gap={16}>
         <Section title={show.garment ? 'Capabilities and machines' : show.fabricTypes ? 'Fabrics supplied' : show.trimCategories ? 'Trims supplied' : 'Capabilities'}>
-          {!hasCapabilities && !show.garment && <Empty>Nothing recorded yet.</Empty>}
+          <Fact label="Brands they work with">{p.brands.length ? <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>{p.brands.map(b => <Chip key={b}>{b}</Chip>)}</div> : <Empty>Not recorded</Empty>}</Fact>
+          {!hasCapabilities && !show.garment && <Empty>Nothing else recorded yet.</Empty>}
           {show.garment && (
             <>
               <Fact label="Specialised products and keywords">{p.keywords.length ? <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>{p.keywords.map(k => <Chip key={k}>{k}</Chip>)}</div> : <Empty>None named. Add a keyword only for a specialised product.</Empty>}</Fact>

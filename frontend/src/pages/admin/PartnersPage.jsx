@@ -128,6 +128,13 @@ export function PartnersPage({ onNavigate }) {
       <RailSection title="Cluster">
         {CLUSTERS.map(c => <CheckRow key={c.v} label={c.label} checked={q.cluster.includes(c.v)} onChange={() => patch({ cluster: toggle(q.cluster, c.v) })} count={f?.byCluster[c.v] || 0} />)}
       </RailSection>
+      {(f?.brands?.length > 0 || q.brand.length > 0) && (
+        <RailSection title="Brand">
+          <ShortList items={[...new Set([...q.brand, ...(f?.brands.map(x => x.value) || [])])]} render={v => (
+            <CheckRow key={v} label={v} checked={q.brand.includes(v)} onChange={() => patch({ brand: toggle(q.brand, v) })} count={f?.brands.find(x => x.value === v)?.count || 0} />
+          )} />
+        </RailSection>
+      )}
       {(f?.fabrics.length > 0 || q.fabric.length > 0) && (
         <RailSection title="Fabric">
           <ShortList items={[...new Set([...q.fabric, ...(f?.fabrics.map(x => x.value) || [])])]} render={v => (
@@ -164,6 +171,7 @@ export function PartnersPage({ onNavigate }) {
   const chips = []
   for (const c of q.category) chips.push([`category:${c}`, CATEGORY_LABEL[c], () => patch({ category: q.category.filter(x => x !== c) })])
   for (const c of q.cluster) chips.push([`cluster:${c}`, CLUSTER_LABEL[c], () => patch({ cluster: q.cluster.filter(x => x !== c) })])
+  for (const v of q.brand) chips.push([`brand:${v}`, v, () => patch({ brand: q.brand.filter(x => x !== v) })])
   for (const v of q.fabric) chips.push([`fabric:${v}`, `${labelOf(v)} fabric`, () => patch({ fabric: q.fabric.filter(x => x !== v) })])
   for (const v of q.status) chips.push([`status:${v}`, STATUS_BY[v]?.label, () => patch({ status: q.status.filter(x => x !== v) })])
   if (q.minScore !== '' || q.maxScore !== '') chips.push(['score', `Score ${q.minScore === '' ? 0 : q.minScore} to ${q.maxScore === '' ? 100 : q.maxScore}`, () => patch({ minScore: '', maxScore: '' })])

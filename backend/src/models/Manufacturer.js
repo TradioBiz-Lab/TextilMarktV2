@@ -79,6 +79,8 @@ const manufacturerSchema = new mongoose.Schema({
 
   source:   { type: String, trim: true, default: '', maxlength: 500 }, // where the lead came from, with the capture date
   keywords: { type: [String], default: [] },
+  // The brands this manufacturer works with, as typed (Tradio's own customers, Cocoblu ...). Kept for scoring later.
+  brands:   { type: [String], default: [] },
   notes:    { type: String, trim: true, default: '', maxlength: 5000 },
   isActive: { type: Boolean, default: true },
   // Derived from `status === 'live'` by the hooks below, so lists can put live partners first. Never set it directly.

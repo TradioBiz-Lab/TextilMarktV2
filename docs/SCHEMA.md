@@ -769,6 +769,8 @@ manufacturer can reach. It is not the same as a manufacturer-role `users` record
   keywords          [String] lower-case search words. Where a product is named it is a SPECIALISED one (sports bras,
                              leggings, thermals, socks, innerwear, tracksuits, kidswear); the CSV "products" column and
                              the seed both feed keywords
+  brands            [String] the brands this manufacturer works with, as typed (Tradio's own customers, Cocoblu ...); kept
+                             for scoring later. Filterable (exact brand, any capitalisation) and found by search
   notes             String
   isActive          Boolean  false = archived: kept on file, out of the default list
   isLive            Boolean  derived from status === 'live' by the model's hooks (never set directly), so lists put live
@@ -795,7 +797,7 @@ The tiles are generated drawings, never photos of a partner's premises.
 Indexes: unique case-insensitive `name`; `categories`; one text index over `name, city, products, fabrics, fabricTypes,
 trimCategories, keywords, notes` (weighted); `{ type, cluster, status }`; sparse `linkedUserId`.
 
-API (`/api/manufacturers`, GET and POST only like the rest of the API): `GET /` (filters `search, type, category (any of a comma list), cluster,
+API (`/api/manufacturers`, GET and POST only like the rest of the API): `GET /` (filters `search, type, category (any of a comma list), brand, cluster,
 status, priority, product, fabric, minScore, maxScore, verifiedOnly, onPlatform, live, includeInactive, sort, limit,
 skip`; a search tries the text index first and falls back to a regex over name, city, products, fabrics, fabric
 types, trim categories and keywords for partial words), `GET /facets`, `GET /:id`, `GET /:id/image`, `GET /thumbs`, `POST /`,
@@ -808,7 +810,7 @@ Scripts (`backend/scripts/`, dry run unless `--apply`, run with `node --env-file
 `backend/.env` and refuse any database that is not local or `*_sandbox` unless `CONFIRM_DB=<name>` is set):
 `importManufacturers.mjs` (seeds from the two research spreadsheets, idempotent on name, then writes
 `reports/partners_needing_images.md`), `uploadPartnerTiles.mjs` (attaches a folder of generated tiles, named as that report asks, shrinking each to 640px with macOS `sips`), `syncPlatformManufacturers.mjs` (a record for every active manufacturer-role
-user, idempotent on `linkedUserId`), `partnersImageReport.mjs` (`--all` lists every active partner, to redo the tiles), `uploadPartnerTiles.mjs --replace` swaps tiles already attached.
+user, idempotent on `linkedUserId`), `setPartnerBrands.mjs` (fills brands from the Cocoblu vendor file and the platform manufacturers' customers), `partnersImageReport.mjs` (`--all` lists every active partner, to redo the tiles), `uploadPartnerTiles.mjs --replace` swaps tiles already attached.
 
 ---
 
