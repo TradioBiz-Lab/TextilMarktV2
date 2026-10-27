@@ -2,15 +2,15 @@ import { MapPin } from '../icons.jsx'
 import { T } from '../constants.js'
 import { Card } from './ui.jsx'
 import { PartnerImage, Chip, CategoryChips, TagChips, StatusPill, ScoreBadge, ClaimTag, LiveBadge } from './PartnerBits.jsx'
-import { CLUSTER_LABEL, TYPE_LABEL, moqVerified } from '../partners.js'
+import { CLUSTER_LABEL, TYPE_LABEL, moqVerified, cityName } from '../partners.js'
 
 // One partner in the list page's grid: tile, name, place, what they make, MOQ (a claim until verified), score,
 // and status (Live shows as its own badge).
 export function PartnerCard({ partner: p, onOpen }) {
   const clusterLabel = p.cluster ? CLUSTER_LABEL[p.cluster] : ''
   // The cluster sits at the right of the name. The city line is only for a city that says more than the cluster does.
-  const cityOnly = p.city.replace(/\(.*?\)/g, '').trim().toLowerCase()
-  const showCity = !!p.city && cityOnly !== clusterLabel.toLowerCase()
+  const city = cityName(p.city)
+  const showCity = !!city && city.toLowerCase() !== clusterLabel.toLowerCase()
   const offers = p.type === 'fabric_supplier' ? { tags: p.fabricTypes, tone: 'fabric' }
     : p.type === 'trims_supplier' ? { tags: p.trimCategories, tone: 'trim' }
     : null
@@ -31,7 +31,7 @@ export function PartnerCard({ partner: p, onOpen }) {
         </div>
         {showCity && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: T.fontSize.sm, color: T.textMuted }}>
-            <MapPin size={13} color={T.textLight} /><span>{p.city}</span>
+            <MapPin size={13} color={T.textLight} /><span>{city}</span>
           </div>
         )}
         {p.categories.length > 0 && <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}><CategoryChips categories={p.categories} /></div>}

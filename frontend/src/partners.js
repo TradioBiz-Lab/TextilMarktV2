@@ -97,6 +97,9 @@ export const initialsOf = name => {
   return take.join('') || '?'
 }
 
+/** The city as a card shows it: the place only. Some cities were filed with their address in brackets ("Noida (C-117, Hosiery Complex)"). */
+export const cityName = city => String(city ?? '').replace(/\s*\(.*$/, '').replace(/\s+/g, ' ').trim()
+
 /** Colour of the verification badge: green from 70, amber 50 to 69, grey below that or when not assessed. */
 export function scoreTone(score) {
   if (score === null || score === undefined) return { bg: '#f1f5f9', fg: '#64748b', label: 'Unscored', level: 'unknown' }

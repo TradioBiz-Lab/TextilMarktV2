@@ -2,7 +2,7 @@ import { describe, test, expect } from 'vitest'
 import { capsFor } from '../caps.js'
 import {
   scoreTone, moqVerified, initialsOf, snakeOf, labelOf, fieldsFor, emptyQuery, queryToParams, activeFilterCount,
-  describeQuery, kriyaaPromptFor, sortsFor, TYPE_TABS, CATEGORIES, CLUSTERS, SORTS, STATUSES, canBeLive,
+  describeQuery, kriyaaPromptFor, sortsFor, TYPE_TABS, CATEGORIES, CLUSTERS, SORTS, STATUSES, canBeLive, cityName,
 } from '../partners.js'
 
 describe('who sees the Partner Directory', () => {
@@ -128,6 +128,18 @@ describe('one status: Live', () => {
     expect(canBeLive({ onPlatform: true })).toBe(true)
     expect(canBeLive({ onPlatform: false })).toBe(false)
     expect(canBeLive(null)).toBe(false)
+  })
+})
+
+describe('the city on a card', () => {
+  test('only the place, never the address filed in brackets after it', () => {
+    expect(cityName('Noida (C-117-118, Hosiery Complex, Phase-2 Ext, 201305)')).toBe('Noida')
+    expect(cityName('New Delhi (Shakurpur)')).toBe('New Delhi')
+    expect(cityName('Ludhiana (Millar Ganj)')).toBe('Ludhiana')
+    expect(cityName('Ludhiana / Baddi')).toBe('Ludhiana / Baddi')
+    expect(cityName('Jaipur')).toBe('Jaipur')
+    expect(cityName('')).toBe('')
+    expect(cityName(null)).toBe('')
   })
 })
 
