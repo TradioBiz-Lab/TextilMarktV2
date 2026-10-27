@@ -195,7 +195,7 @@ const WRITE_TOOLS = new Set([
 // customer of a style is always its master order's, and nothing is created until the admin's own reply confirms it.
 // A season is the customer's own code (list_companies shows each customer's list); the server checks it.
 // The filters listManufacturers accepts; anything else the model sends is dropped before validation.
-const LIST_PARTNERS_KEYS = ['search', 'type', 'category', 'cluster', 'status', 'priority', 'fabric', 'minScore', 'maxScore', 'verifiedOnly', 'onPlatform', 'includeInactive', 'sort', 'limit']
+const LIST_PARTNERS_KEYS = ['search', 'type', 'category', 'cluster', 'status', 'priority', 'fabric', 'minScore', 'maxScore', 'verifiedOnly', 'onPlatform', 'live', 'includeInactive', 'sort', 'limit']
 const SEASON_RE = /^[A-Z0-9][A-Z0-9-]{0,9}$/
 const MASTER_ORDER_KEYS = ['orderName', 'season', 'buyerId', 'poNumber', 'poDate', 'shipBy', 'notes']
 const ORDER_KEYS = ['product', 'styleNumber', 'category', 'season', 'totalQty', 'delivery', 'masterOrderId', 'phase', 'callout']
@@ -332,7 +332,7 @@ export const TOOL_HANDLERS = {
         moqClaim: p.moqPerStyleColour ?? undefined, moqNote: p.moqNote || undefined,
         moqVerified: p.verification.gstVerified || p.verification.sampleApproved,
         verificationScore: p.verification.score, gstVerified: p.verification.gstVerified, sampleApproved: p.verification.sampleApproved,
-        status: p.status, priority: p.priority, onPlatform: p.onPlatform, active: p.isActive,
+        status: p.status, priority: p.priority, onPlatform: p.onPlatform, live: p.isLive, active: p.isActive,
         contacts: p.contacts.slice(0, 2).map(c => ({ name: c.name, role: c.role || undefined, phone: c.phone || undefined, email: c.email || undefined })),
         notes: p.notes ? p.notes.slice(0, 300) : undefined,
       })),
@@ -618,6 +618,7 @@ const TOOLS = [
         maxScore: { type: 'integer', minimum: 0, maximum: 100 },
         verifiedOnly: { type: 'boolean', description: 'Only partners with GST checked or a sample approved.' },
         onPlatform: { type: 'boolean', description: 'Only partners that also have a manufacturer account on the platform.' },
+        live: { type: 'boolean', description: 'Only live manufacturers: the ones with orders at Tradio now, the only ones that can be given a style.' },
         includeInactive: { type: 'boolean', description: 'Also list archived partners (service providers, brands, individuals).' },
         sort: { type: 'string', enum: ['relevance', 'score', 'priority', 'updated', 'name'] },
         limit: { type: 'integer', minimum: 1, maximum: 50, description: 'Default 25.' },

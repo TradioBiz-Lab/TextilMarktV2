@@ -103,6 +103,16 @@ describe('categories', () => {
   })
 })
 
+describe('live manufacturers', () => {
+  test('the live switch is a filter and is sent as a flag', () => {
+    const q = { ...emptyQuery(), live: true }
+    expect(queryToParams(q).live).toBe(1)
+    expect(queryToParams(emptyQuery()).live).toBeUndefined()
+    expect(activeFilterCount(q)).toBe(1)
+    expect(describeQuery(q)).toBe('live (orders at Tradio now)')
+  })
+})
+
 describe('Ask Kriyaa', () => {
   test('the question is the typed words, else the filters, else a default', () => {
     expect(kriyaaPromptFor(emptyQuery(), 'knit tees ludhiana')).toMatch(/knit tees ludhiana/)

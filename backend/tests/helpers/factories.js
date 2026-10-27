@@ -7,6 +7,7 @@
 import bcrypt from 'bcryptjs'
 import { User } from '../../src/models/User.js'
 import { MasterOrder } from '../../src/models/MasterOrder.js'
+import { Manufacturer } from '../../src/models/Manufacturer.js'
 
 export const TEST_PASSWORD = 'Test@1234'
 
@@ -21,9 +22,12 @@ async function passwordHash() {
   return sharedHash
 }
 
-export async function makeUser({ role = 'admin', adminType = null, company, name, email, code, isActive = true } = {}) {
+// A manufacturer can only be given a style once its Partner Directory record is marked live (lib/liveManufacturers.js),
+// so a test manufacturer gets one by default. `live: false` leaves it unlisted-as-live, `listed: false` gives it no
+// record at all (the Partner Directory's own tests count records).
+export async function makeUser({ role = 'admin', adminType = null, company, name, email, code, isActive = true, live = true, listed = true } = {}) {
   const seq = ++codeSeq
-  return User.create({
+  const user = await User.create({
     email: email || `${role}${seq}@test.local`,
     passwordHash: await passwordHash(),
     role,
@@ -33,6 +37,10 @@ export async function makeUser({ role = 'admin', adminType = null, company, name
     code: code || nextCode(role.slice(0, 2).toUpperCase()),
     isActive,
   })
+  if (role === 'manufacturer' && listed) {
+    await Manufacturer.create({ name: `${user.company} [${seq}]`, type: 'garment_manufacturer', linkedUserId: user._id, isLive: live, status: 'onboarded' })
+  }
+  return user
 }
 
 export const makeAdmin  = (o = {}) => makeUser({ ...o, role: 'admin', adminType: o.adminType || 'user' })

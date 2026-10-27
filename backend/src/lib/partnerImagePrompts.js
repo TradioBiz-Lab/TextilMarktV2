@@ -1,4 +1,4 @@
-// Ready-to-paste image-generator prompts for the Partner Directory tiles. The tiles are illustrative (a flat drawing of
+// Ready-to-paste image-generator prompts for the Partner Directory tiles. The tiles are generated drawings (a flat drawing of
 // the kind of place a partner is), never photos of the partner's own premises, and the prompts are kept stylistically
 // uniform so the card grid reads as one set. Nothing here fetches or generates an image.
 
@@ -140,7 +140,7 @@ export function imageReportMarkdown(partners, { primary, generatedOn, redo = fal
       ? `Generated ${generatedOn}. ${partners.length} partner${partners.length === 1 ? '' : 's'}. The first set looked too alike, so every prompt below names a different room, framing and base colour (and what the partner is known for).`
       : `Generated ${generatedOn}. ${partners.length} partner${partners.length === 1 ? '' : 's'} have no tile yet.`,
     '',
-    'Paste each prompt into the image generator, save the result under the file name shown, then upload it on the partner\'s page (Partners, open the partner, "Upload image"). The tiles are illustrative drawings, not photos of the factory, and the app labels them that way.',
+    'Paste each prompt into the image generator, save the result under the file name shown, then upload it on the partner\'s page (Partners, open the partner, "Upload image"). The tiles are generated drawings, not photos of the factory.',
     '',
     `All prompts end with the same style sentence (${tileStyle(primary)}) so the grid still looks like a set. Do not use photos or logos taken from a partner's website.`,
     '',

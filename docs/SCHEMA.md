@@ -766,10 +766,16 @@ manufacturer can reach. It is not the same as a manufacturer-role `users` record
                              the seed both feed keywords
   notes             String
   isActive          Boolean  false = archived: kept on file, out of the default list
+  isLive            Boolean  Tradio has orders with this manufacturer now. Only a live manufacturer (one with a platform
+                             account, linkedUserId) can be given a style or a split: the server refuses assignments to any
+                             other (lib/liveManufacturers.js, applied when a style is created, a manufacturer added, a split
+                             reassigned). Set by Tradio on the partner's page; live partners sort first in the directory
   imageUrl          String   an http(s) link to the tile
   imageData         String   an uploaded tile as a data URL (JPEG/PNG/WebP, under 600KB, shrunk to ~640px by the
                              browser). select:false, so list and detail reads never carry image bytes; the page
-                             fetches it from GET /api/manufacturers/:id/image. Kept inline like style photos
+                             fetches it from GET /api/manufacturers/:id/image
+  thumbData         String   a ~360px copy (under 100KB, select:false) for the card grid, fetched for up to 60 partners
+                             at a time by GET /api/manufacturers/thumbs?ids=...&v=... (cacheable by the browser). Kept inline like style photos
                              because the app has no separate file store for images
   imageUploadedAt   Date
   logoUrl           String   link only
@@ -779,16 +785,15 @@ manufacturer can reach. It is not the same as a manufacturer-role `users` record
 }
 ```
 
-The tiles are illustrative (generated drawings, never photos of a partner's premises); the UI says so in a tooltip
-and a corner label.
+The tiles are generated drawings, never photos of a partner's premises.
 
 Indexes: unique case-insensitive `name`; `categories`; one text index over `name, city, products, fabrics, fabricTypes,
 trimCategories, keywords, notes` (weighted); `{ type, cluster, status }`; sparse `linkedUserId`.
 
 API (`/api/manufacturers`, GET and POST only like the rest of the API): `GET /` (filters `search, type, category (any of a comma list), cluster,
-status, priority, product, fabric, minScore, maxScore, verifiedOnly, onPlatform, includeInactive, sort, limit,
+status, priority, product, fabric, minScore, maxScore, verifiedOnly, onPlatform, live, includeInactive, sort, limit,
 skip`; a search tries the text index first and falls back to a regex over name, city, products, fabrics, fabric
-types, trim categories and keywords for partial words), `GET /facets`, `GET /:id`, `GET /:id/image`, `POST /`,
+types, trim categories and keywords for partial words), `GET /facets`, `GET /:id`, `GET /:id/image`, `GET /thumbs`, `POST /`,
 `POST /:id`, `POST /:id/delete`, `POST /:id/image`, `POST /csv/preview`, `POST /import` (`{ rows, mapping?,
 dryRun?, defaultType? }`, de-duplicated case-insensitively on name against the directory and within the file).
 Every mutation writes an `auditlogs` entry (`Partner Created`, `Partner Updated`, `Partner Verification Updated`,

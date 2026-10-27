@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { ArrowLeft, Pencil, Trash2, MapPin, Mail, Phone, Globe, MessageCircle, Camera, Check, Eye, EyeOff, AlertTriangle, History } from '../../icons.jsx'
 import { T } from '../../constants.js'
 import { Card, Btn, Modal, Select, Alert, SectionLabel, LoadingScreen, Grid, useToast } from '../../components/ui.jsx'
-import { PartnerImage, Chip, CategoryChips, TagChips, ScoreBadge, ClaimTag, OnPlatformBadge, CopyChip, ILLUSTRATIVE } from '../../components/PartnerBits.jsx'
+import { PartnerImage, Chip, CategoryChips, TagChips, ScoreBadge, ClaimTag, OnPlatformBadge, LiveBadge, CopyChip } from '../../components/PartnerBits.jsx'
 import { PartnerFormModal } from './PartnerFormModal.jsx'
 import { useApp } from '../../context.jsx'
 import { photoFromFile } from '../../colours.js'
@@ -60,7 +60,7 @@ export function PartnerDetailPage({ partnerId, onBack }) {
   const upload = async file => {
     if (!file) return
     setBusy(true); setImgErr('')
-    try { await setPartnerImage(partnerId, await photoFromFile(file, 640)); refreshAudit().catch(() => {}); toast('Image saved', 'success') }
+    try { await setPartnerImage(partnerId, await photoFromFile(file, 640), await photoFromFile(file, 360)); refreshAudit().catch(() => {}); toast('Image saved', 'success') }
     catch (e) { setImgErr(e?.message || 'Could not save the image') }
     finally { setBusy(false) }
   }
@@ -103,6 +103,7 @@ export function PartnerDetailPage({ partnerId, onBack }) {
               <Chip>{TYPE_LABEL[p.type]}</Chip>
               {(p.city || p.cluster) && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: T.fontSize.body, color: T.textMuted }}><MapPin size={13} />{p.city}</span>}
               {p.cluster && <Chip tone="place">{CLUSTER_LABEL[p.cluster]}</Chip>}
+              {p.isLive && <LiveBadge />}
               {p.onPlatform && <OnPlatformBadge />}
               {!p.isActive && <Chip>Archived</Chip>}
             </div>
@@ -127,6 +128,21 @@ export function PartnerDetailPage({ partnerId, onBack }) {
               <Btn variant="danger" icon={<Trash2 size={13} />} onClick={() => setConfirmDelete(true)}>Delete</Btn>
             </div>
           </div>
+        </div>
+      </Card>
+
+      {/* Live: what lets Tradio give this manufacturer a style */}
+      <Card style={{ borderColor: p.isLive ? T.successBorder : T.border, background: p.isLive ? T.successBg : T.surface }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div style={{ fontSize: T.fontSize.md, fontWeight: 800, color: T.text }}>{p.isLive ? 'Live with Tradio' : 'Not live'}</div>
+            <div style={{ fontSize: T.fontSize.sm, color: T.textMuted, marginTop: 3, lineHeight: 1.5 }}>
+              {p.onPlatform
+                ? (p.isLive ? 'This manufacturer has orders with Tradio now and can be given styles. Switch it off to stop new styles going to it; the work it already has stays.' : 'Mark it live once it has orders with Tradio. Until then it cannot be given a style or a split of one.')
+                : 'Only a partner with a manufacturer account on the platform can be live. Create its account in User Setup first; the account then shows up here.'}
+            </div>
+          </div>
+          <Btn variant={p.isLive ? 'secondary' : 'success'} disabled={busy || !p.onPlatform} onClick={() => save({ isLive: !p.isLive }, p.isLive ? 'No longer live' : 'Marked live: it can now be given styles')}>{p.isLive ? 'Switch off live' : 'Mark live'}</Btn>
         </div>
       </Card>
 
@@ -234,9 +250,9 @@ export function PartnerDetailPage({ partnerId, onBack }) {
 
         <Section title="Image">
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-            <div style={{ width: 200, borderRadius: 10, overflow: 'hidden', border: `1px solid ${T.border}` }}><PartnerImage partner={p} height={130} label={false} /></div>
+            <div style={{ width: 200, borderRadius: 10, overflow: 'hidden', border: `1px solid ${T.border}` }}><PartnerImage partner={p} height={130} /></div>
             <div style={{ flex: 1, minWidth: 200 }}>
-              <div style={{ fontSize: T.fontSize.sm, color: T.textMuted, lineHeight: 1.5, marginBottom: 10 }}>{ILLUSTRATIVE}. It is a generated tile that stands in for the partner on cards; it is labelled as illustrative wherever it shows.</div>
+              <div style={{ fontSize: T.fontSize.sm, color: T.textMuted, lineHeight: 1.5, marginBottom: 10 }}>The tile that stands in for the partner on the cards. It is a generated picture, not a photo of the factory.</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, background: busy ? '#e2e8f0' : T.primaryDeep, color: '#fff', cursor: busy ? 'wait' : 'pointer' }}>
                   <Camera size={14} color="#fff" /> {p.hasUpload || p.imageUrl ? 'Replace image' : 'Upload image'}

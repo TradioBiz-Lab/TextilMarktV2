@@ -65,7 +65,7 @@ function ShortList({ items, render, initial = 6 }) {
 }
 
 export function PartnersPage({ onNavigate }) {
-  const { partners, partnerFacets, partnerQuery: q, setPartnerQuery, loadPartners, loadPartnerFacets } = useApp()
+  const { partners, partnerFacets, partnerQuery: q, setPartnerQuery, loadPartners, loadPartnerThumbs, loadPartnerFacets } = useApp()
   const chat = useKriyaaChat()
   const toast = useToast()
   const [searchText, setSearchText] = useState(q.search)
@@ -95,6 +95,8 @@ export function PartnersPage({ onNavigate }) {
     return () => { live = false }
   }, [key, loadPartners])
   useEffect(() => { loadPartnerFacets().catch(() => {}) }, [loadPartnerFacets])
+  // The tiles of what is on screen arrive in one batch, not one request per card.
+  useEffect(() => { if (partners?.items?.length) loadPartnerThumbs(partners.items) }, [partners, loadPartnerThumbs])
 
   const f = partnerFacets
   const filters = activeFilterCount(q)
@@ -164,6 +166,7 @@ export function PartnersPage({ onNavigate }) {
         </div>
         <div style={{ fontSize: T.fontSize.xs, color: T.textLight, marginTop: 5 }}>Partners not scored yet are left out of a range.</div>
       </RailSection>
+      <SwitchRow checked={q.live} onChange={e => patch({ live: e.target.checked })} label="Live only" hint="Has orders at Tradio now" />
       <SwitchRow checked={q.verifiedOnly} onChange={e => patch({ verifiedOnly: e.target.checked })} label="Verified only" hint="GST checked or a sample approved" />
       <SwitchRow checked={q.onPlatform} onChange={e => patch({ onPlatform: e.target.checked })} label="On platform" hint="Also has a TextilMarkt account" />
       <SwitchRow checked={q.includeInactive} onChange={e => patch({ includeInactive: e.target.checked })} label="Show archived" hint={f?.inactive ? `${f.inactive} kept on file, out of the way` : 'Service providers, brands, individuals'} />
@@ -177,6 +180,7 @@ export function PartnersPage({ onNavigate }) {
   for (const v of q.status) chips.push([`status:${v}`, STATUS_BY[v]?.label, () => patch({ status: q.status.filter(x => x !== v) })])
   for (const v of q.priority) chips.push([`priority:${v}`, `Priority ${v}`, () => patch({ priority: q.priority.filter(x => x !== v) })])
   if (q.minScore !== '' || q.maxScore !== '') chips.push(['score', `Score ${q.minScore === '' ? 0 : q.minScore} to ${q.maxScore === '' ? 100 : q.maxScore}`, () => patch({ minScore: '', maxScore: '' })])
+  if (q.live) chips.push(['live', 'Live only', () => patch({ live: false })])
   if (q.verifiedOnly) chips.push(['verified', 'Verified only', () => patch({ verifiedOnly: false })])
   if (q.onPlatform) chips.push(['platform', 'On platform', () => patch({ onPlatform: false })])
   if (q.includeInactive) chips.push(['inactive', 'Archived shown', () => patch({ includeInactive: false })])

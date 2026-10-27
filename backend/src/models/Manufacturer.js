@@ -77,11 +77,15 @@ const manufacturerSchema = new mongoose.Schema({
   keywords: { type: [String], default: [] },
   notes:    { type: String, trim: true, default: '', maxlength: 5000 },
   isActive: { type: Boolean, default: true },
+  // Live = has orders with Tradio now. Only a live manufacturer (one with a platform account, linkedUserId) can be given a
+  // style or a split on an order; Tradio marks it live here. See lib/liveManufacturers.js.
+  isLive: { type: Boolean, default: false },
 
-  // Illustrative tiles (generated, not factory photos). A link, or an upload kept inline under a small cap like
-  // the product photos. The upload is `select: false` so list reads never carry image bytes (routes/manufacturers.js).
+  // Tiles (generated drawings, not factory photos). A link, or an upload kept inline under a small cap like the product
+  // photos, with a small copy for the grid. Both uploads are `select: false` so list reads never carry image bytes.
   imageUrl:        { type: String, trim: true, default: '', maxlength: 2000 },
   imageData:       { type: String, default: '', select: false },
+  thumbData:       { type: String, default: '', select: false }, // ~360px copy for the card grid, fetched in one batch
   imageUploadedAt: { type: Date, default: null },
   logoUrl:         { type: String, trim: true, default: '', maxlength: 2000 },
 

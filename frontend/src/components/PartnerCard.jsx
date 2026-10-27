@@ -1,7 +1,7 @@
 import { MapPin } from '../icons.jsx'
 import { T } from '../constants.js'
 import { Card } from './ui.jsx'
-import { PartnerImage, Chip, CategoryChips, TagChips, StatusPill, PriorityTag, ScoreBadge, ClaimTag, OnPlatformBadge } from './PartnerBits.jsx'
+import { PartnerImage, Chip, CategoryChips, TagChips, StatusPill, PriorityTag, ScoreBadge, ClaimTag, OnPlatformBadge, LiveBadge } from './PartnerBits.jsx'
 import { CLUSTER_LABEL, TYPE_LABEL, moqVerified } from '../partners.js'
 
 // One partner in the list page's grid: tile, name, place, what they make, MOQ (a claim until verified), score,
@@ -13,10 +13,10 @@ export function PartnerCard({ partner: p, onOpen }) {
     : p.type === 'trims_supplier' ? { tags: p.trimCategories, tone: 'trim' }
     : null
   return (
-    <Card pad={false} onClick={onOpen} style={{ display: 'flex', flexDirection: 'column', opacity: p.isActive ? 1 : 0.65 }}>
+    <Card pad={false} onClick={onOpen} style={{ display: 'flex', flexDirection: 'column', opacity: p.isActive ? 1 : 0.65, ...(p.isLive ? { borderColor: T.successBorder, boxShadow: `0 0 0 1px ${T.successBorder}` } : {}) }}>
       <div style={{ position: 'relative' }}>
-        <PartnerImage partner={p} height={124} />
-        <div style={{ position: 'absolute', top: 8, left: 8 }}><PriorityTag priority={p.priority} /></div>
+        <PartnerImage partner={p} height={124} thumb />
+        <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: 5, alignItems: 'center' }}><PriorityTag priority={p.priority} />{p.isLive && <LiveBadge />}</div>
         <div style={{ position: 'absolute', top: 8, right: 8 }}><ScoreBadge score={p.verification.score} /></div>
       </div>
       <div style={{ padding: '12px 14px 14px', display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>

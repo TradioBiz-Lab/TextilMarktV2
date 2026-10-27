@@ -679,7 +679,8 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
   // The same rule as every other screen (constants.js): one factory on hold does not put the style on hold.
   const overallStatus = () => styleStatus(order)
 
-  const mfrUsers = users.filter(u => u.role === 'manufacturer' && u.isActive)
+  // Only a manufacturer marked live in Partners can be given a style (the server enforces it too).
+  const mfrUsers = users.filter(u => u.role === 'manufacturer' && u.isActive && u.live)
   const refDocLabels = { measurements: 'Measurements', tech_pack: 'Tech Pack', pattern: 'Patterns', lab_dip: 'Lab Dip Receipts', test_report: 'Test Reports (FPT/GPT)' }
 
   const uploadRefDoc = async (type) => {
@@ -1190,7 +1191,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
             </div>
             <div className="form-grid-2" style={{ gap: 12, alignItems: 'flex-end' }}>
               <Select label="Manufacturer *" value={newMfrId} onChange={e => setNewMfrId(e.target.value)}>
-                <option value="">Select manufacturer…</option>
+                <option value="">{mfrUsers.length ? 'Select manufacturer…' : 'No live manufacturer: mark one live in Partners'}</option>
                 {mfrUsers.map(m => <option key={m.id} value={m.id}>{m.company} ({m.code})</option>)}
               </Select>
               <Input label="Quantity *" type="number" value={newMfrQty ?? String(order.totalQty || '')} onChange={e => setNewMfrQty(e.target.value)} />
@@ -1507,7 +1508,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                 <Alert type="warning">{withProgress} step{withProgress > 1 ? 's' : ''} already {withProgress > 1 ? 'have' : 'has'} progress recorded. It stays on the plan and carries over to the new manufacturer.</Alert>
               )}
               {choices.length === 0 ? (
-                <div style={{ fontSize: 12, color: T.textMuted }}>There is no other active manufacturer to hand this split to. Add the manufacturer under User Setup first.</div>
+                <div style={{ fontSize: 12, color: T.textMuted }}>There is no other live manufacturer to hand this split to. Add the manufacturer under User Setup, then mark it live in Partners.</div>
               ) : (
                 <div className="form-grid-2" style={{ gap: 12, alignItems: 'flex-end' }}>
                   <Select label="New manufacturer *" value={reassignTo} onChange={e => setReassignTo(e.target.value)}>

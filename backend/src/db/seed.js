@@ -17,6 +17,7 @@ import { Document }     from '../models/Document.js'
 import { Notification } from '../models/Notification.js'
 import { AuditLog }     from '../models/AuditLog.js'
 import { InboundMessage } from '../models/InboundMessage.js'
+import { Manufacturer } from '../models/Manufacturer.js'
 
 // This script deletes every User/Order/Document/Notification/AuditLog in
 // whatever database MONGO_DB_URI resolves to, then inserts fake data. Local
@@ -83,6 +84,7 @@ async function seed() {
     Notification.deleteMany({}),
     AuditLog.deleteMany({}),
     InboundMessage.deleteMany({}),
+    Manufacturer.deleteMany({}),
   ])
   console.log(`Collections cleared in sandbox db "${dbName}".`)
 
@@ -97,6 +99,9 @@ async function seed() {
   ])
   const [master, ops, zaraBuyer, hmBuyer, tiruppur, blr] = users
   console.log(`Users seeded: ${users.length}`)
+
+  // The demo manufacturers are live in the Partner Directory, so the demo orders can be assigned to them (lib/liveManufacturers.js).
+  await Manufacturer.insertMany([tiruppur, blr].map(u => ({ name: u.company, type: 'garment_manufacturer', status: 'onboarded', linkedUserId: u._id, isLive: true, source: 'Demo seed' })))
 
   // ── Orders ─────────────────────────────────────────────────────────────────
   // Dates anchored around Jun–Nov 2026 so the sandbox reads as "live" against

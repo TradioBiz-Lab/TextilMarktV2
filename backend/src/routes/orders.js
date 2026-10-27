@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { liveGateMessage } from '../lib/liveManufacturers.js'
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
 import { Order } from '../db/index.js'
@@ -438,6 +439,8 @@ export async function validateAndCreateOrder({ id, buyerId, product, styleNumber
       if (!mfrUser || mfrUser.role !== 'manufacturer') return { ok: false, error: `User ${a.mid} is not a manufacturer` }
       if (!mfrUser.isActive) return { ok: false, error: `Manufacturer ${a.mid} is inactive` }
     }
+    const notLive = await liveGateMessage(mfrIds)
+    if (notLive) return { ok: false, error: notLive }
 
     // Validate sum of assignment quantities equals totalQty
     const assignedTotal = asgns.reduce((sum, a) => sum + parseInt(a.qty, 10), 0)
@@ -888,6 +891,8 @@ router.post('/:orderId/assignments', requireAuth, requireAdmin, updateLimiter, a
     const mfrUser = await User.findById(mfrId, 'role isActive').lean()
     if (!mfrUser || mfrUser.role !== 'manufacturer') return res.status(400).json({ error: 'Manufacturer not found' })
     if (!mfrUser.isActive) return res.status(400).json({ error: 'Manufacturer account is inactive' })
+    const notLive = await liveGateMessage([mfrId])
+    if (notLive) return res.status(400).json({ error: notLive })
 
     const existing = await Order.findById(orderId).lean()
     if (!existing) return res.status(404).json({ error: 'Order not found' })
@@ -957,6 +962,8 @@ router.post('/:orderId/assignments/:mfrId/reassign', requireAuth, requireAdmin, 
     const target = await User.findById(newId, 'role isActive company').lean()
     if (!target || target.role !== 'manufacturer') return res.status(400).json({ error: 'Manufacturer not found' })
     if (!target.isActive) return res.status(400).json({ error: 'Manufacturer account is inactive' })
+    const notLive = await liveGateMessage([String(newId)])
+    if (notLive) return res.status(400).json({ error: notLive })
 
     const existing = await Order.findById(orderId).lean()
     if (!existing) return res.status(404).json({ error: 'Order not found' })

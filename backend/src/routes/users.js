@@ -2,7 +2,8 @@ import { Router } from 'express'
 import crypto from 'node:crypto'
 import bcrypt from 'bcryptjs'
 import rateLimit from 'express-rate-limit'
-import { User, AuditLog } from '../db/index.js'
+import { User, AuditLog, Manufacturer } from '../db/index.js'
+import { ensurePartnerForUser } from '../lib/partnerSync.js'
 import { requireAuth, requireAdmin, requireMaster } from '../middleware/auth.js'
 import { sendEmail, emailUserCreated, emailPasswordReset, emailConfigured, emailSent } from '../lib/email.js'
 import { parseSeasonList } from '../lib/seasons.js'
@@ -33,7 +34,9 @@ const mapUser = u => ({
 router.get('/', requireAuth, requireAdmin, async (req, res) => {
   try {
     const users = await User.find().sort({ createdAt: 1 }).lean()
-    res.json(users.map(mapUser))
+    // Which manufacturers are marked live in the Partner Directory: only those may be given a style (lib/liveManufacturers.js).
+    const live = new Set((await Manufacturer.find({ linkedUserId: { $ne: null }, isLive: true }, 'linkedUserId').lean()).map(p => String(p.linkedUserId)))
+    res.json(users.map(u => ({ ...mapUser(u), ...(u.role === 'manufacturer' ? { live: live.has(String(u._id)) } : {}) })))
   } catch (err) {
     console.error('[users]', err)
     res.status(500).json({ error: 'Server error' })
@@ -100,6 +103,12 @@ router.post('/', requireAuth, requireMaster, createUserLimiter, async (req, res)
       isActive: true,
       mustChangePw: true,
     })
+
+    // A new manufacturer gets its Partner Directory record at once (not live: Tradio marks it live before it can be given a
+    // style). The account is made either way, so a failure here is logged, never shown as a failed signup.
+    if (role === 'manufacturer') {
+      try { await ensurePartnerForUser(user.toObject()) } catch (e) { console.error('[users] directory record', e.message) }
+    }
 
     // BRD US-USR-01: "Login credentials sent to user via email on creation"
     sendEmail(emailUserCreated({ name, email, password, role, company }))

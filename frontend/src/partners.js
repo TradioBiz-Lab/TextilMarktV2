@@ -128,7 +128,7 @@ export const PAGE_SIZE = 120
 
 export const emptyQuery = () => ({
   search: '', tab: 'all', category: [], cluster: [], fabric: [], status: [], priority: [],
-  minScore: '', maxScore: '', verifiedOnly: false, onPlatform: false, includeInactive: false, sort: 'score', limit: PAGE_SIZE,
+  minScore: '', maxScore: '', verifiedOnly: false, onPlatform: false, live: false, includeInactive: false, sort: 'score', limit: PAGE_SIZE,
 })
 
 /** The query as the API's parameters: empty filters left out, lists joined with commas. */
@@ -139,7 +139,7 @@ export function queryToParams(q) {
   if (q.search?.trim()) p.search = q.search.trim()
   for (const k of ['category', 'cluster', 'fabric', 'status', 'priority']) if (q[k]?.length) p[k] = q[k].join(',')
   for (const k of ['minScore', 'maxScore']) if (q[k] !== '' && q[k] !== null && q[k] !== undefined) p[k] = q[k]
-  for (const k of ['verifiedOnly', 'onPlatform', 'includeInactive']) if (q[k]) p[k] = 1
+  for (const k of ['verifiedOnly', 'onPlatform', 'live', 'includeInactive']) if (q[k]) p[k] = 1
   p.sort = q.sort === 'relevance' && !p.search ? 'score' : q.sort
   p.limit = q.limit || PAGE_SIZE
   return p
@@ -150,7 +150,7 @@ export function activeFilterCount(q) {
   let n = 0
   for (const k of ['category', 'cluster', 'fabric', 'status', 'priority']) n += q[k]?.length || 0
   if (q.minScore !== '' || q.maxScore !== '') n++
-  for (const k of ['verifiedOnly', 'onPlatform', 'includeInactive']) if (q[k]) n++
+  for (const k of ['verifiedOnly', 'onPlatform', 'live', 'includeInactive']) if (q[k]) n++
   return n
 }
 
@@ -167,6 +167,7 @@ export function describeQuery(q) {
   if (q.minScore !== '') bits.push(`verification score at least ${q.minScore}`)
   if (q.maxScore !== '') bits.push(`verification score at most ${q.maxScore}`)
   if (q.verifiedOnly) bits.push('verified (GST checked or sample approved)')
+  if (q.live) bits.push('live (orders at Tradio now)')
   if (q.onPlatform) bits.push('already on the platform')
   return bits.join(', ')
 }

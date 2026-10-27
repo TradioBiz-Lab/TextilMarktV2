@@ -318,15 +318,18 @@ export function cleanPartnerInput(body, { partial = false, defaultType = null } 
   if (has('isActive')) {
     if (typeof body.isActive !== 'boolean') fail('isActive must be true or false'); else data.isActive = body.isActive
   }
+  if (has('isLive')) {
+    if (typeof body.isLive !== 'boolean') fail('isLive must be true or false'); else data.isLive = body.isLive
+  }
 
   return errors.length ? { errors } : { data }
 }
 
 /** An uploaded tile: { image } (a JPEG, PNG or WebP data URL under the cap) or { error }. */
-export function cleanPartnerImage(value) {
+export function cleanPartnerImage(value, { maxBytes = MAX_IMAGE_BYTES } = {}) {
   const m = /^data:(image\/jpeg|image\/png|image\/webp);base64,([A-Za-z0-9+/=]+)$/.exec(String(value ?? ''))
   if (!m) return { error: 'Image must be a JPEG, PNG or WebP picture' }
-  if (m[2].length * 0.75 > MAX_IMAGE_BYTES) return { error: 'Image too large - keep it under 600KB' }
+  if (m[2].length * 0.75 > maxBytes) return { error: `Image too large - keep it under ${Math.round(maxBytes / 1024)}KB` }
   return { image: value }
 }
 
@@ -370,7 +373,7 @@ export function parsePartnerQuery(raw = {}) {
     if (!Number.isFinite(n) || n < 0 || n > 100) return { error: `Invalid ${key}` }
     f[key] = n
   }
-  for (const key of ['verifiedOnly', 'onPlatform', 'includeInactive']) if (truthy(q[key])) f[key] = true
+  for (const key of ['verifiedOnly', 'onPlatform', 'live', 'includeInactive']) if (truthy(q[key])) f[key] = true
   if (!blank(q.sort)) {
     if (!PARTNER_SORTS.includes(q.sort)) return { error: 'Invalid sort' }
     f.sort = q.sort
@@ -415,6 +418,7 @@ export function partnerMongoFilter(f) {
   // "Verified" is one idea everywhere: GST checked or a sample approved. It is also what lifts the MOQ "self-reported" tag.
   if (f.verifiedOnly) and.push({ $or: [{ 'verification.gstVerified': true }, { 'verification.sampleApproved': true }] })
   if (f.onPlatform) and.push({ linkedUserId: { $type: 'objectId' } })
+  if (f.live) and.push({ isLive: true })
   return and.length ? { $and: and } : {}
 }
 
@@ -425,11 +429,12 @@ export function partnerRegexFilter(tokens) {
   return { $and: tokens.map(t => ({ $or: SEARCH_FIELDS.map(k => ({ [k]: { $regex: escapeRe(t), $options: 'i' } })) })) }
 }
 
+// Live manufacturers (the ones with orders at Tradio now) always come first; the chosen sort orders each group.
 const SORTS = {
-  score:    { 'verification.score': -1, name: 1 },
-  priority: { priority: 1, 'verification.score': -1, name: 1 },
-  updated:  { updatedAt: -1 },
-  name:     { name: 1 },
+  score:    { isLive: -1, 'verification.score': -1, name: 1 },
+  priority: { isLive: -1, priority: 1, 'verification.score': -1, name: 1 },
+  updated:  { isLive: -1, updatedAt: -1 },
+  name:     { isLive: -1, name: 1 },
 }
 
 /**
@@ -485,7 +490,7 @@ export function toPartner(p) {
       lastCheckedAt: p.verification?.lastCheckedAt || null,
     },
     status: p.status || 'new', priority: p.priority || 'C',
-    source: p.source || '', keywords: p.keywords || [], notes: p.notes || '', isActive: p.isActive !== false,
+    source: p.source || '', keywords: p.keywords || [], notes: p.notes || '', isActive: p.isActive !== false, isLive: !!p.isLive,
     imageUrl: p.imageUrl || '', hasUpload: !!p.imageUploadedAt, logoUrl: p.logoUrl || '',
     linkedUserId: p.linkedUserId ? String(p.linkedUserId) : null, onPlatform: !!p.linkedUserId,
     createdBy: p.createdBy ? String(p.createdBy) : null, updatedBy: p.updatedBy ? String(p.updatedBy) : null,

@@ -35,6 +35,7 @@ export function AppProvider({ children }) {
   const [partnerFacets, setPartnerFacets] = useState(null)
   const [partnersById, setPartnersById]   = useState({})
   const [partnerQuery, setPartnerQuery]   = useState(emptyQuery)
+  const [partnerThumbs, setPartnerThumbs] = useState({})     // id -> small tile, fetched in batches for the card grid
 
   const loadingRef = useRef(false)
   // Bumped on logout. A load that started under an earlier value belongs to a
@@ -46,9 +47,10 @@ export function AppProvider({ children }) {
   // cannot land over a newer search.
   const partnerImageCache = useRef({})
   const partnersReq = useRef(0)
+  const thumbsAsked = useRef(new Set())   // `id@version` of tiles already asked for
   const clearPartnerState = useCallback(() => {
-    setPartners(null); setPartnerFacets(null); setPartnersById({}); setPartnerQuery(emptyQuery())
-    partnerImageCache.current = {}; partnersReq.current += 1
+    setPartners(null); setPartnerFacets(null); setPartnersById({}); setPartnerQuery(emptyQuery()); setPartnerThumbs({})
+    partnerImageCache.current = {}; partnersReq.current += 1; thumbsAsked.current = new Set()
   }, [])
   // The latest orders, for an action that needs the plan as it was before its own write.
   const ordersRef = useRef([])
@@ -674,11 +676,26 @@ export function AppProvider({ children }) {
     loadPartnerFacets().catch(() => {})
   }, [loadPartnerFacets])
 
-  const setPartnerImage = useCallback(async (id, image) => {
-    const p = await partnerDirectoryApi.setImage(id, image)
+  const setPartnerImage = useCallback(async (id, image, thumb) => {
+    const p = await partnerDirectoryApi.setImage(id, image, thumb)
     delete partnerImageCache.current[id]
+    setPartnerThumbs(m => { const { [id]: _old, ...rest } = m; return rest })
     return putPartner(p)
   }, [putPartner])
+
+  // The small tiles of the partners on screen, up to 40 per request instead of one request each. A partner is asked for
+  // once per version of its tile (its upload time), so scrolling, filtering and coming back cost nothing.
+  const loadPartnerThumbs = useCallback(async items => {
+    const todo = items.filter(p => p.hasUpload && !p.imageUrl && !thumbsAsked.current.has(`${p.id}@${p.updatedAt}`))
+    for (let i = 0; i < todo.length; i += 40) {
+      const chunk = todo.slice(i, i + 40)
+      for (const p of chunk) thumbsAsked.current.add(`${p.id}@${p.updatedAt}`)
+      try {
+        const r = await partnerDirectoryApi.thumbs(chunk.map(p => p.id), chunk.map(p => p.updatedAt).sort().pop())
+        setPartnerThumbs(m => ({ ...m, ...r.thumbs }))
+      } catch { for (const p of chunk) thumbsAsked.current.delete(`${p.id}@${p.updatedAt}`) }
+    }
+  }, [])
 
   // The tile of a partner with an upload: one fetch per partner and edit, shared by every card showing it.
   const getPartnerImage = useCallback((id, version) => {
@@ -713,8 +730,8 @@ export function AppProvider({ children }) {
       markAllRead, markOneRead, getDocData, refreshAudit, loadMoreAudit,
       refreshOrders, refreshDocs, listAllRibbons, createRibbon, updateRibbon, removeRibbon,
       createActionItem, updateActionItem, addActionItemUpdate, refreshActionItems,
-      partners, partnerFacets, partnersById, partnerQuery, setPartnerQuery,
-      loadPartners, loadPartnerFacets, loadPartner, createPartner, updatePartner, deletePartner, setPartnerImage, getPartnerImage,
+      partners, partnerFacets, partnersById, partnerQuery, setPartnerQuery, partnerThumbs,
+      loadPartners, loadPartnerThumbs, loadPartnerFacets, loadPartner, createPartner, updatePartner, deletePartner, setPartnerImage, getPartnerImage,
       previewPartnerCsv, importPartners,
     }}>
       {children}

@@ -34,7 +34,7 @@ const serverError = (res, err) => {
 const eq = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 const show = v => (v === undefined || v === null || v === '' ? 'empty' : String(v))
 // What the audit entry says about a field: its values for the small pipeline fields, just its name for the rest.
-const VALUE_FIELDS = new Set(['status', 'priority', 'type', 'cluster', 'isActive'])
+const VALUE_FIELDS = new Set(['status', 'priority', 'type', 'cluster', 'isActive', 'isLive'])
 
 const tally = (rows, key) => {
   const m = new Map()
@@ -134,6 +134,19 @@ router.post('/', writeLimiter, async (req, res) => {
   }
 })
 
+// GET /api/manufacturers/thumbs?ids=a,b,c&v=<version> - the small tiles of many partners in one request, as { thumbs: { id: dataUrl } }.
+// `v` only changes the URL when a tile changes, so the browser can keep the answer (a page of 40 tiles was 40 requests of
+// 125KB each). A partner with an upload but no thumbnail yet gets its full picture, so nothing is missing.
+router.get('/thumbs', async (req, res) => {
+  try {
+    const ids = String(req.query.ids || '').split(',').map(x => x.trim()).filter(Boolean)
+    if (ids.length === 0 || ids.length > 60 || !ids.every(id => mongoose.Types.ObjectId.isValid(id))) return res.status(400).json({ error: 'ids must be 1 to 60 partner ids' })
+    const rows = await Manufacturer.find({ _id: { $in: ids }, imageUploadedAt: { $ne: null } }, 'thumbData imageData').select('+thumbData +imageData').lean()
+    res.set('Cache-Control', 'private, max-age=86400')
+    res.json({ thumbs: Object.fromEntries(rows.map(r => [String(r._id), r.thumbData || r.imageData])) })
+  } catch (err) { serverError(res, err) }
+})
+
 const findOne = async (req, res, select) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) { res.status(404).json({ error: 'Partner not found' }); return null }
   const doc = await Manufacturer.findById(req.params.id, select)
@@ -161,15 +174,22 @@ router.post('/:id/image', writeLimiter, async (req, res) => {
     if (!doc) return
     const value = req.body?.image
     if (value === null || value === '') {
-      doc.imageData = ''; doc.imageUploadedAt = null; doc.imageUrl = ''
+      doc.imageData = ''; doc.thumbData = ''; doc.imageUploadedAt = null; doc.imageUrl = ''
     } else if (typeof value === 'string' && value.startsWith('data:')) {
       const r = cleanPartnerImage(value)
       if (r.error) return res.status(400).json({ error: r.error })
-      doc.imageData = r.image; doc.imageUploadedAt = new Date(); doc.imageUrl = ''
+      // The small copy for the grid is optional (older clients send none); it has its own, tighter cap.
+      let thumb = ''
+      if (req.body?.thumb !== undefined && req.body.thumb !== null && req.body.thumb !== '') {
+        const t = cleanPartnerImage(req.body.thumb, { maxBytes: 100 * 1024 })
+        if (t.error) return res.status(400).json({ error: `Thumbnail: ${t.error}` })
+        thumb = t.image
+      }
+      doc.imageData = r.image; doc.thumbData = thumb; doc.imageUploadedAt = new Date(); doc.imageUrl = ''
     } else {
       const link = typeof value === 'string' ? cleanLink(value, { max: 2000 }) : null
       if (!link) return res.status(400).json({ error: 'Image must be an uploaded picture or an http or https link' })
-      doc.imageUrl = link; doc.imageData = ''; doc.imageUploadedAt = null
+      doc.imageUrl = link; doc.imageData = ''; doc.thumbData = ''; doc.imageUploadedAt = null
     }
     doc.updatedBy = req.user.id
     await doc.save()
@@ -196,6 +216,10 @@ router.post('/:id', writeLimiter, async (req, res) => {
     if (!doc) return
     const cleaned = cleanPartnerInput(req.body, { partial: true })
     if (cleaned.errors) return res.status(400).json({ error: cleaned.errors.join('. ') })
+    // Only a partner with a manufacturer account on the platform can be live: live is what lets Tradio give it orders.
+    if (cleaned.data.isLive === true && !doc.linkedUserId) {
+      return res.status(400).json({ error: 'Only a partner with a manufacturer account on the platform can be marked live. Create its account in User Setup first.' })
+    }
     const before = doc.toObject()
     const changes = []       // [field, from, to] outside verification
     const vChanges = []      // [flag, from, to]

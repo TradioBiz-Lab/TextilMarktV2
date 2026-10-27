@@ -214,7 +214,9 @@ export const partnerDirectoryApi = {
   remove: id => api.post(`/manufacturers/${id}/delete`),
   // The uploaded tile, fetched by the page itself (an <img> cannot carry the session); lists never carry image bytes.
   image: id => api.get(`/manufacturers/${id}/image`),
-  setImage: (id, image) => api.post(`/manufacturers/${id}/image`, { image }),
+  // `thumb` is the small copy for the grid. thumbs() fetches many at once; `v` changes only when a tile does, so the browser may cache it.
+  setImage: (id, image, thumb) => api.post(`/manufacturers/${id}/image`, { image, ...(thumb ? { thumb } : {}) }),
+  thumbs: (ids, v) => api.get('/manufacturers/thumbs', { params: { ids: ids.join(','), v } }),
   csvPreview: csv => api.post('/manufacturers/csv/preview', { csv }, { timeout: 60000 }),
   importRows: data => api.post('/manufacturers/import', data, { timeout: 90000 }),
 }

@@ -38,6 +38,7 @@ describe('the directory is admin only, on every endpoint', () => {
     ['GET', '/api/manufacturers/facets'],
     ['GET', `/api/manufacturers/${id}`],
     ['GET', `/api/manufacturers/${id}/image`],
+    ['GET', `/api/manufacturers/thumbs?ids=${id}`],
     ['POST', '/api/manufacturers', P({ name: 'Intruder' })],
     ['POST', `/api/manufacturers/${id}`, { status: 'rejected' }],
     ['POST', `/api/manufacturers/${id}/delete`, {}],
@@ -49,7 +50,7 @@ describe('the directory is admin only, on every endpoint', () => {
   test('buyers and manufacturers get 403 and nothing changes; signed-out gets 401', async () => {
     const admin = await makeAdmin()
     const [partner] = await seed(admin, [{ name: 'Secret Mills' }])
-    for (const who of [await makeBuyer(), await makeMfr()]) {
+    for (const who of [await makeBuyer(), await makeMfr({ listed: false })]) {
       const api = as(who)
       for (const [method, path, body] of endpoints(partner.id)) {
         const res = await req(method, path, { token: api.token, body })
@@ -76,7 +77,7 @@ describe('the directory is admin only, on every endpoint', () => {
   test('nothing about partners reaches a buyer or manufacturer through notifications or the audit log', async () => {
     const admin = await makeAdmin()
     const buyer = await makeBuyer()
-    const mfr = await makeMfr()
+    const mfr = await makeMfr({ listed: false })
     const [partner] = await seed(admin, [{ name: 'Quiet Knits' }])
     await as(admin).post(`/api/manufacturers/${partner.id}`, { status: 'contacted' })
     assert.equal(await Notification.countDocuments(), 0)
@@ -254,7 +255,7 @@ describe('search and filters', () => {
     assert.deepEqual((await q(api, 'verifiedOnly=1&sort=name')).items.map(p => p.name), ['ARNIT Creations', 'Dossil Fashions'])
     assert.equal((await q(api, 'onPlatform=1')).total, 0)
     const ar = await Manufacturer.findOne({ name: 'ARNIT Creations' })
-    const mfr = await makeMfr()
+    const mfr = await makeMfr({ listed: false })
     await Manufacturer.updateOne({ _id: ar._id }, { linkedUserId: mfr._id })
     const linked = await q(api, 'onPlatform=1')
     assert.deepEqual(names(linked), ['ARNIT Creations'])

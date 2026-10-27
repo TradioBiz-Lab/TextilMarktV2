@@ -1,5 +1,5 @@
 // Attaches generated tiles to partners. Reads a folder of images named as partners_needing_images.md asked
-// (dossil-fashions-pvt-ltd.png ...), shrinks each to 640px JPEG with macOS `sips`, and stores it as the partner's tile,
+// (dossil-fashions-pvt-ltd.png ...), shrinks each to a 640px JPEG (and a 360px thumbnail for the grid) with macOS `sips`, and stores it as the partner's tile,
 // exactly as the upload button on the partner page does. A partner that already has a tile is skipped unless --replace.
 // Files that match no partner, and partners with no file, are listed.
 //
@@ -36,9 +36,14 @@ for (const { file, partner } of matched) {
   const image = `data:image/jpeg;base64,${fs.readFileSync(out).toString('base64')}`
   const ok = cleanPartnerImage(image)
   if (ok.error) { console.log(`[partners] FAILED ${file}: ${ok.error}`); failed++; continue }
-  console.log(`[partners] ${apply ? 'attach' : 'would attach'} ${file} -> "${partner.name}" (${Math.round(image.length * 0.75 / 1024)} KB)`)
+  // The small copy the card grid loads (many at once), so the page is not waiting on 40 full pictures.
+  const thumbOut = path.join(tmp, `${path.parse(file).name}.thumb.jpg`)
+  const t = spawnSync('sips', ['-Z', '360', path.join(dir, file), '--out', thumbOut, '-s', 'format', 'jpeg', '-s', 'formatOptions', '70'], { encoding: 'utf8' })
+  const thumb = t.status === 0 && fs.existsSync(thumbOut) ? cleanPartnerImage(`data:image/jpeg;base64,${fs.readFileSync(thumbOut).toString('base64')}`, { maxBytes: 100 * 1024 }) : { error: 'could not shrink' }
+  if (thumb.error) { console.log(`[partners] FAILED thumbnail of ${file}: ${thumb.error}`); failed++; continue }
+  console.log(`[partners] ${apply ? 'attach' : 'would attach'} ${file} -> "${partner.name}" (${Math.round(image.length * 0.75 / 1024)} KB, thumbnail ${Math.round(thumb.image.length * 0.75 / 1024)} KB)`)
   if (apply) {
-    await Manufacturer.updateOne({ _id: partner._id }, { $set: { imageData: ok.image, imageUploadedAt: new Date(), imageUrl: '' } })
+    await Manufacturer.updateOne({ _id: partner._id }, { $set: { imageData: ok.image, thumbData: thumb.image, imageUploadedAt: new Date(), imageUrl: '' } })
     await AuditLog.create({ byUser: null, action: 'Partner Image Updated', detail: `${partner.name}: image set from ${file} (script)` })
   }
   attached++

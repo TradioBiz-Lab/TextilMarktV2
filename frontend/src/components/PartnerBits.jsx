@@ -1,13 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
-import { Factory, Copy, Check, ShieldCheck, Link2 } from '../icons.jsx'
+import { Factory, Copy, Check, ShieldCheck, Link2, Zap } from '../icons.jsx'
 import { T } from '../constants.js'
 import { useToast } from './ui.jsx'
 import { useApp } from '../context.jsx'
 import { STATUS_BY, PRIORITY_BY, CATEGORY_LABEL, scoreTone, initialsOf, labelOf } from '../partners.js'
 
 // Small pieces shared by the Partner Directory's list, card and detail page.
-
-export const ILLUSTRATIVE = 'Illustrative image, not a photo of the factory'
 
 export function Chip({ children, tone = 'plain', title }) {
   const tones = {
@@ -55,6 +53,15 @@ export function ClaimTag() {
   return <span title="The partner's own figure. It stays a claim until GST is verified or a sample is approved." style={{ fontSize: T.fontSize.micro, fontWeight: 700, color: '#92400e', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 5, padding: '1px 6px', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>self-reported</span>
 }
 
+/** Live: the manufacturer has orders with Tradio now. Only a live manufacturer can be given a style. */
+export function LiveBadge() {
+  return (
+    <span title="Live: has orders with Tradio now, and can be given styles" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: T.radius.pill, fontSize: T.fontSize.micro, fontWeight: 800, background: T.successDeep, color: '#fff', whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+      <Zap size={11} fill="#fff" />Live
+    </span>
+  )
+}
+
 export function OnPlatformBadge() {
   return (
     <span title="Also has a manufacturer account on TextilMarkt" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: T.radius.pill, fontSize: T.fontSize.micro, fontWeight: 800, background: T.masterBg, color: T.master, border: '1px solid #c4b5fd', whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -75,45 +82,43 @@ const tintFor = name => {
 }
 
 /**
- * A partner's tile: the uploaded or linked illustration when there is one, otherwise a clean initials placeholder.
- * An upload is fetched once the tile scrolls near the screen (lists never carry image bytes). The pictures are
- * illustrations, not photos of the factory, and say so on hover and in a small corner label.
+ * A partner's tile: the uploaded or linked picture when there is one, otherwise a clean initials placeholder. On the card
+ * grid (`thumb`) the small copy comes from one batched request (loadPartnerThumbs); anywhere else the full picture is
+ * fetched once the tile scrolls near the screen. Lists never carry image bytes.
  */
-export function PartnerImage({ partner, height = 124, rounded = 0, label = true }) {
-  const { getPartnerImage } = useApp()
+export function PartnerImage({ partner, height = 124, rounded = 0, thumb = false }) {
+  const { getPartnerImage, partnerThumbs } = useApp()
   const [upload, setUpload] = useState(null)
   const [near, setNear] = useState(false)
   const [broken, setBroken] = useState(false)
   const box = useRef(null)
   const wantsUpload = !!partner.hasUpload && !partner.imageUrl
+  const batched = thumb && wantsUpload
 
   useEffect(() => {
-    if (!wantsUpload) return undefined
+    if (!wantsUpload || batched) return undefined
     const el = box.current
     if (!el || typeof IntersectionObserver === 'undefined') { setNear(true); return undefined }
     const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setNear(true); io.disconnect() } }, { rootMargin: '240px' })
     io.observe(el)
     return () => io.disconnect()
-  }, [partner.id, wantsUpload])
+  }, [partner.id, wantsUpload, batched])
 
   useEffect(() => {
-    if (!wantsUpload || !near) { if (!wantsUpload) setUpload(null); return undefined }
+    if (!wantsUpload || batched || !near) { if (!wantsUpload) setUpload(null); return undefined }
     let live = true
     getPartnerImage(partner.id, partner.updatedAt).then(img => { if (live) setUpload(img) }).catch(() => { if (live) setUpload(null) })
     return () => { live = false }
-  }, [partner.id, partner.updatedAt, wantsUpload, near, getPartnerImage])
+  }, [partner.id, partner.updatedAt, wantsUpload, batched, near, getPartnerImage])
 
   useEffect(() => { setBroken(false) }, [partner.imageUrl])
 
-  const src = partner.imageUrl || upload
+  const src = partner.imageUrl || (batched ? partnerThumbs[partner.id] : upload)
   const tint = tintFor(partner.name)
   return (
-    <div ref={box} title={src && !broken ? ILLUSTRATIVE : undefined} style={{ position: 'relative', height, background: tint.bg, overflow: 'hidden', borderRadius: rounded, flexShrink: 0 }}>
+    <div ref={box} style={{ position: 'relative', height, background: tint.bg, overflow: 'hidden', borderRadius: rounded, flexShrink: 0 }}>
       {src && !broken ? (
-        <>
-          <img src={src} alt="" onError={() => setBroken(true)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-          {label && <span style={{ position: 'absolute', left: 8, bottom: 8, fontSize: 9, fontWeight: 700, color: '#fff', background: 'rgba(15,23,42,0.55)', borderRadius: 4, padding: '1px 6px', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Illustrative</span>}
-        </>
+        <img src={src} alt="" onError={() => setBroken(true)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
       ) : (
         <>
           <Factory size={Math.round(height * 0.9)} color={tint.fg} style={{ position: 'absolute', right: -Math.round(height * 0.12), bottom: -Math.round(height * 0.14), opacity: 0.1 }} />
