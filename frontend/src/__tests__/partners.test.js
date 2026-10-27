@@ -2,7 +2,7 @@ import { describe, test, expect } from 'vitest'
 import { capsFor } from '../caps.js'
 import {
   scoreTone, moqVerified, initialsOf, snakeOf, labelOf, fieldsFor, emptyQuery, queryToParams, activeFilterCount,
-  describeQuery, kriyaaPromptFor, sortsFor, TYPE_TABS, CATEGORIES,
+  describeQuery, kriyaaPromptFor, sortsFor, TYPE_TABS, CATEGORIES, CLUSTERS, SORTS,
 } from '../partners.js'
 
 describe('who sees the Partner Directory', () => {
@@ -100,6 +100,20 @@ describe('categories', () => {
     expect(queryToParams(emptyQuery()).category).toBeUndefined()
     expect(activeFilterCount(q)).toBe(2)
     expect(describeQuery(q)).toBe('for athleisure or fusion')
+  })
+})
+
+describe('clusters and ranking', () => {
+  test('Ludhiana, one NCR, Jaipur, Kolkata, Tiruppur, other; no Noida or Delhi of their own', () => {
+    expect(CLUSTERS.map(c => c.v)).toEqual(['ludhiana', 'ncr', 'jaipur', 'kolkata', 'tiruppur', 'other'])
+  })
+
+  test('priority is out of the list: no filter, no sort; score ranks', () => {
+    const q = emptyQuery()
+    expect('priority' in q).toBe(false)
+    expect('priority' in queryToParams({ ...q, priority: ['A'] })).toBe(false)
+    expect(SORTS.map(s => s.v)).toEqual(['score', 'updated', 'name'])
+    expect(queryToParams(q).sort).toBe('score')
   })
 })
 

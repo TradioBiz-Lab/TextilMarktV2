@@ -84,7 +84,7 @@ function sceneKey(p) {
   return 'knit'
 }
 
-const CLUSTER_LABEL = { ludhiana: 'Ludhiana', noida_ncr: 'Noida', delhi_ncr: 'Delhi', tiruppur: 'Tiruppur' }
+const CLUSTER_LABEL = { ludhiana: 'Ludhiana', ncr: 'Delhi NCR', jaipur: 'Jaipur', kolkata: 'Kolkata', tiruppur: 'Tiruppur' }
 
 /** The place named in a prompt: the city without its bracketed area, else the cluster, else nothing. */
 export function placeFor(p) {

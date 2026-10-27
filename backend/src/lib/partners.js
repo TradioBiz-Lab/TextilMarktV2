@@ -1,4 +1,4 @@
-import { PARTNER_TYPES, PARTNER_CLUSTERS, PARTNER_STATUSES, PARTNER_PRIORITIES, PARTNER_CATEGORIES } from '../models/Manufacturer.js'
+import { PARTNER_TYPES, PARTNER_CLUSTERS, PARTNER_STATUSES, PARTNER_PRIORITIES, PARTNER_CATEGORIES, LEGACY_CLUSTERS } from '../models/Manufacturer.js'
 
 // Validation, normalisation and query parsing for the Partner Directory (models/Manufacturer.js,
 // routes/manufacturers.js). Everything that reaches a partner document or a Mongo filter goes through here, so
@@ -64,12 +64,14 @@ export function normalizeType(text) {
 /** The cluster for a cluster label, or for a city when the label is empty. null when neither says anything. */
 export function normalizeCluster(text, city = '') {
   const t = String(text ?? '').trim().toLowerCase()
+  if (LEGACY_CLUSTERS[t]) return LEGACY_CLUSTERS[t]
   if (PARTNER_CLUSTERS.includes(t)) return t
   const pick = s => {
     if (/ludhiana/.test(s)) return 'ludhiana'
     if (/tirupp?ur/.test(s)) return 'tiruppur'
-    if (/noida/.test(s)) return 'noida_ncr'
-    if (/delhi|gurugram|gurgaon|faridabad|ghaziabad|sonipat|sonepat|panipat/.test(s)) return 'delhi_ncr'
+    if (/jaipur/.test(s)) return 'jaipur'
+    if (/kolkata|calcutta/.test(s)) return 'kolkata'
+    if (/noida|delhi|\bncr\b|gurugram|gurgaon|faridabad|ghaziabad|sonipat|sonepat|panipat/.test(s)) return 'ncr'
     return null
   }
   if (t && !/^(tbd|n\/?a|not found|not listed|unknown|-)$/.test(t)) return pick(t) || 'other'
@@ -183,9 +185,10 @@ export function cleanPartnerInput(body, { partial = false, defaultType = null } 
 
   // Location
   if (has('cluster')) {
+    const cluster = LEGACY_CLUSTERS[body.cluster] || body.cluster
     if (blank(body.cluster)) data.cluster = undefined
-    else if (!PARTNER_CLUSTERS.includes(body.cluster)) fail('Invalid cluster')
-    else data.cluster = body.cluster
+    else if (!PARTNER_CLUSTERS.includes(cluster)) fail('Invalid cluster')
+    else data.cluster = cluster
   }
   text('city', 120, 'City')
   text('address', 500, 'Address')
@@ -352,7 +355,7 @@ export function parsePartnerQuery(raw = {}) {
   }
   for (const [key, allowed] of [['type', PARTNER_TYPES], ['cluster', PARTNER_CLUSTERS], ['status', PARTNER_STATUSES], ['priority', PARTNER_PRIORITIES]]) {
     if (blank(q[key])) continue
-    const list = csvOf(q[key])
+    const list = csvOf(q[key]).map(x => (key === 'cluster' ? LEGACY_CLUSTERS[x] || x : x))
     if (list.length > allowed.length || !list.every(x => allowed.includes(x))) return { error: `Invalid ${key}` }
     f[key] = [...new Set(list)]
   }

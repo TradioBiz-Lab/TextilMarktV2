@@ -221,9 +221,9 @@ describe('search and filters', () => {
   const rows = [
     { name: 'Dossil Fashions', cluster: 'ludhiana', city: 'Ludhiana', products: ['tee', 'jogger'], fabrics: ['cotton_lycra'], priority: 'A', keywords: ['knitwear', 'low moq'], verification: { score: 80, gstVerified: true } },
     { name: 'Sukartik Clothing', cluster: 'ludhiana', city: 'Ludhiana', products: ['sports_bra', 'leggings'], fabrics: ['poly_spandex'], priority: 'B', verification: { score: 55 }, status: 'contacted' },
-    { name: 'ARNIT Creations', cluster: 'noida_ncr', city: 'Noida', products: ['leggings'], fabrics: ['poly_spandex'], priority: 'A', verification: { score: 30, sampleApproved: true } },
+    { name: 'ARNIT Creations', cluster: 'ncr', city: 'Noida', products: ['leggings'], fabrics: ['poly_spandex'], priority: 'A', verification: { score: 30, sampleApproved: true } },
     { name: 'Weave Works', type: 'fabric_supplier', cluster: 'tiruppur', city: 'Tiruppur', fabricTypes: ['single_jersey', 'rib'], priority: 'C' },
-    { name: 'Button Bazaar', type: 'trims_supplier', cluster: 'delhi_ncr', city: 'Delhi', trimCategories: ['buttons', 'zips'], priority: 'D' },
+    { name: 'Button Bazaar', type: 'trims_supplier', cluster: 'ncr', city: 'Delhi', trimCategories: ['buttons', 'zips'], priority: 'D' },
     { name: 'Hidden Agent', type: 'unknown', isActive: false, city: 'Jaipur' },
   ]
   const setup = async () => { const admin = await makeAdmin(); await seed(admin, rows); return as(admin) }
@@ -503,7 +503,7 @@ describe('CSV upload', () => {
 
     const first = await Manufacturer.findOne({ name: '16th July Exports' }).lean()
     assert.equal(first.type, 'garment_manufacturer')
-    assert.equal(first.cluster, 'delhi_ncr')
+    assert.equal(first.cluster, 'ncr')
     // a products column feeds keywords (specialised products are keywords), not the products field
     assert.deepEqual(first.keywords, ['leggings', 'sports bras', 'joggers'])
     assert.deepEqual(first.products, [])
@@ -586,5 +586,27 @@ describe('categories (athleisure, indian, western, fusion, home textiles)', () =
     assert.match(res.errors[0].errors[0], /Unknown category/)
     assert.deepEqual((await Manufacturer.findOne({ name: 'A Co' }).lean()).categories, ['athleisure', 'fusion'])
     assert.deepEqual((await Manufacturer.findOne({ name: 'C Co' }).lean()).categories, ['home_textiles'])
+  })
+})
+
+describe('clusters: Ludhiana, NCR, Jaipur, Kolkata, Tiruppur', () => {
+  test('Jaipur and Kolkata are clusters; the old Noida and Delhi values mean NCR', async () => {
+    const api = as(await makeAdmin())
+    const mk = async (name, cluster) => api.post('/api/manufacturers', P({ name, cluster }))
+    assert.equal((await mk('J One', 'jaipur')).body.cluster, 'jaipur')
+    assert.equal((await mk('K One', 'kolkata')).body.cluster, 'kolkata')
+    assert.equal((await mk('N One', 'ncr')).body.cluster, 'ncr')
+    // an older client still sending the two old values gets NCR
+    assert.equal((await mk('N Two', 'noida_ncr')).body.cluster, 'ncr')
+    assert.equal((await mk('N Three', 'delhi_ncr')).body.cluster, 'ncr')
+    assert.equal((await mk('Bad', 'pune')).status, 400)
+    const q = async qs => (await api.get(`/api/manufacturers?${qs}&sort=name`)).body.items.map(p => p.name)
+    assert.deepEqual(await q('cluster=ncr'), ['N One', 'N Three', 'N Two'])
+    assert.deepEqual(await q('cluster=noida_ncr'), ['N One', 'N Three', 'N Two'])
+    assert.deepEqual(await q('cluster=jaipur,kolkata'), ['J One', 'K One'])
+    const f = (await api.get('/api/manufacturers/facets')).body
+    assert.deepEqual(f.byCluster, { jaipur: 1, kolkata: 1, ncr: 3 })
+    const moved = await api.post(`/api/manufacturers/${(await mk('Mover', 'ludhiana')).body.id}`, { cluster: 'delhi_ncr' })
+    assert.equal(moved.body.cluster, 'ncr')
   })
 })

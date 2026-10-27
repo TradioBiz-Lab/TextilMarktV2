@@ -6,7 +6,7 @@ import { PartnerImage, Chip, CategoryChips, TagChips, ScoreBadge, ClaimTag, OnPl
 import { PartnerFormModal } from './PartnerFormModal.jsx'
 import { useApp } from '../../context.jsx'
 import { photoFromFile } from '../../colours.js'
-import { TYPE_LABEL, CLUSTER_LABEL, STATUSES, PRIORITIES, VERIFICATION_CHECKS, fieldsFor, moqVerified } from '../../partners.js'
+import { TYPE_LABEL, CLUSTER_LABEL, STATUSES, VERIFICATION_CHECKS, fieldsFor, moqVerified } from '../../partners.js'
 
 // One partner: who they are, what they can make, what they claim and what has been checked. Admin only.
 
@@ -114,11 +114,6 @@ export function PartnerDetailPage({ partnerId, onBack }) {
               <div style={{ width: 160 }}>
                 <Select label="Status" value={p.status} disabled={busy} onChange={e => save({ status: e.target.value }, 'Status updated')}>
                   {STATUSES.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
-                </Select>
-              </div>
-              <div style={{ width: 160 }}>
-                <Select label="Priority" value={p.priority} disabled={busy} onChange={e => save({ priority: e.target.value }, 'Priority updated')}>
-                  {PRIORITIES.map(x => <option key={x.v} value={x.v}>{x.label} ({x.hint})</option>)}
                 </Select>
               </div>
             </div>

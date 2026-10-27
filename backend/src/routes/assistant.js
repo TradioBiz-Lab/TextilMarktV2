@@ -195,7 +195,7 @@ const WRITE_TOOLS = new Set([
 // customer of a style is always its master order's, and nothing is created until the admin's own reply confirms it.
 // A season is the customer's own code (list_companies shows each customer's list); the server checks it.
 // The filters listManufacturers accepts; anything else the model sends is dropped before validation.
-const LIST_PARTNERS_KEYS = ['search', 'type', 'category', 'cluster', 'status', 'priority', 'fabric', 'minScore', 'maxScore', 'verifiedOnly', 'onPlatform', 'live', 'includeInactive', 'sort', 'limit']
+const LIST_PARTNERS_KEYS = ['search', 'type', 'category', 'cluster', 'status', 'fabric', 'minScore', 'maxScore', 'verifiedOnly', 'onPlatform', 'live', 'includeInactive', 'sort', 'limit']
 const SEASON_RE = /^[A-Z0-9][A-Z0-9-]{0,9}$/
 const MASTER_ORDER_KEYS = ['orderName', 'season', 'buyerId', 'poNumber', 'poDate', 'shipBy', 'notes']
 const ORDER_KEYS = ['product', 'styleNumber', 'category', 'season', 'totalQty', 'delivery', 'masterOrderId', 'phase', 'callout']
@@ -332,7 +332,7 @@ export const TOOL_HANDLERS = {
         moqClaim: p.moqPerStyleColour ?? undefined, moqNote: p.moqNote || undefined,
         moqVerified: p.verification.gstVerified || p.verification.sampleApproved,
         verificationScore: p.verification.score, gstVerified: p.verification.gstVerified, sampleApproved: p.verification.sampleApproved,
-        status: p.status, priority: p.priority, onPlatform: p.onPlatform, live: p.isLive, active: p.isActive,
+        status: p.status, onPlatform: p.onPlatform, live: p.isLive, active: p.isActive,
         contacts: p.contacts.slice(0, 2).map(c => ({ name: c.name, role: c.role || undefined, phone: c.phone || undefined, email: c.email || undefined })),
         notes: p.notes ? p.notes.slice(0, 300) : undefined,
       })),
@@ -610,9 +610,8 @@ const TOOLS = [
         search: { type: 'string', maxLength: 100, description: 'Words to look for in name, city, products, fabrics and keywords. Partial words work.' },
         type: { type: 'string', enum: ['garment_manufacturer', 'fabric_supplier', 'trims_supplier', 'dyer_processor', 'trader', 'buying_house', 'unknown'] },
         category: { type: 'string', enum: ['athleisure', 'indian', 'western', 'fusion', 'home_textiles'], description: 'What the partner makes for. A partner can be in several categories; this matches any partner that has it.' },
-        cluster: { type: 'string', enum: ['ludhiana', 'noida_ncr', 'delhi_ncr', 'tiruppur', 'other'] },
+        cluster: { type: 'string', enum: ['ludhiana', 'ncr', 'jaipur', 'kolkata', 'tiruppur', 'other'] },
         status: { type: 'string', enum: ['new', 'contacted', 'qualified', 'pilot', 'onboarded', 'rejected', 'off_scope'] },
-        priority: { type: 'string', enum: ['A', 'B', 'C', 'D'] },
         fabric: { type: 'string', maxLength: 60, description: "A fabric, snake_case: 'poly_spandex', 'cotton_lycra'." },
         minScore: { type: 'integer', minimum: 0, maximum: 100, description: 'Least verification score.' },
         maxScore: { type: 'integer', minimum: 0, maximum: 100 },

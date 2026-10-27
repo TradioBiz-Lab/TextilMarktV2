@@ -736,7 +736,8 @@ manufacturer can reach. It is not the same as a manufacturer-role `users` record
   categories        [enum]   athleisure | indian | western | fusion | home_textiles. What the partner makes
                              for; a factory can be in several (default empty). Words like "activewear" or
                              "indo-western" are accepted on input and stored as the five values
-  cluster           enum     ludhiana | noida_ncr | delhi_ncr | tiruppur | other   (optional)
+  cluster           enum     ludhiana | ncr | jaipur | kolkata | tiruppur | other   (optional). Noida and Delhi are one
+                             NCR; the old values noida_ncr and delhi_ncr are still accepted on input and mean ncr
   city, address, pincode    String
 
   -- garment manufacturers only (the form hides them for other types) --
@@ -759,7 +760,8 @@ manufacturer can reach. It is not the same as a manufacturer-role `users` record
                       videoWalkthrough, sampleApproved, siteVisited (Boolean), lastCheckedAt }
                     lastCheckedAt is stamped by the server whenever a verification field changes
   status            enum     new | contacted | qualified | pilot | onboarded | rejected | off_scope   (default new)
-  priority          enum     A | B | C | D   (default C)
+  priority          enum     A | B | C | D   (default C). Not shown or edited in the UI for now: partners are ranked by
+                             verification score. The field and API filter remain
   source            String   where the lead came from, with the capture date
   keywords          [String] lower-case search words. Where a product is named it is a SPECIALISED one (sports bras,
                              leggings, thermals, socks, innerwear, tracksuits, kidswear); the CSV "products" column and

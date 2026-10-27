@@ -5,7 +5,9 @@ import mongoose from 'mongoose'
 // is admin-only end to end (routes/manufacturers.js). It is NOT the same thing as a manufacturer-role User: a
 // directory record only points at one through `linkedUserId`, and linking changes nothing about what that user sees.
 export const PARTNER_TYPES = ['garment_manufacturer', 'fabric_supplier', 'trims_supplier', 'dyer_processor', 'trader', 'buying_house', 'unknown']
-export const PARTNER_CLUSTERS = ['ludhiana', 'noida_ncr', 'delhi_ncr', 'tiruppur', 'other']
+export const PARTNER_CLUSTERS = ['ludhiana', 'ncr', 'jaipur', 'kolkata', 'tiruppur', 'other']
+// Noida and Delhi were once two clusters; they are one NCR now. The old values are still understood on input.
+export const LEGACY_CLUSTERS = { noida_ncr: 'ncr', delhi_ncr: 'ncr' }
 export const PARTNER_STATUSES = ['new', 'contacted', 'qualified', 'pilot', 'onboarded', 'rejected', 'off_scope']
 export const PARTNER_PRIORITIES = ['A', 'B', 'C', 'D']
 // What a partner makes for. A factory can sit in several (an activewear unit that also does fusion wear).

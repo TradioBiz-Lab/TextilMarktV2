@@ -3,7 +3,7 @@ import { Factory, Copy, Check, ShieldCheck, Link2, Zap } from '../icons.jsx'
 import { T } from '../constants.js'
 import { useToast } from './ui.jsx'
 import { useApp } from '../context.jsx'
-import { STATUS_BY, PRIORITY_BY, CATEGORY_LABEL, scoreTone, initialsOf, labelOf } from '../partners.js'
+import { STATUS_BY, CATEGORY_LABEL, scoreTone, initialsOf, labelOf } from '../partners.js'
 
 // Small pieces shared by the Partner Directory's list, card and detail page.
 
@@ -26,13 +26,6 @@ export function StatusPill({ status }) {
   const s = STATUS_BY[status] || STATUS_BY.new
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 10px', borderRadius: T.radius.pill, fontSize: T.fontSize.xs, fontWeight: 700, background: s.bg, color: s.fg, whiteSpace: 'nowrap' }}>{s.label}</span>
-  )
-}
-
-export function PriorityTag({ priority }) {
-  const p = PRIORITY_BY[priority] || PRIORITY_BY.C
-  return (
-    <span title={`Priority ${p.label}: ${p.hint}`} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 22, height: 22, padding: '0 6px', borderRadius: 6, fontSize: T.fontSize.xs, fontWeight: 800, background: p.bg, color: p.fg, border: `1px solid ${p.border}` }}>{p.label}</span>
   )
 }
 

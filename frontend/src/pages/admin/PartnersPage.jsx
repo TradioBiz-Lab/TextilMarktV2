@@ -8,7 +8,7 @@ import { PartnerCsvImportModal } from './PartnerCsvImportModal.jsx'
 import { useApp } from '../../context.jsx'
 import { useKriyaaChat } from '../../kriyaaChatContext.jsx'
 import {
-  TYPE_TABS, CATEGORIES, CATEGORY_LABEL, CLUSTERS, STATUSES, PRIORITIES, CLUSTER_LABEL, STATUS_BY, labelOf, sortsFor, PAGE_SIZE,
+  TYPE_TABS, CATEGORIES, CATEGORY_LABEL, CLUSTERS, STATUSES, CLUSTER_LABEL, STATUS_BY, labelOf, sortsFor, PAGE_SIZE,
   emptyQuery, queryToParams, activeFilterCount, kriyaaPromptFor,
 } from '../../partners.js'
 
@@ -138,17 +138,6 @@ export function PartnersPage({ onNavigate }) {
       <RailSection title="Status">
         {STATUSES.map(s => <CheckRow key={s.v} label={s.label} checked={q.status.includes(s.v)} onChange={() => patch({ status: toggle(q.status, s.v) })} count={f?.byStatus[s.v] || 0} />)}
       </RailSection>
-      <RailSection title="Priority">
-        <div style={{ display: 'flex', gap: 6 }}>
-          {PRIORITIES.map(p => {
-            const on = q.priority.includes(p.v)
-            return (
-              <button key={p.v} type="button" onClick={() => patch({ priority: toggle(q.priority, p.v) })} title={`Priority ${p.v}: ${p.hint}`} aria-pressed={on}
-                style={{ flex: 1, padding: '5px 0', borderRadius: 7, cursor: 'pointer', fontWeight: 800, fontSize: T.fontSize.body, fontFamily: 'inherit', border: `1px solid ${on ? T.primaryDeep : T.border}`, background: on ? T.primaryLight : '#fff', color: on ? T.primaryDeep : T.textMuted }}>{p.v}</button>
-            )
-          })}
-        </div>
-      </RailSection>
       <RailSection title="Verification score">
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
           {[['70+', 70, ''], ['50 to 69', 50, 69], ['Under 50', '', 49]].map(([label, lo, hi]) => {
@@ -178,7 +167,6 @@ export function PartnersPage({ onNavigate }) {
   for (const c of q.cluster) chips.push([`cluster:${c}`, CLUSTER_LABEL[c], () => patch({ cluster: q.cluster.filter(x => x !== c) })])
   for (const v of q.fabric) chips.push([`fabric:${v}`, `${labelOf(v)} fabric`, () => patch({ fabric: q.fabric.filter(x => x !== v) })])
   for (const v of q.status) chips.push([`status:${v}`, STATUS_BY[v]?.label, () => patch({ status: q.status.filter(x => x !== v) })])
-  for (const v of q.priority) chips.push([`priority:${v}`, `Priority ${v}`, () => patch({ priority: q.priority.filter(x => x !== v) })])
   if (q.minScore !== '' || q.maxScore !== '') chips.push(['score', `Score ${q.minScore === '' ? 0 : q.minScore} to ${q.maxScore === '' ? 100 : q.maxScore}`, () => patch({ minScore: '', maxScore: '' })])
   if (q.live) chips.push(['live', 'Live only', () => patch({ live: false })])
   if (q.verifiedOnly) chips.push(['verified', 'Verified only', () => patch({ verifiedOnly: false })])

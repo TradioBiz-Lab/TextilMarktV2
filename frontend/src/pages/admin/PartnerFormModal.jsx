@@ -4,7 +4,7 @@ import { T } from '../../constants.js'
 import { Modal, Input, Select, Textarea, Btn, Alert, SectionLabel, Grid } from '../../components/ui.jsx'
 import { TagInput } from '../../components/TagInput.jsx'
 import { useApp } from '../../context.jsx'
-import { PARTNER_TYPES, CATEGORIES, CLUSTERS, STATUSES, PRIORITIES, SPECIALISED_SUGGESTIONS, COMMON_FABRICS, fieldsFor } from '../../partners.js'
+import { PARTNER_TYPES, CATEGORIES, CLUSTERS, STATUSES, SPECIALISED_SUGGESTIONS, COMMON_FABRICS, fieldsFor } from '../../partners.js'
 
 // Add or edit a partner. Only a name and a type are required, so a partner can be added in seconds and filled in
 // later. Fields that do not apply to the chosen type are hidden: machines, MOQ, products and fabric experience for
@@ -16,7 +16,7 @@ const num = v => (v === '' || v === null || v === undefined ? '' : String(v))
 function initialForm(p, initialType) {
   return {
     name: p?.name || '', legalName: p?.legalName || '', type: p?.type || initialType || 'garment_manufacturer',
-    status: p?.status || 'new', priority: p?.priority || 'C', isActive: p ? p.isActive : true,
+    status: p?.status || 'new', isActive: p ? p.isActive : true,
     categories: p?.categories || [],
     cluster: p?.cluster || '', city: p?.city || '', address: p?.address || '', pincode: p?.pincode || '',
     fabrics: p?.fabrics || [], fabricTypes: p?.fabricTypes || [], trimCategories: p?.trimCategories || [],
@@ -50,7 +50,7 @@ export function PartnerFormModal({ partner, initialType, onClose, onSaved }) {
     e.preventDefault()
     if (!f.name.trim()) { setErr('Give the partner a name.'); return }
     const body = {
-      name: f.name, legalName: f.legalName, type: f.type, categories: f.categories, status: f.status, priority: f.priority, isActive: f.isActive,
+      name: f.name, legalName: f.legalName, type: f.type, categories: f.categories, status: f.status, isActive: f.isActive,
       cluster: f.cluster || null, city: f.city, address: f.address, pincode: f.pincode,
       priceIndication: f.priceIndication, leadTimeDays: f.leadTimeDays === '' ? null : Number(f.leadTimeDays),
       contacts: f.contacts, website: f.website, logoUrl: f.logoUrl, gstin: f.gstin, udyam: f.udyam, mcaCin: f.mcaCin,
@@ -93,9 +93,6 @@ export function PartnerFormModal({ partner, initialType, onClose, onSaved }) {
             <Input label="Website" value={f.website} onChange={e => set('website', e.target.value)} placeholder="example.com" maxLength={300} />
             <Select label="Status" value={f.status} onChange={e => set('status', e.target.value)}>
               {STATUSES.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
-            </Select>
-            <Select label="Priority" value={f.priority} onChange={e => set('priority', e.target.value)}>
-              {PRIORITIES.map(p => <option key={p.v} value={p.v}>{p.label} ({p.hint})</option>)}
             </Select>
           </Grid>
           <div style={{ marginTop: 12 }}>
