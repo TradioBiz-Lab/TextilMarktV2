@@ -6,7 +6,7 @@ import { PartnerImage, Chip, CategoryChips, TagChips, ScoreBadge, ClaimTag, Live
 import { PartnerFormModal } from './PartnerFormModal.jsx'
 import { useApp } from '../../context.jsx'
 import { photoFromFile } from '../../colours.js'
-import { TYPE_LABEL, CLUSTER_LABEL, STATUSES, VERIFICATION_CHECKS, fieldsFor, moqVerified, canBeLive } from '../../partners.js'
+import { TYPE_LABEL, CLUSTER_LABEL, STATUSES, VERIFICATION_CHECKS, fieldsFor, moqVerified, canBeLive, machineTotal } from '../../partners.js'
 
 // One partner: who they are, what they can make, what they claim and what has been checked. Admin only.
 
@@ -143,6 +143,7 @@ export function PartnerDetailPage({ partnerId, onBack }) {
               <Fact label="Specialised products and keywords">{p.keywords.length ? <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>{p.keywords.map(k => <Chip key={k}>{k}</Chip>)}</div> : <Empty>None named. Add a keyword only for a specialised product.</Empty>}</Fact>
               <Fact label="Fabric experience">{p.fabrics.length ? <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}><TagChips tags={p.fabrics} tone="fabric" max={30} /></div> : <Empty>Not recorded</Empty>}</Fact>
               <Fact label="Machines">
+                <div style={{ fontSize: T.fontSize.md, marginBottom: 8 }}>{machineTotal(p) !== null ? <><strong>{machineTotal(p)}</strong> in all{p.machineCount === null && <span style={{ color: T.textLight }}> (sum of the types below)</span>}</> : <Empty>Total not recorded</Empty>}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6 }}>
                   {machines.map(([l, n]) => (
                     <div key={l} style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: '6px 10px', display: 'flex', justifyContent: 'space-between', fontSize: T.fontSize.sm }}>

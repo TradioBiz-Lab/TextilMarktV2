@@ -32,6 +32,7 @@ export const PARTNER_CSV_FIELDS = [
   { key: 'machines.coverstitch', label: 'Coverstitch machines', aliases: ['coverstitch', 'coverstitchmachines'] },
   { key: 'machines.overlock', label: 'Overlock machines', aliases: ['overlock', 'overlockmachines'] },
   { key: 'machines.singleNeedle', label: 'Single needle machines', aliases: ['singleneedle', 'singleneedlemachines'] },
+  { key: 'machineCount', label: 'Total machines', aliases: ['machines', 'totalmachines', 'machinecount', 'nomachines', 'numberofmachines', 'noofmachines', 'sewingmachines', 'capacity'] },
   { key: 'moqPerStyleColour', label: 'MOQ (pieces)', aliases: ['moq', 'moqclaim', 'moqpcs', 'minimumorder', 'minimumorderquantity'] },
   { key: 'moqNote', label: 'MOQ note', aliases: ['moqnote', 'moqnotes'] },
   { key: 'priceIndication', label: 'Price indication', aliases: ['price', 'priceindication', 'pricing'] },
@@ -133,6 +134,11 @@ export function mapPartnerRecord(record, mapping) {
   if (out.categories) out.categories = out.categories.map(c => normalizeCategory(c) ?? c)
   if (out.status !== undefined) out.status = normalizeStatus(out.status) ?? out.status
   if (out.priority !== undefined) out.priority = normalizePriority(out.priority) ?? out.priority
+  if (out.machineCount !== undefined) {
+    // "60 machines" -> 60; no number in it, no value.
+    const m = /\d[\d,]*/.exec(String(out.machineCount))
+    if (m) out.machineCount = Number(m[0].replace(/,/g, '')); else delete out.machineCount
+  }
   if (out.moqPerStyleColour !== undefined) {
     // "100 pcs/style" -> 100, with the words kept in the note; anything else is a note only.
     const m = /\d[\d,]*/.exec(String(out.moqPerStyleColour))

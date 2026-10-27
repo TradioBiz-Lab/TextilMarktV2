@@ -84,6 +84,7 @@ export function mergePartner(current, incoming) {
     if (incoming.cluster && incoming.cluster !== current.cluster) set('cluster', incoming.cluster)
   }
   for (const f of SCALARS) if (blank(current[f]) && !blank(incoming[f])) set(f, incoming[f])
+  if ((current.machineCount === null || current.machineCount === undefined) && incoming.machineCount != null) set('machineCount', incoming.machineCount)
   if ((current.moqPerStyleColour === null || current.moqPerStyleColour === undefined) && incoming.moqPerStyleColour != null) set('moqPerStyleColour', incoming.moqPerStyleColour)
 
   for (const f of LISTS) {

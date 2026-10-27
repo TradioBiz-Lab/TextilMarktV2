@@ -162,6 +162,19 @@ export function PartnersPage({ onNavigate }) {
         </div>
         <div style={{ fontSize: T.fontSize.xs, color: T.textLight, marginTop: 5 }}>Partners not scored yet are left out of a range.</div>
       </RailSection>
+      <RailSection title="Machines">
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+          {[25, 50, 100].map(n => {
+            const on = q.minMachines === n
+            return (
+              <button key={n} type="button" onClick={() => patch({ minMachines: on ? '' : n })} aria-pressed={on}
+                style={{ padding: '3px 10px', borderRadius: T.radius.pill, cursor: 'pointer', fontSize: T.fontSize.sm, fontWeight: 700, fontFamily: 'inherit', border: `1px solid ${on ? T.primaryDeep : T.border}`, background: on ? T.primaryLight : '#fff', color: on ? T.primaryDeep : T.textMuted }}>{n}+</button>
+            )
+          })}
+        </div>
+        <input type="number" min={0} max={99999} placeholder="At least this many" aria-label="Fewest machines" value={q.minMachines} onChange={e => patch({ minMachines: e.target.value === '' ? '' : Math.min(99999, Math.max(0, Math.floor(Number(e.target.value)))) })} style={numInput} />
+        <div style={{ fontSize: T.fontSize.xs, color: T.textLight, marginTop: 5 }}>Partners with no machine count recorded are left out.</div>
+      </RailSection>
       <SwitchRow checked={q.live} onChange={e => patch({ live: e.target.checked })} label="Live only" hint="Has orders at Tradio now" />
       <SwitchRow checked={q.verifiedOnly} onChange={e => patch({ verifiedOnly: e.target.checked })} label="Verified only" hint="GST checked or a sample approved" />
       <SwitchRow checked={q.includeInactive} onChange={e => patch({ includeInactive: e.target.checked })} label="Show archived" hint={f?.inactive ? `${f.inactive} kept on file, out of the way` : 'Service providers, brands, individuals'} />
@@ -175,6 +188,7 @@ export function PartnersPage({ onNavigate }) {
   for (const v of q.fabric) chips.push([`fabric:${v}`, `${labelOf(v)} fabric`, () => patch({ fabric: q.fabric.filter(x => x !== v) })])
   for (const v of q.status) chips.push([`status:${v}`, STATUS_BY[v]?.label, () => patch({ status: q.status.filter(x => x !== v) })])
   if (q.minScore !== '' || q.maxScore !== '') chips.push(['score', `Score ${q.minScore === '' ? 0 : q.minScore} to ${q.maxScore === '' ? 100 : q.maxScore}`, () => patch({ minScore: '', maxScore: '' })])
+  if (q.minMachines !== '') chips.push(['machines', `${q.minMachines}+ machines`, () => patch({ minMachines: '' })])
   if (q.live) chips.push(['live', 'Live only', () => patch({ live: false })])
   if (q.verifiedOnly) chips.push(['verified', 'Verified only', () => patch({ verifiedOnly: false })])
   if (q.includeInactive) chips.push(['inactive', 'Archived shown', () => patch({ includeInactive: false })])

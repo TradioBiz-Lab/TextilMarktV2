@@ -195,7 +195,7 @@ const WRITE_TOOLS = new Set([
 // customer of a style is always its master order's, and nothing is created until the admin's own reply confirms it.
 // A season is the customer's own code (list_companies shows each customer's list); the server checks it.
 // The filters listManufacturers accepts; anything else the model sends is dropped before validation.
-const LIST_PARTNERS_KEYS = ['search', 'type', 'category', 'brand', 'cluster', 'status', 'fabric', 'minScore', 'maxScore', 'verifiedOnly', 'live', 'includeInactive', 'sort', 'limit']
+const LIST_PARTNERS_KEYS = ['search', 'type', 'category', 'brand', 'cluster', 'status', 'fabric', 'minScore', 'maxScore', 'minMachines', 'verifiedOnly', 'live', 'includeInactive', 'sort', 'limit']
 const SEASON_RE = /^[A-Z0-9][A-Z0-9-]{0,9}$/
 const MASTER_ORDER_KEYS = ['orderName', 'season', 'buyerId', 'poNumber', 'poDate', 'shipBy', 'notes']
 const ORDER_KEYS = ['product', 'styleNumber', 'category', 'season', 'totalQty', 'delivery', 'masterOrderId', 'phase', 'callout']
@@ -329,6 +329,7 @@ export const TOOL_HANDLERS = {
       partners: result.data.items.map(p => ({
         name: p.name, type: p.type, categories: p.categories, cluster: p.cluster || undefined, city: p.city || undefined,
         brands: p.brands, keywords: p.keywords, fabrics: p.fabrics, fabricTypes: p.fabricTypes, trimCategories: p.trimCategories,
+        machineCount: p.machineCount ?? undefined,
         moqClaim: p.moqPerStyleColour ?? undefined, moqNote: p.moqNote || undefined,
         moqVerified: p.verification.gstVerified || p.verification.sampleApproved,
         verificationScore: p.verification.score, gstVerified: p.verification.gstVerified, sampleApproved: p.verification.sampleApproved,
@@ -616,10 +617,11 @@ const TOOLS = [
         fabric: { type: 'string', maxLength: 60, description: "A fabric, snake_case: 'poly_spandex', 'cotton_lycra'." },
         minScore: { type: 'integer', minimum: 0, maximum: 100, description: 'Least verification score.' },
         maxScore: { type: 'integer', minimum: 0, maximum: 100 },
+        minMachines: { type: 'integer', minimum: 0, maximum: 99999, description: 'Least total machines (capacity). Partners with no machine count recorded are left out.' },
         verifiedOnly: { type: 'boolean', description: 'Only partners with GST checked or a sample approved.' },
         live: { type: 'boolean', description: 'Only live manufacturers (status Live): the ones with orders at Tradio now, the only ones that can be given a style.' },
         includeInactive: { type: 'boolean', description: 'Also list archived partners (service providers, brands, individuals).' },
-        sort: { type: 'string', enum: ['relevance', 'score', 'priority', 'updated', 'name'] },
+        sort: { type: 'string', enum: ['relevance', 'score', 'priority', 'updated', 'name', 'machines'], description: "'machines' puts the biggest capacity first." },
         limit: { type: 'integer', minimum: 1, maximum: 50, description: 'Default 25.' },
       },
       additionalProperties: false,

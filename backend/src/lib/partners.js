@@ -9,7 +9,7 @@ const MAX_TAG_LEN = 60
 const MAX_CONTACTS = 20
 const MAX_IMAGE_BYTES = 600 * 1024 // an uploaded tile; the browser resizes to about 640px, so this is generous
 
-export const PARTNER_SORTS = ['relevance', 'score', 'priority', 'updated', 'name']
+export const PARTNER_SORTS = ['relevance', 'score', 'priority', 'updated', 'name', 'machines']
 
 const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v)
 const blank = v => v === undefined || v === null || (typeof v === 'string' && !v.trim())
@@ -251,6 +251,10 @@ export function cleanPartnerInput(body, { partial = false, defaultType = null } 
       }
     }
   }
+  if (has('machineCount')) {
+    const n = whole(body, 'machineCount', 'Total machines', 99_999)
+    if (n !== undefined) data.machineCount = n
+  }
   if (has('moqPerStyleColour')) {
     const n = whole(body, 'moqPerStyleColour', 'MOQ', 1_000_000)
     if (n !== undefined) data.moqPerStyleColour = n
@@ -400,6 +404,11 @@ export function parsePartnerQuery(raw = {}) {
     if (!Number.isFinite(n) || n < 0 || n > 100) return { error: `Invalid ${key}` }
     f[key] = n
   }
+  if (!blank(q.minMachines)) {
+    const n = Number(q.minMachines)
+    if (!Number.isInteger(n) || n < 0 || n > 99_999) return { error: 'Invalid minMachines' }
+    f.minMachines = n
+  }
   for (const key of ['verifiedOnly', 'onPlatform', 'live', 'includeInactive']) if (truthy(q[key])) f[key] = true
   if (!blank(q.sort)) {
     if (!PARTNER_SORTS.includes(q.sort)) return { error: 'Invalid sort' }
@@ -444,6 +453,7 @@ export function partnerMongoFilter(f) {
   if (f.fabric) and.push({ $or: [{ fabrics: { $in: f.fabric } }, { fabricTypes: { $in: f.fabric } }] })
   if (f.minScore !== undefined) and.push({ 'verification.score': { $gte: f.minScore } })
   if (f.maxScore !== undefined) and.push({ 'verification.score': { $lte: f.maxScore } })
+  if (f.minMachines) and.push({ machineCount: { $gte: f.minMachines } })
   // "Verified" is one idea everywhere: GST checked or a sample approved. It is also what lifts the MOQ "self-reported" tag.
   if (f.verifiedOnly) and.push({ $or: [{ 'verification.gstVerified': true }, { 'verification.sampleApproved': true }] })
   if (f.onPlatform) and.push({ linkedUserId: { $type: 'objectId' } })
@@ -464,6 +474,7 @@ const SORTS = {
   priority: { isLive: -1, priority: 1, 'verification.score': -1, name: 1 },
   updated:  { isLive: -1, updatedAt: -1 },
   name:     { isLive: -1, name: 1 },
+  machines: { isLive: -1, machineCount: -1, 'verification.score': -1, name: 1 }, // not recorded sorts after any number
 }
 
 /**
@@ -518,6 +529,7 @@ export function toPartner(p) {
     cluster: p.cluster || null, city: p.city || '', address: p.address || '', pincode: p.pincode || '',
     products: p.products || [],
     machines: { flatlock: 0, coverstitch: 0, overlock: 0, singleNeedle: 0, ...(p.machines || {}) },
+    machineCount: p.machineCount ?? null,
     moqPerStyleColour: p.moqPerStyleColour ?? null, moqNote: p.moqNote || '',
     fabricTypes: p.fabricTypes || [], trimCategories: p.trimCategories || [], fabrics: p.fabrics || [],
     priceIndication: p.priceIndication || '', leadTimeDays: p.leadTimeDays ?? null,

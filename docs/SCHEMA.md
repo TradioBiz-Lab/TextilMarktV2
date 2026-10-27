@@ -743,7 +743,10 @@ manufacturer can reach. It is not the same as a manufacturer-role `users` record
   -- garment manufacturers only (the form hides them for other types) --
   products          [String] legacy and no longer written by the UI, CSV import or seed: generic garments are what
                              `categories` already says. Still stored, searched and filterable through the API
-  machines          { flatlock, coverstitch, overlock, singleNeedle }  Number, 0 = unknown
+  machines          { flatlock, coverstitch, overlock, singleNeedle }  Number, 0 = unknown (the breakdown)
+  machineCount      Number   total machines in the unit, a sense of capacity; null = not recorded (the UI shows the sum of
+                             the breakdown when this is empty). Filter minMachines leaves out partners with none; sort=machines
+                             puts the biggest first and not recorded last
   moqPerStyleColour Number   a CLAIM until verification.gstVerified or .sampleApproved is set (the UI tags it
                              "self-reported")
   moqNote           String   the partner's own wording ("100 pcs/style")
@@ -798,7 +801,7 @@ Indexes: unique case-insensitive `name`; `categories`; one text index over `name
 trimCategories, keywords, notes` (weighted); `{ type, cluster, status }`; sparse `linkedUserId`.
 
 API (`/api/manufacturers`, GET and POST only like the rest of the API): `GET /` (filters `search, type, category (any of a comma list), brand, cluster,
-status, priority, product, fabric, minScore, maxScore, verifiedOnly, onPlatform, live, includeInactive, sort, limit,
+status, priority, product, fabric, minScore, maxScore, minMachines, verifiedOnly, onPlatform, live, includeInactive, sort (relevance, score, priority, updated, name, machines), limit,
 skip`; a search tries the text index first and falls back to a regex over name, city, products, fabrics, fabric
 types, trim categories and keywords for partial words), `GET /facets`, `GET /:id`, `GET /:id/image`, `GET /thumbs`, `POST /`,
 `POST /:id`, `POST /:id/delete`, `POST /:id/image`, `POST /csv/preview`, `POST /import` (`{ rows, mapping?,

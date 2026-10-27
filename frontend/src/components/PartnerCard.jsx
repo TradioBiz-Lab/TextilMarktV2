@@ -1,7 +1,7 @@
 import { T } from '../constants.js'
 import { Card } from './ui.jsx'
 import { PartnerImage, Chip, CategoryChips, TagChips, StatusPill, ScoreBadge, ClaimTag, LiveBadge } from './PartnerBits.jsx'
-import { CLUSTER_LABEL, TYPE_LABEL, moqVerified, cityName } from '../partners.js'
+import { CLUSTER_LABEL, TYPE_LABEL, moqVerified, cityName, machineTotal } from '../partners.js'
 
 // One partner in the list page's grid: tile, name, place, what they make, MOQ (a claim until verified), score,
 // and status (Live shows as its own badge).
@@ -32,10 +32,10 @@ export function PartnerCard({ partner: p, onOpen }) {
           {offers ? <TagChips tags={offers.tags} tone={offers.tone} /> : <><TagChips tags={p.keywords} max={3} plain /><TagChips tags={p.fabrics} tone="fabric" max={2} /></>}
         </div>
         <div style={{ flex: 1 }} />
-        {p.moqPerStyleColour !== null && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: T.fontSize.sm, color: T.text }}>
-            <span style={{ fontWeight: 700 }}>MOQ {p.moqPerStyleColour} pcs</span>
-            {!moqVerified(p) && <ClaimTag />}
+        {(p.moqPerStyleColour !== null || machineTotal(p) !== null) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: T.fontSize.sm, color: T.text }}>
+            {p.moqPerStyleColour !== null && <><span style={{ fontWeight: 700 }}>MOQ {p.moqPerStyleColour} pcs</span>{!moqVerified(p) && <ClaimTag />}</>}
+            {machineTotal(p) !== null && <span style={{ fontWeight: 700, marginLeft: p.moqPerStyleColour !== null ? 'auto' : 0 }}>{machineTotal(p)} machines</span>}
           </div>
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>

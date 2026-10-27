@@ -20,7 +20,7 @@ function initialForm(p, initialType) {
     categories: p?.categories || [],
     cluster: p?.cluster || '', city: p?.city || '', address: p?.address || '', pincode: p?.pincode || '',
     fabrics: p?.fabrics || [], fabricTypes: p?.fabricTypes || [], trimCategories: p?.trimCategories || [],
-    flatlock: num(p?.machines?.flatlock || ''), coverstitch: num(p?.machines?.coverstitch || ''), overlock: num(p?.machines?.overlock || ''), singleNeedle: num(p?.machines?.singleNeedle || ''),
+    machineCount: num(p?.machineCount), flatlock: num(p?.machines?.flatlock || ''), coverstitch: num(p?.machines?.coverstitch || ''), overlock: num(p?.machines?.overlock || ''), singleNeedle: num(p?.machines?.singleNeedle || ''),
     moqPerStyleColour: num(p?.moqPerStyleColour), moqNote: p?.moqNote || '',
     priceIndication: p?.priceIndication || '', leadTimeDays: num(p?.leadTimeDays),
     contacts: p?.contacts?.length ? p.contacts.map(c => ({ ...blankContact(), ...c })) : [],
@@ -57,10 +57,12 @@ export function PartnerFormModal({ partner, initialType, onClose, onSaved }) {
       contacts: f.contacts, website: f.website, logoUrl: f.logoUrl, gstin: f.gstin, udyam: f.udyam, mcaCin: f.mcaCin,
       source: f.source, keywords: f.keywords, brands: f.brands, notes: f.notes,
     }
+    const breakdownSum = ['flatlock', 'coverstitch', 'overlock', 'singleNeedle'].reduce((a, k) => a + (Number(f[k]) || 0), 0)
     // A hidden section is left as it was (editing) or empty (adding); it is never sent blank over saved data.
     if (show.garment) {
       Object.assign(body, {
         fabrics: f.fabrics,
+        machineCount: f.machineCount !== '' ? Number(f.machineCount) : (breakdownSum > 0 ? breakdownSum : null),
         machines: Object.fromEntries(['flatlock', 'coverstitch', 'overlock', 'singleNeedle'].map(k => [k, f[k] === '' ? 0 : Number(f[k])])),
         moqPerStyleColour: f.moqPerStyleColour === '' ? null : Number(f.moqPerStyleColour), moqNote: f.moqNote,
       })
@@ -131,7 +133,8 @@ export function PartnerFormModal({ partner, initialType, onClose, onSaved }) {
                 <>
                   <TagInput label="Fabric experience" value={f.fabrics} onChange={v => set('fabrics', v)} suggestions={sugg.fabrics} snake placeholder="poly spandex, cotton lycra" />
                   <div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>Machines (leave empty if unknown)</div>
+                    <Input label="Total machines" type="number" min={0} max={99999} value={f.machineCount} onChange={e => set('machineCount', e.target.value)} placeholder={['flatlock', 'coverstitch', 'overlock', 'singleNeedle'].some(k => f[k] !== '') ? String(['flatlock', 'coverstitch', 'overlock', 'singleNeedle'].reduce((a, k) => a + (Number(f[k]) || 0), 0)) : 'e.g. 60'} hint="All sewing machines in the unit: a sense of capacity. Left empty, it is the sum of the types below." />
+                    <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '10px 0 5px' }}>By type (leave empty if unknown)</div>
                     <Grid cols={4} gap={10}>
                       {[['flatlock', 'Flatlock'], ['coverstitch', 'Coverstitch'], ['overlock', 'Overlock'], ['singleNeedle', 'Single needle']].map(([k, l]) => (
                         <Input key={k} type="number" min={0} max={9999} aria-label={l} placeholder={l} value={f[k]} onChange={e => set(k, e.target.value)} />

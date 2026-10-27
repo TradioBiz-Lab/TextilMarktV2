@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest'
 import { capsFor } from '../caps.js'
 import {
-  scoreTone, moqVerified, initialsOf, snakeOf, labelOf, fieldsFor, emptyQuery, queryToParams, activeFilterCount,
+  scoreTone, moqVerified, initialsOf, snakeOf, labelOf, fieldsFor, emptyQuery, queryToParams, activeFilterCount, machineTotal,
   describeQuery, kriyaaPromptFor, sortsFor, TYPE_TABS, CATEGORIES, CLUSTERS, SORTS, STATUSES, canBeLive, cityName,
 } from '../partners.js'
 
@@ -112,7 +112,7 @@ describe('clusters and ranking', () => {
     const q = emptyQuery()
     expect('priority' in q).toBe(false)
     expect('priority' in queryToParams({ ...q, priority: ['A'] })).toBe(false)
-    expect(SORTS.map(s => s.v)).toEqual(['score', 'updated', 'name'])
+    expect(SORTS.map(s => s.v)).toEqual(['score', 'updated', 'machines', 'name'])
     expect(queryToParams(q).sort).toBe('score')
   })
 })
@@ -170,5 +170,24 @@ describe('Ask Kriyaa', () => {
     expect(describeQuery(q)).toBe('for athleisure, in Ludhiana, verified (GST checked or sample approved)')
     expect(kriyaaPromptFor(q, '  ')).toMatch(/for athleisure, in Ludhiana/)
     expect(kriyaaPromptFor(emptyQuery(), '')).toMatch(/low-MOQ garment manufacturers/)
+  })
+})
+
+describe('machines', () => {
+  test('the total is the entered figure, else the sum of the types, else not recorded', () => {
+    expect(machineTotal({ machineCount: 60, machines: { flatlock: 5 } })).toBe(60)
+    expect(machineTotal({ machineCount: 0, machines: { flatlock: 5 } })).toBe(0)
+    expect(machineTotal({ machineCount: null, machines: { flatlock: 5, overlock: 3, coverstitch: 0, singleNeedle: 0 } })).toBe(8)
+    expect(machineTotal({ machineCount: null, machines: { flatlock: 0, overlock: 0 } })).toBeNull()
+    expect(machineTotal({ machineCount: null })).toBeNull()
+  })
+
+  test('the minimum is a filter: sent to the API, counted, and put in words', () => {
+    expect(queryToParams(emptyQuery()).minMachines).toBeUndefined()
+    const q = { ...emptyQuery(), minMachines: 50 }
+    expect(queryToParams(q).minMachines).toBe(50)
+    expect(activeFilterCount(q)).toBe(1)
+    expect(describeQuery(q)).toContain('at least 50 machines')
+    expect(queryToParams({ ...emptyQuery(), sort: 'machines' }).sort).toBe('machines')
   })
 })

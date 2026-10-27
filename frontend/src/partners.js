@@ -54,12 +54,20 @@ export const STATUSES = [
 ]
 export const STATUS_BY = Object.fromEntries(STATUSES.map(s => [s.v, s]))
 
+/** A partner's machines in all: the total entered, else the sum of the per-type counts, else null (not recorded). */
+export function machineTotal(p) {
+  if (p?.machineCount !== null && p?.machineCount !== undefined) return p.machineCount
+  const sum = Object.values(p?.machines || {}).reduce((a, n) => a + (Number(n) || 0), 0)
+  return sum > 0 ? sum : null
+}
+
 /** Live needs a manufacturer account on the platform; a partner without one cannot be set to it. */
 export const canBeLive = p => !!p?.onPlatform
 
 export const SORTS = [
   { v: 'score', label: 'Verification score' },
   { v: 'updated', label: 'Recently updated' },
+  { v: 'machines', label: 'Most machines' },
   { v: 'name', label: 'Name A to Z' },
 ]
 const RELEVANCE = { v: 'relevance', label: 'Best match' }
@@ -126,7 +134,7 @@ export const PAGE_SIZE = 120
 
 export const emptyQuery = () => ({
   search: '', tab: 'all', category: [], brand: [], cluster: [], fabric: [], status: [],
-  minScore: '', maxScore: '', verifiedOnly: false, live: false, includeInactive: false, sort: 'score', limit: PAGE_SIZE,
+  minScore: '', maxScore: '', minMachines: '', verifiedOnly: false, live: false, includeInactive: false, sort: 'score', limit: PAGE_SIZE,
 })
 
 /** The query as the API's parameters: empty filters left out, lists joined with commas. */
@@ -136,7 +144,7 @@ export function queryToParams(q) {
   if (tab?.types.length) p.type = tab.types.join(',')
   if (q.search?.trim()) p.search = q.search.trim()
   for (const k of ['category', 'brand', 'cluster', 'fabric', 'status']) if (q[k]?.length) p[k] = q[k].join(',')
-  for (const k of ['minScore', 'maxScore']) if (q[k] !== '' && q[k] !== null && q[k] !== undefined) p[k] = q[k]
+  for (const k of ['minScore', 'maxScore', 'minMachines']) if (q[k] !== '' && q[k] !== null && q[k] !== undefined) p[k] = q[k]
   for (const k of ['verifiedOnly', 'live', 'includeInactive']) if (q[k]) p[k] = 1
   p.sort = q.sort === 'relevance' && !p.search ? 'score' : q.sort
   p.limit = q.limit || PAGE_SIZE
@@ -148,6 +156,7 @@ export function activeFilterCount(q) {
   let n = 0
   for (const k of ['category', 'brand', 'cluster', 'fabric', 'status']) n += q[k]?.length || 0
   if (q.minScore !== '' || q.maxScore !== '') n++
+  if (q.minMachines !== '') n++
   for (const k of ['verifiedOnly', 'live', 'includeInactive']) if (q[k]) n++
   return n
 }
@@ -164,6 +173,7 @@ export function describeQuery(q) {
   if (q.status.length) bits.push(`status ${q.status.map(s => STATUS_BY[s]?.label || s).join(' or ').toLowerCase()}`)
   if (q.minScore !== '') bits.push(`verification score at least ${q.minScore}`)
   if (q.maxScore !== '') bits.push(`verification score at most ${q.maxScore}`)
+  if (q.minMachines !== '') bits.push(`at least ${q.minMachines} machines`)
   if (q.verifiedOnly) bits.push('verified (GST checked or sample approved)')
   if (q.live) bits.push('live (orders at Tradio now)')
   return bits.join(', ')

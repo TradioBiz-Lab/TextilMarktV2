@@ -45,6 +45,8 @@ const manufacturerSchema = new mongoose.Schema({
   machines: {
     flatlock: count, coverstitch: count, overlock: count, singleNeedle: count,
   },
+  // Machines in all (the capacity at a glance); the four counts above are the breakdown. null = not recorded.
+  machineCount: { type: Number, min: 0, default: null },
   // The MOQ figure is a claim until verification.gstVerified or verification.sampleApproved is set; the UI says so.
   moqPerStyleColour: { type: Number, min: 0, default: null },
   moqNote:           { type: String, trim: true, default: '', maxlength: 500 },
