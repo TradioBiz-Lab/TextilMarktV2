@@ -14,7 +14,7 @@ import {
   stageKindOf, deriveStageStatus, mirroredUnits, reconcileForTotal, stageEtaVarianceDays, deriveActualEnd, deliveryVarianceDays,
 } from '../models/Order.js'
 import { dayNumber, getToday, effectiveEta, DELIVERY_STEP_NAME, isDeliveryName, deliveryStageIndex, makeDeliveryStage, makeDevelopmentStages, statusAfterDeliveryStep } from '../lib/stageMath.js'
-import { notify, notifyOrderChange, adminIds } from '../lib/notify.js'
+import { notify, notifyOrderChange, notifySplit, adminIds } from '../lib/notify.js'
 import { sendEmail, emailEscalation, emailConfigured } from '../lib/email.js'
 import { userKey } from '../lib/limiterKey.js'
 import { isStandalone } from '../lib/platform.js'
@@ -157,6 +157,26 @@ const RESPONSIBLE_ROLES = ['admin', 'manufacturer', 'buyer']
  */
 const buyerMayWriteStage = (user, stage) =>
   user.role === 'buyer' && !!stage?.responsibleId && String(stage.responsibleId) === String(user.id)
+
+// A step may be owned by Tradio, this order's own customer, or this split's own factory - never another factory or
+// customer. A copy across styles once put Factory A's id on Factory B's splits, which then let A write there.
+// Tradio portal only: standalone already limits owners to the companies on the order.
+const ownerSplitProblem = (owner, order, asgn) => {
+  if (!owner || isStandalone()) return null
+  if (owner.role === 'manufacturer' && String(owner._id) !== String(asgn?.mfrId))
+    return "That person works for a different factory. Pick this style's own factory."
+  if (owner.role === 'buyer' && String(owner._id) !== String(order?.buyerId))
+    return "That person is not this order's customer."
+  return null
+}
+
+// A customer approving her own step tells the split's factory and Tradio; her note when she sends one back goes through
+// the notes route. Without this a decision reached nobody until they happened to look. Tradio portal only.
+const whoLabel = u => `${u.name || 'The customer'}${u.company ? ` (${u.company})` : ''}`
+async function notifyApproval(mfrId, actor, orderId, stageNames) {
+  if (!stageNames.length) return
+  await notifySplit(mfrId, actor, { msg: `${whoLabel(actor)} approved ${stageNames.join(', ')} on ${orderId}`, orderId })
+}
 
 // Tell people a step has just been handed to them (a customer given Lab Dip Approval would
 // otherwise only find out by logging in and looking). One message per person, however many
@@ -1197,6 +1217,8 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, orderWriteG
           if (!u || !RESPONSIBLE_ROLES.includes(u.role))
             return res.status(400).json({ error: `Responsible person on stage ${i + 1} must be an admin, manufacturer, or buyer` })
           if (!u.isActive) return res.status(400).json({ error: `Responsible person on stage ${i + 1} is inactive` })
+          const wrongOwner = ownerSplitProblem(u, existingOrder, existingAsgn)
+          if (wrongOwner) return res.status(400).json({ error: `Stage ${i + 1}: ${wrongOwner}` })
           if (req.user.role !== 'admin' && !orderPartyIds.has(String(row.responsibleId)))
             return res.status(400).json({ error: `Responsible person on stage ${i + 1} must be a company on this order` })
           if (u.role === 'buyer' && stage.isDelivery)
@@ -1327,7 +1349,8 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, orderWriteG
       action: 'Stages Bulk Updated',
       detail: `${orderId}: ${touched.length} stage(s) updated by ${req.user.name} [${touched.map(i => i + 1).join(', ')}]`,
     })
-    await notifyOrderChange(order, req.user, { msg: `Production update on ${orderId}: ${touched.length} stage${touched.length !== 1 ? 's' : ''} updated`, orderId })
+    if (req.user.role === 'buyer' && !isStandalone()) await notifyApproval(mfrId, req.user, orderId, touched.filter(i => rows.find(r => parseInt(r.index, 10) === i)?.status === 'done').map(i => allStages[i].name))
+    else await notifyOrderChange(order, req.user, { msg: `Production update on ${orderId}: ${touched.length} stage${touched.length !== 1 ? 's' : ''} updated`, orderId })
     await notifyNewOwners(orderId, req.user, newOwners)
 
     res.json({ ...enrichFor(order, req), updated: touched.length })
@@ -1442,6 +1465,7 @@ router.post('/:orderId/assignments/:mfrId/stages/insert', requireAuth, requirePl
       return res.status(400).json({ error: 'Start date must be on or before the end date' })
 
     let resolvedResponsibleId = null
+    let insertOwner = null
     if (responsibleId) {
       if (!mongoose.Types.ObjectId.isValid(responsibleId))
         return res.status(400).json({ error: 'Invalid responsible person ID' })
@@ -1450,12 +1474,15 @@ router.post('/:orderId/assignments/:mfrId/stages/insert', requireAuth, requirePl
         return res.status(400).json({ error: 'Responsible person must be an admin, manufacturer, or buyer' })
       if (!u.isActive) return res.status(400).json({ error: 'Responsible person is inactive' })
       resolvedResponsibleId = responsibleId
+      insertOwner = u
     }
 
     const existingOrder = await Order.findById(orderId).lean()
     if (!existingOrder) return res.status(404).json({ error: 'Order not found' })
     const existingAsgn = (existingOrder.assignments || []).find(a => a.mfrId?.toString() === mfrId)
     if (!existingAsgn) return res.status(404).json({ error: 'Assignment not found' })
+    const insertOwnerProblem = ownerSplitProblem(insertOwner, existingOrder, existingAsgn)
+    if (insertOwnerProblem) return res.status(400).json({ error: insertOwnerProblem })
     // A manufacturer editing its own plan (standalone) may hand a step only to a company on this order.
     if (resolvedResponsibleId && req.user.role !== 'admin') {
       const parties = new Set([String(existingOrder.buyerId), ...(existingOrder.assignments || []).map(a => String(a.mfrId))])
@@ -1727,7 +1754,8 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, orde
       action: nextAsgnStatus === 'Delivered' ? 'Order Delivered' : 'Delivery Reopened',
       detail: `${orderId}: split is now ${nextAsgnStatus} (Delivery step ${nextStatus}) by ${req.user.name}`,
     })
-    await notifyOrderChange(order, req.user, { msg: `Production update on ${orderId}: ${stageName} progress updated`, orderId })
+    if (req.user.role === 'buyer' && !isStandalone()) await notifyApproval(mfrId, req.user, orderId, nextStatus === 'done' ? [stageName] : [])
+    else await notifyOrderChange(order, req.user, { msg: `Production update on ${orderId}: ${stageName} progress updated`, orderId })
 
     // Real TNA plans aren't strictly sequential — FPT/PP/GPT approvals
     // legitimately overlap, and only some stages are actual hard gates
@@ -1796,6 +1824,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
       return res.status(400).json({ error: `Invalid kind - must be one of: ${STAGE_KINDS.join(', ')}` })
 
     let assigneeRole = null
+    let updateOwner = null
     if (hasResponsibleId && responsibleId) {
       if (!mongoose.Types.ObjectId.isValid(responsibleId))
         return res.status(400).json({ error: 'Invalid responsible person ID' })
@@ -1805,6 +1834,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
       if (!responsibleUser.isActive)
         return res.status(400).json({ error: 'Responsible person is inactive' })
       assigneeRole = responsibleUser.role
+      updateOwner = responsibleUser
     }
 
     // Validate stageIndex against actual stage count
@@ -1815,6 +1845,8 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
     const stageCount = existingAsgn.stages?.length || 0
     if (isNaN(stageIndex) || stageIndex < 0 || stageIndex >= stageCount)
       return res.status(400).json({ error: `Invalid stage index (0–${stageCount - 1})` })
+    const updateOwnerProblem = ownerSplitProblem(updateOwner, existingOrder, existingAsgn)
+    if (updateOwnerProblem) return res.status(400).json({ error: updateOwnerProblem })
     // A manufacturer editing its own plan (standalone) may hand a step only to a company on this order.
     if (hasResponsibleId && responsibleId && req.user.role !== 'admin') {
       const parties = new Set([String(existingOrder.buyerId), ...(existingOrder.assignments || []).map(a => String(a.mfrId))])
@@ -2187,6 +2219,16 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/updates', requireAu
       byUser: req.user.id,
       action: 'Stage Update Added',
       detail: `${orderId}: ${stageName} - ${text.trim().slice(0, 100)}`,
+    })
+
+        // A note reaches the split's factory and Tradio. A customer's "Rejected: ..." is how she sends a step back.
+    const noteText = text.trim()
+    const sentBack = req.user.role === 'buyer' && /^rejected:/i.test(noteText)
+    await notifySplit(mfrId, req.user, {
+      msg: sentBack
+        ? `${whoLabel(req.user)} sent back ${stageName} on ${orderId}: ${noteText.replace(/^rejected:\s*/i, '').slice(0, 120)}`
+        : `New note on ${stageName}, ${orderId}: ${noteText.slice(0, 80)}`,
+      orderId,
     })
 
     res.json(enrichFor(order, req))

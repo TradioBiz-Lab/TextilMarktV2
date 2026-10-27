@@ -179,11 +179,12 @@ function userConfirmed(conversation) {
 
 async function confirmationNeeded(input) {
   if (input?.override === true) return 'a master override'
-  if (input?.status === undefined) return null
+  // Any way of closing or reopening the Delivery step: its status, a unit count that reaches the target, or an end date.
+  if (input?.status === undefined && input?.unitsDone === undefined && input?.actualEnd === undefined) return null
   if (typeof input.orderId !== 'string' || !OBJECT_ID_RE.test(String(input.mfrId))) return null
   const order = await Order.findById(input.orderId, { assignments: 1 }).lean()
   const asgn = (order?.assignments || []).find(a => String(a.mfrId) === String(input.mfrId))
-  return asgn?.stages?.[input.stageIndex]?.isDelivery ? 'closing or reopening the Delivery step (it marks the manufacturer\'s split Delivered or puts it back to Processing)' : null
+  return asgn?.stages?.[input.stageIndex]?.isDelivery ? 'changing the Delivery step (it marks the manufacturer\'s split Delivered or puts it back to Processing)' : null
 }
 
 const WRITE_TOOLS = new Set([
