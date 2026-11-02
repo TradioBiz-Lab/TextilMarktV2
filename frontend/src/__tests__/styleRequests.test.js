@@ -8,6 +8,16 @@ describe('how a request reads', () => {
     expect(requestTitle({ kind: 'replen', product: 'Skirt', styleNumber: '', quantity: 50 })).toBe('Replen of Skirt, 50 pcs')
   })
 
+  test('a replen of several styles names them; a quantity left out is not shown', () => {
+    expect(requestTitle({ kind: 'replen', items: [{ product: 'Dress', styleNumber: 'FYL-4002' }, { product: 'Skirt', styleNumber: '' }] })).toBe('Replen of 2 styles: FYL-4002, Skirt')
+    expect(requestTitle({ kind: 'replen', items: [{ product: 'Dress', styleNumber: 'FYL-4002' }] })).toBe('Replen of Dress (FYL-4002)')
+  })
+
+  test('new product development names the style, or how many', () => {
+    expect(requestTitle({ kind: 'npd', items: [{ product: 'Wrap Dress', styleNumber: 'FYL-5001' }] })).toBe('New product: Wrap Dress (FYL-5001)')
+    expect(requestTitle({ kind: 'npd', items: [{ product: 'A' }, { product: 'B' }, { product: 'C' }] })).toBe('New product development: 3 styles')
+  })
+
   test('a sheet names the file and how many styles are ready', () => {
     expect(requestTitle({ kind: 'import', filename: 'replen.xlsx', summary: { ok: 7 } })).toBe('replen.xlsx, 7 styles')
     expect(requestTitle({ kind: 'import', filename: 'replen.xlsx', summary: { ok: 1 } })).toBe('replen.xlsx, 1 style')

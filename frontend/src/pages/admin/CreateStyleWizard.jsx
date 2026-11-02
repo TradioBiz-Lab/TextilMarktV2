@@ -4,6 +4,7 @@ import { T, PHASES, isPrePhase, CATEGORIES, PATTERN_FILE_PROPS, MEASUREMENTS_FIL
 import { swatchHex, normalisePantone, PANTONE_HINT, PANTONE_PLACEHOLDER, photoFromFile } from '../../colours.js'
 import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload, useToast, MeasurementLabelSelect } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
+import { styleRequestsApi } from '../../api.js'
 import { autoShortenLink } from '../../links.js'
 
 let _styleKeySeq = 1
@@ -24,20 +25,26 @@ const newStyle = () => ({
 })
 
 const STEPS = ['Master order & basic details', 'Colourways & fabric (optional)', 'Reference documents (optional)']
+// A customer's New Product Development: no master order (Tradio's master admin picks one when approving) and no stage choice.
+const CUSTOMER_STEPS = ['Basic details', 'Colourways & fabric (optional)', 'Photos & documents (optional)']
 
 // Decision-tree modal: Node 1 picks the Master Order and defines one or more
 // styles' basic details; Node 2 collects colourways/fabric per style; Node 3
 // collects optional reference documents per style. No manufacturer, no
 // production stages (TNA) here at all — both are added later from the Style
 // Detail page once the style exists.
-export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, onCreated, onNewMasterOrder }) {
+// `forCustomer`: the customer's guided New Product Development. The same steps, but every style is NPD, there is no master
+// order to choose, and the last step sends the styles to Tradio for review (POST /api/style-requests) instead of creating them.
+export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, onCreated, onNewMasterOrder, forCustomer = false }) {
+  const steps = forCustomer ? CUSTOMER_STEPS : STEPS
+  const freshStyle = () => (forCustomer ? { ...newStyle(), phase: 'development' } : newStyle())
   const { createOrder, uploadDoc, orders } = useApp()
   const toast = useToast()
   const [step, setStep] = useState(1)
   const [masterOrderId, setMasterOrderId] = useState(presetMasterOrderId || '')
   // A master order created from inside the wizard (or asked for by the page) becomes the chosen one.
   useEffect(() => { if (presetMasterOrderId) setMasterOrderId(presetMasterOrderId) }, [presetMasterOrderId])
-  const [styles, setStyles] = useState([newStyle()])
+  const [styles, setStyles] = useState(() => [freshStyle()])
   const [err, setErr] = useState('')
   const [photoMsg, setPhotoMsg] = useState({}) // style key -> what the photo picker could not add
   const [saving, setSaving] = useState(false)
@@ -45,7 +52,7 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
   const mo = masterOrders.find(m => m.id === masterOrderId)
 
   const updateStyle = (key, patch) => setStyles(p => p.map(s => s._key === key ? { ...s, ...patch } : s))
-  const addStyle = () => setStyles(p => [...p, newStyle()])
+  const addStyle = () => setStyles(p => [...p, freshStyle()])
   const removeStyle = key => setStyles(p => p.length > 1 ? p.filter(s => s._key !== key) : p)
 
   const addColourway = key => updateStyle(key, {
@@ -68,7 +75,7 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
     ...s, fabrics: s.fabrics.filter(f => f._key !== fKey),
   }))
 
-  const step1Valid = masterOrderId && styles.every(s =>
+  const step1Valid = (forCustomer || masterOrderId) && styles.every(s =>
     s.product.trim() &&
     (s.category && s.category !== '__custom__' ? true : s.customCategory.trim()) &&
     !!s.phase &&
@@ -81,6 +88,38 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
     // A measurement sheet says what it is: Customer Submission, Fit Approval or PP Approval.
     if (styles.some(s => s.measurementsFile && !s.measurementLabel)) { setErr('Choose what each measurement sheet is (Customer Submission, Fit Approval or PP Approval).'); return }
     setSaving(true)
+    if (forCustomer) {
+      try {
+        const items = []
+        for (const s of styles) {
+          // The files go up first, on no style yet; the request names them and approval moves them onto the new style.
+          const docIds = []
+          for (const [file, type, label, extra] of [
+            [s.measurementsFile, 'measurements', 'Measurements', { measurementLabel: s.measurementLabel }],
+            [s.techPackFile, 'tech_pack', 'Tech Pack'], [s.patternFile, 'pattern', 'Pattern'],
+          ]) {
+            if (!file) continue
+            const d = await uploadDoc({ type, name: `${label}, ${s.product.trim()}`, issuer: '', issueDate: getToday(), expiryDate: null, orderId: null, mfrId: null, ...(extra || {}), ...fileUploadPayload(file) })
+            docIds.push(d.id)
+          }
+          const colourways = s.colourways.filter(c => c.name.trim()).map(c => ({ name: c.name.trim(), code: c.code.trim(), hex: c.hex.trim() }))
+          items.push({
+            product: s.product.trim(), styleNumber: s.styleNumber.trim(), category: s.category === '__custom__' ? s.customCategory.trim() : s.category,
+            brand: s.brand.trim(), ...(String(s.totalQty).trim() ? { totalQty: Math.floor(Number(s.totalQty)) } : {}),
+            colourways, fabricDetails: s.fabrics.filter(f => f.name.trim()).map(f => ({ name: f.name.trim(), composition: f.composition.trim(), gsm: f.gsm.trim(), supplier: f.supplier.trim() })),
+            ecommerceLink: s.ecommerceLink.trim(), techPackLink: s.techPackLink.trim(),
+            photos: s.photos.map(ph => ({ image: ph.image, colourway: colourways.some(c => c.name === ph.colourway) ? ph.colourway : '' })),
+            docIds,
+          })
+        }
+        const sent = await styleRequestsApi.create('npd', items)
+        onCreated(null, sent)
+      } catch (e) {
+        setErr(e?.message || 'Could not send the styles. Nothing was sent; try again.')
+        setSaving(false)
+      }
+      return
+    }
     const createdIds = []
     const createdKeys = []
     const failedUploads = []
@@ -138,9 +177,9 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
       <div style={{ background: '#fff', borderRadius: 14, border: `1px solid ${T.border}`, width: '100%', maxWidth: 860, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
         <div className="dialog-head" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, padding: '20px 24px 16px', borderBottom: `1px solid ${T.border}` }}>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>Create Style{styles.length > 1 ? 's' : ''}</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>{forCustomer ? 'New product development' : `Create Style${styles.length > 1 ? 's' : ''}`}</div>
             <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>
-              Step {step} of {STEPS.length} - {STEPS[step - 1]}
+              Step {step} of {steps.length} - {steps[step - 1]}
             </div>
           </div>
           <button onClick={onClose} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.textMuted }}><X size={15} /></button>
@@ -149,6 +188,7 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
         <div className="dialog-body" style={{ padding: '20px 24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 18 }}>
           {step === 1 && (
             <>
+              {!forCustomer && (
               <div>
                 <FlexRow justify="space-between" style={{ marginBottom: 6 }}>
                   <label style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Master Order *</label>
@@ -160,6 +200,7 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
                   {masterOrders.map(m => <option key={m.id} value={m.id}>{m.id} - {m.orderName} ({m.buyerCompany})</option>)}
                 </select>
               </div>
+              )}
 
               {styles.map((s, si) => {
                 return (
@@ -198,10 +239,12 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
 
                     <Input label="Brand" value={s.brand} onChange={e => updateStyle(s._key, { brand: e.target.value })} placeholder="e.g. FYLTR" maxLength={60} hint="Optional. The customer's own brand this style is for." />
                     <div className="form-grid-2" style={{ gap: 10 }}>
-                      <Select label="Stage *" value={s.phase} onChange={e => updateStyle(s._key, { phase: e.target.value })}>
-                        <option value="">Select stage</option>
-                        {PHASES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                      </Select>
+                      {!forCustomer && (
+                        <Select label="Stage *" value={s.phase} onChange={e => updateStyle(s._key, { phase: e.target.value })}>
+                          <option value="">Select stage</option>
+                          {PHASES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        </Select>
+                      )}
                       {s.phase === 'production' && <Input label="Promised delivery date" type="date" value={s.delivery} onChange={e => updateStyle(s._key, { delivery: e.target.value })} hint={pastDateNote(s.delivery) || 'Optional. It can be added later.'} />}
                     </div>
                   </div>
@@ -374,12 +417,12 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
             <Btn variant="secondary" onClick={step === 1 ? onClose : () => setStep(step - 1)}>
               {step === 1 ? 'Cancel' : <><ChevronLeft size={13} style={{ marginRight: -2 }} /> Back</>}
             </Btn>
-            {step < STEPS.length ? (
+            {step < steps.length ? (
               <Btn disabled={step === 1 && !step1Valid} onClick={() => setStep(step + 1)}>
-                Next<span className="phone-hide">: {STEPS[step]}</span> <ChevronRight size={13} style={{ marginLeft: -2 }} />
+                Next<span className="phone-hide">: {steps[step]}</span> <ChevronRight size={13} style={{ marginLeft: -2 }} />
               </Btn>
             ) : (
-              <Btn disabled={saving} onClick={submit}>{saving ? 'Creating…' : `Create Style${styles.length > 1 ? 's' : ''}`}</Btn>
+              <Btn disabled={saving} onClick={submit}>{saving ? (forCustomer ? 'Sending…' : 'Creating…') : forCustomer ? 'Send to Tradio for review' : `Create Style${styles.length > 1 ? 's' : ''}`}</Btn>
             )}
           </FlexRow>
         </div>

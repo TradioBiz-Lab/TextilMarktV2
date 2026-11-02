@@ -69,6 +69,8 @@ const documentSchema = new mongoose.Schema({
   locked:    { type: Boolean, default: false },
   lockedBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   lockedAt:  { type: Date, default: null },
+  // A file a customer sent with a style request (routes/styleRequests.js): no style yet; approval moves it onto the style.
+  styleRequestId: { type: mongoose.Schema.Types.ObjectId, ref: 'StyleRequest', default: null },
 
   // Free-text notes — used for stage evidence entries that capture context (SOP-driven),
   // including text-only stage evidence (no file/link).

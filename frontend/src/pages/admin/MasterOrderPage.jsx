@@ -6,6 +6,7 @@ import { useApp } from '../../context.jsx'
 import { capsFor, canEditMasterOrder } from '../../caps.js'
 import { EditMasterOrderModal } from './EditMasterOrderModal.jsx'
 import { ReplenOrderModal } from '../../components/ReplenOrderModal.jsx'
+import { ReplenRequestModal } from '../../components/ReplenRequestModal.jsx'
 import { masterOrdersApi } from '../../api.js'
 
 // The master order's own page: who it is for, how far along it is, and every style that was ever in it, the ones
@@ -262,7 +263,9 @@ export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
 
       {/* Rename, re-season, drop styles from or delete the master order. Deleting it leaves the page on "not found". */}
       {editing && <EditMasterOrderModal mo={mo} onClose={() => setEditing(false)} onDeleted={() => onNavigate('orders')} />}
-      {replenFor && <ReplenOrderModal order={replenFor} onClose={() => setReplenFor(null)} onOrdered={created => { setReplenFor(null); if (!created.pending) onOpen(created.id) }} />}
+      {replenFor && (caps.isBuyer
+        ? <ReplenRequestModal preselect={[replenFor.id]} onClose={() => setReplenFor(null)} onSent={() => setReplenFor(null)} />
+        : <ReplenOrderModal order={replenFor} onClose={() => setReplenFor(null)} onOrdered={created => { setReplenFor(null); if (!created.pending) onOpen(created.id) }} />)}
       <FlexRow gap={8} style={{ flexWrap: 'wrap' }}>
         <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
         <div style={{ flex: 1 }} />

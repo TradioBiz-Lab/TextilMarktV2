@@ -53,7 +53,7 @@ const colourwayFor = (name, colourways) => {
 }
 
 /** A style's photo list from a request: { photos } (empty entries dropped, each tied to one of `colourways` or none), or { error }. */
-function stylePhotos(photos, colourways) {
+export function stylePhotos(photos, colourways) {
   if (!Array.isArray(photos)) return { error: 'Photos must be a list' }
   if (photos.length > MAX_STYLE_PHOTOS) return { error: `Too many photos (max ${MAX_STYLE_PHOTOS})` }
   const next = []
@@ -2688,7 +2688,7 @@ export function replenInput(body) {
  * factory. Returns { ok: true, order } or { ok: false, error }. Writes no audit entry and sends no notification: the
  * caller does, because who is told depends on who asked and who approved.
  */
-export async function createReplenFrom(src, { quantity, note = '' }) {
+export async function createReplenFrom(src, { quantity, note = '', colourways, ecommerceLink, techPackLink, delivery, masterOrderId } = {}) {
   if ((src.phase || 'production') !== 'production') return { ok: false, error: 'A replen can be ordered for a style that is in production.' }
   const buyer = await User.findById(src.buyerId, 'code company').lean()
   if (!buyer) return { ok: false, error: 'Customer not found' }
@@ -2698,9 +2698,11 @@ export async function createReplenFrom(src, { quantity, note = '' }) {
     const id = await nextStyleId(buyer.code, src.category, src.season)
     result = await validateAndCreateOrder({
       id, buyerId: String(src.buyerId), product: src.product, styleNumber: src.styleNumber, category: src.category, season: src.season,
-      phase: 'replen', totalQty: quantity, masterOrderId: src.masterOrderId || undefined, replenOf: src._id,
-      brand: src.brand, techPackLink: src.techPackLink, ecommerceLink: src.ecommerceLink, callout: note,
-      colourways: (src.colourways || []).map(c => ({ name: c.name, code: c.code || '', hex: c.hex || '' })),
+      phase: 'replen', totalQty: quantity || undefined, masterOrderId: masterOrderId || src.masterOrderId || undefined, replenOf: src._id,
+      brand: src.brand, callout: note, delivery: delivery || undefined,
+      // What the customer asked for this time wins; anything left blank comes from the style being reordered.
+      techPackLink: techPackLink || src.techPackLink, ecommerceLink: ecommerceLink || src.ecommerceLink,
+      colourways: (colourways?.length ? colourways.map(name => ({ name })) : (src.colourways || []).map(c => ({ name: c.name, code: c.code || '', hex: c.hex || '' }))),
       fabricDetails: (src.fabricDetails || []).map(f => ({ name: f.name, composition: f.composition || '', gsm: f.gsm || '', supplier: f.supplier || '' })),
       ...(photos.length ? { photos } : src.imageDataUrl ? { imageDataUrl: src.imageDataUrl } : src.imageUrl ? { imageUrl: src.imageUrl } : {}),
     })
@@ -2727,7 +2729,8 @@ router.post('/:id/replen', requireAuth, createOrderLimiter, async (req, res) => 
       // A double click must not send it twice.
       if (await StyleRequest.exists({ kind: 'replen', sourceOrderId: src._id, requestedBy: req.user.id, status: 'pending', quantity, createdAt: { $gt: new Date(Date.now() - 30_000) } }))
         return res.status(409).json({ error: 'This replen request was just sent.' })
-      const request = await StyleRequest.create({ kind: 'replen', buyerId: src.buyerId, requestedBy: req.user.id, masterOrderId: src.masterOrderId || null, sourceOrderId: src._id, product: src.product, styleNumber: src.styleNumber || '', quantity, note })
+      const request = await StyleRequest.create({ kind: 'replen', buyerId: src.buyerId, requestedBy: req.user.id, sourceOrderId: src._id, product: src.product, styleNumber: src.styleNumber || '', quantity, note,
+        items: [{ sourceOrderId: src._id, product: src.product, styleNumber: src.styleNumber || '', quantity, note, colours: [], docIds: [] }] })
       await AuditLog.create({ byUser: req.user.id, action: 'Style Request Sent', detail: `Replen of ${src._id}, ${quantity.toLocaleString('en-IN')} pcs, by the customer, waiting for review` })
       await notify(await masterAdminIds(), { type: 'order', msg: `${req.user.company || 'A customer'} asked for a replen of ${what}. It is waiting for your review.`, orderId: src._id })
       return res.status(202).json({ pending: true, requestId: request._id, product: src.product, quantity })

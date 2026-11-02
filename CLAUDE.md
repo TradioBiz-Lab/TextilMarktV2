@@ -120,10 +120,15 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
 - **Order replen.** `POST /api/orders/:id/replen { quantity, note? }` (customer on its own styles, or Tradio): copies a style in
   production into a new Replen style (same master order, `replenOf` set, no factory) and refuses a repeat within 30 seconds.
   Tradio's own request creates it at once; a customer's becomes a review request.
-- **The review queue for customers.** A customer never creates a style directly: its sheet import and its replen order become
+- **The review queue for customers.** A customer never creates a style directly, and never picks a master order. Its home page
+  has two ways in (`components/CustomerActions.jsx`): Order replen (tick several styles in production, each with colours,
+  quantity, links, expected delivery date and measurement sheets; or a tab to send a sheet) and New product development (the
+  Create Style wizard with `forCustomer`). Each becomes a `StyleRequest` (kinds import, replen, npd); files go up first with no
+  style and `styleRequestId` set. These requests become
   `StyleRequest` entries that a master admin approves or declines on the Style Requests page (`routes/styleRequests.js`,
-  master admin only; the customer sees and can cancel its own). Approval creates the styles with `createRows` /
-  `createReplenFrom`, the same code Tradio's own paths use, and re-checks the sheet first. The full Create Style form and
+  master admin only; the customer sees and can cancel its own). The master admin chooses the master order on approval (or
+  makes one there); approval creates the styles with `createRows` / `createReplenFrom` / `validateAndCreateOrder`, the same
+  code Tradio's own paths use, re-checks a sheet first, and moves the request's files onto the new styles. The full Create Style form and
   master orders stay with Tradio.
 - **Search in the top bar.** `components/GlobalSearch.jsx` over `search.js` (pure, tested): searches the orders and master orders
   already in the app store (so each role finds only its own) by customer, master order name / ID / PO number, product, Tradio

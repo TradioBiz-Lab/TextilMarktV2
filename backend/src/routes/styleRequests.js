@@ -1,17 +1,21 @@
 import { Router } from 'express'
-import mongoose from 'mongoose'
 import rateLimit from 'express-rate-limit'
 import { requireAuth } from '../middleware/auth.js'
-import { Order, MasterOrder, User, AuditLog } from '../db/index.js'
+import { Order, MasterOrder, User, AuditLog, Document } from '../db/index.js'
 import { StyleRequest } from '../models/StyleRequest.js'
-import { createReplenFrom } from './orders.js'
+import { MEASUREMENT_LABELS } from '../models/Document.js'
+import { createReplenFrom, validateAndCreateOrder, stylePhotos } from './orders.js'
 import { analyse, createRows } from './styleImports.js'
 import { ImportError } from '../lib/styleImport.js'
-import { notify } from '../lib/notify.js'
+import { cleanLink } from '../lib/links.js'
+import { nextStyleId } from '../lib/ids.js'
+import { getToday } from '../lib/stageMath.js'
+import { notify, masterAdminIds } from '../lib/notify.js'
 
-// The review queue for what a customer asks to add (a sheet of NPD/Replen styles, or a replen of a style in production).
-// A customer sees and can cancel its own requests; a master admin sees them all and approves or declines. Nothing exists
-// as a style until it is approved: approval creates it with the same code Tradio's own import and replen use.
+// The review queue for what a customer asks to add: a sheet of NPD/Replen styles, reorders (replens) of its styles in
+// production, or new styles from the guided New Product Development form. A customer sends and can cancel its own requests;
+// a master admin sees them all, chooses the master order the styles go under, and approves or declines. Nothing exists as a
+// style until it is approved: approval creates it with the same code Tradio's own paths use.
 const router = Router()
 router.use(requireAuth)
 
@@ -22,29 +26,159 @@ const limiter = (max, message) => rateLimit({
 })
 const readLimiter = limiter(240, 'Too many requests. Please wait.')
 const decideLimiter = limiter(60, 'Too many decisions. Please wait.')
+const sendLimiter = limiter(30, 'Too many requests sent. Please wait.')
 
 const isMaster = u => u?.role === 'admin' && u?.adminType === 'master'
 const fail = (res, status, error, extra) => res.status(status).json({ error, ...extra })
 const dayLabel = n => `${n} style${n !== 1 ? 's' : ''}`
+const OBJECT_ID_RE = /^[a-f0-9]{24}$/i
+const ORDER_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
+const MAX_ITEMS = { replen: 50, npd: 20 }
+// What a customer may attach to an item: the style's measurement sheets, tech pack and pattern.
+const ITEM_DOC_TYPES = ['measurements', 'tech_pack', 'pattern']
 
-/** A request as the browser gets it: never the sheet bytes. */
-async function items(docs) {
+/** The styles of a request: `items`, or the one style of an older replen request. */
+const itemsOf = d => (d.items?.length ? d.items : d.kind === 'replen' && d.sourceOrderId ? [{ sourceOrderId: d.sourceOrderId, product: d.product, styleNumber: d.styleNumber, quantity: d.quantity, note: d.note, colours: [], docIds: [] }] : [])
+
+// ── Checking what a customer sends ─────────────────────────────────────────────────────────────────────────────────────
+const text = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '')
+function textField(item, key, label, max, errors, { required = false } = {}) {
+  const v = item?.[key]
+  if (v == null || v === '') { if (required) errors.push(`${label} is missing.`); return '' }
+  if (typeof v !== 'string') { errors.push(`${label} must be text.`); return '' }
+  if (v.trim().length > max) errors.push(`${label} is too long (${max} characters at most).`)
+  if (required && !v.trim()) errors.push(`${label} is missing.`)
+  return v.trim()
+}
+function linkField(item, key, label, errors) {
+  const r = cleanLink(item?.[key], label)
+  if (r.error) errors.push(r.error)
+  return r.link || ''
+}
+function quantityField(item, errors) {
+  const v = item?.quantity ?? item?.totalQty
+  if (v == null || v === '') return null
+  const n = Number(v)
+  if (!Number.isInteger(n) || n < 1 || n > 10_000_000) { errors.push('Quantity must be a whole number.'); return null }
+  return n
+}
+function coloursField(item, errors) {
+  const v = item?.colours
+  if (v == null) return []
+  if (!Array.isArray(v) || v.length > 40) { errors.push('Colours must be a list of 40 at most.'); return [] }
+  const names = [...new Set(v.map(c => (typeof c === 'string' ? c : c?.name || '').trim()).filter(Boolean))]
+  if (names.some(n => n.length > 60)) errors.push('A colour name is too long (60 characters at most).')
+  return names
+}
+/** The files sent with an item: the sender's own, not yet on a style or another request, of a type an item can carry. */
+async function docsField(item, user, errors, taken) {
+  const ids = item?.docIds ?? []
+  if (!Array.isArray(ids) || ids.length > 20 || !ids.every(id => typeof id === 'string' && OBJECT_ID_RE.test(id))) { errors.push('The attached files could not be read.'); return [] }
+  if (!ids.length) return []
+  const docs = await Document.find({ _id: { $in: ids } }, { uploadedBy: 1, orderId: 1, masterOrderId: 1, isActive: 1, styleRequestId: 1, type: 1, measurementLabel: 1 }).lean()
+  const ok = docs.filter(d => String(d.uploadedBy) === String(user.id) && d.isActive && !d.orderId && !d.masterOrderId && !d.styleRequestId && ITEM_DOC_TYPES.includes(d.type)
+    && (d.type !== 'measurements' || MEASUREMENT_LABELS.includes(d.measurementLabel)) && !taken.has(String(d._id)))
+  if (ok.length !== ids.length) { errors.push('One of the attached files is not available any more. Attach it again.'); return [] }
+  ok.forEach(d => taken.add(String(d._id)))
+  return ids
+}
+
+/** One replen item, checked: the customer's own style in production, and what it wants this time. */
+async function replenItem(raw, user, taken) {
+  const errors = []
+  const sourceOrderId = typeof raw?.sourceOrderId === 'string' && ORDER_ID_RE.test(raw.sourceOrderId) ? raw.sourceOrderId : null
+  const src = sourceOrderId && await Order.findById(sourceOrderId, 'buyerId product styleNumber phase').lean()
+  if (!src || String(src.buyerId) !== String(user.id)) return { errors: ['That style was not found.'] }
+  if ((src.phase || 'production') !== 'production') errors.push('Only a style in production can be reordered.')
+  const delivery = textField(raw, 'delivery', 'Expected delivery date', 10, errors, { required: true })
+  if (delivery && !ISO_DAY.test(delivery)) errors.push('Expected delivery date is not a date.')
+  const item = {
+    sourceOrderId, product: src.product, styleNumber: src.styleNumber || '',
+    colours: coloursField(raw, errors), quantity: quantityField(raw, errors), delivery,
+    ecommerceLink: linkField(raw, 'ecommerceLink', 'Product link', errors), techPackLink: linkField(raw, 'techPackLink', 'Tech pack link', errors),
+    note: textField(raw, 'note', 'Note', 500, errors),
+  }
+  item.docIds = errors.length ? [] : await docsField(raw, user, errors, taken)
+  return { item, errors }
+}
+
+/** One new style from the guided form, checked the way the Create Style form is. */
+async function npdItem(raw, user, taken) {
+  const errors = []
+  const colourways = Array.isArray(raw?.colourways) ? raw.colourways : []
+  const fabricDetails = Array.isArray(raw?.fabricDetails) ? raw.fabricDetails : []
+  if (colourways.length > 40) errors.push('Too many colourways (40 at most).')
+  if (fabricDetails.length > 20) errors.push('Too many fabrics (20 at most).')
+  const cw = colourways.map(c => ({ name: text(c?.name ?? c, 60), code: text(c?.code, 40), hex: /^#[0-9a-f]{6}$/i.test(c?.hex || '') ? c.hex : '' })).filter(c => c.name)
+  const photos = stylePhotos(raw?.photos ?? [], cw)
+  if (photos.error) errors.push(photos.error)
+  const item = {
+    product: textField(raw, 'product', 'Product name', 300, errors, { required: true }),
+    styleNumber: textField(raw, 'styleNumber', 'Style ID', 60, errors),
+    category: textField(raw, 'category', 'Category', 50, errors, { required: true }).toUpperCase(),
+    brand: textField(raw, 'brand', 'Brand', 60, errors),
+    totalQty: quantityField(raw, errors),
+    colourways: cw,
+    fabricDetails: fabricDetails.map(f => ({ name: text(f?.name, 100), composition: text(f?.composition, 100), gsm: text(f?.gsm, 20), supplier: text(f?.supplier, 100) })).filter(f => f.name),
+    ecommerceLink: linkField(raw, 'ecommerceLink', 'Product link', errors), techPackLink: linkField(raw, 'techPackLink', 'Tech pack link', errors),
+    photos: photos.photos || [],
+    // Kept apart from the photos, so the list (which leaves photo data out) can still say how many there are.
+    photoCount: (photos.photos || []).length,
+  }
+  item.docIds = errors.length ? [] : await docsField(raw, user, errors, taken)
+  return { item, errors }
+}
+
+// POST /api/style-requests  { kind: 'replen' | 'npd', items: [...] }   (a customer) -> a request waiting for review
+router.post('/', sendLimiter, async (req, res) => {
+  try {
+    if (req.user.role !== 'buyer') return fail(res, 403, 'Only a customer sends style requests; Tradio creates styles directly')
+    const { kind, items: raw } = req.body || {}
+    if (!['replen', 'npd'].includes(kind)) return fail(res, 400, 'Unknown request')
+    if (!Array.isArray(raw) || !raw.length) return fail(res, 400, kind === 'replen' ? 'Choose at least one style to reorder.' : 'Add at least one style.')
+    if (raw.length > MAX_ITEMS[kind]) return fail(res, 400, `Too many styles in one request (${MAX_ITEMS[kind]} at most).`)
+    if (kind === 'replen' && new Set(raw.map(r => r?.sourceOrderId)).size !== raw.length) return fail(res, 400, 'The same style is chosen twice.')
+    const taken = new Set()
+    const items = [], problems = []
+    for (const [i, r] of raw.entries()) {
+      const { item, errors } = await (kind === 'replen' ? replenItem : npdItem)(r, req.user, taken)
+      if (errors.length) problems.push({ index: i, errors })
+      else items.push(item)
+    }
+    if (problems.length) {
+      const first = problems[0]
+      return fail(res, 400, `${kind === 'replen' ? `Style ${first.index + 1}` : `Style ${first.index + 1}`}: ${first.errors[0]}`, { problems })
+    }
+    const request = await StyleRequest.create({ kind, buyerId: req.user.id, requestedBy: req.user.id, items })
+    const docIds = items.flatMap(i => i.docIds)
+    if (docIds.length) await Document.updateMany({ _id: { $in: docIds } }, { $set: { styleRequestId: request._id } })
+    const what = kind === 'replen' ? `a replen of ${dayLabel(items.length)}` : `${dayLabel(items.length)} for New Product Development`
+    await AuditLog.create({ byUser: req.user.id, action: 'Style Request Sent', detail: `${what}, by the customer, waiting for review` })
+    await notify(await masterAdminIds(), { type: 'order', msg: `${req.user.company || 'A customer'} asked for ${what}. It is waiting for your review.` })
+    res.status(201).json({ pending: true, requestId: request._id, count: items.length })
+  } catch (err) { console.error('[style requests send]', err); fail(res, 500, 'Server error') }
+})
+
+/** A request as the browser gets it: never the sheet bytes or photo data. */
+async function itemsForList(docs) {
   const moIds = [...new Set(docs.map(d => d.masterOrderId).filter(Boolean))]
   const mos = moIds.length ? await MasterOrder.find({ _id: { $in: moIds } }, 'orderName season').lean() : []
   const moName = Object.fromEntries(mos.map(m => [m._id, m.orderName]))
   return docs.map(d => ({
     id: String(d._id), kind: d.kind, status: d.status === 'processing' ? 'pending' : d.status,
     masterOrderId: d.masterOrderId, masterOrderName: moName[d.masterOrderId] || '',
+    buyerId: d.buyerId?._id ? String(d.buyerId._id) : String(d.buyerId || ''),
     buyerCompany: d.buyerId?.company || '', requestedByName: d.requestedBy?.name || '',
     filename: d.filename || '', summary: d.summary || null,
     sourceOrderId: d.sourceOrderId, product: d.product, styleNumber: d.styleNumber, quantity: d.quantity, note: d.note,
+    items: itemsOf(d).map(({ photos, ...it }) => ({ ...it, photoCount: it.photoCount ?? (photos || []).length, docCount: (it.docIds || []).length })),
     decisionNote: d.decisionNote || '', decidedAt: d.decidedAt, decidedByName: d.decidedBy?.name || '',
     createdOrderIds: d.createdOrderIds || [], failedCount: d.failedCount || 0, createdAt: d.createdAt,
   }))
 }
 const populated = q => q.populate('buyerId', 'company').populate('requestedBy', 'name').populate('decidedBy', 'name')
 
-const OBJECT_ID_RE = /^[a-f0-9]{24}$/i
 async function load(req, res, { withData = false } = {}) {
   if (!OBJECT_ID_RE.test(req.params.id)) { fail(res, 404, 'Request not found.'); return null }
   const doc = await (withData ? StyleRequest.findById(req.params.id).select('+data') : StyleRequest.findById(req.params.id))
@@ -54,34 +188,60 @@ async function load(req, res, { withData = false } = {}) {
 }
 const masterOnly = (req, res, next) => isMaster(req.user) ? next() : fail(res, 403, 'Master admin only')
 
+/** The master order a request's styles go under: the one the master admin chose, else the request's own, else (a replen)
+ *  the one its styles already share. It has to be the request's customer's. { mo, buyer } or { error }. */
+async function targetFor(doc, chosen) {
+  let id = typeof chosen === 'string' && chosen ? chosen : doc.masterOrderId
+  if (!id && doc.kind === 'replen') {
+    const srcIds = itemsOf(doc).map(i => i.sourceOrderId)
+    const mos = [...new Set((await Order.find({ _id: { $in: srcIds } }, { masterOrderId: 1 }).lean()).map(o => o.masterOrderId).filter(Boolean))]
+    if (mos.length === 1) id = mos[0]
+  }
+  if (!id) return { error: 'Choose the master order these styles go under.' }
+  if (!ORDER_ID_RE.test(id)) return { error: 'Master order not found.' }
+  const mo = await MasterOrder.findById(id).lean()
+  if (!mo || String(mo.buyerId) !== String(doc.buyerId)) return { error: 'That master order is not this customer\'s.' }
+  const buyer = await User.findById(mo.buyerId, 'code company role isActive').lean()
+  if (!buyer || buyer.role !== 'buyer' || !buyer.isActive) return { error: 'The customer\'s account is not available.' }
+  return { mo, buyer }
+}
+
 // GET /api/style-requests?status=pending|decided|all   (a customer: its own; a master admin: everyone's, pending by default)
 router.get('/', readLimiter, async (req, res) => {
   try {
     if (req.user.role === 'buyer') {
-      const docs = await populated(StyleRequest.find({ requestedBy: req.user.id }).sort({ createdAt: -1 }).limit(50))
-      return res.json(await items(docs))
+      const docs = await populated(StyleRequest.find({ requestedBy: req.user.id }).select('-items.photos').sort({ createdAt: -1 }).limit(50))
+      return res.json(await itemsForList(docs))
     }
     if (!isMaster(req.user)) return fail(res, 403, 'Master admin only')
     const status = req.query.status
     const filter = status === 'all' ? {} : status === 'decided' ? { status: { $in: ['approved', 'declined', 'cancelled'] } } : { status: { $in: ['pending', 'processing'] } }
-    const docs = await populated(StyleRequest.find(filter).sort(status === 'decided' ? { decidedAt: -1, createdAt: -1 } : { createdAt: 1 }).limit(100))
-    res.json(await items(docs))
+    const docs = await populated(StyleRequest.find(filter).select('-items.photos').sort(status === 'decided' ? { decidedAt: -1, createdAt: -1 } : { createdAt: 1 }).limit(100))
+    res.json(await itemsForList(docs))
   } catch (err) { console.error('[style requests]', err); fail(res, 500, 'Server error') }
 })
 
-// POST /api/style-requests/:id/preview  -> what would be created (an import: every row; a replen: the style and quantity)
+// POST /api/style-requests/:id/preview  { masterOrderId? }  -> everything in the request, to review it
 router.post('/:id/preview', readLimiter, async (req, res) => {
   try {
     const doc = await load(req, res, { withData: true }); if (!doc) return
-    const [item] = await items(await populated(StyleRequest.find({ _id: doc._id })))
+    const [item] = await itemsForList(await populated(StyleRequest.find({ _id: doc._id }).select('-items.photos')))
+    const docIds = itemsOf(doc).flatMap(i => i.docIds || [])
+    const files = docIds.length ? await Document.find({ _id: { $in: docIds } }, { name: 1, fileName: 1, type: 1, measurementLabel: 1 }).lean() : []
+    const fileOf = id => files.find(f => String(f._id) === String(id))
+    const withFiles = it => ({ ...it, files: (it.docIds || []).map(fileOf).filter(Boolean).map(f => ({ id: String(f._id), name: f.fileName || f.name, type: f.type, measurementLabel: f.measurementLabel || null })) })
     if (doc.kind === 'replen') {
-      const src = await Order.findById(doc.sourceOrderId, 'product styleNumber totalQty brand phase imageDataUrl imageUrl photos').lean()
-      return res.json({ request: item, source: src ? { id: src._id, product: src.product, styleNumber: src.styleNumber || '', totalQty: src.totalQty ?? null, brand: src.brand || '', phase: src.phase || 'production', image: src.photos?.[0]?.image || src.imageDataUrl || src.imageUrl || null } : null })
+      const srcs = await Order.find({ _id: { $in: itemsOf(doc).map(i => i.sourceOrderId) } }, 'product styleNumber totalQty brand phase masterOrderId imageDataUrl imageUrl photos colourways').lean()
+      return res.json({ request: item, items: itemsOf(doc).map(it => {
+        const s = srcs.find(x => x._id === it.sourceOrderId)
+        return withFiles({ ...it, source: s ? { id: s._id, product: s.product, styleNumber: s.styleNumber || '', totalQty: s.totalQty ?? null, phase: s.phase || 'production', masterOrderId: s.masterOrderId || null, colours: (s.colourways || []).map(c => c.name), image: s.photos?.[0]?.image || s.imageDataUrl || s.imageUrl || null } : null })
+      }) })
     }
+    if (doc.kind === 'npd') return res.json({ request: item, items: itemsOf(doc).map(it => withFiles({ ...it, photos: (it.photos || []).slice(0, 1) })) })
     if (!doc.data) return res.json({ request: item, rows: null })
-    const mo = await MasterOrder.findById(doc.masterOrderId).lean()
-    if (!mo) return fail(res, 404, 'The master order no longer exists.')
-    const analysis = await analyse({ data: doc.data, filename: doc.filename }, mo)
+    const chosen = typeof req.body?.masterOrderId === 'string' && req.body.masterOrderId ? req.body.masterOrderId : doc.masterOrderId
+    const mo = chosen && ORDER_ID_RE.test(chosen) ? await MasterOrder.findById(chosen).lean() : null
+    const analysis = await analyse({ data: doc.data, filename: doc.filename }, mo && String(mo.buyerId) === String(doc.buyerId) ? mo : null)
     res.json({ request: item, ...analysis, rows: analysis.rows.map(({ payload, ...row }) => row) })
   } catch (err) {
     if (err instanceof ImportError) return fail(res, 400, err.message)
@@ -91,43 +251,68 @@ router.post('/:id/preview', readLimiter, async (req, res) => {
 
 /** Put a request that was being approved back in the queue after a failure. */
 const release = id => StyleRequest.updateOne({ _id: id, status: 'processing' }, { $set: { status: 'pending' } }).catch(() => {})
+/** Move the files sent with an item onto the style made from it. */
+const fileOnto = (doc, item, orderId) => (item.docIds?.length
+  ? Document.updateMany({ _id: { $in: item.docIds }, styleRequestId: doc._id, orderId: null }, { $set: { orderId } })
+  : null)
 
-// POST /api/style-requests/:id/approve   (master admin) -> creates the styles
+// POST /api/style-requests/:id/approve  { masterOrderId? }   (master admin) -> creates the styles under that master order
 router.post('/:id/approve', decideLimiter, masterOnly, async (req, res) => {
   if (!OBJECT_ID_RE.test(req.params.id)) return fail(res, 404, 'Request not found.')
+  const pending = await StyleRequest.findOne({ _id: req.params.id, status: 'pending' }).lean()
+  if (!pending) return fail(res, 409, 'That request is not waiting for review (it may already be decided, or being approved).')
+  const target = await targetFor(pending, req.body?.masterOrderId)
+  if (target.error) return fail(res, 400, target.error)
+  const { mo, buyer } = target
   // One approval at a time: a double click must not create the styles twice.
   const doc = await StyleRequest.findOneAndUpdate({ _id: req.params.id, status: 'pending' }, { $set: { status: 'processing' } }, { new: true }).select('+data')
   if (!doc) return fail(res, 409, 'That request is not waiting for review (it may already be decided, or being approved).')
   let done = false
   try {
-    let created = [], failed = [], line = '', firstId = null
-    if (doc.kind === 'replen') {
-      const src = await Order.findById(doc.sourceOrderId).lean()
-      if (!src) return fail(res, 409, 'The style it reorders no longer exists.')
-      const made = await createReplenFrom(src, { quantity: doc.quantity, note: doc.note })
-      if (!made.ok) return fail(res, 409, made.error)
-      created = [{ id: made.order._id }]; firstId = made.order._id
-      line = `Your replen of ${doc.product}${doc.styleNumber ? ` (${doc.styleNumber})` : ''}, ${doc.quantity.toLocaleString('en-IN')} pcs, was approved: ${made.order._id}`
-      await AuditLog.create({ byUser: req.user.id, action: 'Replen Ordered', detail: `${made.order._id} - replen of ${src._id}, ${doc.quantity.toLocaleString('en-IN')} pcs, requested by the customer and approved` })
-    } else {
-      const mo = await MasterOrder.findById(doc.masterOrderId).lean()
-      const buyer = mo && await User.findById(mo.buyerId, 'code company role isActive').lean()
-      if (!mo || !buyer || buyer.role !== 'buyer' || !buyer.isActive) return fail(res, 409, 'The master order or its customer is no longer available.')
+    let created = [], failed = []
+    if (doc.kind === 'import') {
       if (!doc.data) return fail(res, 409, 'The sheet is no longer kept for this request.')
       const analysis = await analyse({ data: doc.data, filename: doc.filename }, mo)
       const { ok, errors, exists } = analysis.summary
       if (errors && !doc.skipInvalid) return fail(res, 409, `${errors} row${errors !== 1 ? 's' : ''} in the sheet now ${errors !== 1 ? 'have' : 'has'} problems (look at the preview), so nothing was created. Decline it and ask for a corrected sheet.`)
       if (!ok) return fail(res, 409, exists ? 'Every style in the sheet is already in this master order.' : 'There are no valid rows to create.')
       ;({ created, failed } = await createRows(analysis, { mo, buyer }))
-      if (!created.length) return fail(res, 409, 'No style could be created.')
-      firstId = created[0].id
-      line = `Your request was approved: ${dayLabel(created.length)} added under ${mo.orderName}`
-      await AuditLog.create({ byUser: req.user.id, action: 'Style Import', detail: `${dayLabel(created.length)} created from ${doc.filename} under ${mo._id}${failed.length ? `, ${failed.length} failed` : ''}, requested by the customer and approved` })
+    } else {
+      for (const [i, it] of itemsOf(doc).entries()) {
+        const label = it.product || `Style ${i + 1}`
+        try {
+          let made
+          if (doc.kind === 'replen') {
+            const src = await Order.findById(it.sourceOrderId).lean()
+            if (!src || String(src.buyerId) !== String(doc.buyerId)) { failed.push({ row: i + 1, styleNumber: it.styleNumber, error: `${label}: the style it reorders no longer exists` }); continue }
+            made = await createReplenFrom(src, { quantity: it.quantity, note: it.note, colourways: it.colours, ecommerceLink: it.ecommerceLink, techPackLink: it.techPackLink, delivery: it.delivery, masterOrderId: mo._id })
+          } else {
+            for (let attempt = 0; attempt < 4; attempt++) {
+              const id = await nextStyleId(buyer.code, it.category, mo.season)
+              made = await validateAndCreateOrder({
+                id, buyerId: String(mo.buyerId), masterOrderId: mo._id, season: mo.season || undefined, phase: 'development', createdAt: getToday(),
+                product: it.product, styleNumber: it.styleNumber, category: it.category, brand: it.brand, ...(it.totalQty ? { totalQty: it.totalQty } : {}),
+                colourways: it.colourways, fabricDetails: it.fabricDetails, ecommerceLink: it.ecommerceLink, techPackLink: it.techPackLink, photos: it.photos,
+              })
+              if (made.ok || made.error !== 'Order ID already exists') break
+            }
+          }
+          if (!made.ok) { failed.push({ row: i + 1, styleNumber: it.styleNumber, error: `${label}: ${made.error}` }); continue }
+          await fileOnto(doc, it, made.order._id)
+          created.push({ row: i + 1, id: made.order._id, styleNumber: it.styleNumber, product: it.product })
+        } catch (err) {
+          console.error('[style requests approve item]', err)
+          failed.push({ row: i + 1, styleNumber: it.styleNumber, error: `${label}: server error` })
+        }
+      }
     }
-    await StyleRequest.updateOne({ _id: doc._id }, { $set: { status: 'approved', decidedBy: req.user.id, decidedAt: new Date(), createdOrderIds: created.map(c => c.id), failedCount: failed.length }, $unset: { data: 1 } })
+    if (!created.length) return fail(res, 409, failed[0]?.error || 'No style could be created.', { failed })
+    await StyleRequest.updateOne({ _id: doc._id }, { $set: { status: 'approved', masterOrderId: mo._id, decidedBy: req.user.id, decidedAt: new Date(), createdOrderIds: created.map(c => c.id), failedCount: failed.length }, $unset: { data: 1 } })
     done = true
-    await notify([doc.requestedBy], { type: 'order', msg: line, orderId: firstId })
-    res.json({ approved: true, created, failed })
+    const what = doc.kind === 'replen' ? `replen of ${dayLabel(created.length)}` : doc.kind === 'npd' ? `${dayLabel(created.length)} for New Product Development` : dayLabel(created.length)
+    await AuditLog.create({ byUser: req.user.id, action: doc.kind === 'import' ? 'Style Import' : doc.kind === 'replen' ? 'Replen Ordered' : 'Order Created', detail: `${what} created under ${mo._id} (${created.map(c => c.id).join(', ')})${failed.length ? `, ${failed.length} failed` : ''}, requested by the customer and approved` })
+    await notify([doc.requestedBy], { type: 'order', msg: `Your request was approved: ${what} added under ${mo.orderName}`, orderId: created[0].id })
+    res.json({ approved: true, masterOrderId: mo._id, created, failed })
   } catch (err) {
     if (err instanceof ImportError) return fail(res, 409, err.message)
     console.error('[style requests approve]', err); fail(res, 500, 'Server error')
@@ -143,8 +328,10 @@ router.post('/:id/decline', decideLimiter, masterOnly, async (req, res) => {
     const doc = await StyleRequest.findOneAndUpdate({ _id: req.params.id, status: 'pending' },
       { $set: { status: 'declined', decidedBy: req.user.id, decidedAt: new Date(), decisionNote: reason }, $unset: { data: 1 } }, { new: true })
     if (!doc) return fail(res, 409, 'That request is not waiting for review (it may already be decided, or being approved).')
-    const what = doc.kind === 'replen' ? `Your replen request for ${doc.product}${doc.styleNumber ? ` (${doc.styleNumber})` : ''}` : `Your request of ${doc.filename}`
-    await AuditLog.create({ byUser: req.user.id, action: 'Style Request Declined', detail: `${doc.kind === 'replen' ? `Replen of ${doc.sourceOrderId}` : doc.filename}${reason ? `: ${reason}` : ''}` })
+    const its = itemsOf(doc)
+    const what = doc.kind === 'import' ? `Your request of ${doc.filename}` : doc.kind === 'npd' ? `Your New Product Development request (${dayLabel(its.length)})`
+      : its.length === 1 ? `Your replen request for ${its[0].product}${its[0].styleNumber ? ` (${its[0].styleNumber})` : ''}` : `Your replen request (${dayLabel(its.length)})`
+    await AuditLog.create({ byUser: req.user.id, action: 'Style Request Declined', detail: `${doc.kind === 'import' ? doc.filename : `${doc.kind}: ${its.map(i => i.styleNumber || i.product).join(', ')}`}${reason ? `: ${reason}` : ''}` })
     await notify([doc.requestedBy], { type: 'order', msg: `${what} was declined${reason ? `: ${reason}` : '.'}` })
     res.json({ declined: true })
   } catch (err) { console.error('[style requests decline]', err); fail(res, 500, 'Server error') }
@@ -158,7 +345,7 @@ router.post('/:id/cancel', decideLimiter, async (req, res) => {
     const doc = await StyleRequest.findOneAndUpdate({ _id: req.params.id, requestedBy: req.user.id, status: 'pending' },
       { $set: { status: 'cancelled', decidedAt: new Date() }, $unset: { data: 1 } }, { new: true })
     if (!doc) return fail(res, 409, 'That request can no longer be cancelled.')
-    await AuditLog.create({ byUser: req.user.id, action: 'Style Request Cancelled', detail: doc.kind === 'replen' ? `Replen of ${doc.sourceOrderId}` : doc.filename })
+    await AuditLog.create({ byUser: req.user.id, action: 'Style Request Cancelled', detail: doc.kind === 'import' ? doc.filename : `${doc.kind}: ${itemsOf(doc).map(i => i.styleNumber || i.product).join(', ')}` })
     res.json({ cancelled: true })
   } catch (err) { console.error('[style requests cancel]', err); fail(res, 500, 'Server error') }
 })

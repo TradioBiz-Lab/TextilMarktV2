@@ -150,7 +150,10 @@ describe('deciding', () => {
     const sent = await as(buyer).post('/api/orders/SRC-1/replen', { quantity: 50 })
     assert.equal(sent.status, 202)
     await Order.deleteOne({ _id: 'SRC-1' })
-    const res = await as(master).post(`/api/style-requests/${sent.body.requestId}/approve`)
+    // With the style gone its master order cannot be worked out, so the master admin has to choose one ...
+    assert.equal((await as(master).post(`/api/style-requests/${sent.body.requestId}/approve`)).status, 400)
+    // ... and even then there is nothing to reorder.
+    const res = await as(master).post(`/api/style-requests/${sent.body.requestId}/approve`, { masterOrderId: mo._id })
     assert.equal(res.status, 409)
     assert.equal((await StyleRequest.findById(sent.body.requestId).lean()).status, 'pending')
   })

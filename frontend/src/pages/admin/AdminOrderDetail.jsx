@@ -21,6 +21,7 @@ import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input,
 import { useApp } from '../../context.jsx'
 import { normalizeCsvDate } from '../../csvDates.js'
 import { ReplenOrderModal } from '../../components/ReplenOrderModal.jsx'
+import { ReplenRequestModal } from '../../components/ReplenRequestModal.jsx'
 import { capsFor, canWriteStage, canSetAssignmentStatus, canManageStepLists } from '../../caps.js'
 import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
@@ -829,7 +830,10 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
             <Btn variant="secondary" size="sm" onClick={() => setSelectedMid(null)} icon={<ArrowLeftRight size={13} />}>All splits</Btn>
           )}
           {caps.orderReplen && (order.phase || 'production') === 'production' && <Btn variant="secondary" size="sm" onClick={() => setReplenOpen(true)} icon={<RefreshCw size={13} />}>Order replen</Btn>}
-          {replenOpen && <ReplenOrderModal order={order} onClose={() => setReplenOpen(false)} onOrdered={created => { setReplenOpen(false); if (!created.pending) onOpenOrder?.(created.id) }} />}
+          {/* A customer's replen is a request with its own details (several styles can go together); Tradio's is created at once. */}
+          {replenOpen && (caps.isBuyer
+            ? <ReplenRequestModal preselect={[order.id]} onClose={() => setReplenOpen(false)} onSent={() => setReplenOpen(false)} />
+            : <ReplenOrderModal order={order} onClose={() => setReplenOpen(false)} onOrdered={created => { setReplenOpen(false); if (!created.pending) onOpenOrder?.(created.id) }} />)}
           {caps.escalate && <Btn variant="secondary" size="sm" onClick={() => setEscalation('')} icon={<ShieldAlert size={13} />}>Escalate</Btn>}
           {escalation !== null && (
             <Modal title="Escalate this style" subtitle={`${order.product} · ${order.id}`} onClose={() => !escalating && setEscalation(null)} size="sm">
@@ -880,31 +884,28 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
 
             {/* Spec sheet */}
             <div style={{ flex: '1 1 420px', padding: '18px 22px', minWidth: 300 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Tradio Style ID</div>
-              <Mono style={{ fontSize: 11, color: T.textLight, letterSpacing: '0.04em' }}>{order.id}</Mono>
-              <h1 style={{ fontSize: 26, fontWeight: 800, color: T.info, margin: '2px 0 2px', lineHeight: 1.15, letterSpacing: '-0.01em' }}>
+              <h1 style={{ fontSize: 26, fontWeight: 800, color: T.info, margin: '0 0 10px', lineHeight: 1.15, letterSpacing: '-0.01em' }}>
                 {order.product}
               </h1>
-              {order.styleNumber && (
-                <div style={{ marginTop: 2 }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.08em', marginRight: 6 }}>Customer Style ID</span>
-                  <Mono style={{ fontSize: 12, color: T.textMuted }}>{order.styleNumber}</Mono>
-                </div>
-              )}
-              {order.replenOf && (
-                <div style={{ marginTop: 2 }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.08em', marginRight: 6 }}>Replen of</span>
-                  {onOpenOrder
-                    ? <button onClick={() => onOpenOrder(order.replenOf)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: T.primaryDeep }}>{order.replenOf} ↗</button>
-                    : <Mono style={{ fontSize: 12, color: T.textMuted }}>{order.replenOf}</Mono>}
-                </div>
-              )}
-              {order.brand && (
-                <div style={{ marginTop: 2 }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.08em', marginRight: 6 }}>Brand</span>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: T.textMuted }}>{order.brand}</span>
-                </div>
-              )}
+              {/* The style's names side by side: the customer's ID, the brand, Tradio's ID (and what a replen reorders), one label and
+                  value style for all of them. */}
+              {(() => {
+                const lbl = { display: 'block', fontSize: 10, fontWeight: 700, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2 }
+                const val = { fontSize: 14, fontWeight: 700, color: T.text, fontVariantNumeric: 'tabular-nums', letterSpacing: '0.01em', wordBreak: 'break-word' }
+                const items = [
+                  order.styleNumber && ['Customer Style ID', <span style={val}>{order.styleNumber}</span>],
+                  order.brand && ['Brand', <span style={val}>{order.brand}</span>],
+                  ['Tradio Style ID', <span style={val}>{order.id}</span>],
+                  order.replenOf && ['Replen of', onOpenOrder
+                    ? <button onClick={() => onOpenOrder(order.replenOf)} style={{ ...val, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', color: T.primaryDeep }}>{order.replenOf} ↗</button>
+                    : <span style={val}>{order.replenOf}</span>],
+                ].filter(Boolean)
+                return (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 28px', marginBottom: 4 }}>
+                    {items.map(([label, value]) => <div key={label} style={{ minWidth: 0 }}><span style={lbl}>{label}</span>{value}</div>)}
+                  </div>
+                )
+              })()}
               {order.ecommerceLink && (
                 /^https?:\/\//i.test(order.ecommerceLink)
                   ? <a href={order.ecommerceLink} target="_blank" rel="noopener noreferrer" style={{ display: 'block', marginTop: 4, fontSize: 11, fontWeight: 600, color: T.primaryDeep }}>{order.ecommerceLink} ↗</a>

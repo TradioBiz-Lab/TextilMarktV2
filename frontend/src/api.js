@@ -184,8 +184,11 @@ export const styleImportsApi = {
 // What a customer asks to add (a sheet of styles, a replen) waits here for a master admin.
 export const styleRequestsApi = {
   list: status => api.get('/style-requests', { params: status ? { status } : undefined }),
-  preview: id => api.post(`/style-requests/${id}/preview`, {}, { timeout: 60000 }),
-  approve: id => api.post(`/style-requests/${id}/approve`, {}, { timeout: 120000 }),
+  // A customer's replen of several styles, or its new styles from the guided form: { kind: 'replen' | 'npd', items }.
+  create: (kind, items) => api.post('/style-requests', { kind, items }, { timeout: 60000 }),
+  // The master order is the master admin's to choose at review: the preview checks a sheet against it, approval uses it.
+  preview: (id, masterOrderId) => api.post(`/style-requests/${id}/preview`, masterOrderId ? { masterOrderId } : {}, { timeout: 60000 }),
+  approve: (id, masterOrderId) => api.post(`/style-requests/${id}/approve`, masterOrderId ? { masterOrderId } : {}, { timeout: 120000 }),
   decline: (id, reason) => api.post(`/style-requests/${id}/decline`, reason ? { reason } : {}),
   cancel: id => api.post(`/style-requests/${id}/cancel`, {}),
 }

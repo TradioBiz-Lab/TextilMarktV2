@@ -868,11 +868,15 @@ Requests page (`routes/styleRequests.js`). Only approval creates styles, with th
 Tradio's own admins are not queued: they create at once.
 
 ```
-kind          String      import | replen
+kind          String      import | replen | npd
 status        String      pending | processing (only while an approval runs) | approved | declined | cancelled
 buyerId       ObjectId    the customer the styles belong to
 requestedBy   ObjectId    the customer user who sent it
-masterOrderId String      the master order the styles go under (a replen: the original style's)
+masterOrderId String      the master order the styles go under: chosen by the master admin at approval (a replen defaults
+                          to the one its styles share)
+items         [Mixed]     replen: { sourceOrderId, colours[], quantity?, ecommerceLink, techPackLink, delivery, note, docIds[] }
+                          npd: { product, styleNumber, category, brand, totalQty?, colourways[], fabricDetails[], links, photos[],
+                          photoCount, docIds[] }. docIds are Documents with no style yet and styleRequestId set.
 -- import
 filename, data (Buffer, select:false), uploadId, skipInvalid (create the valid rows only), summary { total, ok, errors, exists }
 -- replen

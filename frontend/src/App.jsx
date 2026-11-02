@@ -197,7 +197,7 @@ function Inner() {
     // signed-in user, and hides the controls that role cannot use (see caps.js).
     if (view === 'dashboard') return <AdminDashboard onNavigate={navTo} onOpen={openOrder} />
     if (view === 'kriyaa') return <KriyaaPage />
-    if (view === 'orders') return <AdminOrders key={`o:${ordersMo || 'all'}:${ordersPhase || ''}`} onOpen={openOrder} onOpenMo={openMo} initialStatus={ordersStatus} initialMo={ordersMo} initialPhase={ordersPhase} openWizardFor={ordersNewStyle ? ordersMo : null} onSubmitReq={user.role === 'buyer' ? () => navTo('submit_req') : undefined} />
+    if (view === 'orders') return <AdminOrders key={`o:${ordersMo || 'all'}:${ordersPhase || ''}`} onOpen={openOrder} onOpenMo={openMo} initialStatus={ordersStatus} initialMo={ordersMo} initialPhase={ordersPhase} openWizardFor={ordersNewStyle ? ordersMo : null} />
     if (view === 'master_order' && selMo) return <MasterOrderPage moId={selMo} onOpen={openOrder} onNavigate={navTo} onBack={() => goBack({ view: 'orders', ordersMo: selMo })} />
     if (view === 'order_detail' && selOid) return <AdminOrderDetail orderId={selOid} initialMid={selMid} onOpenMo={openMo} onOpenOrder={openOrder} onBack={() => goBack({ view: 'orders', ordersMo: orders?.find(o => o.id === selOid)?.masterOrderId || '__none__' })} />
     if (view === 'documents') return <AdminDocuments />

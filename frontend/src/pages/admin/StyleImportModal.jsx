@@ -7,10 +7,18 @@ import { useApp } from '../../context.jsx'
 import { styleImportsApi } from '../../api.js'
 import { SHEET_ACCEPT, downloadTemplate, readSheetFile, sheetFileProblem } from '../../styleImport.js'
 
+/** Inside another window: just the content, with the subtitle as a lead line. */
+function EmbeddedFrame({ subtitle, children }) {
+  return <div>{subtitle && <div style={{ fontSize: 12.5, color: T.textMuted, marginBottom: 12 }}>{subtitle}</div>}{children}</div>
+}
+
 // Create many styles from an Excel or CSV sheet. Pick the master order and the file; every row is checked and shown before
 // anything is created. Rows already in the master order are skipped, so a second upload never makes duplicates.
-// For a customer (`forReview`) the last step does not create: it sends the sheet to Tradio's master admin to approve.
-export function StyleImportModal({ masterOrders, presetMasterOrderId, onClose, onNewMasterOrder, onDone, forReview = false }) {
+// For a customer (`forReview`) the last step does not create: it sends the sheet to Tradio's master admin to approve, who
+// also chooses the master order then (`noMasterOrder` hides the choice). `embedded` draws it inside another window (the
+// customer's Order replen) instead of its own.
+export function StyleImportModal({ masterOrders, presetMasterOrderId, onClose, onNewMasterOrder, onDone, forReview = false, noMasterOrder = false, embedded = false }) {
+  const Frame = embedded ? EmbeddedFrame : Modal
   const { refreshOrders } = useApp()
   const [masterOrderId, setMasterOrderId] = useState(presetMasterOrderId || '')
   useEffect(() => { if (presetMasterOrderId) setMasterOrderId(presetMasterOrderId) }, [presetMasterOrderId])
@@ -24,7 +32,7 @@ export function StyleImportModal({ masterOrders, presetMasterOrderId, onClose, o
 
   // Check the sheet against the master order whenever either changes.
   useEffect(() => {
-    if (!uploadId || !masterOrderId) { setPreview(null); return }
+    if (!uploadId || (!masterOrderId && !noMasterOrder)) { setPreview(null); return }
     let stale = false
     setBusy('preview'); setErr(''); setPreview(null)
     styleImportsApi.preview(uploadId, masterOrderId)
@@ -32,7 +40,7 @@ export function StyleImportModal({ masterOrders, presetMasterOrderId, onClose, o
       .catch(e => { if (!stale) setErr(e?.message || 'Could not read that file.') })
       .finally(() => { if (!stale) setBusy('') })
     return () => { stale = true }
-  }, [uploadId, masterOrderId])
+  }, [uploadId, masterOrderId, noMasterOrder])
 
   const choose = async f => {
     if (!f) return
@@ -64,20 +72,20 @@ export function StyleImportModal({ masterOrders, presetMasterOrderId, onClose, o
 
   if (result?.pending) {
     return (
-      <Modal title="Sent for review" subtitle={`${result.summary.ok} style${result.summary.ok !== 1 ? 's' : ''}${mo ? ` for ${mo.orderName}` : ''}`} onClose={() => onDone(result)} size="md" float>
+      <Frame title="Sent for review" subtitle={`${result.summary.ok} style${result.summary.ok !== 1 ? 's' : ''}${mo ? ` for ${mo.orderName}` : ''}`} onClose={() => onDone(result)} size="md" float>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ fontSize: 13.5, color: T.text, lineHeight: 1.6 }}>
-            Tradio's master admin has your sheet and will approve it. The styles are added once they do, and you will get a notification either way. You can follow it under "Your requests" on this page.
+            Tradio's master admin has your sheet and will approve it. The styles are added once they do, and you will get a notification either way. You can follow it under "Your requests" on your home page.
           </div>
           <FlexRow justify="flex-end"><Btn onClick={() => onDone(result)}>Done</Btn></FlexRow>
         </div>
-      </Modal>
+      </Frame>
     )
   }
 
   if (result) {
     return (
-      <Modal title="Styles imported" subtitle={`${result.created.length} style${result.created.length !== 1 ? 's' : ''} added${mo ? ` under ${mo.orderName}` : ''}`} onClose={() => onDone(result)} size="lg" float>
+      <Frame title="Styles imported" subtitle={`${result.created.length} style${result.created.length !== 1 ? 's' : ''} added${mo ? ` under ${mo.orderName}` : ''}`} onClose={() => onDone(result)} size="lg" float>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ fontSize: 13, color: T.text }}>
             {result.created.map(c => <div key={c.id} style={{ padding: '3px 0' }}><Check size={13} color={T.success} style={{ verticalAlign: -2, marginRight: 6 }} /><b>{c.id}</b> {c.styleNumber && `(${c.styleNumber})`} {c.product}</div>)}
@@ -95,14 +103,14 @@ export function StyleImportModal({ masterOrders, presetMasterOrderId, onClose, o
           )}
           <FlexRow justify="flex-end"><Btn onClick={() => onDone(result)}>Done</Btn></FlexRow>
         </div>
-      </Modal>
+      </Frame>
     )
   }
 
   return (
-    <Modal title="Import styles" subtitle={forReview ? 'Add many styles at once from an Excel or CSV sheet. Every row is checked first, then Tradio reviews the sheet before the styles are added.' : 'Create many styles at once from an Excel or CSV sheet. Every row is checked and shown before anything is created.'} onClose={() => { if (!busy) onClose() }} size="xxl" float>
+    <Frame title="Import styles" subtitle={forReview ? 'Add many styles at once from an Excel or CSV sheet. Every row is checked first, then Tradio reviews the sheet before the styles are added.' : 'Create many styles at once from an Excel or CSV sheet. Every row is checked and shown before anything is created.'} onClose={() => { if (!busy) onClose() }} size="xxl" float>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div>
+        {!noMasterOrder && <div>
           <FlexRow justify="space-between" style={{ marginBottom: 6 }}>
             <label style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Master Order *</label>
             {onNewMasterOrder && <button onClick={onNewMasterOrder} style={{ fontSize: 11, color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontFamily: 'inherit' }}>+ New Master Order</button>}
@@ -113,7 +121,7 @@ export function StyleImportModal({ masterOrders, presetMasterOrderId, onClose, o
             {masterOrders.map(m => <option key={m.id} value={m.id}>{m.id} - {m.orderName} ({m.buyerCompany})</option>)}
           </select>
           {masterOrders.length === 0 && !onNewMasterOrder && <div style={{ fontSize: 12, color: T.textMuted, marginTop: 6 }}>You have no master order yet. Ask your Tradio coordinator to set one up, then come back.</div>}
-        </div>
+        </div>}
 
         {!file ? (
           <div>
@@ -141,7 +149,7 @@ export function StyleImportModal({ masterOrders, presetMasterOrderId, onClose, o
           </FlexRow>
         )}
 
-        {file && !masterOrderId && <div style={{ fontSize: 12.5, color: T.textMuted }}>Choose the master order to check the sheet against it.</div>}
+        {file && !masterOrderId && !noMasterOrder && <div style={{ fontSize: 12.5, color: T.textMuted }}>Choose the master order to check the sheet against it.</div>}
         {busy === 'preview' && <div style={{ fontSize: 12.5, color: T.textMuted }}>Checking the sheet…</div>}
 
         {err && <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {err}</div>}
@@ -164,6 +172,6 @@ export function StyleImportModal({ masterOrders, presetMasterOrderId, onClose, o
           )}
         </FlexRow>
       </div>
-    </Modal>
+    </Frame>
   )
 }

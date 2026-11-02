@@ -42,6 +42,11 @@ async function loadUpload(req, res) {
 }
 
 async function loadMasterOrder(masterOrderId, res, user) {
+  // A customer does not choose a master order: the master admin does when approving. Its sheet is checked on its own.
+  if (user.role === 'buyer' && (masterOrderId == null || masterOrderId === '')) {
+    const buyer = await User.findById(user.id, 'code company role isActive').lean()
+    return { mo: null, buyer }
+  }
   if (typeof masterOrderId !== 'string' || !MASTER_ORDER_ID_RE.test(masterOrderId)) { fail(res, 400, 'Choose the master order the styles go under.'); return null }
   const mo = await MasterOrder.findById(masterOrderId).lean()
   // A customer can only use its own master orders; another's reads as not found.
@@ -54,7 +59,7 @@ async function loadMasterOrder(masterOrderId, res, user) {
 
 /** The file's rows, checked against the styles already in the master order. */
 export async function analyse(upload, mo) {
-  const styles = await Order.find({ masterOrderId: mo._id, styleNumber: { $nin: ['', null] } }, { _id: 1, styleNumber: 1 }).lean()
+  const styles = mo ? await Order.find({ masterOrderId: mo._id, styleNumber: { $nin: ['', null] } }, { _id: 1, styleNumber: 1 }).lean() : []
   const existing = new Map(styles.map(o => [String(o.styleNumber).trim().toLowerCase(), o._id]))
   return analyseTable(await readTable(upload.data, upload.filename), { existing })
 }
@@ -116,7 +121,7 @@ router.post('/:id/preview', readLimiter, async (req, res) => {
     const analysis = await analyse(upload, target.mo)
     res.json({
       uploadId: upload._id, filename: upload.filename,
-      masterOrder: { id: target.mo._id, orderName: target.mo.orderName, season: target.mo.season || '', buyerCompany: target.buyer.company },
+      masterOrder: target.mo ? { id: target.mo._id, orderName: target.mo.orderName, season: target.mo.season || '', buyerCompany: target.buyer.company } : null,
       ...analysis,
       rows: analysis.rows.map(({ payload, ...row }) => row),
     })
@@ -143,12 +148,12 @@ router.post('/:id/commit', createLimiter, async (req, res) => {
       if (await StyleRequest.exists({ kind: 'import', uploadId: upload._id })) return fail(res, 409, 'This sheet was already sent for review.')
       const skipInvalid = req.body?.skipInvalid === true
       const request = await StyleRequest.create({
-        kind: 'import', buyerId: mo.buyerId, requestedBy: req.user.id, masterOrderId: mo._id, filename: upload.filename, data: upload.data, uploadId: upload._id,
+        kind: 'import', buyerId: mo ? mo.buyerId : req.user.id, requestedBy: req.user.id, masterOrderId: mo?._id || null, filename: upload.filename, data: upload.data, uploadId: upload._id,
         skipInvalid, summary: analysis.summary,
       })
-      await AuditLog.create({ byUser: req.user.id, action: 'Style Request Sent', detail: `${ok} style${ok !== 1 ? 's' : ''} from ${upload.filename} under ${mo._id}, by the customer, waiting for review` })
-      await notify(await masterAdminIds(), { type: 'order', msg: `${buyer.company || 'A customer'} sent ${ok} style${ok !== 1 ? 's' : ''} for review under ${mo.orderName}. They are waiting for your approval.` })
-      return res.status(202).json({ pending: true, requestId: request._id, masterOrderId: mo._id, summary: analysis.summary })
+      await AuditLog.create({ byUser: req.user.id, action: 'Style Request Sent', detail: `${ok} style${ok !== 1 ? 's' : ''} from ${upload.filename}${mo ? ` under ${mo._id}` : ''}, by the customer, waiting for review` })
+      await notify(await masterAdminIds(), { type: 'order', msg: `${buyer.company || 'A customer'} sent ${ok} style${ok !== 1 ? 's' : ''} for review${mo ? ` under ${mo.orderName}` : ''}. They are waiting for your approval.` })
+      return res.status(202).json({ pending: true, requestId: request._id, masterOrderId: mo?._id || null, summary: analysis.summary })
     }
 
     // One create at a time per upload: a double click or a repeated call must not make the styles twice.

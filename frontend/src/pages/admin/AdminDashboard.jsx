@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { DashboardSummary } from '../../components/DashboardSummary.jsx'
 import { capsFor } from '../../caps.js'
 import { FileIntoStyle } from '../../components/FileIntoStyle.jsx'
+import { CustomerActions } from '../../components/CustomerActions.jsx'
 import { ShoppingBag, Factory, Package, Siren, Target, Check, Shirt, Layers, ClipboardList, Megaphone, ChevronRight, Building2, Truck, FlaskConical, RefreshCw, Scissors } from '../../icons.jsx'
 import { T, ST, productionMetrics, productionOrders, developmentOrders, replenOrders, phaseOf, isExpiringSoon, isExpired, getToday, dayNumber, effectiveEta, withBuyerPrefix, fmtDate, styleStatus, masterOrderStatus, inFlightStages } from '../../constants.js'
 import { StatCard, Card, Grid, EmptyState, Mono, PageHeader, Badge, Btn, FlexRow, Modal, Select, Textarea, Input, Alert, LoadingScreen, DocCard } from '../../components/ui.jsx'
@@ -80,7 +81,8 @@ export function AdminDashboard({ onNavigate, onOpen }) {
   if (loading) return <LoadingScreen />
 
   // What customers sent in with no style yet; once Tradio files one into a style it leaves this list.
-  const buyerRequests = docs.filter(d => d.isActive !== false && ['RFQ', 'tech_pack', 'PO'].includes(d.type) && !d.orderId && !d.masterOrderId && d.stageIndex == null && users.find(u => String(u.id) === String(d.uploadedBy) && u.role === 'buyer')).sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))
+  // Files sent with a style request wait in Style Requests, not here.
+  const buyerRequests = docs.filter(d => d.isActive !== false && ['RFQ', 'tech_pack', 'PO'].includes(d.type) && !d.orderId && !d.masterOrderId && !d.styleRequestId && d.stageIndex == null && users.find(u => String(u.id) === String(d.uploadedBy) && u.role === 'buyer')).sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))
 
   const buyers = users.filter(u => u.role === 'buyer' && u.isActive)
   // For a customer or manufacturer the users list is just themselves, so count the other side from their own orders.
@@ -169,6 +171,9 @@ export function AdminDashboard({ onNavigate, onOpen }) {
         subtitle={caps.isAdmin ? 'Platform overview, alerts, and ribbon notifications'
           : caps.isBuyer ? 'Your orders, what needs you, and any alerts'
           : 'Your assigned orders, what needs you, and any alerts'} />
+
+      {/* A customer starts its requests here: Order replen and New product development. */}
+      {caps.isBuyer && <CustomerActions />}
 
       {/* ── Ribbon Publish Modal ── */}
       {showRibbon && (

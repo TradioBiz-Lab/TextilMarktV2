@@ -153,6 +153,7 @@ const mapDoc = (d, includeData = false) => {
     // Measurement sheets: the label and whether it is the style's Locked Measurement.
     measurementLabel: d.measurementLabel || null,
     locked: !!d.locked, lockedAt: d.lockedAt || null,
+    styleRequestId: d.styleRequestId ? d.styleRequestId.toString() : null,
     ...(includeData ? { dataUrl: d.dataUrl } : {}),
   }
 }
