@@ -290,7 +290,8 @@ export function AdminDashboard({ onNavigate, onOpen }) {
                         const rep = group.orders.filter(o => phaseOf(o) === 'replen').length
                         return npd || rep ? ` (${[npd ? `${npd} NPD` : '', rep ? `${rep} Replen` : ''].filter(Boolean).join(', ')})` : ''
                       })()}</span>
-                      <span style={{ padding: '3px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: st.bg, color: st.c, border: `1px solid ${st.c}22`, whiteSpace: 'nowrap' }}>{overallStatus}</span>
+                      {/* A customer sees its master orders here without a status (no "Delayed" on its own home page); Tradio and factories keep it. */}
+                      {!caps.isBuyer && <span style={{ padding: '3px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: st.bg, color: st.c, border: `1px solid ${st.c}22`, whiteSpace: 'nowrap' }}>{overallStatus}</span>}
                     </div>
                   )
                 })}

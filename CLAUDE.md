@@ -119,13 +119,15 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   `[Attached style sheet ...]` line, see `frontend/src/styleImport.js`); creating needs the admin's confirmation.
 - **Replens.** Only a delivered style can be reordered (`replenEligible` in constants.js; on hold or still in production, no).
   One window for both roles (`components/ReplenRequestModal.jsx`): tick several styles, each folded until opened, with colours,
-  quantity, links, expected delivery date and measurement sheets. A customer's "Order replen" sends a request for review; Tradio's
+  quantity, links and expected delivery date (measurement sheets go on the style page later). A customer's "Order replen" sends a request for review; Tradio's
   "Add replen" picks the master order (or makes one) and creates them at once (`POST /api/style-requests/direct-replen`). The
   copy is made by `createReplenFrom` (same master order unless another is given, `replenOf` set, no factory).
 - **The review queue for customers.** A customer never creates a style directly, and never picks a master order. Its home page
   has two ways in (`components/CustomerActions.jsx`): Order replen (tick several styles in production, each with colours,
-  quantity, links, expected delivery date and measurement sheets; or a tab to send a sheet) and New product development (the
-  Create Style wizard with `forCustomer`). Each becomes a `StyleRequest` (kinds import, replen, npd); files go up first with no
+  quantity, links and expected delivery date; or a tab to send a sheet) and New product development
+  (`components/NpdRequestModal.jsx`: per new style only its colours, quantity (optional), expected delivery date and tech pack
+  link, all but the quantity required; it is called "New product (colours)" until Tradio names it; or the same Import tab, where
+  NPD rows need the Tech pack link). Each becomes a `StyleRequest` (kinds import, replen, npd); files go up first with no
   style and `styleRequestId` set. These requests become
   `StyleRequest` entries that a master admin approves or declines on the Style Requests page (`routes/styleRequests.js`,
   master admin only; the customer sees and can cancel its own). The master admin chooses the master order on approval (or

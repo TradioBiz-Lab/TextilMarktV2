@@ -19,7 +19,6 @@ beforeEach(clearDb)
 
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 const PDF = `data:application/pdf;base64,${Buffer.from('%PDF-1.4\n').toString('base64')}`
-const PHOTO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAHnOcQAAAAABJRU5ErkJggg=='
 
 async function arrange() {
   const master = await makeMaster()
@@ -109,47 +108,44 @@ describe('a replen of several styles', () => {
   })
 })
 
-describe('new styles from the guided form', () => {
-  test('are sent with photos, colours, fabrics and files, and become NPD styles under the chosen master order', async () => {
+describe('new styles from the short form', () => {
+  const style = (over = {}) => ({ colours: ['Olive', 'Black'], quantity: 800, delivery: '2027-01-20', techPackLink: 'https://drive.example.com/tp', ...over })
+
+  test('colours, quantity, delivery and tech pack link become an NPD style under the chosen master order', async () => {
     const { master, buyer, mo } = await arrange()
-    const tp = await as(buyer).post('/api/documents', { type: 'tech_pack', name: 'Tech pack', orderId: null, dataUrl: PDF, fileName: 'tp.pdf', mimeType: 'application/pdf' })
-    const spec = await sheetDoc(buyer)
-    const sent = await as(buyer).post('/api/style-requests', { kind: 'npd', items: [{
-      product: 'Wrap Dress', styleNumber: 'FYL-5001', category: 'dress', brand: 'FYLTR', totalQty: '',
-      colourways: [{ name: 'Olive', code: '19-0419 TCX', hex: '#556b2f' }], fabricDetails: [{ name: 'Cotton Poplin', composition: '100% Cotton' }],
-      ecommerceLink: '', techPackLink: '', photos: [{ image: PHOTO, colourway: 'Olive' }], docIds: [tp.body.id, spec.body.id],
-    }] })
+    const sent = await as(buyer).post('/api/style-requests', { kind: 'npd', items: [style()] })
     assert.equal(sent.status, 201, JSON.stringify(sent.body))
     // The approver must choose: an NPD request has no master order of its own.
     assert.equal((await as(master).post(`/api/style-requests/${sent.body.requestId}/approve`)).status, 400)
     const ok = await as(master).post(`/api/style-requests/${sent.body.requestId}/approve`, { masterOrderId: mo._id })
     assert.equal(ok.status, 200, JSON.stringify(ok.body))
     const o = await Order.findById(ok.body.created[0].id).lean()
-    assert.deepEqual([o.phase, o.product, o.styleNumber, o.category, o.brand, o.masterOrderId, o.totalQty], ['development', 'Wrap Dress', 'FYL-5001', 'DRESS', 'FYLTR', mo._id, null])
-    assert.equal(o.colourways[0].code, '19-0419 TCX')
-    assert.equal(o.photos[0].colourway, 'Olive')
-    assert.equal(o.fabricDetails[0].composition, '100% Cotton')
-    assert.equal(await Document.countDocuments({ orderId: o._id }), 2)
+    assert.deepEqual([o.phase, o.product, o.masterOrderId, o.totalQty, o.techPackLink], ['development', 'New product (Olive, Black)', mo._id, 800, 'https://drive.example.com/tp'])
+    assert.deepEqual(o.colourways.map(c => c.name), ['Olive', 'Black'])
+    assert.equal(new Date(o.delivery).toISOString().slice(0, 10), '2027-01-20')
   })
 
-  test('a style without a product name or category is refused', async () => {
+  test('the quantity may wait; the colours, delivery date and tech pack link may not', async () => {
     const { buyer } = await arrange()
-    assert.equal((await as(buyer).post('/api/style-requests', { kind: 'npd', items: [{ category: 'DRESS' }] })).status, 400)
-    assert.equal((await as(buyer).post('/api/style-requests', { kind: 'npd', items: [{ product: 'X' }] })).status, 400)
-    assert.equal((await as(buyer).post('/api/style-requests', { kind: 'npd', items: [{ product: 'X', category: 'TOP', photos: [{ image: 'javascript:1' }] }] })).status, 400)
+    const send = item => as(buyer).post('/api/style-requests', { kind: 'npd', items: [item] })
+    assert.equal((await send(style({ quantity: '' }))).status, 201)
+    for (const [over, why] of [[{ colours: [] }, /colour/], [{ delivery: '' }, /delivery/], [{ delivery: 'soon' }, /date/], [{ techPackLink: '' }, /tech pack/], [{ techPackLink: 'javascript:1' }, /./], [{ quantity: 2.5 }, /whole number/]]) {
+      const res = await send(style(over))
+      assert.equal(res.status, 400, JSON.stringify(over))
+      assert.match(res.body.error, why)
+    }
   })
 
-  test('the review shows each style and its files; the list never carries photo data', async () => {
-    const { master, buyer } = await arrange()
-    const spec = await sheetDoc(buyer, 'fit_approval')
-    const sent = await as(buyer).post('/api/style-requests', { kind: 'npd', items: [{ product: 'Top', category: 'TOP', photos: [{ image: PHOTO }], docIds: [spec.body.id] }] })
-    const list = await as(master).get('/api/style-requests')
-    assert.equal(list.body[0].items[0].photos, undefined)
-    assert.equal(list.body[0].items[0].photoCount, 1)
-    const prev = await as(master).post(`/api/style-requests/${sent.body.requestId}/preview`)
-    assert.equal(prev.status, 200)
-    assert.equal(prev.body.items[0].files[0].measurementLabel, 'fit_approval')
-    assert.equal(prev.body.items[0].photos.length, 1)
+  test('a request from the earlier guided form is still approved as it was sent', async () => {
+    const { master, buyer, mo } = await arrange()
+    const req = await StyleRequest.create({ kind: 'npd', buyerId: buyer._id, requestedBy: buyer._id, items: [{
+      product: 'Wrap Dress', styleNumber: 'FYL-5001', category: 'DRESS', brand: 'FYLTR', totalQty: null,
+      colourways: [{ name: 'Olive', code: '19-0419 TCX', hex: '#556b2f' }], fabricDetails: [], ecommerceLink: '', techPackLink: 'https://drive.example.com/tp', photos: [], photoCount: 0, docIds: [],
+    }] })
+    const ok = await as(master).post(`/api/style-requests/${req._id}/approve`, { masterOrderId: mo._id })
+    assert.equal(ok.status, 200, JSON.stringify(ok.body))
+    const o = await Order.findById(ok.body.created[0].id).lean()
+    assert.deepEqual([o.product, o.styleNumber, o.category, o.colourways[0].code], ['Wrap Dress', 'FYL-5001', 'DRESS', '19-0419 TCX'])
   })
 })
 
@@ -167,6 +163,19 @@ describe('a sheet of styles from a customer', () => {
     const ok = await as(master).post(`/api/style-requests/${sent.body.requestId}/approve`, { masterOrderId: replenMo._id })
     assert.equal(ok.status, 200, JSON.stringify(ok.body))
     assert.equal((await Order.findById(ok.body.created[0].id).lean()).masterOrderId, replenMo._id)
+  })
+
+  test('a customer\'s NPD row needs its tech pack link; Tradio\'s does not', async () => {
+    const { master } = await arrange()
+    const buyer = await makeBuyer()
+    const csv = 'Brand,Style No,Description,Image,Amazon link,Fabric,Stage\nFYLTR,N-1,Wrap Dress,https://img.example.com/1.jpg,,Cotton,NPD\n'
+    const mine = await as(buyer).post('/api/style-imports', { filename: 'npd.csv', data: Buffer.from(csv).toString('base64') })
+    const prev = await as(buyer).post(`/api/style-imports/${mine.body.id}/preview`, {})
+    assert.equal(prev.body.rows[0].status, 'error')
+    assert.match(prev.body.rows[0].problems.join(' '), /Tech pack link is missing/)
+    const mo = await makeMasterOrder({ buyerId: buyer._id, createdBy: master._id })
+    const tradio = await as(master).post('/api/style-imports', { filename: 'npd.csv', data: Buffer.from(csv).toString('base64') })
+    assert.equal((await as(master).post(`/api/style-imports/${tradio.body.id}/preview`, { masterOrderId: mo._id })).body.rows[0].status, 'ok')
   })
 
   test('Tradio still has to choose a master order when it imports', async () => {

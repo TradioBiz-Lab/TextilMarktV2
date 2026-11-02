@@ -4,10 +4,10 @@ import { T } from '../constants.js'
 import { useToast } from './ui.jsx'
 import { ReplenRequestModal } from './ReplenRequestModal.jsx'
 import { StyleRequestsPanel } from './StyleRequestsPanel.jsx'
-import { CreateStyleWizard } from '../pages/admin/CreateStyleWizard.jsx'
+import { NpdRequestModal } from './NpdRequestModal.jsx'
 
 // The customer's two ways in, on its home page, under its numbers: reorder delivered styles (Order replen, with a tab to send a
-// sheet), and start new styles (New product development, the guided Create Style steps). Both go to Tradio for review, which
+// sheet), and start new styles (New product development: colours, quantity, delivery date and tech pack link, or a sheet). Both go to Tradio for review, which
 // also chooses the master order; "Your requests" below shows where each stands.
 export function CustomerActions() {
   const toast = useToast()
@@ -31,13 +31,13 @@ export function CustomerActions() {
     <div style={{ marginBottom: 18 }}>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         {card('replen', <RefreshCw size={20} color="#0f766e" />, '#ccfbf1', 'Order replen', 'Reorder delivered styles, or send a sheet of styles')}
-        {card('npd', <FlaskConical size={20} color="#5b21b6" />, '#ede9fe', 'New product development', 'Start a new style, step by step')}
+        {card('npd', <FlaskConical size={20} color="#5b21b6" />, '#ede9fe', 'New product development', 'Start new styles: colours, delivery date and tech pack')}
       </div>
       <StyleRequestsPanel reloadKey={requestsKey} />
       {open === 'replen' && <ReplenRequestModal onClose={() => setOpen(null)} onSent={sent} />}
       {open === 'npd' && (
-        <CreateStyleWizard forCustomer masterOrders={[]} onClose={() => setOpen(null)}
-          onCreated={(_, r) => { toast(`Sent to Tradio for review: ${r?.count || 1} style${r?.count === 1 ? '' : 's'}`, 'success'); sent() }} />
+        <NpdRequestModal onClose={() => setOpen(null)}
+          onSent={r => { toast(`Sent to Tradio for review: ${r?.count || 1} style${r?.count === 1 ? '' : 's'}`, 'success'); sent() }} />
       )}
     </div>
   )

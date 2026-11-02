@@ -106,7 +106,9 @@ function ReviewModal({ request, onClose, onDecided }) {
             <div style={{ flex: 1, minWidth: 220 }}>
               <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>{it.product}{it.styleNumber ? ` (${it.styleNumber})` : ''}</div>
               <div style={meta}>
-                <div>{[it.category, it.brand, it.totalQty ? `${Number(it.totalQty).toLocaleString('en-IN')} pcs` : 'quantity not given yet', it.photoCount ? `${it.photoCount} photo${it.photoCount !== 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ')}</div>
+                <div>{[it.category, it.brand, (it.totalQty ?? it.quantity) ? `${Number(it.totalQty ?? it.quantity).toLocaleString('en-IN')} pcs` : 'quantity not given yet', it.photoCount ? `${it.photoCount} photo${it.photoCount !== 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ')}</div>
+                {it.delivery && <div>Expected delivery: <b style={{ color: T.text }}>{fmtDate(it.delivery)}</b></div>}
+                {it.colours?.length > 0 && <div>Colours: {it.colours.join(', ')}</div>}
                 {it.colourways?.length > 0 && <div>Colourways: {it.colourways.map(c => c.name + (c.code ? ` (${c.code})` : '')).join(', ')}</div>}
                 {it.fabricDetails?.length > 0 && <div>Fabric: {it.fabricDetails.map(f => [f.name, f.composition, f.gsm && `${f.gsm} GSM`].filter(Boolean).join(', ')).join('; ')}</div>}
                 {it.ecommerceLink && <div>Product link: <a href={it.ecommerceLink} target="_blank" rel="noopener noreferrer" style={{ color: T.primaryDeep }}>{it.ecommerceLink}</a></div>}

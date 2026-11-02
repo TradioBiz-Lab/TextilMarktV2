@@ -135,7 +135,8 @@ export function StyleImportModal({ masterOrders, presetMasterOrderId, onClose, o
             </button>
             <div style={{ fontSize: 12, color: T.textMuted, marginTop: 10, lineHeight: 1.6 }}>
               <b>Every row needs:</b> Brand, Style No, Description, a picture, Fabric and Stage (NPD or Replen). A replen also needs its Amazon link.
-              <br /><b>Optional:</b> Category (worked out from the description when blank), Tech pack link, Quantity, Colours.
+              {forReview && <><br />A new product (Stage NPD) also needs its <b>Tech pack link</b>.</>}
+              <br /><b>Optional:</b> Category (worked out from the description when blank), {forReview ? '' : 'Tech pack link, '}Quantity, Colours.
               <br />In Excel, place each picture over its row; in a CSV, give a web address in the Image column.
             </div>
             <button onClick={downloadTemplate} style={{ marginTop: 8, fontSize: 12, fontWeight: 700, color: T.primaryDeep, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 5 }}>

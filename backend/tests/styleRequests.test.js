@@ -15,12 +15,13 @@ before(async () => { await startTestDb(); await startServer() })
 after(async () => { await stopServer(); await stopTestDb() })
 beforeEach(clearDb)
 
+// A customer's new product (NPD) row carries its tech pack link.
 const CSV = [
-  'Brand,Style No,Description,Image,Amazon link,Fabric,Stage',
-  'FYLTR,F-1,Maxi Dress,https://img.example.com/1.jpg,https://amazon.in/dp/1,Cotton,Replen',
-  'FYLTR,F-2,Midi Dress,https://img.example.com/2.jpg,,Cotton,NPD',
+  'Brand,Style No,Description,Image,Amazon link,Fabric,Stage,Tech pack link',
+  'FYLTR,F-1,Maxi Dress,https://img.example.com/1.jpg,https://amazon.in/dp/1,Cotton,Replen,',
+  'FYLTR,F-2,Midi Dress,https://img.example.com/2.jpg,,Cotton,NPD,https://drive.example.com/tp2',
 ].join('\n')
-const BAD_CSV = CSV + '\nFYLTR,F-3,Wrap Dress,https://img.example.com/3.jpg,,,NPD'
+const BAD_CSV = CSV + '\nFYLTR,F-3,Wrap Dress,https://img.example.com/3.jpg,,,NPD,https://drive.example.com/tp3'
 
 async function arrange() {
   const master = await makeMaster()

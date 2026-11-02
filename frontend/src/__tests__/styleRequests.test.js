@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { requestTitle, requestWhen, REQUEST_STATUS } from '../styleRequests.js'
+import { requestTitle, requestWhen, REQUEST_STATUS, npdMissing } from '../styleRequests.js'
 import { capsFor } from '../caps.js'
 
 describe('how a request reads', () => {
@@ -16,6 +16,7 @@ describe('how a request reads', () => {
   test('new product development names the style, or how many', () => {
     expect(requestTitle({ kind: 'npd', items: [{ product: 'Wrap Dress', styleNumber: 'FYL-5001' }] })).toBe('New product: Wrap Dress (FYL-5001)')
     expect(requestTitle({ kind: 'npd', items: [{ product: 'A' }, { product: 'B' }, { product: 'C' }] })).toBe('New product development: 3 styles')
+    expect(requestTitle({ kind: 'npd', items: [{ product: 'New product (Olive, Black)' }] })).toBe('New product (Olive, Black)')
   })
 
   test('a sheet names the file and how many styles are ready', () => {
@@ -37,5 +38,17 @@ describe('who sees the review queue', () => {
     expect(capsFor({ role: 'admin', adminType: 'user' }).seeStyleRequests).toBe(false)
     expect(capsFor({ role: 'buyer' }).seeStyleRequests).toBe(false)
     expect(capsFor({ role: 'manufacturer' }).seeStyleRequests).toBe(false)
+  })
+})
+
+describe('a new style on the New product development form', () => {
+  const ok = { colours: ['Olive'], quantity: '', delivery: '2027-01-20', techPackLink: 'https://drive.example.com/tp' }
+  test('is ready with colours, a delivery date and a tech pack link; the quantity may wait', () => {
+    expect(npdMissing(ok)).toBe('')
+    expect(npdMissing({ ...ok, quantity: '800' })).toBe('')
+  })
+  test('says what it still needs', () => {
+    expect(npdMissing({ colours: [], quantity: '', delivery: '', techPackLink: ' ' })).toBe('needs a colour, the expected delivery date, the tech pack link')
+    expect(npdMissing({ ...ok, quantity: '2.5' })).toBe('the quantity has to be a whole number')
   })
 })

@@ -19,10 +19,20 @@ export function requestTitle(r) {
   }
   if (r.kind === 'npd') {
     const its = r.items || []
-    return its.length === 1 ? `New product: ${its[0].product}${its[0].styleNumber ? ` (${its[0].styleNumber})` : ''}` : `New product development: ${its.length} styles`
+    if (its.length !== 1) return `New product development: ${its.length} styles`
+    // The short form names a style "New product (its colours)" until Tradio names it.
+    return /^New product\b/.test(its[0].product || '') ? its[0].product : `New product: ${its[0].product}${its[0].styleNumber ? ` (${its[0].styleNumber})` : ''}`
   }
   const n = r.summary?.ok
   return `${r.filename || 'Style sheet'}${n != null ? `, ${n} style${n !== 1 ? 's' : ''}` : ''}`
+}
+
+/** What a style on the New product development form still needs before it can be sent, or '' when it is ready. */
+export function npdMissing(s) {
+  const gaps = [!s.colours.length && 'a colour', !s.delivery && 'the expected delivery date', !s.techPackLink.trim() && 'the tech pack link'].filter(Boolean)
+  if (gaps.length) return `needs ${gaps.join(', ')}`
+  if (String(s.quantity).trim() && !(Number.isInteger(Number(s.quantity)) && Number(s.quantity) > 0)) return 'the quantity has to be a whole number'
+  return ''
 }
 
 /** When it was sent, short: "2 Nov, 11:40 pm". */

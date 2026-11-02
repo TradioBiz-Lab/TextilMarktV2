@@ -262,8 +262,9 @@ const photoProblem = image => {
  *   status 'error'  has a problem that must be fixed in the sheet (listed in `problems`)
  *   status 'exists' this style number is already in the master order: skipped, never duplicated
  * `existing` is a Map of lower-cased style number -> id of the style already in the master order.
+ * `requireTechPackForNpd`: a customer's sheet, where a new product (NPD) row must carry its tech pack link.
  */
-export function analyseTable(table, { existing = new Map() } = {}) {
+export function analyseTable(table, { existing = new Map(), requireTechPackForNpd = false } = {}) {
   const { headerIndex, columns, ignored } = findColumns(table)
   const missing = REQUIRED_COLUMNS.filter(k => columns[k] === undefined)
   if (missing.length) throw new ImportError(`The sheet is missing these columns: ${missing.map(k => COLUMN_LABELS[k]).join(', ')}.`)
@@ -302,6 +303,7 @@ export function analyseTable(table, { existing = new Map() } = {}) {
     else if (!ecom.link && phase === 'replen') problems.push('Amazon link is missing (needed for a replen).')
     const techPack = cleanLink(linkCell(row, columns, 'techPackLink'), 'Tech pack link')
     if (techPack.error) problems.push(techPack.error)
+    else if (requireTechPackForNpd && phase === 'development' && !techPack.link) problems.push('Tech pack link is missing (needed for a new product).')
 
     // Image: the picture on this row, or an address in the Image column.
     let imageField = null, imagePreview = null, hasImage = false

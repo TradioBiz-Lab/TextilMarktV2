@@ -104,30 +104,20 @@ async function replenItem(raw, user, taken, ownerId = user.id) {
   return { item, errors }
 }
 
-/** One new style from the guided form, checked the way the Create Style form is. */
-async function npdItem(raw, user, taken) {
+/** One new style from the customer's short form: its colours, quantity (optional), expected delivery date and tech pack link.
+ *  It is called "New product" with its colours until Tradio names it on the style page. */
+async function npdItem(raw) {
   const errors = []
-  const colourways = Array.isArray(raw?.colourways) ? raw.colourways : []
-  const fabricDetails = Array.isArray(raw?.fabricDetails) ? raw.fabricDetails : []
-  if (colourways.length > 40) errors.push('Too many colourways (40 at most).')
-  if (fabricDetails.length > 20) errors.push('Too many fabrics (20 at most).')
-  const cw = colourways.map(c => ({ name: text(c?.name ?? c, 60), code: text(c?.code, 40), hex: /^#[0-9a-f]{6}$/i.test(c?.hex || '') ? c.hex : '' })).filter(c => c.name)
-  const photos = stylePhotos(raw?.photos ?? [], cw)
-  if (photos.error) errors.push(photos.error)
+  const colours = coloursField(raw, errors)
+  if (!errors.length && !colours.length) errors.push('Add at least one colour.')
+  const delivery = textField(raw, 'delivery', 'Expected delivery date', 10, errors, { required: true })
+  if (delivery && !ISO_DAY.test(delivery)) errors.push('Expected delivery date is not a date.')
+  const techPackLink = linkField(raw, 'techPackLink', 'Tech pack link', errors)
+  if (!errors.length && !techPackLink) errors.push('The tech pack link is missing.')
   const item = {
-    product: textField(raw, 'product', 'Product name', 300, errors, { required: true }),
-    styleNumber: textField(raw, 'styleNumber', 'Style ID', 60, errors),
-    category: textField(raw, 'category', 'Category', 50, errors, { required: true }).toUpperCase(),
-    brand: textField(raw, 'brand', 'Brand', 60, errors),
-    totalQty: quantityField(raw, errors),
-    colourways: cw,
-    fabricDetails: fabricDetails.map(f => ({ name: text(f?.name, 100), composition: text(f?.composition, 100), gsm: text(f?.gsm, 20), supplier: text(f?.supplier, 100) })).filter(f => f.name),
-    ecommerceLink: linkField(raw, 'ecommerceLink', 'Product link', errors), techPackLink: linkField(raw, 'techPackLink', 'Tech pack link', errors),
-    photos: photos.photos || [],
-    // Kept apart from the photos, so the list (which leaves photo data out) can still say how many there are.
-    photoCount: (photos.photos || []).length,
+    product: `New product${colours.length ? ` (${colours.join(', ')})` : ''}`.slice(0, 300),
+    colours, quantity: quantityField(raw, errors), delivery, techPackLink, docIds: [],
   }
-  item.docIds = errors.length ? [] : await docsField(raw, user, errors, taken)
   return { item, errors }
 }
 
@@ -163,7 +153,7 @@ router.post('/', sendLimiter, async (req, res) => {
 
 // POST /api/style-requests/direct-replen  { masterOrderId, items: [...] }   (Tradio) -> the replens, created at once
 // The admin's Add replen: the same choices a customer makes (styles in production, colours, quantity, links, expected
-// delivery date, measurement sheets), but no review, and the admin picks the master order there and then. Every style has to
+// delivery date), but no review, and the admin picks the master order there and then. Every style has to
 // belong to that master order's customer.
 router.post('/direct-replen', sendLimiter, async (req, res) => {
   try {
@@ -278,7 +268,7 @@ router.post('/:id/preview', readLimiter, async (req, res) => {
     if (!doc.data) return res.json({ request: item, rows: null })
     const chosen = typeof req.body?.masterOrderId === 'string' && req.body.masterOrderId ? req.body.masterOrderId : doc.masterOrderId
     const mo = chosen && ORDER_ID_RE.test(chosen) ? await MasterOrder.findById(chosen).lean() : null
-    const analysis = await analyse({ data: doc.data, filename: doc.filename }, mo && String(mo.buyerId) === String(doc.buyerId) ? mo : null)
+    const analysis = await analyse({ data: doc.data, filename: doc.filename }, mo && String(mo.buyerId) === String(doc.buyerId) ? mo : null, { requireTechPackForNpd: true })
     res.json({ request: item, ...analysis, rows: analysis.rows.map(({ payload, ...row }) => row) })
   } catch (err) {
     if (err instanceof ImportError) return fail(res, 400, err.message)
@@ -311,7 +301,7 @@ router.post('/:id/approve', decideLimiter, masterOnly, async (req, res) => {
     let created = [], failed = []
     if (doc.kind === 'import') {
       if (!doc.data) return refuse(409, 'The sheet is no longer kept for this request.')
-      const analysis = await analyse({ data: doc.data, filename: doc.filename }, mo)
+      const analysis = await analyse({ data: doc.data, filename: doc.filename }, mo, { requireTechPackForNpd: true })
       const { ok, errors, exists } = analysis.summary
       if (errors && !doc.skipInvalid) return refuse(409, `${errors} row${errors !== 1 ? 's' : ''} in the sheet now ${errors !== 1 ? 'have' : 'has'} problems (look at the preview), so nothing was created. Decline it and ask for a corrected sheet.`)
       if (!ok) return refuse(409, exists ? 'Every style in the sheet is already in this master order.' : 'There are no valid rows to create.')
@@ -330,8 +320,10 @@ router.post('/:id/approve', decideLimiter, masterOnly, async (req, res) => {
               const id = await nextStyleId(buyer.code, it.category, mo.season)
               made = await validateAndCreateOrder({
                 id, buyerId: String(mo.buyerId), masterOrderId: mo._id, season: mo.season || undefined, phase: 'development', createdAt: getToday(),
-                product: it.product, styleNumber: it.styleNumber, category: it.category, brand: it.brand, ...(it.totalQty ? { totalQty: it.totalQty } : {}),
-                colourways: it.colourways, fabricDetails: it.fabricDetails, ecommerceLink: it.ecommerceLink, techPackLink: it.techPackLink, photos: it.photos,
+                // The short form sends colours, quantity and delivery; requests from the earlier guided form carry the fuller shape.
+                product: it.product, styleNumber: it.styleNumber, category: it.category, brand: it.brand, ...((it.totalQty ?? it.quantity) ? { totalQty: it.totalQty ?? it.quantity } : {}),
+                colourways: it.colourways || (it.colours || []).map(name => ({ name })), fabricDetails: it.fabricDetails, ecommerceLink: it.ecommerceLink, techPackLink: it.techPackLink,
+                photos: it.photos, delivery: it.delivery || undefined,
               })
               if (made.ok || made.error !== 'Order ID already exists') break
             }

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { AlertTriangle, Check, RefreshCw, Search, Trash2, FileSpreadsheet, ChevronRight } from '../icons.jsx'
-import { T, MEASUREMENTS_FILE_PROPS, MEASUREMENT_LABEL_NAME, getToday, replenEligible, fmtDate } from '../constants.js'
-import { Btn, FileUpload, FlexRow, Input, MeasurementLabelSelect, Modal, ProductThumb, fileUploadPayload, useToast } from './ui.jsx'
+import { AlertTriangle, RefreshCw, Search, FileSpreadsheet, ChevronRight } from '../icons.jsx'
+import { T, replenEligible, fmtDate } from '../constants.js'
+import { Btn, FlexRow, Input, Modal, ProductThumb, useToast } from './ui.jsx'
 import { TagInput } from './TagInput.jsx'
 import { MasterOrderPicker } from './MasterOrderPicker.jsx'
 import { useApp } from '../context.jsx'
@@ -9,26 +9,22 @@ import { styleRequestsApi } from '../api.js'
 import { autoShortenLink } from '../links.js'
 import { StyleImportModal } from '../pages/admin/StyleImportModal.jsx'
 
-let _sheetKey = 1
 /** What a chosen style starts with: its own colours and links, for the customer to change. */
-const startFor = o => ({ colours: (o?.colourways || []).map(c => c.name), quantity: '', ecommerceLink: o?.ecommerceLink || '', techPackLink: o?.techPackLink || '', delivery: '', sheets: [], pending: null, pendingLabel: 'customer_submission' })
-
-const label = { display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }
+const startFor = o => ({ colours: (o?.colourways || []).map(c => c.name), quantity: '', ecommerceLink: o?.ecommerceLink || '', techPackLink: o?.techPackLink || '', delivery: '' })
 
 /** One line saying what has been filled in for a chosen style, shown while its details are folded away. */
 function summaryOf(c) {
   const bits = [c.delivery ? `delivery ${fmtDate(c.delivery)}` : null, String(c.quantity).trim() ? `${Number(c.quantity).toLocaleString('en-IN')} pcs` : null,
-    c.colours.length ? c.colours.join(', ') : null, c.sheets.length ? `${c.sheets.length} sheet${c.sheets.length !== 1 ? 's' : ''}` : null].filter(Boolean)
+    c.colours.length ? c.colours.join(', ') : null].filter(Boolean)
   return bits.join(' · ')
 }
 
 // Reordering styles that have been delivered (a replen). Tick any of them and say, for each, the colours, how many (optional),
-// the product and tech pack links, the expected delivery date and any measurement sheets; a ticked style stays folded until
-// it is opened. Or, on the second tab, send a sheet of styles.
+// the product and tech pack links and the expected delivery date; a ticked style stays folded until it is opened. Or, on the second tab, send a sheet of styles.
 //   A customer (Order replen): the request goes to Tradio's master admin for review, who picks the master order.
 //   Tradio (`admin`, Add replen): for one customer (`buyerId`), created at once under the master order chosen here.
 export function ReplenRequestModal({ preselect = [], onClose, onSent, admin = false, buyerId = null }) {
-  const { orders, masterOrders, uploadDoc, createMasterOrder, refreshOrders } = useApp()
+  const { orders, masterOrders, createMasterOrder, refreshOrders } = useApp()
   const toast = useToast()
   const [tab, setTab] = useState('choose')
   const [q, setQ] = useState('')
@@ -65,13 +61,7 @@ export function ReplenRequestModal({ preselect = [], onClose, onSent, admin = fa
       const items = []
       for (const id of ids) {
         const c = chosen[id]
-        // The sheets go up first, on no style yet; they are moved onto the new style when it is made.
-        const docIds = []
-        for (const sh of c.sheets) {
-          const d = await uploadDoc({ type: 'measurements', name: `Measurements, ${(orders || []).find(o => o.id === id)?.product || id}`, issuer: '', issueDate: getToday(), expiryDate: null, orderId: null, mfrId: null, measurementLabel: sh.label, ...fileUploadPayload(sh.file) })
-          docIds.push(d.id)
-        }
-        items.push({ sourceOrderId: id, colours: c.colours, ...(String(c.quantity).trim() ? { quantity: Math.floor(Number(c.quantity)) } : {}), ecommerceLink: c.ecommerceLink.trim(), techPackLink: c.techPackLink.trim(), delivery: c.delivery, docIds })
+        items.push({ sourceOrderId: id, colours: c.colours, ...(String(c.quantity).trim() ? { quantity: Math.floor(Number(c.quantity)) } : {}), ecommerceLink: c.ecommerceLink.trim(), techPackLink: c.techPackLink.trim(), delivery: c.delivery })
       }
       if (admin) {
         let target = moId
@@ -151,23 +141,6 @@ export function ReplenRequestModal({ preselect = [], onClose, onSent, admin = fa
                         <div className="form-grid-2" style={{ gap: 10 }}>
                           <Input label="Product link" value={c.ecommerceLink} onChange={e => update(o.id, { ecommerceLink: autoShortenLink(e.target.value) })} placeholder="https://www.amazon.in/dp/…" />
                           <Input label="Tech pack link" value={c.techPackLink} onChange={e => update(o.id, { techPackLink: e.target.value })} placeholder="https://…" />
-                        </div>
-                        <div>
-                          <span style={label}>Measurement sheets</span>
-                          {c.sheets.map(sh => (
-                            <FlexRow key={sh.key} gap={8} style={{ fontSize: 12.5, color: T.text, marginBottom: 6 }}>
-                              <Check size={13} color={T.success} /><span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sh.file?.name || 'Sheet'}</span>
-                              <span style={{ fontSize: 10.5, fontWeight: 800, color: '#075985', background: '#e0f2fe', border: '1px solid #7dd3fc', borderRadius: 10, padding: '1px 8px' }}>{MEASUREMENT_LABEL_NAME[sh.label]}</span>
-                              <button onClick={() => update(o.id, { sheets: c.sheets.filter(x => x.key !== sh.key) })} aria-label="Remove the sheet" style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textLight, display: 'flex' }}><Trash2 size={13} /></button>
-                            </FlexRow>
-                          ))}
-                          <FileUpload {...MEASUREMENTS_FILE_PROPS} file={c.pending} onFile={f => update(o.id, { pending: f })} />
-                          {c.pending && (
-                            <FlexRow gap={8} style={{ marginTop: 6, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                              <div style={{ minWidth: 200 }}><MeasurementLabelSelect value={c.pendingLabel} onChange={v => update(o.id, { pendingLabel: v })} /></div>
-                              <Btn size="sm" disabled={!c.pendingLabel} onClick={() => update(o.id, { sheets: [...c.sheets, { key: _sheetKey++, file: c.pending, label: c.pendingLabel }], pending: null })}>Add sheet</Btn>
-                            </FlexRow>
-                          )}
                         </div>
                         <FlexRow justify="flex-end"><Btn size="sm" variant="secondary" onClick={() => setOpenId(null)}>Done with this style</Btn></FlexRow>
                       </div>

@@ -58,10 +58,11 @@ async function loadMasterOrder(masterOrderId, res, user) {
 }
 
 /** The file's rows, checked against the styles already in the master order. */
-export async function analyse(upload, mo) {
+/** `opts.requireTechPackForNpd`: a customer's sheet (see analyseTable). */
+export async function analyse(upload, mo, opts = {}) {
   const styles = mo ? await Order.find({ masterOrderId: mo._id, styleNumber: { $nin: ['', null] } }, { _id: 1, styleNumber: 1 }).lean() : []
   const existing = new Map(styles.map(o => [String(o.styleNumber).trim().toLowerCase(), o._id]))
-  return analyseTable(await readTable(upload.data, upload.filename), { existing })
+  return analyseTable(await readTable(upload.data, upload.filename), { existing, ...opts })
 }
 
 /**
@@ -118,7 +119,7 @@ router.post('/:id/preview', readLimiter, async (req, res) => {
   try {
     const upload = await loadUpload(req, res); if (!upload) return
     const target = await loadMasterOrder(req.body?.masterOrderId, res, req.user); if (!target) return
-    const analysis = await analyse(upload, target.mo)
+    const analysis = await analyse(upload, target.mo, { requireTechPackForNpd: req.user.role === 'buyer' })
     res.json({
       uploadId: upload._id, filename: upload.filename,
       masterOrder: target.mo ? { id: target.mo._id, orderName: target.mo.orderName, season: target.mo.season || '', buyerCompany: target.buyer.company } : null,
@@ -137,7 +138,7 @@ router.post('/:id/commit', createLimiter, async (req, res) => {
     upload = await loadUpload(req, res); if (!upload) return
     const target = await loadMasterOrder(req.body?.masterOrderId, res, req.user); if (!target) return
     const { mo, buyer } = target
-    const analysis = await analyse(upload, mo)
+    const analysis = await analyse(upload, mo, { requireTechPackForNpd: req.user.role === 'buyer' })
     const { ok, errors, exists } = analysis.summary
     if (errors && req.body?.skipInvalid !== true)
       return fail(res, 409, `${errors} row${errors !== 1 ? 's have' : ' has'} problems, so nothing was created. Fix the sheet, or create only the ${ok} valid row${ok !== 1 ? 's' : ''}.`, { summary: analysis.summary })

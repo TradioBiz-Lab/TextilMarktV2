@@ -1,4 +1,4 @@
-import { dayNumber, getToday, isStageDone, deliveryStatus, stageStatusOf, stageIsOverdue, effectiveEta, inFlightStages, fmtDate, splitDue } from './constants.js'
+import { dayNumber, getToday, isStageDone, deliveryStatus, stageStatusOf, stageIsOverdue, effectiveEta, inFlightStages, fmtDate, splitDue, phaseOf } from './constants.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dashboard "AI summary" - PLACEHOLDER GENERATOR.
@@ -8,7 +8,8 @@ import { dayNumber, getToday, isStageDone, deliveryStatus, stageStatusOf, stageI
 //
 //   generateSummary(ctx) -> Promise<{ lines: string[], generatedAt: string, source: string }>
 //
-// `ctx` is { role, user, orders, actionItems }. To plug in a real model, replace
+// `ctx` is { role, user, orders, actionItems, preOrders }: `orders` are the styles in production, `preOrders` those in
+// Replen and New Product Development (each gets a line of its own). To plug in a real model, replace
 // the body of `generateSummary` with a backend call that returns the same
 // object; the card, loading state and placement need no changes. Lines may use
 // **bold** for emphasis.
@@ -115,8 +116,34 @@ function nextDeliveryLine(rows, role, todayNum) {
   return `Next delivery: **${next.order.product}**${who} on ${shortDate(next.due.date)} (${days === 0 ? 'today' : `in ${plural(days, 'day')}`}${promised}).`
 }
 
-function build({ role, user, orders, actionItems }) {
+/**
+ * One line each for Replen and New Product Development: how many styles (and pieces), how many have a factory and how many
+ * are waiting for one, steps past plan, and the earliest expected delivery. Nothing for a stage with no styles.
+ */
+function pipelineLines(pre, role, userId, todayNum) {
+  const lines = []
+  for (const [phase, title] of [['replen', 'Replen'], ['development', 'New product development']]) {
+    const styles = (pre || []).filter(o => phaseOf(o) === phase)
+    if (!styles.length) continue
+    const pcs = styles.reduce((n, o) => n + (o.totalQty || 0), 0)
+    const withFactory = styles.filter(o => (o.assignments || []).length).length
+    const waiting = styles.length - withFactory
+    const splits = styles.flatMap(o => (o.assignments || []).filter(a => a.status !== 'On Hold' && (role !== 'manufacturer' || String(a.mid) === String(userId))))
+    const late = splits.reduce((n, a) => n + inFlightStages(a, { windowDays: 3650 }).filter(({ stage }) => stageIsOverdue(stage)).length, 0)
+    const next = styles.filter(o => o.delivery && dayNumber(o.delivery) >= todayNum).sort((a, b) => dayNumber(a.delivery) - dayNumber(b.delivery))[0]
+    const who = role === 'admin' && next ? ` for ${next.buyerCompany || 'an unknown customer'}` : ''
+    const factories = role === 'manufacturer' ? '' : withFactory && waiting ? `, ${withFactory} with a factory and ${waiting} waiting for one`
+      : withFactory ? `, all with a factory` : `, none with a factory yet`
+    const steps = withFactory ? `; ${late ? `${plural(late, 'step')} past plan` : 'nothing past plan'}` : ''
+    const due = next ? ` Earliest expected delivery: **${next.product}**${who} on ${shortDate(next.delivery)}.` : ''
+    lines.push(`${title}: **${plural(styles.length, 'style')}**${pcs ? ` (${pcs.toLocaleString('en-IN')} pcs)` : ''}${factories}${steps}.${due}`)
+  }
+  return lines
+}
+
+function build({ role, user, orders, actionItems, preOrders }) {
   const todayNum = dayNumber(getToday())
+  const pipeline = pipelineLines(preOrders, role, user?.id, todayNum)
   const rows = buildRows(orders, role, user?.id, todayNum)   // order x factory
   const orderRows = groupByOrder(rows)                        // one per order
   const live = orderRows.filter(r => !r.delivered)
@@ -126,8 +153,16 @@ function build({ role, user, orders, actionItems }) {
   const lines = []
 
   if (!live.length) {
+    // With nothing in production, the Replen and New Product Development lines are the news.
+    if (!orderRows.length && pipeline.length) return pipeline
+    // Styles on hold or still waiting for a factory make no rows; say so rather than "nothing is in progress".
+    const held = (orders || []).filter(o => (o.assignments || []).length && o.assignments.every(a => a.status === 'On Hold')).length
+    const waitingForFactory = role === 'manufacturer' ? 0 : (orders || []).filter(o => !(o.assignments || []).length).length
+    const rest = [held ? `${held} on hold` : '', waitingForFactory ? `${plural(waitingForFactory, 'style')} waiting for a factory` : ''].filter(Boolean)
     lines.push(orderRows.length
-      ? `All ${plural(orderRows.length, 'order')} on your book ${orderRows.length === 1 ? 'is' : 'are'} delivered, nothing is in progress.`
+      ? rest.length
+        ? `${plural(orderRows.length, 'order')} delivered; nothing else in production is moving (${list(rest)}).`
+        : `All ${plural(orderRows.length, 'order')} in production ${orderRows.length === 1 ? 'is' : 'are'} delivered, nothing is in progress.`
       : (() => {
         // Styles that exist but have no manufacturer yet produce no rows, so they used to read as "no orders".
         const unassigned = role === 'manufacturer' ? 0 : (orders || []).filter(o => !(o.assignments || []).length).length
@@ -135,7 +170,7 @@ function build({ role, user, orders, actionItems }) {
           ? `${plural(unassigned, 'style')} ${unassigned === 1 ? 'has' : 'have'} been created but no manufacturer is assigned yet, so there is no production to track.`
           : 'No orders yet, there is nothing to summarise.'
       })())
-    return lines
+    return [...lines, ...pipeline]
   }
 
   const mix = `${count('ontrack')} on track, ${count('late')} delayed, ${count('blocked')} blocked`
@@ -152,6 +187,7 @@ function build({ role, user, orders, actionItems }) {
   }
 
   lines.push(attentionLine(live, role))
+  lines.push(...pipeline)
 
   // The action-items line differs most by role: it answers "what is waiting on me".
   if (role === 'admin') {

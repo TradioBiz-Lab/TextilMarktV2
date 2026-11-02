@@ -49,3 +49,42 @@ describe('dashboard summary', () => {
     expect(text).not.toMatch(/Fabric delay|Theirs/)
   })
 })
+
+describe('dashboard summary: Replen and New Product Development', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-03T10:00:00Z')) })
+  afterEach(() => vi.useRealTimers())
+  const runPre = (orders, preOrders, role = 'buyer') => generateSummary({ role, user: { id: 'b1', name: 'Buyer' }, orders, preOrders, actionItems: [] }).then(r => r.lines.join('\n'))
+  const replen = (over = {}) => order({ id: `R-${Math.random()}`, phase: 'replen', totalQty: null, delivery: null, assignments: [], ...over })
+
+  test('says how many replen styles there are, which have a factory, what is late and what lands first', async () => {
+    const pre = [
+      replen({ product: 'Flared Top', totalQty: 1200, delivery: '2026-12-15', assignments: [{ mid: 'm1', qty: 1200, status: 'Processing', stages: [stage({ baselineEta: '2026-10-25' })] }] }),
+      replen({ product: 'Midi Dress', totalQty: 500, delivery: '2027-01-10' }),
+      replen({ product: 'Skirt' }),
+    ]
+    const text = await runPre([order({ delivery: '2026-12-31' })], pre)
+    expect(text).toMatch(/Replen: \*\*3 styles\*\* \(1,700 pcs\), 1 with a factory and 2 waiting for one; 1 step past plan\. Earliest expected delivery: \*\*Flared Top\*\* on 15 Dec 2026\./)
+  })
+
+  test('New Product Development gets its own line, and nothing is said for an empty stage', async () => {
+    const text = await runPre([], [replen({ phase: 'development', product: 'Wrap Dress' })])
+    expect(text).toMatch(/New product development: \*\*1 style\*\*, none with a factory yet\./)
+    expect(text).not.toMatch(/Replen:/)
+    expect(text).not.toMatch(/No orders yet/)
+  })
+
+  test('with everything in production delivered, the replen line still comes through', async () => {
+    const done = order({ assignments: [{ mid: 'm1', qty: 100, status: 'Delivered', stages: [stage({ isDelivery: true, status: 'done', unitsDone: 1 })] }] })
+    const text = await runPre([done], [replen({ product: 'Flared Top' })])
+    expect(text).toMatch(/delivered, nothing is in progress/)
+    expect(text).toMatch(/Replen: \*\*1 style\*\*/)
+  })
+
+  test('with production delivered but a style on hold or waiting for a factory, it says so instead of "nothing is in progress"', async () => {
+    const done = order({ assignments: [{ mid: 'm1', qty: 100, status: 'Delivered', stages: [stage({ isDelivery: true, status: 'done', unitsDone: 1 })] }] })
+    const held = order({ id: 'H', assignments: [{ mid: 'm1', qty: 10, status: 'On Hold', stages: [stage()] }] })
+    const text = await runPre([done, held, order({ id: 'U', assignments: [] })], [])
+    expect(text).toMatch(/1 order delivered; nothing else in production is moving \(1 on hold and 1 style waiting for a factory\)\./)
+    expect(text).not.toMatch(/nothing is in progress/)
+  })
+})

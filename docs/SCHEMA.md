@@ -875,8 +875,10 @@ requestedBy   ObjectId    the customer user who sent it
 masterOrderId String      the master order the styles go under: chosen by the master admin at approval (a replen defaults
                           to the one its styles share)
 items         [Mixed]     replen: { sourceOrderId, colours[], quantity?, ecommerceLink, techPackLink, delivery, note, docIds[] }
-                          npd: { product, styleNumber, category, brand, totalQty?, colourways[], fabricDetails[], links, photos[],
-                          photoCount, docIds[] }. docIds are Documents with no style yet and styleRequestId set.
+                          npd: { product ("New product (colours)"), colours[], quantity?, delivery, techPackLink, docIds[] }; requests
+                          sent before 4 Nov 2026 carry { product, styleNumber, category, brand, totalQty?, colourways[], fabricDetails[],
+                          links, photos[], photoCount, docIds[] } and are still approved as sent. docIds are Documents with no style yet
+                          and styleRequestId set.
 -- import
 filename, data (Buffer, select:false), uploadId, skipInvalid (create the valid rows only), summary { total, ok, errors, exists }
 -- replen
