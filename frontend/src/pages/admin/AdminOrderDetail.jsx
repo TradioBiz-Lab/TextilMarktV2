@@ -269,6 +269,10 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
     return asgn?.stages?.[sgIndex] || null
   }, [order, sgTarget, sgIndex])
 
+  // A hook, so it must sit above the early returns below: dropping this style removes the order from state, and
+  // a render that returns early with fewer hooks than the one before it crashes the page.
+  const postingNotes = useRef(new Set())
+
   if (loading) return <LoadingScreen />
   if (!order) return null
 
@@ -424,7 +428,6 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
   }
 
   // ── Stage updates thread + materials checklist (expand row) ──
-  const postingNotes = useRef(new Set())
   const submitStageUpdateNote = async (mfrId, stageIndex) => {
     const key = `${mfrId}:${stageIndex}`
     const text = (updateDrafts[key] || '').trim()
