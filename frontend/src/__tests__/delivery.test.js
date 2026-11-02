@@ -99,7 +99,16 @@ describe('productionMetrics', () => {
     { id: 'D', totalQty: 40, assignments: [] },
   ]
   test('counts pieces and styles; a style waiting for its manufacturer is in production', () => {
-    expect(productionMetrics(orders)).toEqual({ productsDelivered: 146, productsInProduction: 140, stylesDelivered: 1, stylesInProduction: 3 })
+    expect(productionMetrics(orders)).toEqual({ productsDelivered: 146, productsInProduction: 140, stylesDelivered: 1, stylesInProduction: 3, stylesOnHold: 0 })
+  })
+
+  test('a style wholly on hold is still in production, and counted as on hold too; one factory on hold is not', () => {
+    const held = [...orders,
+      { id: 'E', assignments: [{ qty: 10, status: 'On Hold', stages: wip }] },
+      { id: 'F', assignments: [{ qty: 10, status: 'On Hold', stages: wip }, { qty: 10, status: 'Processing', stages: wip }] }]
+    const m = productionMetrics(held)
+    expect(m.stylesInProduction).toBe(5)
+    expect(m.stylesOnHold).toBe(1)
   })
 })
 

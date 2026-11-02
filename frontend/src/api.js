@@ -68,8 +68,6 @@ export const ordersApi = {
   list: () => api.get('/orders'),
   get: id => api.get(`/orders/${id}`),
   create: data => api.post('/orders', data),
-  // Reorders a style in production as a new Replen style: { quantity, note? }.
-  orderReplen: (id, data) => api.post(`/orders/${id}/replen`, data),
   update: (id, data) => api.post(`/orders/${id}`, data),
   // The customer's own style: its product photos (Tradio uses update).
   setPhotos: (id, photos) => api.post(`/orders/${id}/photos`, { photos }),
@@ -186,6 +184,8 @@ export const styleRequestsApi = {
   list: status => api.get('/style-requests', { params: status ? { status } : undefined }),
   // A customer's replen of several styles, or its new styles from the guided form: { kind: 'replen' | 'npd', items }.
   create: (kind, items) => api.post('/style-requests', { kind, items }, { timeout: 60000 }),
+  // Tradio's Add replen: created at once under the master order chosen (no review).
+  directReplen: (masterOrderId, items) => api.post('/style-requests/direct-replen', { masterOrderId, items }, { timeout: 120000 }),
   // The master order is the master admin's to choose at review: the preview checks a sheet against it, approval uses it.
   preview: (id, masterOrderId) => api.post(`/style-requests/${id}/preview`, masterOrderId ? { masterOrderId } : {}, { timeout: 60000 }),
   approve: (id, masterOrderId) => api.post(`/style-requests/${id}/approve`, masterOrderId ? { masterOrderId } : {}, { timeout: 120000 }),

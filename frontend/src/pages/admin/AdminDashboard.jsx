@@ -172,8 +172,6 @@ export function AdminDashboard({ onNavigate, onOpen }) {
           : caps.isBuyer ? 'Your orders, what needs you, and any alerts'
           : 'Your assigned orders, what needs you, and any alerts'} />
 
-      {/* A customer starts its requests here: Order replen and New product development. */}
-      {caps.isBuyer && <CustomerActions />}
 
       {/* ── Ribbon Publish Modal ── */}
       {showRibbon && (
@@ -241,7 +239,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
             {group('Styles', [
               <StatCard key="total" label="Total" value={allOrders.length} icon={<Shirt size={19} color={T.primaryDeep} />} bg={T.primaryLight} onClick={go('orders')} hint="Open Orders" />,
               <StatCard key="deliv" label="Delivered" value={prod.stylesDelivered} icon={<Truck size={19} color={T.success} />} bg={T.successBg} onClick={go('reports')} hint="Open Reports" />,
-              <StatCard key="prod" label="In production" value={prod.stylesInProduction} icon={<Scissors size={19} color="#92400e" />} bg="#fef9c3" onClick={go('orders')} hint="Open Orders" />,
+              <StatCard key="prod" label="In production" value={prod.stylesInProduction} note={prod.stylesOnHold ? `incl. ${prod.stylesOnHold} on hold` : undefined} icon={<Scissors size={19} color="#92400e" />} bg="#fef9c3" onClick={go('orders')} hint="Open Orders" />,
               <StatCard key="pre" label="New product development" value={inDevelopment} icon={<FlaskConical size={19} color="#5b21b6" />} bg="#ede9fe" onClick={go('orders', { phase: 'development' })} hint="Open New Product Development" />,
               <StatCard key="replen" label="Replen" value={inReplen} icon={<RefreshCw size={19} color="#0f766e" />} bg="#ccfbf1" onClick={go('orders', { phase: 'replen' })} hint="Open Replen" />,
             ])}
@@ -261,6 +259,9 @@ export function AdminDashboard({ onNavigate, onOpen }) {
           </div>
         )
       })()}
+
+      {/* A customer starts its requests here, under its numbers: Order replen and New product development. */}
+      {caps.isBuyer && <CustomerActions />}
 
       <DashboardSummary />
 

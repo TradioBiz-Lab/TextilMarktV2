@@ -84,12 +84,13 @@ async function docsField(item, user, errors, taken) {
   return ids
 }
 
-/** One replen item, checked: the customer's own style in production, and what it wants this time. */
-async function replenItem(raw, user, taken) {
+/** One replen item, checked: a style of `ownerId` (the customer: the sender itself, or the one Tradio is adding for) in
+ *  production, and what is wanted this time. Files must be the sender's own. */
+async function replenItem(raw, user, taken, ownerId = user.id) {
   const errors = []
   const sourceOrderId = typeof raw?.sourceOrderId === 'string' && ORDER_ID_RE.test(raw.sourceOrderId) ? raw.sourceOrderId : null
   const src = sourceOrderId && await Order.findById(sourceOrderId, 'buyerId product styleNumber phase').lean()
-  if (!src || String(src.buyerId) !== String(user.id)) return { errors: ['That style was not found.'] }
+  if (!src || String(src.buyerId) !== String(ownerId)) return { errors: ['That style was not found.'] }
   if ((src.phase || 'production') !== 'production') errors.push('Only a style in production can be reordered.')
   const delivery = textField(raw, 'delivery', 'Expected delivery date', 10, errors, { required: true })
   if (delivery && !ISO_DAY.test(delivery)) errors.push('Expected delivery date is not a date.')
@@ -158,6 +159,42 @@ router.post('/', sendLimiter, async (req, res) => {
     await notify(await masterAdminIds(), { type: 'order', msg: `${req.user.company || 'A customer'} asked for ${what}. It is waiting for your review.` })
     res.status(201).json({ pending: true, requestId: request._id, count: items.length })
   } catch (err) { console.error('[style requests send]', err); fail(res, 500, 'Server error') }
+})
+
+// POST /api/style-requests/direct-replen  { masterOrderId, items: [...] }   (Tradio) -> the replens, created at once
+// The admin's Add replen: the same choices a customer makes (styles in production, colours, quantity, links, expected
+// delivery date, measurement sheets), but no review, and the admin picks the master order there and then. Every style has to
+// belong to that master order's customer.
+router.post('/direct-replen', sendLimiter, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return fail(res, 403, 'Only Tradio adds replens directly; a customer sends a request')
+    const { masterOrderId, items: raw } = req.body || {}
+    if (typeof masterOrderId !== 'string' || !ORDER_ID_RE.test(masterOrderId)) return fail(res, 400, 'Choose the master order the replens go under.')
+    const mo = await MasterOrder.findById(masterOrderId).lean()
+    if (!mo) return fail(res, 404, 'Master order not found.')
+    if (!Array.isArray(raw) || !raw.length) return fail(res, 400, 'Choose at least one style to reorder.')
+    if (raw.length > MAX_ITEMS.replen) return fail(res, 400, `Too many styles at once (${MAX_ITEMS.replen} at most).`)
+    if (new Set(raw.map(r => r?.sourceOrderId)).size !== raw.length) return fail(res, 400, 'The same style is chosen twice.')
+    const taken = new Set(), items = []
+    for (const [i, r] of raw.entries()) {
+      const { item, errors } = await replenItem(r, req.user, taken, mo.buyerId)
+      if (errors.length) return fail(res, 400, `Style ${i + 1}: ${errors[0]}${errors[0] === 'That style was not found.' ? ' (it has to be this master order\'s customer\'s)' : ''}`)
+      items.push(item)
+    }
+    const created = [], failed = []
+    for (const [i, it] of items.entries()) {
+      const src = await Order.findById(it.sourceOrderId).lean()
+      const made = await createReplenFrom(src, { quantity: it.quantity, note: it.note, colourways: it.colours, ecommerceLink: it.ecommerceLink, techPackLink: it.techPackLink, delivery: it.delivery, masterOrderId: mo._id })
+      if (!made.ok) { failed.push({ row: i + 1, styleNumber: it.styleNumber, error: `${it.product}: ${made.error}` }); continue }
+      if (it.docIds.length) await Document.updateMany({ _id: { $in: it.docIds }, uploadedBy: req.user.id, orderId: null }, { $set: { orderId: made.order._id } })
+      created.push({ row: i + 1, id: made.order._id, styleNumber: it.styleNumber, product: it.product })
+    }
+    if (created.length) {
+      await AuditLog.create({ byUser: req.user.id, action: 'Replen Ordered', detail: `Replen of ${dayLabel(created.length)} under ${mo._id}: ${created.map(c => c.id).join(', ')}${failed.length ? `, ${failed.length} failed` : ''}` })
+      await notify([mo.buyerId], { type: 'order', msg: `A replen of ${dayLabel(created.length)} was added for you under ${mo.orderName}`, orderId: created[0].id }, { exceptUserId: req.user.id })
+    }
+    res.status(created.length ? 201 : 400).json({ masterOrderId: mo._id, created, failed, ...(created.length ? {} : { error: failed[0]?.error || 'No replen could be created.' }) })
+  } catch (err) { console.error('[style requests direct replen]', err); fail(res, 500, 'Server error') }
 })
 
 /** A request as the browser gets it: never the sheet bytes or photo data. */
@@ -268,14 +305,16 @@ router.post('/:id/approve', decideLimiter, masterOnly, async (req, res) => {
   const doc = await StyleRequest.findOneAndUpdate({ _id: req.params.id, status: 'pending' }, { $set: { status: 'processing' } }, { new: true }).select('+data')
   if (!doc) return fail(res, 409, 'That request is not waiting for review (it may already be decided, or being approved).')
   let done = false
+  // A refusal puts the request back in the queue BEFORE answering, so whoever reads it next sees it waiting again.
+  const refuse = async (status, error, extra) => { await release(doc._id); done = true; return fail(res, status, error, extra) }
   try {
     let created = [], failed = []
     if (doc.kind === 'import') {
-      if (!doc.data) return fail(res, 409, 'The sheet is no longer kept for this request.')
+      if (!doc.data) return refuse(409, 'The sheet is no longer kept for this request.')
       const analysis = await analyse({ data: doc.data, filename: doc.filename }, mo)
       const { ok, errors, exists } = analysis.summary
-      if (errors && !doc.skipInvalid) return fail(res, 409, `${errors} row${errors !== 1 ? 's' : ''} in the sheet now ${errors !== 1 ? 'have' : 'has'} problems (look at the preview), so nothing was created. Decline it and ask for a corrected sheet.`)
-      if (!ok) return fail(res, 409, exists ? 'Every style in the sheet is already in this master order.' : 'There are no valid rows to create.')
+      if (errors && !doc.skipInvalid) return refuse(409, `${errors} row${errors !== 1 ? 's' : ''} in the sheet now ${errors !== 1 ? 'have' : 'has'} problems (look at the preview), so nothing was created. Decline it and ask for a corrected sheet.`)
+      if (!ok) return refuse(409, exists ? 'Every style in the sheet is already in this master order.' : 'There are no valid rows to create.')
       ;({ created, failed } = await createRows(analysis, { mo, buyer }))
     } else {
       for (const [i, it] of itemsOf(doc).entries()) {
@@ -306,7 +345,7 @@ router.post('/:id/approve', decideLimiter, masterOnly, async (req, res) => {
         }
       }
     }
-    if (!created.length) return fail(res, 409, failed[0]?.error || 'No style could be created.', { failed })
+    if (!created.length) return refuse(409, failed[0]?.error || 'No style could be created.', { failed })
     await StyleRequest.updateOne({ _id: doc._id }, { $set: { status: 'approved', masterOrderId: mo._id, decidedBy: req.user.id, decidedAt: new Date(), createdOrderIds: created.map(c => c.id), failedCount: failed.length }, $unset: { data: 1 } })
     done = true
     const what = doc.kind === 'replen' ? `replen of ${dayLabel(created.length)}` : doc.kind === 'npd' ? `${dayLabel(created.length)} for New Product Development` : dayLabel(created.length)
@@ -314,7 +353,7 @@ router.post('/:id/approve', decideLimiter, masterOnly, async (req, res) => {
     await notify([doc.requestedBy], { type: 'order', msg: `Your request was approved: ${what} added under ${mo.orderName}`, orderId: created[0].id })
     res.json({ approved: true, masterOrderId: mo._id, created, failed })
   } catch (err) {
-    if (err instanceof ImportError) return fail(res, 409, err.message)
+    if (err instanceof ImportError) return refuse(409, err.message)
     console.error('[style requests approve]', err); fail(res, 500, 'Server error')
   } finally { if (!done) await release(doc._id) }
 })

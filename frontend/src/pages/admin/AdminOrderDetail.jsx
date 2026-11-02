@@ -7,8 +7,7 @@ import {
   stageKindOf, kindForCustomerOwner, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
   stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber, getToday, planProgress,
   PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, stageNameForDoc, PO_INVOICE_DOC_TYPES, COMMERCIAL_DOC_TYPES, deliveryDocsOf, defaultStepOwner, stepOwnerOptions,
-  fmtDate, styleStatus, dueDates, dueText, pastDateNote, siblingStepNames, stepNameWarning, isPreProduction, PHASE_LABEL,
-} from '../../constants.js'
+  fmtDate, styleStatus, dueDates, dueText, pastDateNote, siblingStepNames, stepNameWarning, isPreProduction, PHASE_LABEL, replenEligible } from '../../constants.js'
 import { PlanStarter } from '../../components/PlanStarter.jsx'
 import { planTemplatesApi } from '../../api.js'
 import { PromoteModal } from '../../components/PromoteModal.jsx'
@@ -20,7 +19,6 @@ import { swatchHex } from '../../colours.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, DateOrNA, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey, MeasurementLabelSelect } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { normalizeCsvDate } from '../../csvDates.js'
-import { ReplenOrderModal } from '../../components/ReplenOrderModal.jsx'
 import { ReplenRequestModal } from '../../components/ReplenRequestModal.jsx'
 import { capsFor, canWriteStage, canSetAssignmentStatus, canManageStepLists } from '../../caps.js'
 import { ordersApi } from '../../api.js'
@@ -829,11 +827,10 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
           {!unassigned && order.assignments?.length > 1 && (
             <Btn variant="secondary" size="sm" onClick={() => setSelectedMid(null)} icon={<ArrowLeftRight size={13} />}>All splits</Btn>
           )}
-          {caps.orderReplen && (order.phase || 'production') === 'production' && <Btn variant="secondary" size="sm" onClick={() => setReplenOpen(true)} icon={<RefreshCw size={13} />}>Order replen</Btn>}
-          {/* A customer's replen is a request with its own details (several styles can go together); Tradio's is created at once. */}
-          {replenOpen && (caps.isBuyer
-            ? <ReplenRequestModal preselect={[order.id]} onClose={() => setReplenOpen(false)} onSent={() => setReplenOpen(false)} />
-            : <ReplenOrderModal order={order} onClose={() => setReplenOpen(false)} onOrdered={created => { setReplenOpen(false); if (!created.pending) onOpenOrder?.(created.id) }} />)}
+          {/* Only a delivered style can be reordered. A customer orders it for review; Tradio adds it straight away. */}
+          {caps.orderReplen && replenEligible(order) && <Btn variant="secondary" size="sm" onClick={() => setReplenOpen(true)} icon={<RefreshCw size={13} />}>{caps.isBuyer ? 'Order replen' : 'Add replen'}</Btn>}
+          {replenOpen && <ReplenRequestModal preselect={[order.id]} admin={!caps.isBuyer} buyerId={order.buyerId} onClose={() => setReplenOpen(false)}
+            onSent={r => { setReplenOpen(false); if (r?.created?.length === 1) onOpenOrder?.(r.created[0].id) }} />}
           {caps.escalate && <Btn variant="secondary" size="sm" onClick={() => setEscalation('')} icon={<ShieldAlert size={13} />}>Escalate</Btn>}
           {escalation !== null && (
             <Modal title="Escalate this style" subtitle={`${order.product} · ${order.id}`} onClose={() => !escalating && setEscalation(null)} size="sm">

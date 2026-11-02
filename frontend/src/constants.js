@@ -484,6 +484,9 @@ export const developmentOrders = orders => (orders || []).filter(o => phaseOf(o)
 export const replenOrders = orders => (orders || []).filter(o => phaseOf(o) === 'replen')
 export const preProductionOrders = orders => (orders || []).filter(isPreProduction)
 /** A style is on hold when it has manufacturer splits and every one of them is On Hold. It leaves the TNA. */
+/** A style can be reordered (a replen) once it has been delivered: not while it is still in production. */
+export const replenEligible = o => phaseOf(o) === 'production' && styleStatus(o) === 'Delivered'
+
 export const styleOnHold = o => (o?.assignments || []).length > 0 && o.assignments.every(a => a.status === 'On Hold')
 
 // ── Where a style stands: one rule for every screen ─────────────────────────────────────────────────────────────
@@ -551,7 +554,8 @@ export function dueText(order) {
  * with its ordered pieces, so Delivered, In production and the styles in development add up to every style.
  */
 export const productionMetrics = orders => {
-  const m = { productsDelivered: 0, productsInProduction: 0, stylesDelivered: 0, stylesInProduction: 0 }
+  // stylesOnHold: of the styles in production, those wholly on hold (they are still counted in stylesInProduction).
+  const m = { productsDelivered: 0, productsInProduction: 0, stylesDelivered: 0, stylesInProduction: 0, stylesOnHold: 0 }
   for (const o of productionOrders(orders)) {
     const splits = o.assignments || []
     if (!splits.length) { m.stylesInProduction++; m.productsInProduction += o.totalQty ?? 0; continue }
@@ -560,7 +564,7 @@ export const productionMetrics = orders => {
       if (deliveryStatus(o, a).delivered) m.productsDelivered += a.deliveredQty ?? a.qty ?? 0
       else { all = false; m.productsInProduction += a.qty ?? 0 }
     }
-    if (all) m.stylesDelivered++; else m.stylesInProduction++
+    if (all) m.stylesDelivered++; else { m.stylesInProduction++; if (styleOnHold(o)) m.stylesOnHold++ }
   }
   return m
 }

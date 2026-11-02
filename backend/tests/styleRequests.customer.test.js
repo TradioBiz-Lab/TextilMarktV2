@@ -176,3 +176,37 @@ describe('a sheet of styles from a customer', () => {
     assert.equal((await as(master).post(`/api/style-imports/${up.body.id}/preview`, {})).status, 400)
   })
 })
+
+describe('Tradio adds a replen directly', () => {
+  test('creates the replens at once under the master order chosen, with each style\'s details and files, and tells the customer', async () => {
+    const { master, buyer, replenMo } = await arrange()
+    const XLSXT = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    const spec = await as(master).post('/api/documents', { type: 'measurements', name: 'Spec', orderId: null, measurementLabel: 'pp_approval', dataUrl: `data:${XLSXT};base64,${Buffer.from('PK').toString('base64')}`, fileName: 'spec.xlsx', mimeType: XLSXT })
+    assert.equal(spec.status, 201, JSON.stringify(spec.body))
+    const r = await as(master).post('/api/style-requests/direct-replen', { masterOrderId: replenMo._id, items: [
+      { sourceOrderId: 'SRC-1', colours: ['Navy'], quantity: 800, delivery: '2026-12-20', docIds: [spec.body.id] },
+      { sourceOrderId: 'SRC-2', delivery: '2027-01-05' },
+    ] })
+    assert.equal(r.status, 201, JSON.stringify(r.body))
+    assert.equal(r.body.created.length, 2)
+    const a = await Order.findById(r.body.created[0].id).lean()
+    assert.deepEqual([a.phase, a.masterOrderId, a.totalQty, a.replenOf, a.colourways[0].name], ['replen', replenMo._id, 800, 'SRC-1', 'Navy'])
+    assert.equal((await Document.findById(spec.body.id).lean()).orderId, a._id)
+    assert.equal(await StyleRequest.countDocuments(), 0, 'no review for Tradio')
+    assert.equal(await Notification.countDocuments({ toUser: buyer._id, msg: /replen of 2 styles was added/ }), 1)
+  })
+
+  test('refused: a customer, no master order, another customer\'s style, a missing delivery date', async () => {
+    const { master, buyer, mo } = await arrange()
+    const other = await makeBuyer()
+    const otherMo = await makeMasterOrder({ buyerId: other._id, createdBy: master._id })
+    const send = (who, body) => as(who).post('/api/style-requests/direct-replen', body)
+    assert.equal((await send(buyer, { masterOrderId: mo._id, items: [{ sourceOrderId: 'SRC-1', delivery: '2026-12-20' }] })).status, 403)
+    assert.equal((await send(master, { items: [{ sourceOrderId: 'SRC-1', delivery: '2026-12-20' }] })).status, 400)
+    const wrong = await send(master, { masterOrderId: otherMo._id, items: [{ sourceOrderId: 'SRC-1', delivery: '2026-12-20' }] })
+    assert.equal(wrong.status, 400)
+    assert.match(wrong.body.error, /customer/)
+    assert.equal((await send(master, { masterOrderId: mo._id, items: [{ sourceOrderId: 'SRC-1' }] })).status, 400)
+    assert.equal(await Order.countDocuments(), 2)
+  })
+})

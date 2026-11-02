@@ -117,9 +117,11 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   cost and price columns are ignored on purpose. Kriyaa reaches it through `preview_style_import` and
   `create_styles_from_import` (admins only; the admin attaches the file with the paperclip; the message then starts with an
   `[Attached style sheet ...]` line, see `frontend/src/styleImport.js`); creating needs the admin's confirmation.
-- **Order replen.** `POST /api/orders/:id/replen { quantity, note? }` (customer on its own styles, or Tradio): copies a style in
-  production into a new Replen style (same master order, `replenOf` set, no factory) and refuses a repeat within 30 seconds.
-  Tradio's own request creates it at once; a customer's becomes a review request.
+- **Replens.** Only a delivered style can be reordered (`replenEligible` in constants.js; on hold or still in production, no).
+  One window for both roles (`components/ReplenRequestModal.jsx`): tick several styles, each folded until opened, with colours,
+  quantity, links, expected delivery date and measurement sheets. A customer's "Order replen" sends a request for review; Tradio's
+  "Add replen" picks the master order (or makes one) and creates them at once (`POST /api/style-requests/direct-replen`). The
+  copy is made by `createReplenFrom` (same master order unless another is given, `replenOf` set, no factory).
 - **The review queue for customers.** A customer never creates a style directly, and never picks a master order. Its home page
   has two ways in (`components/CustomerActions.jsx`): Order replen (tick several styles in production, each with colours,
   quantity, links, expected delivery date and measurement sheets; or a tab to send a sheet) and New product development (the

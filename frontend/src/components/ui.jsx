@@ -426,7 +426,8 @@ export function Tabs({ tabs, active, onChange }) {
 // hairline outline; this only applies to icons from our own set (they accept `weight`).
 const duotone = (icon, size) => (isValidElement(icon) && typeof icon.type !== 'string' ? cloneElement(icon, { weight: 'duotone', ...(size ? { size } : {}) }) : icon)
 
-export function StatCard({ label, value, icon, bg, trend, onClick, hint }) {
+// `note`: a small aside under the label, such as how many of the count are on hold.
+export function StatCard({ label, value, icon, bg, trend, onClick, hint, note }) {
   const [hov, setHov] = useState(false)
   return (
     // height:100% so every card in a grid row matches the tallest, rather than
@@ -440,6 +441,7 @@ export function StatCard({ label, value, icon, bg, trend, onClick, hint }) {
         {/* labels are short ("Active Buyers"); balance keeps a 2-word wrap from
             leaving one orphan word on line two */}
         <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2, textWrap: 'balance' }}>{label}</div>
+        {note && <div style={{ fontSize: 11, fontStyle: 'italic', color: T.textLight, marginTop: 1 }}>{note}</div>}
       </div>
       {trend != null && <div style={{ fontSize: 12, fontWeight: 700, color: trend >= 0 ? T.success : T.danger }}>{trend >= 0 ? '+' : ''}{trend}%</div>}
     </div>

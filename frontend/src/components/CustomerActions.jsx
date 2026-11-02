@@ -6,7 +6,7 @@ import { ReplenRequestModal } from './ReplenRequestModal.jsx'
 import { StyleRequestsPanel } from './StyleRequestsPanel.jsx'
 import { CreateStyleWizard } from '../pages/admin/CreateStyleWizard.jsx'
 
-// The customer's two ways in, on its home page: reorder styles already in production (Order replen, with a tab to send a
+// The customer's two ways in, on its home page, under its numbers: reorder delivered styles (Order replen, with a tab to send a
 // sheet), and start new styles (New product development, the guided Create Style steps). Both go to Tradio for review, which
 // also chooses the master order; "Your requests" below shows where each stands.
 export function CustomerActions() {
@@ -30,7 +30,7 @@ export function CustomerActions() {
   return (
     <div style={{ marginBottom: 18 }}>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-        {card('replen', <RefreshCw size={20} color="#0f766e" />, '#ccfbf1', 'Order replen', 'Reorder styles in production, or send a sheet of styles')}
+        {card('replen', <RefreshCw size={20} color="#0f766e" />, '#ccfbf1', 'Order replen', 'Reorder delivered styles, or send a sheet of styles')}
         {card('npd', <FlaskConical size={20} color="#5b21b6" />, '#ede9fe', 'New product development', 'Start a new style, step by step')}
       </div>
       <StyleRequestsPanel reloadKey={requestsKey} />

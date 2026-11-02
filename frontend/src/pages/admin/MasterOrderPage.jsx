@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, ArrowRight, Folder, Package, Truck, Scissors, FlaskConical, RefreshCw, PauseCircle, Trash2, Factory, Calendar, ChevronRight, Building2, BarChart3, LayoutGrid, Pencil, Plus, FileText, StickyNote, Wallet, MapPin, Paperclip } from '../../icons.jsx'
-import { T, phaseOf, deliveryStatus, planProgress, styleOnHold, dayNumber, getToday, effectiveEta, fmtDate, dueText, dueDates, factoriesOnHold, fmtMoney } from '../../constants.js'
+import { T, phaseOf, replenEligible, deliveryStatus, planProgress, styleOnHold, dayNumber, getToday, effectiveEta, fmtDate, dueText, dueDates, factoriesOnHold, fmtMoney } from '../../constants.js'
 import { Btn, Card, FlexRow, Mono, ProductThumb, EmptyState, LoadingScreen, DocCard, Modal, Input, FileUpload, useToast, fileUploadPayload } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { capsFor, canEditMasterOrder } from '../../caps.js'
 import { EditMasterOrderModal } from './EditMasterOrderModal.jsx'
-import { ReplenOrderModal } from '../../components/ReplenOrderModal.jsx'
 import { ReplenRequestModal } from '../../components/ReplenRequestModal.jsx'
 import { masterOrdersApi } from '../../api.js'
 
@@ -79,7 +78,7 @@ function InfoRow({ icon: Icon, label, children }) {
   )
 }
 
-function StyleRow({ order, section, onOpen, showFactories = true, onReplen }) {
+function StyleRow({ order, section, onOpen, showFactories = true, onReplen, replenLabel = 'Order replen' }) {
   const s = SECTION[section]
   const splits = order.assignments || []
   const stages = splits.flatMap(a => a.stages || [])
@@ -102,7 +101,7 @@ function StyleRow({ order, section, onOpen, showFactories = true, onReplen }) {
         </FlexRow>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 4, fontSize: 12, color: T.textMuted }}>
           <Mono style={{ fontSize: 11 }}>{order.id}</Mono>
-          <span>{(order.totalQty || 0).toLocaleString('en-IN')} pcs</span>
+          <span>{order.totalQty ? `${order.totalQty.toLocaleString('en-IN')} pcs` : 'quantity not set'}</span>
           {showFactories && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Factory size={12} /> {factories.length ? factories.join(', ') : 'No manufacturer yet'}</span>}
           {section === 'delivered'
             ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#166534', fontWeight: 600 }}><Truck size={12} color="#166534" /> {deliveredOn(order) ? `Delivered on ${fmtDate(deliveredOn(order))}` : 'Delivered'}</span>
@@ -120,9 +119,9 @@ function StyleRow({ order, section, onOpen, showFactories = true, onReplen }) {
         </div>
       )}
       {onReplen && (
-        <button onClick={e => { e.stopPropagation(); onReplen(order) }} title="Order a replen of this style" aria-label={`Order a replen of ${order.product}`}
+        <button onClick={e => { e.stopPropagation(); onReplen(order) }} title={`${replenLabel} for this style`} aria-label={`${replenLabel}: ${order.product}`}
           style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: '#0f766e', background: '#ccfbf1', border: '1px solid #5eead4', borderRadius: 8, padding: '5px 10px', cursor: 'pointer' }}>
-          <RefreshCw size={12} /> Order replen
+          <RefreshCw size={12} /> {replenLabel}
         </button>
       )}
       <ChevronRight size={16} color={T.textLight} style={{ flexShrink: 0 }} />
@@ -263,9 +262,8 @@ export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
 
       {/* Rename, re-season, drop styles from or delete the master order. Deleting it leaves the page on "not found". */}
       {editing && <EditMasterOrderModal mo={mo} onClose={() => setEditing(false)} onDeleted={() => onNavigate('orders')} />}
-      {replenFor && (caps.isBuyer
-        ? <ReplenRequestModal preselect={[replenFor.id]} onClose={() => setReplenFor(null)} onSent={() => setReplenFor(null)} />
-        : <ReplenOrderModal order={replenFor} onClose={() => setReplenFor(null)} onOrdered={created => { setReplenFor(null); if (!created.pending) onOpen(created.id) }} />)}
+      {replenFor && <ReplenRequestModal preselect={[replenFor.id]} admin={!caps.isBuyer} buyerId={replenFor.buyerId} onClose={() => setReplenFor(null)}
+        onSent={r => { setReplenFor(null); if (r?.created?.length === 1) onOpen(r.created[0].id) }} />}
       <FlexRow gap={8} style={{ flexWrap: 'wrap' }}>
         <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
         <div style={{ flex: 1 }} />
@@ -334,7 +332,7 @@ export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {s.id === 'dropped'
                     ? list.map(r => <DroppedRow key={r.id} r={r} />)
-                    : list.map(o => <StyleRow key={o.id} order={o} section={s.id} onOpen={onOpen} showFactories={!caps.isBuyer} onReplen={caps.orderReplen && (o.phase || 'production') === 'production' ? setReplenFor : undefined} />)}
+                    : list.map(o => <StyleRow key={o.id} order={o} section={s.id} onOpen={onOpen} showFactories={!caps.isBuyer} onReplen={caps.orderReplen && replenEligible(o) ? setReplenFor : undefined} replenLabel={caps.isBuyer ? 'Order replen' : 'Add replen'} />)}
                 </div>
               </section>
             )
