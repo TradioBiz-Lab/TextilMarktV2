@@ -4,6 +4,7 @@ import { T, PHASES, isPrePhase, CATEGORIES, PATTERN_FILE_PROPS, MEASUREMENTS_FIL
 import { swatchHex, normalisePantone, PANTONE_HINT, PANTONE_PLACEHOLDER, photoFromFile } from '../../colours.js'
 import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload, useToast } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
+import { autoShortenLink } from '../../links.js'
 
 let _styleKeySeq = 1
 const newStyle = () => ({
@@ -355,7 +356,7 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
                     </div>
                   </div>
                   <div className="form-grid-2" style={{ gap: 10 }}>
-                    <Input label="E-commerce Link" value={s.ecommerceLink} onChange={e => updateStyle(s._key, { ecommerceLink: e.target.value })} placeholder="https://…" />
+                    <Input label="E-commerce Link" value={s.ecommerceLink} onChange={e => updateStyle(s._key, { ecommerceLink: autoShortenLink(e.target.value) })} placeholder="https://…" />
                     <Input label="Tech Pack Link" value={s.techPackLink} onChange={e => updateStyle(s._key, { techPackLink: e.target.value })} placeholder="https://…" hint="Optional. Use it when the tech pack lives online instead of as a file." />
                   </div>
                 </div>

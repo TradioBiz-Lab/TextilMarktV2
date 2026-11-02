@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { AlertTriangle, X, Plus } from '../../icons.jsx'
 import { T, phaseOf, isPrePhase, seasonsFor, sameStyleIdIn, CATEGORIES, resolveNamedColor, pastDateNote } from '../../constants.js'
 import { useApp } from '../../context.jsx'
+import { autoShortenLink } from '../../links.js'
 import { swatchHex, normalisePantone, PANTONE_HINT, PANTONE_PLACEHOLDER } from '../../colours.js'
 import { Btn, FlexRow, Input, Select } from '../../components/ui.jsx'
 
@@ -213,7 +214,7 @@ export function EditOrderModal({ order, onClose, onSave }) {
           <Input
             label="E-commerce Link"
             value={f.ecommerceLink}
-            onChange={set('ecommerceLink')}
+            onChange={e => setF(p => ({ ...p, ecommerceLink: autoShortenLink(e.target.value) }))}
             placeholder="https://…"
           />
           <Input

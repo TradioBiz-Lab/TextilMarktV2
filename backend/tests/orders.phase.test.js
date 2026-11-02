@@ -61,13 +61,15 @@ describe('the standard plan for a style in new product development', () => {
     const added = await as(master).post('/api/orders/DV-001/assignments', { mfrId: String(mfr._id), qty: 100 })
     assert.equal(added.status, 201, JSON.stringify(added.body))
     const stages = (await Order.findById('DV-001').lean()).assignments[0].stages
-    assert.deepEqual(stages.map(s => s.name), ['Request Received', 'Manufacturer Matching', 'Proto/Fit Sample', 'Fit Sample Shared', 'Fit Sample Approved', 'Pricing Approved', 'Ready for Production'])
+    assert.deepEqual(stages.map(s => s.name), ['Request Received', 'Manufacturer Matching', 'Pricing Approved', 'Proto/Fit Sample', 'Fit Sample Shared', 'Fit Sample Approved', 'Ready for Production'])
     assert.ok(stages.every(s => s.kind === 'milestone'))
-    // Matching books 4 days, the proto / fit sample 5, and each step starts where the last one ends.
+    // Matching books 4 days, the pricing approval 2 (the third step), the proto / fit sample 5, and each step starts where the last one ends.
     const day = iso => Date.parse(`${String(iso).slice(0, 10)}T00:00:00Z`) / 86400000
     assert.equal(day(stages[1].baselineEta) - day(stages[1].startDate), 4)
-    assert.equal(day(stages[2].baselineEta) - day(stages[2].startDate), 5)
+    assert.equal(day(stages[2].baselineEta) - day(stages[2].startDate), 2)
+    assert.equal(day(stages[3].baselineEta) - day(stages[3].startDate), 5)
     assert.equal(String(stages[2].startDate).slice(0, 10), String(stages[1].baselineEta).slice(0, 10))
+    assert.equal(String(stages[3].startDate).slice(0, 10), String(stages[2].baselineEta).slice(0, 10))
     assert.ok(!stages.some(s => s.isDelivery))
   })
 

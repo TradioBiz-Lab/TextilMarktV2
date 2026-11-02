@@ -106,7 +106,8 @@ Uses a human-readable custom string `_id` for traceability.
                                   checklist items from one list instead of the names being
                                   retyped per step. A qty-per-colour-per-size grid is
                                   deliberately out of scope.
-  ecommerceLink String            default: "", max 2000 chars — optional public product-page URL
+  ecommerceLink String            default: "", max 2000 chars — optional public product-page URL. An Amazon
+                                  product link is saved short, https://www.amazon.<site>/dp/<ASIN> (lib/links.js)
   techPackLink  String            default: "", max 2000 chars — optional web link to the tech pack
                                   when it lives online (an uploaded tech pack is a `documents` entry)
   brand         String            default: "", max 60 — the customer's own brand the style is for
