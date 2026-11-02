@@ -111,6 +111,9 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   page component per role; navigation is done by calling a passed-down `onNavigate(view, params)`
   function, not by URL. When adding a new page/view, wire it into this switch rather than
   reaching for a routing library.
+  Back (the in-app button and the browser's) walks a real history stack in `App.jsx`. A screen's filters, search, tabs and
+  open groups go in `useNavState` (`frontend/src/navState.js`) instead of `useState`, so Back returns to it as it was left;
+  scroll position is restored by App.jsx. A new screen opens at the top. Use it for anything a person would be annoyed to lose.
 - **Single global store.** `frontend/src/context.jsx`'s `AppProvider` holds all fetched data
   (orders, users, documents, notifications, etc.) and all mutating actions (`createOrder`,
   `updateStage`, ...) in one React Context — there's no per-feature store. New mutations

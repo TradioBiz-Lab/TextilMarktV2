@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, Fragment } from 'react'
+import { useNavState } from '../../navState.js'
 import Papa from 'papaparse'
 import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight, ChevronUp, ChevronDown, Trash2, ArrowRight, Folder, LayoutGrid } from '../../icons.jsx'
 import {
@@ -54,11 +55,11 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
   }
   const [promoteOpen, setPromoteOpen] = useState(false)
   const [movingStage, setMovingStage] = useState(false)
-  const [galleryIdx, setGalleryIdx] = useState(0) // which colourway photo the style gallery shows
+  const [galleryIdx, setGalleryIdx] = useNavState('detail.gallery', 0) // which colourway photo the style gallery shows
   const [promoting, setPromoting] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
 
-  const [tab, setTab] = useState('production')
+  const [tab, setTab] = useNavState('detail.tab', 'production')
   const [viewerBlob, setViewerBlob] = useState(null)
   const [viewerName, setViewerName] = useState('')
   const [viewerLoading, setViewerLoading] = useState(false)

@@ -1,4 +1,5 @@
 import { useMemo, useState, Fragment } from 'react'
+import { useNavState } from '../../navState.js'
 import { AlertTriangle, Plus, RotateCw, Ban, CircleDot, CalendarClock, Search, User, Building2, Package, MessageCircle, Check, ChevronUp, ChevronDown } from '../../icons.jsx'
 import {
   T, dayNumber, getToday, fmtN, effectiveEta,
@@ -62,15 +63,15 @@ export function ActionItemsPage({ onOpen, onNavigate }) {
   const toast = useToast()
   const canEditPlan = capsFor(currentUser).editPlan
 
-  const [q, setQ] = useState('')
-  const [owner, setOwner] = useState('all')
-  const [windowDays, setWindowDays] = useState(3)
-  const [includeOverdue, setIncludeOverdue] = useState(true)
-  const [onlyMine, setOnlyMine] = useState(false)
+  const [q, setQ] = useNavState('actions.q', '')
+  const [owner, setOwner] = useNavState('actions.owner', 'all')
+  const [windowDays, setWindowDays] = useNavState('actions.window', 3)
+  const [includeOverdue, setIncludeOverdue] = useNavState('actions.overdue', true)
+  const [onlyMine, setOnlyMine] = useNavState('actions.mine', false)
   const [edits, setEdits] = useState({})
   const [saving, setSaving] = useState(false)
   // Buyer groups start collapsed; a search, owner filter or "mine only" opens them so results are never hidden.
-  const [expanded, setExpanded] = useState({})
+  const [expanded, setExpanded] = useNavState('actions.expanded', {})
   const [showCreate, setShowCreate] = useState(false)
   const [customDrafts, setCustomDrafts] = useState({})
   const [busy, setBusy] = useState(false)

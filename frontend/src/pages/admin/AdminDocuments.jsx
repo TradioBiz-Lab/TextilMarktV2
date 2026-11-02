@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavState } from '../../navState.js'
 import { Factory, Paperclip, Folder, Inbox, ChevronDown } from '../../icons.jsx'
 import { T, DOC_TYPES, getToday } from '../../constants.js'
 import { Modal, Select, Input, Btn, Card, EmptyState, FlexRow, PageHeader, DocCard, FileUpload, LoadingScreen, useToast, fileUploadPayload, activateOnKey } from '../../components/ui.jsx'
@@ -20,9 +21,9 @@ export function AdminDocuments() {
   // Admins upload any of these for any manufacturer; a factory uploads its own. A customer only reads.
   const uploadTypes = DOC_TYPES.filter(t => FACTORY_TYPES.includes(t.v))
   const [show, setShow] = useState(false)
-  const [filt, setFilt] = useState('all')
+  const [filt, setFilt] = useNavState('documents.filter', 'all')
   // Every folder starts closed, like the Orders page; a click opens it.
-  const [openGroups, setOpenGroups] = useState(() => new Set())
+  const [openGroups, setOpenGroups] = useNavState('documents.groups', () => new Set())
   const toggleGroup = id => setOpenGroups(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   const blankForm = () => ({ type: 'mfr_profile', name: '', issuer: defaultIssuer, issueDate: getToday(), expiryDate: '', mfrId: null })
   const [uf, setUf] = useState(blankForm)

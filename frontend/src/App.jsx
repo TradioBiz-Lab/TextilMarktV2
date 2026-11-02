@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { CheckCircle2, AlertTriangle } from './icons.jsx'
 import { AppProvider, useApp } from './context.jsx'
 import { Shell } from './components/Shell.jsx'
@@ -21,6 +21,7 @@ import { KriyaaChatProvider } from './kriyaaChatContext.jsx'
 import { ReportingPage } from './pages/shared/ReportingPage.jsx'
 import { ActionItemsPage } from './pages/shared/ActionItemsPage.jsx'
 import { authApi } from './api.js'
+import { NavEntryContext } from './navState.js'
 import { T } from './constants.js'
 import { Input, Btn, ToastProvider } from './components/ui.jsx'
 
@@ -94,17 +95,37 @@ function Inner() {
   // you came from. Before leaving a list for an order, that list's snapshot is stamped with the
   // order's master order, so coming back re-opens (and scrolls to) the group you were in.
   const hist = useRef({ stack: [], idx: -1 })
+  const [navKey, setNavKey] = useState(0) // changes with every history step, so each screen opens fresh from its own entry
   const BLANK = { view: 'dashboard', selOid: null, selMid: null, ordersStatus: null, ordersMo: null, ordersPhase: null, reportsMo: null, selPartner: null }
   const apply = useCallback(s => {
     setView(s.view); setSelOid(s.selOid); setSelMid(s.selMid)
     setOrdersStatus(s.ordersStatus); setOrdersMo(s.ordersMo); setOrdersPhase(s.ordersPhase ?? null); setOrdersNewStyle(!!s.ordersNewStyle); setUsersTab(s.usersTab ?? null); setReportsMo(s.reportsMo); setSelMo(s.selMo ?? null); setSelPartner(s.selPartner ?? null)
+    setNavKey(k => k + 1)
   }, [])
+  // The entry being shown, which holds what its screen remembers (navState.js) and how far it was scrolled.
+  const currentEntry = useCallback(() => hist.current.stack[hist.current.idx], [])
+  const mainEl = () => document.querySelector('main.main-content')
+  const saveScroll = () => { const e = currentEntry(); const m = mainEl(); if (e && m) e.scroll = m.scrollTop }
+  // The screen fills in after it mounts (lists load), so keep trying until the saved position can be reached.
+  const restoreScroll = top => {
+    const t0 = Date.now()
+    const tick = () => {
+      const m = mainEl()
+      if (!m) return
+      m.scrollTop = top
+      if (Math.abs(m.scrollTop - top) <= 2 || Date.now() - t0 > 1500) return
+      requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  }
   const go = useCallback(next => {
     const h = hist.current
     const snap = { ...BLANK, ...next }
+    saveScroll()
     h.stack = h.stack.slice(0, h.idx + 1); h.stack.push(snap); h.idx = h.stack.length - 1
     window.history.pushState({ nav: h.idx }, '')
     apply(snap)
+    restoreScroll(0) // a new screen opens at the top, not wherever the last one was scrolled to
     // Create Style opens once on arrival: coming Back or Forward to this screen later shows the list only.
     if (snap.ordersNewStyle) h.stack[h.idx] = { ...snap, ordersNewStyle: false }
   }, [apply])
@@ -126,7 +147,7 @@ function Inner() {
     const onPop = e => {
       const i = e.state?.nav
       const h = hist.current
-      if (typeof i === 'number' && h.stack[i]) { h.idx = i; apply(h.stack[i]) }
+      if (typeof i === 'number' && h.stack[i]) { saveScroll(); h.idx = i; apply(h.stack[i]); restoreScroll(h.stack[i].scroll || 0) }
     }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
@@ -196,7 +217,9 @@ function Inner() {
     <KriyaaChatProvider>
       <LiveRefresh />
       <Shell view={view} setView={navTo} onOpenOrder={openOrder}>
-        {renderView()}
+        <NavEntryContext.Provider value={currentEntry}>
+          <Fragment key={navKey}>{renderView()}</Fragment>
+        </NavEntryContext.Provider>
       </Shell>
     </KriyaaChatProvider>
   )

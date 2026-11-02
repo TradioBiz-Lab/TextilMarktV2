@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { useNavState } from '../../navState.js'
 import { Package, RotateCw, Paperclip, User, Ban, Check, KeyRound, Zap, Search, Crown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X } from '../../icons.jsx'
 import { T, fmtDate } from '../../constants.js'
 import { Card, PageHeader, EmptyState, FlexRow, LoadingScreen, Btn } from '../../components/ui.jsx'
@@ -59,10 +60,10 @@ export function AdminAuditLog() {
 
   // The server writes every audit entry, so re-read the log whenever this page opens.
   useEffect(() => { refreshAudit().catch(() => {}) }, [refreshAudit])
-  const [q, setQ] = useState('')
-  const [actionFilt, setActionFilt] = useState('All')
-  const [userFilt, setUserFilt] = useState('All')
-  const [page, setPage] = useState(1)
+  const [q, setQ] = useNavState('audit.q', '')
+  const [actionFilt, setActionFilt] = useNavState('audit.action', 'All')
+  const [userFilt, setUserFilt] = useNavState('audit.user', 'All')
+  const [page, setPage] = useNavState('audit.page', 1)
 
   const sorted = useMemo(
     () => [...audit].sort((a, b) => new Date(b.at) - new Date(a.at)),

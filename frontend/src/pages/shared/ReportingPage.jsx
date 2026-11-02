@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, useRef } from 'react'
+import { useNavState } from '../../navState.js'
 import { CalendarClock, AlertTriangle, Package, Ban, CircleDot, CheckCircle2, Search, BarChart3, Folder, MessageCircle, Calendar, ChevronDown, ChevronRight, Play, Download, ArrowRight, Sparkles } from '../../icons.jsx'
 import {
   T, dayNumber, getToday, fmtN, effectiveEta, planProgress, deliveryStatus, splitDue,
@@ -179,10 +180,10 @@ export function ReportingPage({ onOpen, initialMo }) {
   const orders = useMemo(() => productionOrders(allOrders), [allOrders])
   const inDevelopment = developmentOrders(allOrders).length
   const onHold = orders.filter(styleOnHold).length
-  const [q, setQ] = useState('')
-  const [healthFilter, setHealthFilter] = useState('All')
+  const [q, setQ] = useNavState('reports.q', '')
+  const [healthFilter, setHealthFilter] = useNavState('reports.health', 'All')
   // Groups start collapsed; a search or filter opens them so results are never hidden.
-  const [expanded, setExpanded] = useState({})
+  const [expanded, setExpanded] = useNavState('reports.expanded', {})
   // Arriving from the dashboard (or Back from a product page) on a specific master order: open just that
   // group and scroll to it.
   const [ganttTarget, setGanttTarget] = useState(null)

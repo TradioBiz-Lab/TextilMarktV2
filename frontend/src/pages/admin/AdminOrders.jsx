@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useNavState } from '../../navState.js'
 import { Plus, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, ChevronUp, ArrowRight, X } from '../../icons.jsx'
 import {
   T, SEASONS, ORDER_STATUSES, seasonsFor,
@@ -34,11 +35,11 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
   // One Orders page for every role; caps decides which actions each sees (see caps.js).
   const caps = capsFor(currentUser)
   const toast = useToast()
-  const [q, setQ] = useState('')
+  const [q, setQ] = useNavState('orders.q', '')
   const [showSugg, setShowSugg] = useState(false)
-  const [sfilt, setSfilt] = useState(initialStatus || 'All')
+  const [sfilt, setSfilt] = useNavState('orders.status', initialStatus || 'All')
   // Styles still being sampled and developed are kept apart from the ones in production.
-  const [phase, setPhase] = useState(initialPhase || 'production')
+  const [phase, setPhase] = useNavState('orders.phase', initialPhase || 'production')
   // Moving styles out of New Product Development: tick the ones that are ready and move them in one go.
   const [promoteOpen, setPromoteOpen] = useState(false)
   const [picked, setPicked] = useState(() => new Set())
@@ -49,7 +50,7 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
   // Groups start collapsed — an admin managing many master orders shouldn't have to
   // scroll past every line item of every group just to find one. Tracks which groups
   // have been explicitly expanded, rather than which are collapsed.
-  const [expandedGroups, setExpandedGroups] = useState(() => new Set())
+  const [expandedGroups, setExpandedGroups] = useNavState('orders.groups', () => new Set())
   const toggleGroup = moId => setExpandedGroups(prev => {
     const next = new Set(prev)
     next.has(moId) ? next.delete(moId) : next.add(moId)

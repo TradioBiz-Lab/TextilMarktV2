@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavState } from '../../navState.js'
 import { Crown, Check, AlertTriangle, Plus, Search, KeyRound, Pencil, Users, Circle } from '../../icons.jsx'
 import { T, getToday, fmtDate } from '../../constants.js'
 import { Modal, Input, Select, Btn, Card, Alert, EmptyState, FlexRow, PageHeader, RoleBadge, Mono, LoadingScreen, FileUpload, useToast, fileUploadPayload } from '../../components/ui.jsx'
@@ -9,11 +10,11 @@ import { useApp } from '../../context.jsx'
 export function UserSetup({ initialTab } = {}) {
   const { users, loading, createUser, updateUser, toggleUser, resetUserPw, uploadDoc, currentUser, docs } = useApp()
   const toast = useToast()
-  const [tab, setTab] = useState(initialTab || 'all')
+  const [tab, setTab] = useNavState('users.tab', initialTab || 'all')
   // Deactivate and Reset password are one click away from locking someone out, so they ask first.
   const [confirmAction, setConfirmAction] = useState(null) // { kind: 'deactivate' | 'reset', user }
   const [confirmBusy, setConfirmBusy] = useState(false)
-  const [q, setQ] = useState('')
+  const [q, setQ] = useNavState('users.q', '')
   const [showC, setShowC] = useState(false)
   const [f, setF] = useState({ name: '', email: '', password: '', company: '', phone: '', role: 'buyer', adminType: 'user', code: '', seasons: '' })
   const [errors, setErrors] = useState({})
