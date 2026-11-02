@@ -125,6 +125,13 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   master admin only; the customer sees and can cancel its own). Approval creates the styles with `createRows` /
   `createReplenFrom`, the same code Tradio's own paths use, and re-checks the sheet first. The full Create Style form and
   master orders stay with Tradio.
+- **Search in the top bar.** `components/GlobalSearch.jsx` over `search.js` (pure, tested): searches the orders and master orders
+  already in the app store (so each role finds only its own) by customer, master order name / ID / PO number, product, Tradio
+  style ID and the customer's style ID, including just its last digits. Enter opens the best match: a style's page or a master
+  order's page. "/" or Ctrl/Cmd+K focuses it.
+- **Measurement sheets** carry a label (Customer Submission / Fit Approval / PP Approval, required on upload). Only a master
+  admin locks one as the style's Locked Measurement (`POST /api/documents/:id/lock`); a locked sheet cannot be replaced,
+  relabelled or deleted. See docs/SCHEMA.md `documents`.
 - **No router library.** `App.jsx` holds the current view in state and switch-renders the right
   page component per role; navigation is done by calling a passed-down `onNavigate(view, params)`
   function, not by URL. When adding a new page/view, wire it into this switch rather than

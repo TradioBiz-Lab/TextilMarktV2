@@ -5,6 +5,7 @@ import { T } from '../constants.js'
 import { capsFor } from '../caps.js'
 import { Btn, RibbonBanner } from './ui.jsx'
 import { NotifPanel } from './NotifPanel.jsx'
+import { GlobalSearch } from './GlobalSearch.jsx'
 import { KriyaaWidget } from './KriyaaWidget.jsx'
 import { useApp } from '../context.jsx'
 
@@ -178,6 +179,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
             </button>
             <div className="header-logo"><Logo size={28} /></div>
           </div>
+          <GlobalSearch onOpenOrder={onOpenOrder} onOpenMo={id => setView('master_order', { mo: id })} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ position: 'relative' }}>
               <button data-notif-toggle onClick={() => setNotifOpen(p => !p)}

@@ -19,6 +19,11 @@ const DOC_TYPES = [
   'floor_evidence',
 ]
 
+// Where a measurement sheet stands in the fit process. Every measurement upload carries one; the one a master admin locks
+// is the style's Locked Measurement.
+export const MEASUREMENT_LABELS = ['customer_submission', 'fit_approval', 'pp_approval']
+export const MEASUREMENT_LABEL_NAMES = { customer_submission: 'Customer Submission', fit_approval: 'Fit Approval', pp_approval: 'PP Approval' }
+
 const documentSchema = new mongoose.Schema({
   type:       { type: String, required: true, enum: DOC_TYPES },
   name:       { type: String, required: true, trim: true },
@@ -55,6 +60,15 @@ const documentSchema = new mongoose.Schema({
   // Optional link to a specific materials/PO checklist line within that stage
   // (index into stages[stageIndex].materials array) — used for PO document attachments.
   materialLineIndex: { type: Number, default: null, min: 0 },
+
+  // Measurement sheets only (type 'measurements'): which stage of the fit process this sheet is. Required on every new
+  // upload; null on sheets filed before labels existed.
+  measurementLabel: { type: String, enum: MEASUREMENT_LABELS, default: null },
+  // The style's Locked Measurement: the one sheet everyone works to. Only a master admin sets or clears it, and while it is
+  // set the sheet can be neither replaced nor deleted. A style has at most one.
+  locked:    { type: Boolean, default: false },
+  lockedBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  lockedAt:  { type: Date, default: null },
 
   // Free-text notes — used for stage evidence entries that capture context (SOP-driven),
   // including text-only stage evidence (no file/link).

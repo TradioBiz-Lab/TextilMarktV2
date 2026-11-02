@@ -60,6 +60,7 @@ import {
   Palette as P_Palette,
   PaperPlaneTilt as P_PaperPlaneTilt,
   Paperclip as P_Paperclip,
+  Lock as P_Lock,
   PencilLine as P_PencilLine,
   PencilSimple as P_PencilSimple,
   Phone as P_Phone,
@@ -220,6 +221,7 @@ export const Mic = make(P_Microphone, 'Mic')
 export const Package = make(P_Package, 'Package')
 export const Palette = make(P_Palette, 'Palette')
 export const Paperclip = make(P_Paperclip, 'Paperclip')
+export const Lock = make(P_Lock, 'Lock')
 export const PenLine = make(P_PencilLine, 'PenLine')
 export const Pencil = make(P_PencilSimple, 'Pencil')
 export const Phone = make(P_Phone, 'Phone')

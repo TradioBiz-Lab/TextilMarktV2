@@ -288,6 +288,12 @@ table { border-collapse: collapse; width: 100%; }
   .modal-backdrop.modal-float .modal-inner { border-radius: 14px !important; max-height: 92vh !important; }
 }
 
+/* The top-bar search: on a phone it is a small box until it is used, then it spans the bar so there is room to type. */
+@media (max-width: 640px) {
+  .global-search { margin: 0 8px !important; }
+  .global-search:focus-within { position: absolute !important; left: 12px; right: 12px; top: 9px; max-width: none !important; margin: 0 !important; z-index: 500; }
+}
+
 /* ── Small mobile (≤480px) ── */
 @media (max-width: 480px) {
   .grid-responsive-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }

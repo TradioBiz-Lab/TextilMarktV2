@@ -463,6 +463,12 @@ manufacturer, an order, or both — or is stage-evidence tied to a specific stag
 }
 ```
 
+**Measurement sheets** (`type: 'measurements'`) carry `measurementLabel` (customer_submission | fit_approval | pp_approval), required on
+every new upload. `locked` / `lockedBy` / `lockedAt` mark the style's **Locked Measurement**: only a master admin sets or clears it
+(`POST /api/documents/:id/lock`), a style has at most one (locking another sheet moves it), it needs a label, and while it is
+set the sheet cannot be replaced, relabelled or deleted by anyone. A replaced file's earlier copy is never locked.
+
+
 > For non-stage documents, exactly one of `dataUrl` / `externalUrl` is set. Stage-evidence
 > documents (`stageIndex != null`) may have neither if `notes` alone captures the evidence.
 

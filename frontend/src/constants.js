@@ -469,6 +469,10 @@ export const deliveryStatus = (order, asgn) => {
  * A style is in New Product Development (being sampled), in Replen (a reorder of an existing style) or in production; styles
  * from before the field are production. Development and Replen behave the same: no delivery date or Delivery step yet.
  */
+// What a measurement sheet is, in the fit process. Every measurement upload carries one; a master admin locks one per style.
+export const MEASUREMENT_LABELS = [['customer_submission', 'Customer Submission'], ['fit_approval', 'Fit Approval'], ['pp_approval', 'PP Approval']]
+export const MEASUREMENT_LABEL_NAME = Object.fromEntries(MEASUREMENT_LABELS)
+
 export const PHASES = [['production', 'Production'], ['development', 'New Product Development'], ['replen', 'Replen']]
 export const PHASE_LABEL = Object.fromEntries(PHASES)
 const PRE_PRODUCTION = ['development', 'replen']

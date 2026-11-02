@@ -135,6 +135,8 @@ export const documentsApi = {
   versions: id => api.get(`/documents/${id}/versions`),
   fileInto: (id, orderId) => api.post(`/documents/${id}/file`, { orderId }),
   remove: id => api.post(`/documents/${id}/delete`),
+  // Master admin only: mark a measurement sheet as its style's Locked Measurement, or clear it.
+  lock: (id, locked) => api.post(`/documents/${id}/lock`, { locked }),
   checkCertExpiry: () => api.post('/documents/cert-expiry-check'),
 }
 

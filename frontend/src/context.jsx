@@ -358,6 +358,14 @@ export function AppProvider({ children }) {
     return doc
   }, [])
 
+  // The style's Locked Measurement (master admin only). A style has one, so locking a sheet clears the lock on its siblings here
+  // the same way the server does.
+  const lockDoc = useCallback(async (id, locked) => {
+    const doc = await documentsApi.lock(id, locked)
+    setDocs(p => p.map(d => d.id === id ? doc : (locked && d.orderId === doc.orderId && d.type === 'measurements' ? { ...d, locked: false } : d)))
+    return doc
+  }, [])
+
   // A document's earlier files (kept when its file is replaced), newest first.
   const getDocVersions = useCallback(id => documentsApi.versions(id), [])
 
@@ -731,7 +739,7 @@ export function AppProvider({ children }) {
       login, logout,
       updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
       bulkUpdateStages, addStageItem, updateStageItem, removeStageItem,
-      updateAssignment, addAssignment, reassignAssignment, setDeliveredQty, insertStage, moveStage, startPlan, uploadDoc, updateDoc, deleteDoc, getDocVersions, fileDocInto, setStylePhotos, createOrder, orderReplen, createMasterOrder, updateMasterOrder, deleteMasterOrder,
+      updateAssignment, addAssignment, reassignAssignment, setDeliveredQty, insertStage, moveStage, startPlan, uploadDoc, updateDoc, lockDoc, deleteDoc, getDocVersions, fileDocInto, setStylePhotos, createOrder, orderReplen, createMasterOrder, updateMasterOrder, deleteMasterOrder,
       editOrder, deleteOrder, escalateOrder,
       createUser, updateUser, toggleUser, resetUserPw,
       markAllRead, markOneRead, getDocData, refreshAudit, loadMoreAudit,

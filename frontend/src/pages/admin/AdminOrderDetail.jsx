@@ -17,7 +17,7 @@ import { AddStepBar } from '../../components/AddStepBar.jsx'
 import { StyleStatusMenu } from '../../components/StyleStatusMenu.jsx'
 import { ProductPhotos } from '../../components/ProductPhotos.jsx'
 import { swatchHex } from '../../colours.js'
-import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, DateOrNA, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey } from '../../components/ui.jsx'
+import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, DateOrNA, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey, MeasurementLabelSelect } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { normalizeCsvDate } from '../../csvDates.js'
 import { ReplenOrderModal } from '../../components/ReplenOrderModal.jsx'
@@ -159,6 +159,8 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
   const [tplBusy, setTplBusy] = useState(false)
   const [addingMfr, setAddingMfr] = useState(false)
   const [refDocFiles, setRefDocFiles] = useState({ measurements: null, tech_pack: null, pattern: null })
+  // Every measurement sheet says what it is (Customer Submission, Fit Approval, PP Approval) when it is uploaded.
+  const [measurementLabel, setMeasurementLabel] = useState('')
   const [refDocErrs, setRefDocErrs] = useState({})
   const [refDocUploading, setRefDocUploading] = useState(null) // which type is mid-upload
   const [openFolders, setOpenFolders] = useState({}) // PO and Invoice / Delivery documents: folded away until opened
@@ -701,14 +703,17 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
   const uploadRefDoc = async (type) => {
     const file = refDocFiles[type]
     if (!file) return
+    if (type === 'measurements' && !measurementLabel) { toast('Choose what this measurement sheet is first', 'error'); return }
     setRefDocUploading(type)
     try {
       await uploadDoc({
         type, name: `${refDocLabels[type]}, ${order.id}`, issuer: '', issueDate: getToday(),
         expiryDate: null, orderId: order.id, mfrId: null,
+        ...(type === 'measurements' ? { measurementLabel } : {}),
         ...fileUploadPayload(file),
       })
       setRefDocFiles(p => ({ ...p, [type]: null }))
+      if (type === 'measurements') setMeasurementLabel('')
       toast(`${refDocLabels[type]} uploaded`, 'success')
     } catch (e) {
       toast(typeof e === 'string' ? e : (e?.message || 'Upload failed'), 'error')
@@ -1034,7 +1039,8 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
                                 <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 10 }}>
                                   <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, marginBottom: 6 }}>Add a newer version (the earlier ones stay listed)</div>
                                   <FileUpload {...item.uploadProps} file={item.file} onFile={item.onFile} error={item.err} onError={item.onErr} />
-                                  {item.file && <Btn size="sm" style={{ marginTop: 6 }} disabled={item.uploading} onClick={item.onUpload}>{item.uploading ? 'Uploading...' : 'Upload'}</Btn>}
+                                  {item.key === 'measurements' && item.file && <div style={{ marginTop: 6 }}><MeasurementLabelSelect value={measurementLabel} onChange={setMeasurementLabel} /></div>}
+                                  {item.file && <Btn size="sm" style={{ marginTop: 6 }} disabled={item.uploading || (item.key === 'measurements' && !measurementLabel)} onClick={item.onUpload}>{item.uploading ? 'Uploading...' : 'Upload'}</Btn>}
                                 </div>
                               )}
                             </div>
@@ -1045,8 +1051,9 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
                       ) : (
                         <>
                           <FileUpload {...item.uploadProps} file={item.file} onFile={item.onFile} error={item.err} onError={item.onErr} />
+                          {item.key === 'measurements' && item.file && <div style={{ marginTop: 6 }}><MeasurementLabelSelect value={measurementLabel} onChange={setMeasurementLabel} /></div>}
                           {item.file && (
-                            <Btn size="sm" style={{ marginTop: 6 }} disabled={item.uploading} onClick={item.onUpload}>
+                            <Btn size="sm" style={{ marginTop: 6 }} disabled={item.uploading || (item.key === 'measurements' && !measurementLabel)} onClick={item.onUpload}>
                               {item.uploading ? 'Uploading…' : `Upload ${item.label}`}
                             </Btn>
                           )}

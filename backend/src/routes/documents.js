@@ -2,7 +2,8 @@ import { Router } from 'express'
 import mongoose from 'mongoose'
 import rateLimit from 'express-rate-limit'
 import { Document, Order, User, Notification, AuditLog, MasterOrder } from '../db/index.js'
-import { requireAuth, requireAdmin } from '../middleware/auth.js'
+import { requireAuth, requireAdmin, requireMaster } from '../middleware/auth.js'
+import { MEASUREMENT_LABELS, MEASUREMENT_LABEL_NAMES } from '../models/Document.js'
 import { sendEmail, emailBuyerDocumentReceived } from '../lib/email.js'
 import { notify, adminIds } from '../lib/notify.js'
 
@@ -149,9 +150,14 @@ const mapDoc = (d, includeData = false) => {
     versionOf: d.versionOf ? d.versionOf.toString() : null,
     replacedAt: d.replacedAt || null,
     filedAt: d.filedAt || null,
+    // Measurement sheets: the label and whether it is the style's Locked Measurement.
+    measurementLabel: d.measurementLabel || null,
+    locked: !!d.locked, lockedAt: d.lockedAt || null,
     ...(includeData ? { dataUrl: d.dataUrl } : {}),
   }
 }
+
+const LOCKED_MESSAGE = 'This is the style\'s Locked Measurement. A master admin has to unlock it before it can be replaced, relabelled or deleted.'
 
 // GET /api/documents
 router.get('/', requireAuth, async (req, res) => {
@@ -374,13 +380,16 @@ router.get('/:id/versions', requireAuth, async (req, res) => {
 // POST /api/documents
 router.post('/', requireAuth, uploadLimiter, async (req, res) => {
   try {
-    const { type: sentType, name, mfrId, orderId, masterOrderId, stageIndex, materialLineIndex, issueDate, expiryDate, issuer, dataUrl, externalUrl, fileName, fileSize, mimeType, notes } = req.body
+    const { type: sentType, name, mfrId, orderId, masterOrderId, stageIndex, materialLineIndex, issueDate, expiryDate, issuer, dataUrl, externalUrl, fileName, fileSize, mimeType, notes, measurementLabel } = req.body
     // "Buyer Order" was the same paper as the customer's purchase order, filed under a second name: it is a PO now.
     const type = sentType === 'buyer_order' ? 'PO' : sentType
     if (!type || !name || !name.trim()) return res.status(400).json({ error: 'type and name required' })
     if (typeof type !== 'string' || typeof name !== 'string') return res.status(400).json({ error: 'Invalid input types' })
     if (name.length > 300 || type.length > 50) return res.status(400).json({ error: 'Input too long' })
     if (!Document.schema.path('type').enumValues.includes(type)) return res.status(400).json({ error: `Unknown document type "${type}"` })
+    // A measurement sheet says which stage of the fit process it is; nothing else carries a label, and nothing is locked on upload.
+    if (type === 'measurements' && !MEASUREMENT_LABELS.includes(measurementLabel)) return res.status(400).json({ error: `Say what this measurement sheet is: ${Object.values(MEASUREMENT_LABEL_NAMES).join(', ')}.` })
+    if (type !== 'measurements' && measurementLabel != null && measurementLabel !== '') return res.status(400).json({ error: 'Only a measurement sheet has a label' })
     // A file on a whole master order (the customer sees it): Tradio attaches any, and the customer its own purchase order
     // for the buy.
     if (masterOrderId != null && masterOrderId !== '') {
@@ -466,6 +475,7 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
       uploadedBy: req.user.id,
       issuer:     issuer   || null,
       version: 1, isActive: true,
+      measurementLabel: type === 'measurements' ? measurementLabel : null,
       notes:       normalizedNotes,
       dataUrl:     hasFile ? dataUrl       : null,
       externalUrl: hasUrl  ? normalizedUrl : null,
@@ -516,7 +526,14 @@ router.post('/:id', requireAuth, uploadLimiter, async (req, res) => {
     if (req.user.role !== 'admin' && !isOwner)
       return res.status(403).json({ error: 'You can only edit your own documents' })
 
-    const { name, notes, issuer, issueDate, expiryDate, dataUrl, externalUrl, fileName, fileSize, mimeType, removeFile } = req.body
+    const { name, notes, issuer, issueDate, expiryDate, dataUrl, externalUrl, fileName, fileSize, mimeType, removeFile, measurementLabel } = req.body
+    // The Locked Measurement is fixed: its file and label change only after a master admin unlocks it.
+    if (doc.locked && (dataUrl || externalUrl || removeFile || (measurementLabel !== undefined && measurementLabel !== doc.measurementLabel))) return res.status(409).json({ error: LOCKED_MESSAGE })
+    if (measurementLabel !== undefined && measurementLabel !== doc.measurementLabel) {
+      if (doc.type !== 'measurements') return res.status(400).json({ error: 'Only a measurement sheet has a label' })
+      if (!MEASUREMENT_LABELS.includes(measurementLabel)) return res.status(400).json({ error: `The label must be one of: ${Object.values(MEASUREMENT_LABEL_NAMES).join(', ')}.` })
+      doc.measurementLabel = measurementLabel
+    }
     // The file as it was, kept as an earlier version below if this edit replaces it.
     const before = doc.toObject()
 
@@ -580,7 +597,7 @@ router.post('/:id', requireAuth, uploadLimiter, async (req, res) => {
     if (fileReplaced) {
       // Written as stored, without today's checks, so an old record of a since-renamed type still keeps its history.
       const { _id, __v, ...was } = before
-      await Document.collection.insertOne({ ...was, isActive: false, versionOf: doc._id, replacedAt: new Date(), replacedByUser: new mongoose.Types.ObjectId(req.user.id) })
+      await Document.collection.insertOne({ ...was, locked: false, lockedBy: null, lockedAt: null, isActive: false, versionOf: doc._id, replacedAt: new Date(), replacedByUser: new mongoose.Types.ObjectId(req.user.id) })
     }
     doc.version = (doc.version || 1) + 1
     await doc.save()
@@ -623,6 +640,42 @@ router.post('/:id/file', requireAuth, requireAdmin, async (req, res) => {
   }
 })
 
+// POST /api/documents/:id/lock  { locked: true | false }  (master admin only)
+// Marks a measurement sheet as its style's Locked Measurement, or clears it. A style has one: locking another sheet moves the
+// lock. The sheet has to be a current measurement sheet of a style, with a label, and a file or link.
+router.post('/:id/lock', requireAuth, requireMaster, async (req, res) => {
+  try {
+    if (typeof req.body?.locked !== 'boolean') return res.status(400).json({ error: 'locked must be true or false' })
+    const doc = await Document.findById(req.params.id)
+    if (!doc || !doc.isActive || doc.versionOf) return res.status(404).json({ error: 'Document not found' })
+    if (doc.type !== 'measurements' || !doc.orderId) return res.status(400).json({ error: 'Only a measurement sheet on a style can be locked' })
+    const where = `${doc.name}${doc.orderId ? ' - order ' + doc.orderId : ''}`
+
+    if (!req.body.locked) {
+      if (!doc.locked) return res.json(mapDoc(doc.toObject(), false))
+      await Document.updateOne({ _id: doc._id }, { $set: { locked: false, lockedBy: null, lockedAt: null } })
+      await AuditLog.create({ byUser: req.user.id, action: 'Measurement Unlocked', detail: where })
+      const saved = await Document.findById(doc._id).select('-dataUrl').lean()
+      return res.json(mapDoc(saved, false))
+    }
+
+    if (!doc.measurementLabel) return res.status(400).json({ error: 'Give this sheet a label (Customer Submission, Fit Approval or PP Approval) before locking it' })
+    if (!doc.dataUrl && !doc.externalUrl) return res.status(400).json({ error: 'There is no file to lock' })
+    // One Locked Measurement per style: lock this one, then release any other.
+    const others = await Document.find({ orderId: doc.orderId, type: 'measurements', locked: true, _id: { $ne: doc._id } }, { name: 1 }).lean()
+    await Document.updateOne({ _id: doc._id }, { $set: { locked: true, lockedBy: req.user.id, lockedAt: new Date() } })
+    if (others.length) await Document.updateMany({ _id: { $in: others.map(o => o._id) } }, { $set: { locked: false, lockedBy: null, lockedAt: null } })
+    await AuditLog.create({ byUser: req.user.id, action: 'Measurement Locked', detail: `${where}, ${MEASUREMENT_LABEL_NAMES[doc.measurementLabel]}${others.length ? `; the lock moved from ${others.map(o => o.name).join(', ')}` : ''}` })
+    const order = await Order.findById(doc.orderId, { buyerId: 1, product: 1 }).lean()
+    await notify([order?.buyerId, ...await adminIds()], { type: 'order', msg: `Locked Measurement set for ${order?.product || doc.orderId}: ${doc.name} (${MEASUREMENT_LABEL_NAMES[doc.measurementLabel]})`, orderId: doc.orderId }, { exceptUserId: req.user.id })
+    const saved = await Document.findById(doc._id).select('-dataUrl').lean()
+    res.json(mapDoc(saved, false))
+  } catch (err) {
+    console.error('[documents]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
 // POST /api/documents/:id/delete  (soft delete)
 router.post('/:id/delete', requireAuth, async (req, res) => {
   try {
@@ -632,6 +685,8 @@ router.post('/:id/delete', requireAuth, async (req, res) => {
     const isOwner = doc.uploadedBy && doc.uploadedBy.toString() === req.user.id
     if (req.user.role !== 'admin' && !isOwner)
       return res.status(403).json({ error: 'You can only delete your own documents' })
+
+    if (doc.locked) return res.status(409).json({ error: LOCKED_MESSAGE })
 
     // Only the flag changes. A save() would re-check every stored field against today's rules, and an old record
     // (seed data, a type since renamed) that no longer passes them could then never be deleted.

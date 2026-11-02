@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { X, Plus, Trash2, ChevronLeft, ChevronRight, AlertTriangle, Camera } from '../../icons.jsx'
 import { T, PHASES, isPrePhase, CATEGORIES, PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, getToday, pastDateNote, sameStyleIdIn } from '../../constants.js'
 import { swatchHex, normalisePantone, PANTONE_HINT, PANTONE_PLACEHOLDER, photoFromFile } from '../../colours.js'
-import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload, useToast } from '../../components/ui.jsx'
+import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload, useToast, MeasurementLabelSelect } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { autoShortenLink } from '../../links.js'
 
@@ -17,7 +17,7 @@ const newStyle = () => ({
   totalQty: '', delivery: '', phase: '',
   // Step 3, all optional. Product photos, each tied to one of the style's colourways or to none; the first is the main photo.
   photos: [], photoColour: '',
-  measurementsFile: null, measurementsErr: '',
+  measurementsFile: null, measurementsErr: '', measurementLabel: '',
   techPackFile: null, techPackErr: '',
   patternFile: null, patternErr: '',
   ecommerceLink: '', techPackLink: '', brand: '',
@@ -78,6 +78,8 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
 
   const submit = async () => {
     setErr('')
+    // A measurement sheet says what it is: Customer Submission, Fit Approval or PP Approval.
+    if (styles.some(s => s.measurementsFile && !s.measurementLabel)) { setErr('Choose what each measurement sheet is (Customer Submission, Fit Approval or PP Approval).'); return }
     setSaving(true)
     const createdIds = []
     const createdKeys = []
@@ -102,16 +104,17 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
         createdKeys.push(s._key)
 
         const docUploads = [
-          [s.measurementsFile, 'measurements', 'Measurements'],
+          [s.measurementsFile, 'measurements', 'Measurements', { measurementLabel: s.measurementLabel }],
           [s.techPackFile, 'tech_pack', 'Tech Pack'],
           [s.patternFile, 'pattern', 'Pattern'],
         ]
-        for (const [file, type, label] of docUploads) {
+        for (const [file, type, label, extra] of docUploads) {
           if (!file) continue
           try {
             await uploadDoc({
               type, name: `${label}, ${created.id}`, issuer: '', issueDate: getToday(),
               expiryDate: null, orderId: created.id, mfrId: null,
+              ...(extra || {}),
               ...fileUploadPayload(file),
             })
           } catch (e) { failedUploads.push(`${label} for ${created.id} (${e?.message || 'upload failed'})`) }
@@ -345,6 +348,7 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
                     <div>
                       <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Measurements</label>
                       <FileUpload {...MEASUREMENTS_FILE_PROPS} file={s.measurementsFile} onFile={f => updateStyle(s._key, { measurementsFile: f, measurementsErr: '' })} error={s.measurementsErr} onError={e => updateStyle(s._key, { measurementsErr: e })} />
+                      {s.measurementsFile && <div style={{ marginTop: 6 }}><MeasurementLabelSelect value={s.measurementLabel} onChange={v => updateStyle(s._key, { measurementLabel: v })} /></div>}
                     </div>
                     <div>
                       <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Tech Pack</label>

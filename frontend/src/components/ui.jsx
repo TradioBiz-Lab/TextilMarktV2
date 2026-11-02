@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, createContext, useContext, isValidElement, cloneElement } from 'react'
-import { Folder, Link2, Package, Factory, Eye, Download, FileText, StickyNote, AlertTriangle, CheckCircle2, Info, X, Image as ImageIcon, Paperclip, Upload, ChevronLeft, ChevronRight, Crown, Check, Pencil, Trash2 } from '../icons.jsx'
-import { T, ST, DOC_TYPES, STAGE_DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired, stageNameForDoc, fmtDate, fileUploadPropsFor, PO_INVOICE_DOC_TYPES } from '../constants.js'
+import { Folder, Link2, Package, Factory, Eye, Download, FileText, StickyNote, AlertTriangle, CheckCircle2, Info, X, Image as ImageIcon, Paperclip, Upload, ChevronLeft, ChevronRight, Crown, Check, Pencil, Trash2, Lock } from '../icons.jsx'
+import { T, ST, DOC_TYPES, STAGE_DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired, stageNameForDoc, fmtDate, fileUploadPropsFor, PO_INVOICE_DOC_TYPES, MEASUREMENT_LABELS, MEASUREMENT_LABEL_NAME } from '../constants.js'
 import { useApp } from '../context.jsx'
 import * as pdfjsLib from 'pdfjs-dist'
 import { CsvTable, XlsxTable, DxfPreview, AudioPlayer, Msg } from './fileViewers.jsx'
@@ -638,12 +638,23 @@ const fmtShort = d => fmtDate(d)
 // Inline edit form for a document — name, notes (stage-evidence text), and an
 // optional file/link replacement. Shared by both DocCard layouts (stage evidence
 // and regular doc) so editing behaves identically everywhere a document appears.
+/** The label every measurement sheet carries: Customer Submission, Fit Approval or PP Approval. */
+export function MeasurementLabelSelect({ value, onChange, label = 'What is this sheet? *', ...rest }) {
+  return (
+    <Select label={label} value={value || ''} onChange={e => onChange(e.target.value)} {...rest}>
+      <option value="">Select a label</option>
+      {MEASUREMENT_LABELS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+    </Select>
+  )
+}
+
 function DocEditModal({ doc, onClose, onSaved }) {
   const { updateDoc } = useApp()
   const toast = useToast()
   const isStageDoc = doc.stageIndex != null
   const [name, setName] = useState(doc.name || '')
   const [notes, setNotes] = useState(doc.notes || '')
+  const [label, setLabel] = useState(doc.measurementLabel || '')
   const [replacing, setReplacing] = useState(false)
   const [newFile, setNewFile] = useState(null)
   const [fileErr, setFileErr] = useState('')
@@ -654,10 +665,12 @@ function DocEditModal({ doc, onClose, onSaved }) {
 
   const save = async () => {
     if (!name.trim()) { setErr('Document name is required.'); return }
+    if (doc.type === 'measurements' && !label) { setErr('Choose what this measurement sheet is.'); return }
     setErr('')
     setSaving(true)
     try {
       const payload = { name: name.trim(), notes: isStageDoc ? (notes.trim() || null) : undefined }
+      if (doc.type === 'measurements' && label !== (doc.measurementLabel || '')) payload.measurementLabel = label
       if (replacing && newFile) Object.assign(payload, fileUploadPayload(newFile))
       const updated = await updateDoc(doc.id, payload)
       toast('Document updated', 'success')
@@ -672,6 +685,7 @@ function DocEditModal({ doc, onClose, onSaved }) {
     <Modal title={isStageDoc ? 'Edit Evidence' : 'Edit Document'} subtitle={doc.name} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <Input label="Document Name *" value={name} onChange={e => setName(e.target.value)} />
+        {doc.type === 'measurements' && <MeasurementLabelSelect value={label} onChange={setLabel} />}
         {isStageDoc && (
           <Textarea label="Notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="SOP context, observations, or text-only stage evidence…" rows={3} />
         )}
@@ -707,7 +721,7 @@ const READABLE_DOC_TYPE = { test_report: 'Test report', lab_dip: 'Lab dip', meas
 
 // compact: for a list already grouped under its step heading, so the card drops the stage / order / manufacturer bar it would only repeat.
 export function DocCard({ doc, users, onGetData, stageName: stageNameProp, compact = false }) {
-  const { currentUser, deleteDoc, orders, getDocVersions } = useApp()
+  const { currentUser, deleteDoc, lockDoc, orders, getDocVersions } = useApp()
   const toast = useToast()
   const [showEdit, setShowEdit] = useState(false)
   // An earlier version is a record of what was there: it is viewed and downloaded, never edited or deleted on its own.
@@ -759,10 +773,40 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp, compa
     }
   }
 
-  const manageButtons = canManage && (
+  // A measurement sheet: its label, and whether it is the style's Locked Measurement. Only a master admin sets or clears the
+  // lock; while it is set the sheet cannot be edited, replaced or deleted (the server refuses too).
+  const isMeasurement = doc.type === 'measurements' && !isEarlier
+  const isMaster = currentUser?.role === 'admin' && currentUser?.adminType === 'master'
+  const [locking, setLocking] = useState(false)
+  const toggleLock = async e => {
+    e.stopPropagation()
+    setLocking(true)
+    try { await lockDoc(doc.id, !doc.locked); toast(doc.locked ? 'Measurement unlocked' : 'Locked Measurement set', 'success') }
+    catch (err) { toast(err?.message || 'Could not change the lock', 'error') }
+    finally { setLocking(false) }
+  }
+  const measurementChips = isMeasurement && (
     <>
-      <Btn size="sm" variant="secondary" icon={<Pencil size={12} />} onClick={e => { e.stopPropagation(); setShowEdit(true) }}>Edit</Btn>
-      <Btn size="sm" variant="danger" icon={<Trash2 size={12} />} onClick={handleDelete}>Delete</Btn>
+      {doc.measurementLabel && <span style={{ fontSize: 10, fontWeight: 800, padding: '1px 8px', borderRadius: 10, background: '#e0f2fe', color: '#075985', border: '1px solid #7dd3fc', whiteSpace: 'nowrap' }}>{MEASUREMENT_LABEL_NAME[doc.measurementLabel] || doc.measurementLabel}</span>}
+      {doc.locked && <span title="The style's Locked Measurement" style={{ fontSize: 10, fontWeight: 800, padding: '1px 8px', borderRadius: 10, background: '#dcfce7', color: '#166534', border: '1px solid #86efac', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Lock size={10} /> Locked Measurement</span>}
+    </>
+  )
+  const lockButton = isMeasurement && isMaster && !!doc.orderId && (
+    <Btn size="sm" variant="secondary" icon={<Lock size={12} />} disabled={locking || (!doc.locked && !doc.measurementLabel)} onClick={toggleLock}
+      title={!doc.locked && !doc.measurementLabel ? 'Give the sheet a label first (Edit)' : undefined}>
+      {locking ? '…' : doc.locked ? 'Unlock' : 'Lock measurement'}
+    </Btn>
+  )
+  const manageButtons = (lockButton || canManage) && (
+    <>
+      {lockButton}
+      {canManage && !doc.locked && (
+        <>
+          <Btn size="sm" variant="secondary" icon={<Pencil size={12} />} onClick={e => { e.stopPropagation(); setShowEdit(true) }}>Edit</Btn>
+          <Btn size="sm" variant="danger" icon={<Trash2 size={12} />} onClick={handleDelete}>Delete</Btn>
+        </>
+      )}
+      {canManage && doc.locked && <span title="A master admin has to unlock it before it can be edited, replaced or deleted" style={{ fontSize: 11, color: T.textMuted, fontWeight: 600 }}>Locked</span>}
     </>
   )
   const editModal = (
@@ -995,6 +1039,7 @@ export function DocCard({ doc, users, onGetData, stageName: stageNameProp, compa
           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center', marginTop: 5 }}>
             <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10, background: tone ? tone.bg : '#f1f5f9', color: tone ? tone.fg : T.textMuted, border: `1px solid ${tone ? tone.bd : T.border}`, whiteSpace: 'nowrap' }}>{typLabel}</span>
             {earlierChip}
+            {measurementChips}
             {!compact && doc.orderId && <span style={{ fontSize: 11, color: T.primary, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Package size={11} /> {doc.orderId}</span>}
             {!compact && !doc.orderId && doc.masterOrderId && <span title="Attached to the whole master order" style={{ fontSize: 11, color: T.primary, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Folder size={11} /> {doc.masterOrderId}</span>}
             {!compact && mfr && <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Factory size={11} /> {mfr.company}</span>}
