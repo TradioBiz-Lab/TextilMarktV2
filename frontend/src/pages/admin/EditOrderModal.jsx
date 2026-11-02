@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { AlertTriangle, X, Plus } from '../../icons.jsx'
-import { T, phaseOf, seasonsFor, sameStyleIdIn, CATEGORIES, resolveNamedColor, pastDateNote } from '../../constants.js'
+import { T, phaseOf, isPrePhase, seasonsFor, sameStyleIdIn, CATEGORIES, resolveNamedColor, pastDateNote } from '../../constants.js'
 import { useApp } from '../../context.jsx'
 import { swatchHex, normalisePantone, PANTONE_HINT, PANTONE_PLACEHOLDER } from '../../colours.js'
 import { Btn, FlexRow, Input, Select } from '../../components/ui.jsx'
@@ -50,12 +50,12 @@ export function EditOrderModal({ order, onClose, onSave }) {
     if (!f.product.trim()) { setErr('Product name is required'); return }
     const qty = parseInt(f.totalQty, 10)
     // A style in New Product Development with no manufacturer may not know its quantity yet.
-    const qtyLater = f.phase === 'development' && !(order.assignments || []).length && !String(f.totalQty).trim()
+    const qtyLater = isPrePhase(f.phase) && !(order.assignments || []).length && !String(f.totalQty).trim()
     if (!qtyLater && (isNaN(qty) || qty < 1)) { setErr('Total quantity must be a positive number'); return }
     // The date is needed once a style in production has a manufacturer (its plan's Delivery step stands on it).
     const hasSplits = (order.assignments || []).length > 0
     // Optional until given; once a style in production with a manufacturer has one, it can be changed but not removed.
-    if (!f.delivery && order.delivery && f.phase !== 'development' && hasSplits) { setErr('The delivery date can be changed but not removed once the style has a manufacturer'); return }
+    if (!f.delivery && order.delivery && !isPrePhase(f.phase) && hasSplits) { setErr('The delivery date can be changed but not removed once the style has a manufacturer'); return }
 
     const payload = {
       product: f.product.trim(),
@@ -134,7 +134,7 @@ export function EditOrderModal({ order, onClose, onSave }) {
 
           <div className="form-grid-2" style={{ gap: 12 }}>
             <Input
-              label={f.phase === 'development' && !(order.assignments || []).length ? 'Total Quantity' : 'Total Quantity *'}
+              label={isPrePhase(f.phase) && !(order.assignments || []).length ? 'Total Quantity' : 'Total Quantity *'}
               type="number"
               value={f.totalQty}
               onChange={set('totalQty')}
@@ -146,7 +146,7 @@ export function EditOrderModal({ order, onClose, onSave }) {
                 : (order.assignments || []).length > 1 ? (order.totalQty === splitSum ? `Split across ${(order.assignments || []).length} manufacturers, so the total is the sum of their quantities.` : `The splits add up to ${splitSum}. Set the total to ${splitSum} to match them.`) : undefined}
             />
             <Input
-              label={f.phase !== 'development' && (order.assignments || []).length > 0 && order.delivery ? 'Promised delivery date *' : 'Promised delivery date'}
+              label={!isPrePhase(f.phase) && (order.assignments || []).length > 0 && order.delivery ? 'Promised delivery date *' : 'Promised delivery date'}
               type="date"
               value={f.delivery}
               onChange={set('delivery')}

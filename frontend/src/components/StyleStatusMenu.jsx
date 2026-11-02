@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, Check, ArrowRight, ArrowLeft, Trash2 } from '../icons.jsx'
-import { T, ST, deliveryStatus, styleStatus, factoriesOnHold } from '../constants.js'
+import { T, ST, PHASE_LABEL, isPreProduction, deliveryStatus, styleStatus, factoriesOnHold } from '../constants.js'
 import { Btn, FlexRow, Modal, Textarea, useToast } from './ui.jsx'
 import { useApp } from '../context.jsx'
 
 // Everything about where a style stands, in one place: its status (applied to every manufacturer split at once), its
-// stage (New Product Development or Production) and dropping it. Only On Hold (with a reason) and back to Processing
+// stage (New Product Development, Replen or Production) and dropping it. Only On Hold (with a reason) and back to Processing
 // are picked here: Delivered follows the Delivery step, and Delayed shows by itself once a step or the delivery date
 // has passed (constants.js styleStatus is the one rule every screen uses).
 const SETTABLE = ['Processing', 'On Hold']
@@ -26,7 +26,7 @@ export function StyleStatusMenu({ order, canStatus, canStage, canDrop, onPromote
   }
   const [pick, setPick] = useState(null)      // the status being applied (asks for an optional note)
   const [note, setNote] = useState('')
-  const [demoting, setDemoting] = useState(false)
+  const [demoting, setDemoting] = useState(null) // the phase a production style is being moved back to
   const [busy, setBusy] = useState(false)
   const ref = useRef(null)
   useEffect(() => {
@@ -41,7 +41,8 @@ export function StyleStatusMenu({ order, canStatus, canStage, canDrop, onPromote
   const current = styleStatus(order)
   const held = factoriesOnHold(order)
   const anyDelivered = splits.some(a => deliveryStatus(order, a).delivered)
-  const dev = order.phase === 'development'
+  const dev = isPreProduction(order)
+  const otherPre = order.phase === 'replen' ? 'development' : 'replen'
   const showStatus = canStatus && splits.length > 0
   if (!showStatus && !canStage && !canDrop) return null
 
@@ -55,9 +56,16 @@ export function StyleStatusMenu({ order, canStatus, canStage, canDrop, onPromote
     } catch (e) { toast(typeof e === 'string' ? e : (e?.message || 'Could not change the status'), 'error') }
     finally { setBusy(false) }
   }
+  // Between New Product Development and Replen nothing else changes: no plan or date moves, so no confirmation is asked.
+  const movePre = async phase => {
+    setBusy(true)
+    try { await editOrder(order.id, { phase }); toast(`Moved to ${PHASE_LABEL[phase]}`, 'success') }
+    catch (e) { toast(typeof e === 'string' ? e : (e?.message || 'Could not move the style'), 'error') }
+    finally { setBusy(false) }
+  }
   const demote = async () => {
     setBusy(true)
-    try { await editOrder(order.id, { phase: 'development' }); toast('Moved back to New Product Development', 'success'); setDemoting(false) }
+    try { await editOrder(order.id, { phase: demoting }); toast(`Moved back to ${PHASE_LABEL[demoting]}`, 'success'); setDemoting(null) }
     catch (e) { toast(typeof e === 'string' ? e : (e?.message || 'Could not move the style'), 'error') }
     finally { setBusy(false) }
   }
@@ -94,9 +102,13 @@ export function StyleStatusMenu({ order, canStatus, canStage, canDrop, onPromote
           {canStage && (<>
             <div style={{ height: 1, background: T.border, margin: '4px 0' }} />
             {heading('Stage')}
-            {dev
-              ? item('Move to production', { icon: <ArrowRight size={13} />, onClick: onPromote })
-              : item('Move back to New Product Development', { icon: <ArrowLeft size={13} />, disabled: anyDelivered, hint: anyDelivered ? 'A style with a delivered split stays in production' : undefined, onClick: () => setDemoting(true) })}
+            {dev ? (<>
+              {item('Move to production', { icon: <ArrowRight size={13} />, onClick: onPromote })}
+              {item(`Move to ${PHASE_LABEL[otherPre]}`, { icon: <ArrowLeft size={13} />, onClick: () => movePre(otherPre) })}
+            </>) : (<>
+              {item('Move back to New Product Development', { icon: <ArrowLeft size={13} />, disabled: anyDelivered, hint: anyDelivered ? 'A style with a delivered split stays in production' : undefined, onClick: () => setDemoting('development') })}
+              {item('Move back to Replen', { icon: <ArrowLeft size={13} />, disabled: anyDelivered, hint: anyDelivered ? 'A style with a delivered split stays in production' : undefined, onClick: () => setDemoting('replen') })}
+            </>)}
           </>)}
           {canDrop && (<>
             <div style={{ height: 1, background: T.border, margin: '4px 0' }} />
@@ -118,11 +130,11 @@ export function StyleStatusMenu({ order, canStatus, canStage, canDrop, onPromote
         </Modal>
       )}
       {demoting && (
-        <Modal title="Move back to New Product Development" onClose={() => { if (!busy) setDemoting(false) }} size="sm">
+        <Modal title={`Move back to ${PHASE_LABEL[demoting]}`} onClose={() => { if (!busy) setDemoting(null) }} size="sm">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ fontSize: 13, color: T.textMuted }}>The style leaves the production numbers. Its plans lose the Delivery step and the style its delivery date; both come back when it moves to production again.</div>
             <FlexRow justify="flex-end" gap={8}>
-              <Btn variant="secondary" disabled={busy} onClick={() => setDemoting(false)}>Cancel</Btn>
+              <Btn variant="secondary" disabled={busy} onClick={() => setDemoting(null)}>Cancel</Btn>
               <Btn disabled={busy} onClick={demote}>{busy ? 'Moving...' : 'Move back'}</Btn>
             </FlexRow>
           </div>

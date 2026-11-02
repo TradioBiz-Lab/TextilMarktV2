@@ -3,7 +3,7 @@ import { useNavState } from '../../navState.js'
 import { CalendarClock, AlertTriangle, Package, Ban, CircleDot, CheckCircle2, Search, BarChart3, Folder, MessageCircle, Calendar, ChevronDown, ChevronRight, Play, Download, ArrowRight, Sparkles } from '../../icons.jsx'
 import {
   T, dayNumber, getToday, fmtN, effectiveEta, planProgress, deliveryStatus, splitDue,
-  stageStatusOf, stageIsOverdue, isStageDone, inFlightStages, stageProgressLabel, stageVariance, productionOrders, developmentOrders, styleOnHold, fmtDate, dueDates,
+  stageStatusOf, stageIsOverdue, isStageDone, inFlightStages, stageProgressLabel, stageVariance, productionOrders, preProductionOrders, styleOnHold, fmtDate, dueDates,
 } from '../../constants.js'
 import { toCsvCell } from '../../csvCell.js'
 import { Btn, Card, EmptyState, FlexRow, Modal, Mono, LoadingScreen, PageHeader, ProductThumb, StatCard, activateOnKey } from '../../components/ui.jsx'
@@ -178,7 +178,7 @@ export function ReportingPage({ onOpen, initialMo }) {
   const { orders: allOrders, masterOrders, currentUser, loading, loadError } = useApp()
   // The report is about styles in production; the ones still being sampled are left out and counted below the title.
   const orders = useMemo(() => productionOrders(allOrders), [allOrders])
-  const inDevelopment = developmentOrders(allOrders).length
+  const inDevelopment = preProductionOrders(allOrders).length
   const onHold = orders.filter(styleOnHold).length
   const [q, setQ] = useNavState('reports.q', '')
   const [healthFilter, setHealthFilter] = useNavState('reports.health', 'All')
@@ -334,7 +334,7 @@ export function ReportingPage({ onOpen, initialMo }) {
     <div>
       <PageHeader
         title="Order Status"
-        subtitle={`Where every style stands right now: what's open, what's stuck, what's next${inDevelopment ? `. ${inDevelopment} ${inDevelopment === 1 ? 'style' : 'styles'} in New Product Development not included.` : ''}${onHold ? ` ${onHold} on hold not included.` : ''}`}
+        subtitle={`Where every style stands right now: what's open, what's stuck, what's next${inDevelopment ? `. ${inDevelopment} ${inDevelopment === 1 ? 'style' : 'styles'} in New Product Development or Replen not included.` : ''}${onHold ? ` ${onHold} on hold not included.` : ''}`}
         action={(
           <FlexRow gap={8}>
             <Btn variant="secondary" icon={<Download size={16} />} onClick={exportExcel} disabled={filtered.length === 0 || exporting}>{exporting ? 'Preparing…' : 'Export to Excel'}</Btn>

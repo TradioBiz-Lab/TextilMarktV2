@@ -453,7 +453,7 @@ export const deliveryStatus = (order, asgn) => {
   const stages = asgn?.stages || []
   const step = stages.find(s => s.isDelivery)
   // A style still in New Product Development has no Delivery step; finishing its development steps is not delivery.
-  const delivered = order?.phase !== 'development' && (asgn?.status === 'Delivered'
+  const delivered = !isPreProduction(order) && (asgn?.status === 'Delivered'
     || (step ? isStageDone(step) : stages.length > 0 && stages.every(isStageDone)))
   const actualEnd = delivered && step?.actualEnd && step.actualEnd !== 'NA' ? step.actualEnd : null
   // Quantity actually delivered against what was ordered for this split. `diff` is negative when short.
@@ -465,11 +465,20 @@ export const deliveryStatus = (order, asgn) => {
   }
 }
 
-/** A style is either still in new product development or in production; styles from before the field are production. */
-export const PHASES = [['production', 'Production'], ['development', 'New Product Development']]
-export const phaseOf = o => (o?.phase === 'development' ? 'development' : 'production')
+/**
+ * A style is in New Product Development (being sampled), in Replen (a reorder of an existing style) or in production; styles
+ * from before the field are production. Development and Replen behave the same: no delivery date or Delivery step yet.
+ */
+export const PHASES = [['production', 'Production'], ['development', 'New Product Development'], ['replen', 'Replen']]
+export const PHASE_LABEL = Object.fromEntries(PHASES)
+const PRE_PRODUCTION = ['development', 'replen']
+export const isPrePhase = phase => PRE_PRODUCTION.includes(phase)
+export const isPreProduction = o => isPrePhase(o?.phase)
+export const phaseOf = o => (isPreProduction(o) ? o.phase : 'production')
 export const productionOrders = orders => (orders || []).filter(o => phaseOf(o) === 'production')
 export const developmentOrders = orders => (orders || []).filter(o => phaseOf(o) === 'development')
+export const replenOrders = orders => (orders || []).filter(o => phaseOf(o) === 'replen')
+export const preProductionOrders = orders => (orders || []).filter(isPreProduction)
 /** A style is on hold when it has manufacturer splits and every one of them is On Hold. It leaves the TNA. */
 export const styleOnHold = o => (o?.assignments || []).length > 0 && o.assignments.every(a => a.status === 'On Hold')
 

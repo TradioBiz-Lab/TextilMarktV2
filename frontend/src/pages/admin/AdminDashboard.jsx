@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react'
 import { DashboardSummary } from '../../components/DashboardSummary.jsx'
 import { capsFor } from '../../caps.js'
 import { FileIntoStyle } from '../../components/FileIntoStyle.jsx'
-import { ShoppingBag, Factory, Package, Siren, Target, Check, Shirt, Layers, ClipboardList, Megaphone, ChevronRight, Building2, Truck, FlaskConical, Scissors } from '../../icons.jsx'
-import { T, ST, productionMetrics, productionOrders, developmentOrders, isExpiringSoon, isExpired, getToday, dayNumber, effectiveEta, withBuyerPrefix, fmtDate, styleStatus, masterOrderStatus, inFlightStages } from '../../constants.js'
+import { ShoppingBag, Factory, Package, Siren, Target, Check, Shirt, Layers, ClipboardList, Megaphone, ChevronRight, Building2, Truck, FlaskConical, RefreshCw, Scissors } from '../../icons.jsx'
+import { T, ST, productionMetrics, productionOrders, developmentOrders, replenOrders, isExpiringSoon, isExpired, getToday, dayNumber, effectiveEta, withBuyerPrefix, fmtDate, styleStatus, masterOrderStatus, inFlightStages } from '../../constants.js'
 import { StatCard, Card, Grid, EmptyState, Mono, PageHeader, Badge, Btn, FlexRow, Modal, Select, Textarea, Input, Alert, LoadingScreen, DocCard } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
@@ -53,6 +53,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
   // Everything on the dashboard is about styles in production; the ones still being sampled are counted on their own.
   const orders = productionOrders(allOrders)
   const inDevelopment = developmentOrders(allOrders).length
+  const inReplen = replenOrders(allOrders).length
   const [openSections, setOpenSections] = useState({ orders: !!caps.isBuyer, actions: false, requests: false, alerts: false, ribbons: false })
   const toggleSection = id => setOpenSections(p => ({ ...p, [id]: !p[id] }))
 
@@ -236,6 +237,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
               <StatCard key="deliv" label="Delivered" value={prod.stylesDelivered} icon={<Truck size={19} color={T.success} />} bg={T.successBg} onClick={go('reports')} hint="Open Reports" />,
               <StatCard key="prod" label="In production" value={prod.stylesInProduction} icon={<Scissors size={19} color="#92400e" />} bg="#fef9c3" onClick={go('orders')} hint="Open Orders" />,
               <StatCard key="pre" label="New product development" value={inDevelopment} icon={<FlaskConical size={19} color="#5b21b6" />} bg="#ede9fe" onClick={go('orders', { phase: 'development' })} hint="Open New Product Development" />,
+              <StatCard key="replen" label="Replen" value={inReplen} icon={<RefreshCw size={19} color="#0f766e" />} bg="#ccfbf1" onClick={go('orders', { phase: 'replen' })} hint="Open Replen" />,
             ])}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18 }}>
               {caps.isAdmin && group('Products (pieces)', [

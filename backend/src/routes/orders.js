@@ -25,7 +25,6 @@ import { PlanTemplate } from '../models/PlanTemplate.js'
 import { materialDetails, newMaterialDetails } from '../lib/materialFields.js'
 
 // Categories are now free-text — no validation needed
-const ORDER_PHASES    = ['development', 'production']
 const MAX_PRODUCT_PHOTO_SIZE = 1024 * 1024 // 1MB raw - reference thumbnail, not full-res
 const MAX_STYLE_PHOTOS = 12
 
@@ -70,6 +69,7 @@ const mainPhotoFields = photos => {
   return { imageDataUrl: main && main.startsWith('data:') ? main : null, imageUrl: main && !main.startsWith('data:') ? main : null }
 }
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
+import { ORDER_PHASES, isPreProduction } from '../lib/phases.js'
 // Email triggers for orders are intentionally suppressed — order activity is portal-notifications only
 
 // Rate limits are real behaviour, not test behaviour — a suite that writes 200
@@ -362,7 +362,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 export async function validateAndCreateOrder({ id, buyerId, product, styleNumber, category, season, phase, totalQty, delivery, createdAt, masterOrderId, assignments: asgns, stageEtas, stageStartDates, stageNames: customStages, stageResponsibleIds, stageDescriptions, stageTotalUnits, stageKinds, colourways, fabricDetails, callout, imageDataUrl, imageUrl, ecommerceLink, photos }) {
   // No delivery date at creation: it is set when the style gets its manufacturer (or with a plan sent here).
   // A style in New Product Development may wait for its bulk quantity (unless a manufacturer split is made now).
-  const qtyLater = phase === 'development' && !(Array.isArray(asgns) && asgns.length) && (totalQty == null || totalQty === '')
+  const qtyLater = isPreProduction(phase) && !(Array.isArray(asgns) && asgns.length) && (totalQty == null || totalQty === '')
   if (!id || !buyerId || !product || (!totalQty && !qtyLater))
     return { ok: false, error: 'Missing required fields' }
   if (typeof id !== 'string' || typeof product !== 'string')
@@ -905,7 +905,7 @@ router.post('/:orderId/assignments', requireAuth, requireAdmin, updateLimiter, a
     // Delivery step on it. Without one the Delivery step is undated (NA) and takes the date when it is given.
     let deliveryISO = existing.delivery ? new Date(existing.delivery).toISOString().slice(0, 10) : null
     let setDelivery = null
-    if (existing.phase !== 'development' && !deliveryISO && delivery !== undefined && delivery !== null && delivery !== '') {
+    if (!isPreProduction(existing.phase) && !deliveryISO && delivery !== undefined && delivery !== null && delivery !== '') {
       if (typeof delivery !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(delivery) || isNaN(new Date(delivery).getTime()))
         return res.status(400).json({ error: 'Invalid delivery date (YYYY-MM-DD)' })
       deliveryISO = delivery
@@ -917,7 +917,7 @@ router.post('/:orderId/assignments', requireAuth, requireAdmin, updateLimiter, a
       // Starts with just the mandatory Delivery step; the TNA builder adds the rest in front of it. A style still
       // in New Product Development starts with the standard development plan instead, and no Delivery step yet.
       { ...(setDelivery ? { $set: { delivery: setDelivery, ...(existing.baselineDelivery ? {} : { baselineDelivery: setDelivery }) } } : {}),
-        $push: { assignments: { mfrId, qty: aqty, status: 'Processing', sub: nextSub, note: '', stages: existing.phase === 'development'
+        $push: { assignments: { mfrId, qty: aqty, status: 'Processing', sub: nextSub, note: '', stages: isPreProduction(existing.phase)
         // No Delivery step until the style moves to production and gets a delivery date.
         ? makeDevelopmentStages(getToday())
         : [makeDeliveryStage(deliveryISO || 'NA')] } } },
@@ -2720,7 +2720,7 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
     }
 
     // A style in New Product Development may have its quantity cleared (not known yet); one in production may not.
-    if ((totalQty === null || totalQty === '') && (updates.phase || existing.phase) === 'development' && !(existing.assignments || []).length) {
+    if ((totalQty === null || totalQty === '') && isPreProduction(updates.phase || existing.phase) && !(existing.assignments || []).length) {
       updates.totalQty = null
     } else if (totalQty !== undefined) {
       const qty = parseInt(totalQty, 10)
@@ -2775,7 +2775,7 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
 
     if (delivery === null || delivery === '') {
       // A style with a manufacturer in production needs its date (its Delivery step stands on it); new Date(null) would be 1 Jan 1970.
-      if ((updates.phase || existing.phase) !== 'development' && (existing.assignments || []).length) return res.status(400).json({ error: 'A style with a manufacturer in production needs a delivery date' })
+      if (!isPreProduction(updates.phase || existing.phase) && (existing.assignments || []).length) return res.status(400).json({ error: 'A style with a manufacturer in production needs a delivery date' })
       updates.delivery = null
     } else if (delivery !== undefined) {
       const d = new Date(delivery)
@@ -2797,7 +2797,7 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
     // Moving a style out of New Product Development needs a delivery date, and its plans then end in the mandatory
     // Delivery step they did not have while it was being developed.
     let promoteDeliveryISO = null
-    const promoting = existing.phase === 'development' && updates.phase === 'production'
+    const promoting = isPreProduction(existing.phase) && updates.phase === 'production'
     if (promoting && !(updates.totalQty ?? existing.totalQty))
       return res.status(400).json({ error: 'Give the style its quantity before moving it to production' })
     if (promoting) {
@@ -2809,7 +2809,7 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
     // (unless this same edit sets one), as for any style being developed. A style with a delivered split stays in
     // production, since that delivery really happened.
     let demote = false
-    if ((existing.phase || 'production') === 'production' && updates.phase === 'development') {
+    if ((existing.phase || 'production') === 'production' && isPreProduction(updates.phase)) {
       const delivered = (existing.assignments || []).some(a => a.status === 'Delivered'
         || (a.stages || []).some(st => st.isDelivery && deriveStageStatus(st) === 'done'))
       if (delivered) return res.status(400).json({ error: 'A style with a delivered split stays in production' })

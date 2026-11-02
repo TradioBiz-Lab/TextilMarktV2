@@ -1,5 +1,5 @@
 import { describe, test, expect, vi } from 'vitest'
-import { deliveryStatus, productionMetrics, productionOrders, developmentOrders } from '../constants.js'
+import { deliveryStatus, productionMetrics, productionOrders, developmentOrders, replenOrders, preProductionOrders, phaseOf, isPreProduction, isPrePhase, PHASES } from '../constants.js'
 import { rowCallout } from '../dashboardSummary.js'
 
 const done = (name, over = {}) => ({ name, kind: 'milestone', status: 'done', unitsDone: 1, totalUnits: 1, ...over })
@@ -121,5 +121,30 @@ describe('a style in new product development', () => {
     const steps = [{ name: 'Request Received', kind: 'milestone', status: 'done', unitsDone: 1, totalUnits: 1 }, { name: 'Ready for Production', kind: 'milestone', status: 'done', unitsDone: 1, totalUnits: 1 }]
     expect(deliveryStatus({ phase: 'development', delivery: null }, { stages: steps }).delivered).toBe(false)
     expect(deliveryStatus({ phase: 'production', delivery: null }, { stages: steps }).delivered).toBe(true)   // old plans with no Delivery step
+  })
+})
+
+describe('replen is a phase before production, like development', () => {
+  test('the phases, in tab order', () => {
+    expect(PHASES.map(([v]) => v)).toEqual(['production', 'development', 'replen'])
+    expect(isPrePhase('replen')).toBe(true)
+    expect(isPrePhase('development')).toBe(true)
+    expect(isPrePhase('production')).toBe(false)
+    expect(isPreProduction({ phase: 'replen' })).toBe(true)
+    expect(isPreProduction({})).toBe(false)
+  })
+
+  test('each style lands in one list; an old style with no phase is production', () => {
+    const orders = [{ id: 'A' }, { id: 'B', phase: 'development' }, { id: 'C', phase: 'replen' }, { id: 'D', phase: 'production' }]
+    expect(orders.map(phaseOf)).toEqual(['production', 'development', 'replen', 'production'])
+    expect(productionOrders(orders).map(o => o.id)).toEqual(['A', 'D'])
+    expect(developmentOrders(orders).map(o => o.id)).toEqual(['B'])
+    expect(replenOrders(orders).map(o => o.id)).toEqual(['C'])
+    expect(preProductionOrders(orders).map(o => o.id)).toEqual(['B', 'C'])
+  })
+
+  test('a replen style is never delivered by finishing its steps, as with development', () => {
+    const steps = [{ name: 'Request Received', status: 'done', unitsDone: 1, totalUnits: 1 }]
+    expect(deliveryStatus({ phase: 'replen', delivery: null }, { stages: steps }).delivered).toBe(false)
   })
 })

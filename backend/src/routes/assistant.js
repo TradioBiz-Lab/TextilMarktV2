@@ -7,6 +7,7 @@ import { stageEtaVarianceDays, deliveryVarianceDays } from '../models/Order.js'
 import { getToday, stageActualVariance, deliveryOverrunDays } from '../lib/stageMath.js'
 import { isoDay } from '../lib/masterOrderDetails.js'
 import { parsePartnerQuery, partnerQueryString } from '../lib/partners.js'
+import { ORDER_PHASES, isPreProduction } from '../lib/phases.js'
 
 const router = Router()
 
@@ -354,10 +355,10 @@ export const TOOL_HANDLERS = {
   create_order: async (input, ctx) => {
     if (typeof input?.product !== 'string' || !input.product.trim() || input.product.length > 300) return badInput('product')
     // A style still in development may not know its quantity yet.
-    if (!(input.phase === 'development' && input.totalQty === undefined && !input.manufacturerId) && (!Number.isInteger(input.totalQty) || input.totalQty < 1)) return badInput('totalQty')
+    if (!(isPreProduction(input.phase) && input.totalQty === undefined && !input.manufacturerId) && (!Number.isInteger(input.totalQty) || input.totalQty < 1)) return badInput('totalQty')
     if (typeof input.masterOrderId !== 'string' || !ORDER_ID_RE.test(input.masterOrderId)) return badInput('masterOrderId')
     if (input.season !== undefined && !SEASON_RE.test(String(input.season))) return badInput('season')
-    if (input.phase !== undefined && !['production', 'development'].includes(input.phase)) return badInput('phase')
+    if (input.phase !== undefined && !ORDER_PHASES.includes(input.phase)) return badInput('phase')
     if (input.manufacturerId !== undefined && !OBJECT_ID_RE.test(String(input.manufacturerId))) return badInput('manufacturerId')
     if (input.delivery !== undefined && !isoDay(input.delivery)) return badInput('delivery')
     if (input.colourways !== undefined && !(Array.isArray(input.colourways) && input.colourways.every(c => typeof c === 'string' && c.length <= 60))) return badInput('colourways')
@@ -655,9 +656,9 @@ const TOOLS = [
         product: { type: 'string', maxLength: 300, description: "e.g. 'Smocked Waist Top'." },
         styleNumber: { type: 'string', maxLength: 60, description: "The customer's style ID (their own code for the style), if they give one." },
         category: { type: 'string', maxLength: 50, description: "Free text, e.g. 'TOP' or 'DRESS'. It becomes part of the style ID." },
-        totalQty: { type: 'integer', minimum: 1, description: 'The bulk quantity. Required unless the style is in development (phase) with no manufacturer yet.' },
+        totalQty: { type: 'integer', minimum: 1, description: 'The bulk quantity. Required unless the style is in development or replen (phase) with no manufacturer yet.' },
         season: { type: 'string', maxLength: 10, description: "Defaults to the master order's; otherwise one of the customer's seasons." },
-        phase: { type: 'string', enum: ['production', 'development'], description: "Defaults to production; 'development' for a style still being sampled." },
+        phase: { type: 'string', enum: ['production', 'development', 'replen'], description: "Defaults to production; 'development' for a style still being sampled, 'replen' for a reorder of an existing style." },
         colourways: { type: 'array', items: { type: 'string', maxLength: 60 }, maxItems: 40 },
         manufacturerId: { type: 'string', description: 'Optional: the manufacturer to assign (from list_companies).' },
         delivery: { type: 'string', description: "ISO date 'YYYY-MM-DD'. Needed when a manufacturer is assigned to a style in production." },

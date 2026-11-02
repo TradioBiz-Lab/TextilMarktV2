@@ -1,5 +1,6 @@
 import mongoose from 'mongoose'
 import { getToday, effectiveEta } from '../lib/stageMath.js'
+import { ORDER_PHASES, isPreProduction } from '../lib/phases.js'
 
 // Default production stages — admin can override per order at creation time
 export const DEFAULT_STAGE_NAMES = [
@@ -256,9 +257,9 @@ const orderSchema = new mongoose.Schema({
   season:   { type: String },
   // Where the style is in its life: still being sampled and developed, or in production. Orders from before
   // this field are production.
-  phase:    { type: String, enum: ['development', 'production'], default: 'production' },
+  phase:    { type: String, enum: ORDER_PHASES, default: 'production' },
   // A style in New Product Development may not know its bulk quantity yet; it needs one to move to production.
-  totalQty: { type: Number, min: 1, default: null, required: function () { return this.phase !== 'development' } },
+  totalQty: { type: Number, min: 1, default: null, required: function () { return !isPreProduction(this.phase) } },
   // A style still in New Product Development has no delivery date; one is set when it moves to production.
   delivery: { type: Date, default: null },
   // Frozen original delivery promise — same baselineEta/eta pattern as

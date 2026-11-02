@@ -7,7 +7,7 @@ import {
   stageKindOf, kindForCustomerOwner, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
   stagePct, stageProgressLabel, STAGE_STATUS_LABELS, dayNumber, getToday, planProgress,
   PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, stageNameForDoc, PO_INVOICE_DOC_TYPES, COMMERCIAL_DOC_TYPES, deliveryDocsOf, defaultStepOwner, stepOwnerOptions,
-  fmtDate, styleStatus, dueDates, dueText, pastDateNote, siblingStepNames, stepNameWarning,
+  fmtDate, styleStatus, dueDates, dueText, pastDateNote, siblingStepNames, stepNameWarning, isPreProduction, PHASE_LABEL,
 } from '../../constants.js'
 import { PlanStarter } from '../../components/PlanStarter.jsx'
 import { planTemplatesApi } from '../../api.js'
@@ -815,7 +815,8 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
               </button>
             )
           })()}
-          {order.phase === 'development' && <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 10, background: '#ede9fe', color: '#5b21b6', border: '1px solid #c4b5fd' }}>New Product Development</span>}
+          {order.phase === 'development' && <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 10, background: '#ede9fe', color: '#5b21b6', border: '1px solid #c4b5fd' }}>{PHASE_LABEL.development}</span>}
+          {order.phase === 'replen' && <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 10, background: '#ccfbf1', color: '#0f766e', border: '1px solid #5eead4' }}>{PHASE_LABEL.replen}</span>}
           <div style={{ flex: 1 }} />
           {!unassigned && order.assignments?.length > 1 && (
             <Btn variant="secondary" size="sm" onClick={() => setSelectedMid(null)} icon={<ArrowLeftRight size={13} />}>All splits</Btn>
@@ -1208,7 +1209,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                 {mfrUsers.map(m => <option key={m.id} value={m.id}>{m.company} ({m.code})</option>)}
               </Select>
               <Input label="Quantity *" type="number" value={newMfrQty ?? String(order.totalQty || '')} onChange={e => setNewMfrQty(e.target.value)} />
-              {order.phase !== 'development' && !order.delivery && (
+              {!isPreProduction(order) && !order.delivery && (
                 <Input label="Promised delivery date" type="date" value={newMfrDelivery} onChange={e => setNewMfrDelivery(e.target.value)} hint={pastDateNote(newMfrDelivery) || "Optional. The plan's Delivery step is dated with it."} />
               )}
             </div>

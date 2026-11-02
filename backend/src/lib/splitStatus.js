@@ -5,6 +5,7 @@
 // has passed. A delay someone hears about early is recorded by moving that step's date, which shows as slip.
 import { deriveStageStatus } from '../models/Order.js'
 import { effectiveEta, getToday } from './stageMath.js'
+import { isPreProduction } from './phases.js'
 
 const day = v => (v ? (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10) : null)
 
@@ -18,6 +19,6 @@ export function splitStatus(order, asgn, today = getToday()) {
   })
   const hasDeliveryStep = stages.some(s => s.isDelivery)
   const promised = day(order?.delivery)
-  const latePromise = !hasDeliveryStep && order?.phase !== 'development' && !!promised && promised < today
+  const latePromise = !hasDeliveryStep && !isPreProduction(order?.phase) && !!promised && promised < today
   return lateStep || latePromise ? 'Delayed' : 'Processing'
 }

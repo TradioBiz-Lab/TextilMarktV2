@@ -4,7 +4,7 @@ import { Plus, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, 
 import {
   T, SEASONS, ORDER_STATUSES, seasonsFor,
   isStageDone, stageIsOverdue, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct, fmtStageDate, effectiveEta, styleStatus,
-  CELL_STATE, cellState, buildMatrixSpine, withBuyerPrefix, getToday, PHASES, phaseOf, styleOnHold, moDetailsForm, moDetailsPayload
+  CELL_STATE, cellState, buildMatrixSpine, withBuyerPrefix, getToday, PHASES, PHASE_LABEL, phaseOf, styleOnHold, moDetailsForm, moDetailsPayload
 } from '../../constants.js'
 import { Badge, Btn, Card, EmptyState, Mono, FlexRow, PageHeader, Select, Input, Textarea, FileUpload, LoadingScreen, useToast, fileUploadPayload, ProductThumb, Modal, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -40,7 +40,7 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
   const [sfilt, setSfilt] = useNavState('orders.status', initialStatus || 'All')
   // Styles still being sampled and developed are kept apart from the ones in production.
   const [phase, setPhase] = useNavState('orders.phase', initialPhase || 'production')
-  // Moving styles out of New Product Development: tick the ones that are ready and move them in one go.
+  // Moving styles out of New Product Development or Replen: tick the ones that are ready and move them in one go.
   const [promoteOpen, setPromoteOpen] = useState(false)
   const [picked, setPicked] = useState(() => new Set())
   const [moving, setMoving] = useState(false)
@@ -270,7 +270,7 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
           </button>
         ))}
       </FlexRow>
-      {phase === 'development' && currentUser.role !== 'manufacturer' && (() => {
+      {phase !== 'production' && currentUser.role !== 'manufacturer' && (() => {
         const ready = caps.editOrders ? filtered : []
         if (ready.length === 0) return null
         const byMo = new Map()
@@ -386,7 +386,7 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
         {/* Styles across the top, TNA steps down the side. Each cell's state is named in its hover tooltip. */}
           <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-            {groupedOrders.length === 0 && <EmptyState icon={<Package size={26} color={T.textLight} />} title={phase === 'development' ? 'Nothing in New Product Development' : 'No orders'} desc={phase === 'development' ? 'Styles still being sampled show up here.' : caps.createOrders ? "Create your first order above" : "Orders will appear here once they are placed"} />}
+            {groupedOrders.length === 0 && <EmptyState icon={<Package size={26} color={T.textLight} />} title={phase !== 'production' ? `Nothing in ${PHASE_LABEL[phase]}` : 'No orders'} desc={phase === 'development' ? 'Styles still being sampled show up here.' : phase === 'replen' ? 'Reorders of existing styles show up here.' : caps.createOrders ? "Create your first order above" : "Orders will appear here once they are placed"} />}
 
             {groupedOrders.map(g => {
               // Earliest delivery first — the style due soonest is the one that

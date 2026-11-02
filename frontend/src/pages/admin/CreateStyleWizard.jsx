@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { X, Plus, Trash2, ChevronLeft, ChevronRight, AlertTriangle, Camera } from '../../icons.jsx'
-import { T, PHASES, CATEGORIES, PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, getToday, pastDateNote, sameStyleIdIn } from '../../constants.js'
+import { T, PHASES, isPrePhase, CATEGORIES, PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, getToday, pastDateNote, sameStyleIdIn } from '../../constants.js'
 import { swatchHex, normalisePantone, PANTONE_HINT, PANTONE_PLACEHOLDER, photoFromFile } from '../../colours.js'
 import { Btn, FlexRow, Input, Select, FileUpload, fileUploadPayload, useToast } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -71,8 +71,8 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
     s.product.trim() &&
     (s.category && s.category !== '__custom__' ? true : s.customCategory.trim()) &&
     !!s.phase &&
-    // A style in New Product Development may not know its bulk quantity yet; one in production needs it.
-    (s.phase === 'development' && !String(s.totalQty).trim() ? true : s.totalQty && Number.isInteger(Number(s.totalQty)) && Number(s.totalQty) > 0)
+    // A style in New Product Development or Replen may not know its bulk quantity yet; one in production needs it.
+    (isPrePhase(s.phase) && !String(s.totalQty).trim() ? true : s.totalQty && Number.isInteger(Number(s.totalQty)) && Number(s.totalQty) > 0)
   )
 
   const submit = async () => {
@@ -189,7 +189,7 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
                             style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 12px', fontSize: 13, marginTop: 6, fontFamily: 'inherit', boxSizing: 'border-box' }} />
                         )}
                       </div>
-                      <Input label={s.phase === 'development' ? 'Quantity' : 'Quantity *'} type="number" value={s.totalQty} onChange={e => updateStyle(s._key, { totalQty: e.target.value })} placeholder="5000" hint={s.phase === 'development' ? 'Optional until it moves to production.' : undefined} />
+                      <Input label={isPrePhase(s.phase) ? 'Quantity' : 'Quantity *'} type="number" value={s.totalQty} onChange={e => updateStyle(s._key, { totalQty: e.target.value })} placeholder="5000" hint={isPrePhase(s.phase) ? 'Optional until it moves to production.' : undefined} />
                     </div>
 
                     <div className="form-grid-2" style={{ gap: 10 }}>

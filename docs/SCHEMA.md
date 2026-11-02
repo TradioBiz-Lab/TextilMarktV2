@@ -85,7 +85,11 @@ Uses a human-readable custom string `_id` for traceability.
                                   JACKET, POLO, SHORTS, HOODIE
   season        String            the customer's own season code (users.seasons, else SS26..SS28);
                                   checked by lib/seasons.js, not a schema enum
-  totalQty      Number | null     min: 1. Required, except for a style in New Product Development with no
+  phase         String            development | replen | production (default; styles from before the field are
+                                  production). Development (New Product Development) and Replen (a reorder of an
+                                  existing style) behave the same: no Delivery step, no delivery date or quantity
+                                  needed yet; moving to production asks for them (lib/phases.js)
+  totalQty      Number | null     min: 1. Required, except for a style in New Product Development or Replen with no
                                   manufacturer yet; it must be given before moving to production
   delivery      Date | null       the expected delivery date, optional: at creation, with the first
                                   manufacturer or later. A plan's Delivery step is dated with it; made

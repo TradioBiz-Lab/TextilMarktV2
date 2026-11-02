@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, ArrowRight, Folder, Package, Truck, Scissors, FlaskConical, PauseCircle, Trash2, Factory, Calendar, ChevronRight, Building2, BarChart3, LayoutGrid, Pencil, Plus, FileText, StickyNote, Wallet, MapPin, Paperclip } from '../../icons.jsx'
+import { ArrowLeft, ArrowRight, Folder, Package, Truck, Scissors, FlaskConical, RefreshCw, PauseCircle, Trash2, Factory, Calendar, ChevronRight, Building2, BarChart3, LayoutGrid, Pencil, Plus, FileText, StickyNote, Wallet, MapPin, Paperclip } from '../../icons.jsx'
 import { T, phaseOf, deliveryStatus, planProgress, styleOnHold, dayNumber, getToday, effectiveEta, fmtDate, dueText, dueDates, factoriesOnHold, fmtMoney } from '../../constants.js'
 import { Btn, Card, FlexRow, Mono, ProductThumb, EmptyState, LoadingScreen, DocCard, Modal, Input, FileUpload, useToast, fileUploadPayload } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -15,6 +15,7 @@ const SECTIONS = [
   { id: 'production', label: 'In production', icon: Scissors, fg: '#92400e', bg: '#fef9c3', bd: '#fde68a' },
   { id: 'delivered', label: 'Delivered', icon: Truck, fg: '#166534', bg: '#dcfce7', bd: '#86efac' },
   { id: 'development', label: 'New Product Development', icon: FlaskConical, fg: '#5b21b6', bg: '#ede9fe', bd: '#c4b5fd' },
+  { id: 'replen', label: 'Replen', icon: RefreshCw, fg: '#0f766e', bg: '#ccfbf1', bd: '#5eead4' },
   { id: 'hold', label: 'On hold', icon: PauseCircle, fg: '#475569', bg: '#f1f5f9', bd: '#cbd5e1' },
   { id: 'dropped', label: 'Dropped', icon: Trash2, fg: '#991b1b', bg: '#fee2e2', bd: '#fca5a5' },
 ]
@@ -35,7 +36,7 @@ const dayOf = d => (d ? dayNumber(typeof d === 'string' ? d : new Date(d).toISOS
 
 const sectionOf = o => {
   if (styleOnHold(o)) return 'hold'
-  if (phaseOf(o) === 'development') return 'development'
+  if (phaseOf(o) !== 'production') return phaseOf(o)
   const splits = o.assignments || []
   if (splits.length && splits.every(a => deliveryStatus(o, a).delivered)) return 'delivered'
   return 'production'
@@ -257,7 +258,7 @@ export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
         <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
         <div style={{ flex: 1 }} />
         {/* The TNA tab the styles are on; Reports only covers styles in production. */}
-        {styles.length > 0 && <Btn variant="secondary" size="sm" onClick={() => onNavigate('orders', { mo: moId, phase: grouped.development.length && !grouped.production.length && !grouped.delivered.length ? 'development' : undefined })} icon={<LayoutGrid size={13} />}>Open in TNA</Btn>}
+        {styles.length > 0 && <Btn variant="secondary" size="sm" onClick={() => onNavigate('orders', { mo: moId, phase: !grouped.production.length && !grouped.delivered.length ? (grouped.development.length ? 'development' : grouped.replen.length ? 'replen' : undefined) : undefined })} icon={<LayoutGrid size={13} />}>Open in TNA</Btn>}
         {(grouped.production.length > 0 || grouped.delivered.length > 0) && <Btn variant="secondary" size="sm" onClick={() => onNavigate('reports', { mo: moId })} icon={<BarChart3 size={13} />}>Open in Reports</Btn>}
         {caps.createOrders && <Btn variant="secondary" size="sm" onClick={() => onNavigate('orders', { mo: moId, newStyle: true })} icon={<Plus size={13} />}>Create Style</Btn>}
         {canEditMasterOrder(currentUser, mo) && <Btn size="sm" onClick={() => setEditing(true)} icon={<Pencil size={13} />}>Edit</Btn>}
