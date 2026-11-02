@@ -14,6 +14,7 @@ import { UserSetup } from './pages/admin/UserSetup.jsx'
 import { KriyaaPage } from './pages/admin/KriyaaPage.jsx'
 import { ReviewQueuePage } from './pages/admin/ReviewQueuePage.jsx'
 import { PartnersPage } from './pages/admin/PartnersPage.jsx'
+import { StyleRequestsPage } from './pages/admin/StyleRequestsPage.jsx'
 import { PartnerDetailPage } from './pages/admin/PartnerDetailPage.jsx'
 import { capsFor } from './caps.js'
 import { LiveRefresh } from './components/LiveRefresh.jsx'
@@ -198,13 +199,14 @@ function Inner() {
     if (view === 'kriyaa') return <KriyaaPage />
     if (view === 'orders') return <AdminOrders key={`o:${ordersMo || 'all'}:${ordersPhase || ''}`} onOpen={openOrder} onOpenMo={openMo} initialStatus={ordersStatus} initialMo={ordersMo} initialPhase={ordersPhase} openWizardFor={ordersNewStyle ? ordersMo : null} onSubmitReq={user.role === 'buyer' ? () => navTo('submit_req') : undefined} />
     if (view === 'master_order' && selMo) return <MasterOrderPage moId={selMo} onOpen={openOrder} onNavigate={navTo} onBack={() => goBack({ view: 'orders', ordersMo: selMo })} />
-    if (view === 'order_detail' && selOid) return <AdminOrderDetail orderId={selOid} initialMid={selMid} onOpenMo={openMo} onBack={() => goBack({ view: 'orders', ordersMo: orders?.find(o => o.id === selOid)?.masterOrderId || '__none__' })} />
+    if (view === 'order_detail' && selOid) return <AdminOrderDetail orderId={selOid} initialMid={selMid} onOpenMo={openMo} onOpenOrder={openOrder} onBack={() => goBack({ view: 'orders', ordersMo: orders?.find(o => o.id === selOid)?.masterOrderId || '__none__' })} />
     if (view === 'documents') return <AdminDocuments />
     if (view === 'reports') return <ReportingPage key={`r:${reportsMo || 'all'}`} onOpen={openOrder} initialMo={reportsMo} />
     if (user.role === 'buyer' && view === 'submit_req') return <BuyerSubmitReq />
     if (user.role === 'admin') {
       if (view === 'review') return <ReviewQueuePage />
       if (view === 'audit') return <AdminAuditLog />
+      if (view === 'style_requests' && capsFor(user).seeStyleRequests) return <StyleRequestsPage onOpen={openOrder} onOpenMo={openMo} />
       if (view === 'users' && user.adminType === 'master') return <UserSetup key={usersTab || 'all'} initialTab={usersTab} />
       // The Partner Directory is admin-only sourcing data; capsFor gates it here and the server refuses every other role.
       if (view === 'partners' && capsFor(user).seePartners) return <PartnersPage onNavigate={navTo} />

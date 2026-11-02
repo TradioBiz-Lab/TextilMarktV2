@@ -19,7 +19,7 @@ const newStyle = () => ({
   measurementsFile: null, measurementsErr: '',
   techPackFile: null, techPackErr: '',
   patternFile: null, patternErr: '',
-  ecommerceLink: '',
+  ecommerceLink: '', techPackLink: '', brand: '',
 })
 
 const STEPS = ['Master order & basic details', 'Colourways & fabric (optional)', 'Reference documents (optional)']
@@ -94,7 +94,7 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
           category, season: mo.season || undefined, masterOrderId,
           ...(String(s.totalQty).trim() ? { totalQty: Math.floor(Number(s.totalQty)) } : {}), ...(s.phase === 'production' && s.delivery ? { delivery: s.delivery } : {}), phase: s.phase,
           createdAt: getToday(),
-          colourways, fabricDetails, ecommerceLink: s.ecommerceLink.trim(),
+          colourways, fabricDetails, ecommerceLink: s.ecommerceLink.trim(), techPackLink: s.techPackLink.trim(), brand: s.brand.trim(),
           photos: s.photos.map(ph => ({ image: ph.image, colourway: colourways.some(c => c.name === ph.colourway) ? ph.colourway : '' })),
         })
         createdIds.push(created.id)
@@ -192,6 +192,7 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
                       <Input label={isPrePhase(s.phase) ? 'Quantity' : 'Quantity *'} type="number" value={s.totalQty} onChange={e => updateStyle(s._key, { totalQty: e.target.value })} placeholder="5000" hint={isPrePhase(s.phase) ? 'Optional until it moves to production.' : undefined} />
                     </div>
 
+                    <Input label="Brand" value={s.brand} onChange={e => updateStyle(s._key, { brand: e.target.value })} placeholder="e.g. FYLTR" maxLength={60} hint="Optional. The customer's own brand this style is for." />
                     <div className="form-grid-2" style={{ gap: 10 }}>
                       <Select label="Stage *" value={s.phase} onChange={e => updateStyle(s._key, { phase: e.target.value })}>
                         <option value="">Select stage</option>
@@ -353,7 +354,10 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
                       <FileUpload {...PATTERN_FILE_PROPS} file={s.patternFile} onFile={f => updateStyle(s._key, { patternFile: f, patternErr: '' })} error={s.patternErr} onError={e => updateStyle(s._key, { patternErr: e })} />
                     </div>
                   </div>
-                  <Input label="E-commerce Link" value={s.ecommerceLink} onChange={e => updateStyle(s._key, { ecommerceLink: e.target.value })} placeholder="https://…" />
+                  <div className="form-grid-2" style={{ gap: 10 }}>
+                    <Input label="E-commerce Link" value={s.ecommerceLink} onChange={e => updateStyle(s._key, { ecommerceLink: e.target.value })} placeholder="https://…" />
+                    <Input label="Tech Pack Link" value={s.techPackLink} onChange={e => updateStyle(s._key, { techPackLink: e.target.value })} placeholder="https://…" hint="Optional. Use it when the tech pack lives online instead of as a file." />
+                  </div>
                 </div>
               ))}
             </>

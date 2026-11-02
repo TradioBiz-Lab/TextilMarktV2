@@ -15,14 +15,16 @@ import {
   stageKindOf, deriveStageStatus, mirroredUnits, reconcileForTotal, stageEtaVarianceDays, deriveActualEnd, deliveryVarianceDays,
 } from '../models/Order.js'
 import { dayNumber, getToday, effectiveEta, DELIVERY_STEP_NAME, isDeliveryName, deliveryStageIndex, makeDeliveryStage, makeDevelopmentStages, statusAfterDeliveryStep } from '../lib/stageMath.js'
-import { notify, notifyOrderChange, notifySplit, adminIds } from '../lib/notify.js'
+import { notify, notifyOrderChange, notifySplit, adminIds, masterAdminIds } from '../lib/notify.js'
 import { sendEmail, emailEscalation, emailConfigured } from '../lib/email.js'
 import { nextStyleId } from '../lib/ids.js'
 import { splitStatus } from '../lib/splitStatus.js'
 import { seasonError } from '../lib/seasons.js'
 import { planSteps, stagesFromSibling, stagesFromTemplate } from '../lib/planCopy.js'
 import { PlanTemplate } from '../models/PlanTemplate.js'
+import { StyleRequest } from '../models/StyleRequest.js'
 import { materialDetails, newMaterialDetails } from '../lib/materialFields.js'
+import { normalizeLink, isHttpUrl, cleanLink } from '../lib/links.js'
 
 // Categories are now free-text — no validation needed
 const MAX_PRODUCT_PHOTO_SIZE = 1024 * 1024 // 1MB raw - reference thumbnail, not full-res
@@ -209,6 +211,9 @@ const enrichOrder = (o, viewerMfrId = null) => {
   photos: (o.photos || []).map(p => ({ image: p.image, colourway: p.colourway || '' })),
   fabricDetails: (o.fabricDetails || []).map(f => ({ name: f.name, composition: f.composition || '', gsm: f.gsm || '', supplier: f.supplier || '' })),
   ecommerceLink: o.ecommerceLink || '',
+  techPackLink: o.techPackLink || '',
+  brand: o.brand || '',
+  replenOf: o.replenOf || null,
   callout: o.callout || '',
   assignments: visibleAssignments.map(a => {
     const mfr = a.mfrId && typeof a.mfrId === 'object' && a.mfrId.company ? a.mfrId : null
@@ -298,17 +303,15 @@ async function repointStageDocs(label, orderId, mfrObjectId, stageIndex, to) {
   await withRetry(label, () => Document.bulkWrite(ops, { ordered: false }))
 }
 
-// A product link is shown to buyers and factories as a clickable link, so it must be a real
-// http(s) address: anything else (javascript:, data:, ...) is refused rather than rendered.
-// People paste "amazon.in/x" without the scheme. A bare web address gets https:// added; anything
-// that already names a scheme is left alone so a javascript: or data: link still fails validation.
-const normalizeLink = v => {
-  const t = String(v ?? '').trim()
-  if (!t || /^[a-z][a-z0-9+.-]*:/i.test(t)) return t
-  return /^[\w-]+(\.[\w-]+)+(:\d+)?([/?#]\S*)?$/.test(t) ? `https://${t}` : t
-}
-const isHttpUrl = v => { try { const u = new URL(String(v)); return u.protocol === 'http:' || u.protocol === 'https:' } catch { return false } }
 const LINK_SCHEME_ERROR = 'E-commerce link must be a full web address starting with http:// or https://'
+const BRAND_MAX = 60
+/** The brand as stored: trimmed text, or { error } when it is not text or too long. */
+const cleanBrand = v => {
+  if (v === undefined || v === null) return { brand: '' }
+  if (typeof v !== 'string') return { error: 'Brand must be text' }
+  const brand = v.trim()
+  return brand.length > BRAND_MAX ? { error: `Brand too long (max ${BRAND_MAX} characters)` } : { brand }
+}
 
 const STAGES_CHANGED = { error: 'The stages changed while you were editing. Reload the order and try again.' }
 
@@ -359,7 +362,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 // and creates it if valid. Centralizes rules (including the B1 required-end-date
 // check) so both call sites can't drift out of sync. Returns the raw created
 // Mongoose doc on success (not populated/enriched — that's caller-specific).
-export async function validateAndCreateOrder({ id, buyerId, product, styleNumber, category, season, phase, totalQty, delivery, createdAt, masterOrderId, assignments: asgns, stageEtas, stageStartDates, stageNames: customStages, stageResponsibleIds, stageDescriptions, stageTotalUnits, stageKinds, colourways, fabricDetails, callout, imageDataUrl, imageUrl, ecommerceLink, photos }) {
+export async function validateAndCreateOrder({ id, buyerId, product, styleNumber, category, season, phase, totalQty, delivery, createdAt, masterOrderId, assignments: asgns, stageEtas, stageStartDates, stageNames: customStages, stageResponsibleIds, stageDescriptions, stageTotalUnits, stageKinds, colourways, fabricDetails, callout, imageDataUrl, imageUrl, ecommerceLink, techPackLink, brand, replenOf, photos }) {
   // No delivery date at creation: it is set when the style gets its manufacturer (or with a plan sent here).
   // A style in New Product Development may wait for its bulk quantity (unless a manufacturer split is made now).
   const qtyLater = isPreProduction(phase) && !(Array.isArray(asgns) && asgns.length) && (totalQty == null || totalQty === '')
@@ -403,6 +406,10 @@ export async function validateAndCreateOrder({ id, buyerId, product, styleNumber
     if (ecommerceLink.trim().length > 2000) return { ok: false, error: 'E-commerce link too long' }
     if (normalizeLink(ecommerceLink) && !isHttpUrl(normalizeLink(ecommerceLink))) return { ok: false, error: LINK_SCHEME_ERROR }
   }
+  const techPack = cleanLink(techPackLink, 'Tech pack link')
+  if (techPack.error) return { ok: false, error: techPack.error }
+  const brandClean = cleanBrand(brand)
+  if (brandClean.error) return { ok: false, error: brandClean.error }
   if (!mongoose.Types.ObjectId.isValid(buyerId)) return { ok: false, error: 'Invalid buyer ID' }
   const buyerCheck = await User.findById(buyerId, 'role isActive').lean()
   if (!buyerCheck || buyerCheck.role !== 'buyer') return { ok: false, error: 'Buyer not found' }
@@ -643,6 +650,9 @@ export async function validateAndCreateOrder({ id, buyerId, product, styleNumber
       colourways: colourwaysResolved,
       fabricDetails: fabricDetailsResolved,
       ecommerceLink: normalizeLink(ecommerceLink),
+      techPackLink: techPack.link,
+      brand: brandClean.brand,
+      replenOf: typeof replenOf === 'string' && replenOf ? replenOf : null,
       callout: callout ? callout.trim() : '',
       createdAt: createdAt ? new Date(createdAt) : undefined,
       assignments: !hasAssignments ? [] : asgns.map((a, i) => ({
@@ -2663,10 +2673,84 @@ router.post('/:id/photos', requireAuth, updateLimiter, async (req, res) => {
 })
 
 
+/** The quantity and note of a replen request, checked: { quantity, note } or { error }. */
+export function replenInput(body) {
+  const quantity = Number(body?.quantity)
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10_000_000) return { error: 'Enter how many pieces to reorder (a whole number).' }
+  const note = typeof body?.note === 'string' ? body.note.trim() : ''
+  if (note.length > 500) return { error: 'The note is too long (500 characters at most).' }
+  return { quantity, note }
+}
+
+/**
+ * Make the Replen style that reorders `src` (a lean order in production): a copy of the product (name, style ID, brand,
+ * photos, fabric, colourways, links) in the Replen stage with the quantity asked, in the same master order, with no
+ * factory. Returns { ok: true, order } or { ok: false, error }. Writes no audit entry and sends no notification: the
+ * caller does, because who is told depends on who asked and who approved.
+ */
+export async function createReplenFrom(src, { quantity, note = '' }) {
+  if ((src.phase || 'production') !== 'production') return { ok: false, error: 'A replen can be ordered for a style that is in production.' }
+  const buyer = await User.findById(src.buyerId, 'code company').lean()
+  if (!buyer) return { ok: false, error: 'Customer not found' }
+  const photos = (src.photos || []).map(p => ({ image: p.image, colourway: p.colourway || '' }))
+  let result
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const id = await nextStyleId(buyer.code, src.category, src.season)
+    result = await validateAndCreateOrder({
+      id, buyerId: String(src.buyerId), product: src.product, styleNumber: src.styleNumber, category: src.category, season: src.season,
+      phase: 'replen', totalQty: quantity, masterOrderId: src.masterOrderId || undefined, replenOf: src._id,
+      brand: src.brand, techPackLink: src.techPackLink, ecommerceLink: src.ecommerceLink, callout: note,
+      colourways: (src.colourways || []).map(c => ({ name: c.name, code: c.code || '', hex: c.hex || '' })),
+      fabricDetails: (src.fabricDetails || []).map(f => ({ name: f.name, composition: f.composition || '', gsm: f.gsm || '', supplier: f.supplier || '' })),
+      ...(photos.length ? { photos } : src.imageDataUrl ? { imageDataUrl: src.imageDataUrl } : src.imageUrl ? { imageUrl: src.imageUrl } : {}),
+    })
+    if (result.ok || result.error !== 'Order ID already exists') break
+  }
+  return result.ok ? { ok: true, order: result.order, buyer } : { ok: false, error: result.error }
+}
+
+// POST /api/orders/:id/replen  { quantity, note? } - order a replen (a reorder) of a style that is in production.
+// Tradio creates it at once. A customer's request goes to the review queue (POST /api/style-requests/... decides it): the
+// master admin approves it, and only then does the Replen style exist.
+router.post('/:id/replen', requireAuth, createOrderLimiter, async (req, res) => {
+  try {
+    if (req.user.role !== 'buyer' && req.user.role !== 'admin') return res.status(403).json({ error: 'Only the customer or Tradio can order a replen' })
+    const src = await Order.findById(req.params.id).lean()
+    if (!src || (req.user.role === 'buyer' && String(src.buyerId) !== String(req.user.id))) return res.status(404).json({ error: 'Order not found' })
+    if ((src.phase || 'production') !== 'production') return res.status(400).json({ error: 'A replen can be ordered for a style that is in production.' })
+    const input = replenInput(req.body)
+    if (input.error) return res.status(400).json({ error: input.error })
+    const { quantity, note } = input
+    const what = `${src.product}${src.styleNumber ? ` (${src.styleNumber})` : ''}, ${quantity.toLocaleString('en-IN')} pcs`
+
+    if (req.user.role === 'buyer') {
+      // A double click must not send it twice.
+      if (await StyleRequest.exists({ kind: 'replen', sourceOrderId: src._id, requestedBy: req.user.id, status: 'pending', quantity, createdAt: { $gt: new Date(Date.now() - 30_000) } }))
+        return res.status(409).json({ error: 'This replen request was just sent.' })
+      const request = await StyleRequest.create({ kind: 'replen', buyerId: src.buyerId, requestedBy: req.user.id, masterOrderId: src.masterOrderId || null, sourceOrderId: src._id, product: src.product, styleNumber: src.styleNumber || '', quantity, note })
+      await AuditLog.create({ byUser: req.user.id, action: 'Style Request Sent', detail: `Replen of ${src._id}, ${quantity.toLocaleString('en-IN')} pcs, by the customer, waiting for review` })
+      await notify(await masterAdminIds(), { type: 'order', msg: `${req.user.company || 'A customer'} asked for a replen of ${what}. It is waiting for your review.`, orderId: src._id })
+      return res.status(202).json({ pending: true, requestId: request._id, product: src.product, quantity })
+    }
+
+    // A double click must not order it twice.
+    if (await Order.exists({ replenOf: src._id, createdAt: { $gt: new Date(Date.now() - 30_000) } })) return res.status(409).json({ error: 'A replen of this style was just ordered.' })
+    const made = await createReplenFrom(src, { quantity, note })
+    if (!made.ok) return res.status(400).json({ error: made.error })
+    const order = await Order.findById(made.order._id).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+    await AuditLog.create({ byUser: req.user.id, action: 'Replen Ordered', detail: `${order._id} - replen of ${src._id}, ${quantity.toLocaleString('en-IN')} pcs` })
+    await notify([src.buyerId], { type: 'order', msg: `A replen of ${what} was ordered for you: ${order._id}`, orderId: order._id }, { exceptUserId: req.user.id })
+    res.status(201).json(enrichFor(order, req))
+  } catch (err) {
+    console.error('[orders replen]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
 // PATCH /api/orders/:id — edit order top-level fields (admin only)
 router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
   try {
-    const { product, styleNumber, category, season, phase, totalQty, delivery, imageDataUrl, imageUrl, colourways, photos, fabricDetails, callout, ecommerceLink, masterOrderId } = req.body
+    const { product, styleNumber, category, season, phase, totalQty, delivery, imageDataUrl, imageUrl, colourways, photos, fabricDetails, callout, ecommerceLink, techPackLink, brand, masterOrderId } = req.body
     const orderId = req.params.id
 
     const existing = await Order.findById(orderId).lean()
@@ -2691,6 +2775,18 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
       if (link.length > 2000) return res.status(400).json({ error: 'E-commerce link too long' })
       if (link && !isHttpUrl(link)) return res.status(400).json({ error: LINK_SCHEME_ERROR })
       updates.ecommerceLink = link
+    }
+
+    if (techPackLink !== undefined) {
+      const r = cleanLink(techPackLink, 'Tech pack link')
+      if (r.error) return res.status(400).json({ error: r.error })
+      updates.techPackLink = r.link
+    }
+
+    if (brand !== undefined) {
+      const r = cleanBrand(brand)
+      if (r.error) return res.status(400).json({ error: r.error })
+      updates.brand = r.brand
     }
 
     if (category !== undefined) {

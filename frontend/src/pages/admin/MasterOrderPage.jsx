@@ -5,6 +5,7 @@ import { Btn, Card, FlexRow, Mono, ProductThumb, EmptyState, LoadingScreen, DocC
 import { useApp } from '../../context.jsx'
 import { capsFor, canEditMasterOrder } from '../../caps.js'
 import { EditMasterOrderModal } from './EditMasterOrderModal.jsx'
+import { ReplenOrderModal } from '../../components/ReplenOrderModal.jsx'
 import { masterOrdersApi } from '../../api.js'
 
 // The master order's own page: who it is for, how far along it is, and every style that was ever in it, the ones
@@ -77,7 +78,7 @@ function InfoRow({ icon: Icon, label, children }) {
   )
 }
 
-function StyleRow({ order, section, onOpen }) {
+function StyleRow({ order, section, onOpen, showFactories = true, onReplen }) {
   const s = SECTION[section]
   const splits = order.assignments || []
   const stages = splits.flatMap(a => a.stages || [])
@@ -101,7 +102,7 @@ function StyleRow({ order, section, onOpen }) {
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 4, fontSize: 12, color: T.textMuted }}>
           <Mono style={{ fontSize: 11 }}>{order.id}</Mono>
           <span>{(order.totalQty || 0).toLocaleString('en-IN')} pcs</span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Factory size={12} /> {factories.length ? factories.join(', ') : 'No manufacturer yet'}</span>
+          {showFactories && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Factory size={12} /> {factories.length ? factories.join(', ') : 'No manufacturer yet'}</span>}
           {section === 'delivered'
             ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#166534', fontWeight: 600 }}><Truck size={12} color="#166534" /> {deliveredOn(order) ? `Delivered on ${fmtDate(deliveredOn(order))}` : 'Delivered'}</span>
             : dueText(order) && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: dueDates(order).slipped ? T.danger : undefined }}><Calendar size={12} /> {dueText(order)}</span>}
@@ -116,6 +117,12 @@ function StyleRow({ order, section, onOpen }) {
             <div style={{ width: `${pct}%`, height: '100%', background: section === 'delivered' ? '#16a34a' : section === 'hold' ? '#94a3b8' : T.primaryDeep, borderRadius: 3 }} />
           </div>
         </div>
+      )}
+      {onReplen && (
+        <button onClick={e => { e.stopPropagation(); onReplen(order) }} title="Order a replen of this style" aria-label={`Order a replen of ${order.product}`}
+          style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: '#0f766e', background: '#ccfbf1', border: '1px solid #5eead4', borderRadius: 8, padding: '5px 10px', cursor: 'pointer' }}>
+          <RefreshCw size={12} /> Order replen
+        </button>
       )}
       <ChevronRight size={16} color={T.textLight} style={{ flexShrink: 0 }} />
     </div>
@@ -196,6 +203,7 @@ export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
   const seesDropped = currentUser?.role === 'admin' || currentUser?.role === 'buyer'
   const [dropped, setDropped] = useState(null)
   const [editing, setEditing] = useState(false)
+  const [replenFor, setReplenFor] = useState(null)
   useEffect(() => {
     if (!seesDropped || !moId) return
     let live = true
@@ -254,12 +262,13 @@ export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
 
       {/* Rename, re-season, drop styles from or delete the master order. Deleting it leaves the page on "not found". */}
       {editing && <EditMasterOrderModal mo={mo} onClose={() => setEditing(false)} onDeleted={() => onNavigate('orders')} />}
+      {replenFor && <ReplenOrderModal order={replenFor} onClose={() => setReplenFor(null)} onOrdered={created => { setReplenFor(null); if (!created.pending) onOpen(created.id) }} />}
       <FlexRow gap={8} style={{ flexWrap: 'wrap' }}>
         <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
         <div style={{ flex: 1 }} />
-        {/* The TNA tab the styles are on; Reports only covers styles in production. */}
+        {/* The TNA tab the styles are on. */}
         {styles.length > 0 && <Btn variant="secondary" size="sm" onClick={() => onNavigate('orders', { mo: moId, phase: !grouped.production.length && !grouped.delivered.length ? (grouped.development.length ? 'development' : grouped.replen.length ? 'replen' : undefined) : undefined })} icon={<LayoutGrid size={13} />}>Open in TNA</Btn>}
-        {(grouped.production.length > 0 || grouped.delivered.length > 0) && <Btn variant="secondary" size="sm" onClick={() => onNavigate('reports', { mo: moId })} icon={<BarChart3 size={13} />}>Open in Reports</Btn>}
+        {styles.length > 0 && <Btn variant="secondary" size="sm" onClick={() => onNavigate('reports', { mo: moId })} icon={<BarChart3 size={13} />}>Open in Reports</Btn>}
         {caps.createOrders && <Btn variant="secondary" size="sm" onClick={() => onNavigate('orders', { mo: moId, newStyle: true })} icon={<Plus size={13} />}>Create Style</Btn>}
         {canEditMasterOrder(currentUser, mo) && <Btn size="sm" onClick={() => setEditing(true)} icon={<Pencil size={13} />}>Edit</Btn>}
       </FlexRow>
@@ -322,7 +331,7 @@ export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {s.id === 'dropped'
                     ? list.map(r => <DroppedRow key={r.id} r={r} />)
-                    : list.map(o => <StyleRow key={o.id} order={o} section={s.id} onOpen={onOpen} />)}
+                    : list.map(o => <StyleRow key={o.id} order={o} section={s.id} onOpen={onOpen} showFactories={!caps.isBuyer} onReplen={caps.orderReplen && (o.phase || 'production') === 'production' ? setReplenFor : undefined} />)}
                 </div>
               </section>
             )
@@ -341,7 +350,7 @@ export function MasterOrderPage({ moId, onBack, onOpen, onNavigate }) {
             {mo.incoterm && <InfoRow icon={Truck} label="Incoterm">{mo.incoterm}</InfoRow>}
             {mo.shipTo && <InfoRow icon={MapPin} label="Ship to"><span style={{ fontWeight: 500, whiteSpace: 'pre-wrap' }}>{mo.shipTo}</span></InfoRow>}
             <InfoRow icon={Building2} label="Customer">{mo.buyerCompany || '-'}{mo.buyerName ? <span style={{ color: T.textMuted, fontWeight: 500 }}> · {mo.buyerName}</span> : null}</InfoRow>
-            <InfoRow icon={Factory} label={factories.length === 1 ? 'Manufacturer' : 'Manufacturers'}>{factories.length ? factories.join(', ') : 'None assigned yet'}</InfoRow>
+            {!caps.isBuyer && <InfoRow icon={Factory} label={factories.length === 1 ? 'Manufacturer' : 'Manufacturers'}>{factories.length ? factories.join(', ') : 'None assigned yet'}</InfoRow>}
             <InfoRow icon={Calendar} label="Delivery window">{dates.length ? (dates.length === 1 || fmtDate(dates[0]) === fmtDate(dates[dates.length - 1]) ? fmtDate(dates[0]) : `${fmtDate(dates[0])} to ${fmtDate(dates[dates.length - 1])}`) : 'No delivery dates yet'}</InfoRow>
             <InfoRow icon={Truck} label="Next delivery">
               {next

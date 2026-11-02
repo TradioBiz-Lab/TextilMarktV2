@@ -31,9 +31,12 @@ export function capsFor(user) {
     uploadInvoices: isAdmin,
     uploadDeliveryDocs: isAdmin || isMfr,       // packing lists, carton stickers: Tradio and the factory that ships
     submitRequirement: isBuyer,
+    // Reorder a production style as a replen, and import a sheet of NPD/Replen styles: Tradio and the customer (its own styles only; the server enforces it).
+    orderReplen: isAdmin || isBuyer, importStyles: isAdmin || isBuyer,
     escalate: isBuyer,   // a customer raises a style with Tradio's master admins (in-app and email)
     manageCertificates: isMfr,
     // Admin-only surfaces
+    seeStyleRequests: isMaster /* the review queue for what customers ask to add: master admins decide it (the server enforces it) */,
     seeUsers: isAdmin, seeAudit: isAdmin, seePartners: isAdmin /* the Partner Directory: Tradio's sourcing CRM, admins only (the server enforces it) */, seeReviewQueue: false /* retired until the WhatsApp integration; set to isAdmin to bring it back */, seeRibbonsAdmin: isAdmin, seeBuyerRequests: isAdmin,
   }
 }

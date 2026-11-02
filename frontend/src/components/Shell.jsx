@@ -70,6 +70,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
     { id: 'documents', icon: Folder, label: 'Documents' },
     ...(isCustomer ? [] : [reportsTab]),
     ...(user.role === 'admin' ? [{ id: 'audit', icon: History, label: 'Audit Log' }] : []),
+    ...(capsFor(user).seeStyleRequests ? [{ id: 'style_requests', icon: Inbox, label: 'Style Requests' }] : []),
     ...(capsFor(user).seePartners ? [{ id: 'partners', icon: Factory, label: 'Partners' }] : []),
     ...(user.role === 'admin' && user.adminType === 'master' ? [{ id: 'users', icon: Users, label: 'User Setup' }] : []),
   ]

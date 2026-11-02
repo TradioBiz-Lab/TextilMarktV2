@@ -283,6 +283,9 @@ table { border-collapse: collapse; width: 100%; }
   /* Modal bottom-sheet on mobile */
   .modal-backdrop { align-items: flex-end !important; padding: 0 !important; }
   .modal-inner { border-radius: 0 !important; border-top-left-radius: 16px !important; border-top-right-radius: 16px !important; max-height: 94vh !important; }
+  /* A dialog that opts out of the sheet: a floating card with a margin all round. */
+  .modal-backdrop.modal-float { align-items: center !important; padding: 16px !important; }
+  .modal-backdrop.modal-float .modal-inner { border-radius: 14px !important; max-height: 92vh !important; }
 }
 
 /* ── Small mobile (≤480px) ── */

@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, Fragment } from 'react'
 import { useNavState } from '../../navState.js'
 import Papa from 'papaparse'
-import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight, ChevronUp, ChevronDown, Trash2, ArrowRight, Folder, LayoutGrid } from '../../icons.jsx'
+import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight, ChevronUp, ChevronDown, Trash2, ArrowRight, Folder, LayoutGrid, RefreshCw } from '../../icons.jsx'
 import {
   T, ORDER_STATUSES, evidenceTypesFor, productDocForStep, DOC_ICONS,
   stageKindOf, kindForCustomerOwner, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
@@ -20,6 +20,7 @@ import { swatchHex } from '../../colours.js'
 import { Modal, Select, Textarea, Btn, Card, Badge, Alert, FlexRow, Mono, Input, Tabs, StageTimeline, FileUpload, DocCard, SectionLabel, LoadingScreen, MfrProfileLink, StageDocGroup, EmptyState, DateOrNA, useToast, dataUrlToBlobUrl, fileUploadPayload, ProductThumb, activateOnKey } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 import { normalizeCsvDate } from '../../csvDates.js'
+import { ReplenOrderModal } from '../../components/ReplenOrderModal.jsx'
 import { capsFor, canWriteStage, canSetAssignmentStatus, canManageStepLists } from '../../caps.js'
 import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
@@ -31,7 +32,7 @@ import { ownerForSplit, ownerCopyLabel } from '../../ownerCopy.js'
 // Bulk Edit row: step, start, end, responsible, target qty, description, evidence, NA / Undo.
 const BULK_EDIT_COLS = '170px 168px 168px 150px 78px minmax(120px, 1fr) 30px 64px'
 
-export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
+export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, onBack }) {
   const { currentUser, orders, masterOrders, docs, users, loading, updateAssignment, updateStage, uploadDoc, getDocData, refreshOrders, editOrder, deleteOrder,
     addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
     addStageItem, updateStageItem, removeStageItem, addAssignment, reassignAssignment, insertStage, moveStage, bulkUpdateStages, escalateOrder } = useApp()
@@ -43,6 +44,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
   const [showEdit, setShowEdit] = useState(false)
   // Escalating to Tradio (customers): the reason being written, or null while closed.
   const [escalation, setEscalation] = useState(null)
+  const [replenOpen, setReplenOpen] = useState(false)
   const [escalating, setEscalating] = useState(false)
   const sendEscalation = async () => {
     setEscalating(true)
@@ -821,6 +823,8 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
           {!unassigned && order.assignments?.length > 1 && (
             <Btn variant="secondary" size="sm" onClick={() => setSelectedMid(null)} icon={<ArrowLeftRight size={13} />}>All splits</Btn>
           )}
+          {caps.orderReplen && (order.phase || 'production') === 'production' && <Btn variant="secondary" size="sm" onClick={() => setReplenOpen(true)} icon={<RefreshCw size={13} />}>Order replen</Btn>}
+          {replenOpen && <ReplenOrderModal order={order} onClose={() => setReplenOpen(false)} onOrdered={created => { setReplenOpen(false); if (!created.pending) onOpenOrder?.(created.id) }} />}
           {caps.escalate && <Btn variant="secondary" size="sm" onClick={() => setEscalation('')} icon={<ShieldAlert size={13} />}>Escalate</Btn>}
           {escalation !== null && (
             <Modal title="Escalate this style" subtitle={`${order.product} · ${order.id}`} onClose={() => !escalating && setEscalation(null)} size="sm">
@@ -882,10 +886,29 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                   <Mono style={{ fontSize: 12, color: T.textMuted }}>{order.styleNumber}</Mono>
                 </div>
               )}
+              {order.replenOf && (
+                <div style={{ marginTop: 2 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.08em', marginRight: 6 }}>Replen of</span>
+                  {onOpenOrder
+                    ? <button onClick={() => onOpenOrder(order.replenOf)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: T.primaryDeep }}>{order.replenOf} ↗</button>
+                    : <Mono style={{ fontSize: 12, color: T.textMuted }}>{order.replenOf}</Mono>}
+                </div>
+              )}
+              {order.brand && (
+                <div style={{ marginTop: 2 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.08em', marginRight: 6 }}>Brand</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: T.textMuted }}>{order.brand}</span>
+                </div>
+              )}
               {order.ecommerceLink && (
                 /^https?:\/\//i.test(order.ecommerceLink)
                   ? <a href={order.ecommerceLink} target="_blank" rel="noopener noreferrer" style={{ display: 'block', marginTop: 4, fontSize: 11, fontWeight: 600, color: T.primaryDeep }}>{order.ecommerceLink} ↗</a>
                   : <span style={{ display: 'block', marginTop: 4, fontSize: 11, color: T.textMuted }}>{order.ecommerceLink}</span>
+              )}
+              {order.techPackLink && (
+                /^https?:\/\//i.test(order.techPackLink)
+                  ? <a href={order.techPackLink} target="_blank" rel="noopener noreferrer" style={{ display: 'block', marginTop: 4, fontSize: 11, fontWeight: 600, color: T.primaryDeep }}>Tech pack: {order.techPackLink} ↗</a>
+                  : <span style={{ display: 'block', marginTop: 4, fontSize: 11, color: T.textMuted }}>Tech pack: {order.techPackLink}</span>
               )}
 
               {/* Ruled spec table */}
@@ -894,11 +917,12 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
                   ['Category', order.category || '—'],
                   ['Season', order.season || '—'],
                   ['Buyer', order.buyerCompany ? `${order.buyerCompany}${order.buyerCode ? ` (${order.buyerCode})` : ''}` : '—'],
-                  ['Quantity', `${order.totalQty?.toLocaleString()} pcs`],
+                  ['Quantity', order.totalQty ? `${order.totalQty.toLocaleString()} pcs` : 'Not set yet'],
                   // Promised: agreed with the customer. Expected: where the plan's Delivery step now lands.
                   ['Promised delivery', fmtDate(dueDates(order).promised)],
                   ['Expected delivery', <span key="exp" style={{ color: dueDates(order).slipped ? T.danger : undefined }}>{fmtDate(dueDates(order).expected)}</span>],
-                  ['Factories', [...new Set((order.assignments || []).map(a => a.mfrCompany).filter(Boolean))].join(', ') || 'None yet'],
+                  // A customer does not see the factories for now.
+                  ...(currentUser?.role === 'buyer' ? [] : [['Factories', [...new Set((order.assignments || []).map(a => a.mfrCompany).filter(Boolean))].join(', ') || 'None yet']]),
                   ['Created', fmtDate(order.createdAt)],
                 ].map(([label, value], i) => (
                   <div key={label} style={{ padding: '8px 12px', borderTop: i > 1 ? `1px solid ${T.border}` : 'none', borderLeft: i % 2 === 1 ? `1px solid ${T.border}` : 'none', background: i % 2 === 0 ? '#fbfcfe' : '#fff' }}>
@@ -1247,7 +1271,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
               <Badge status={overallStatus()} />
             </FlexRow>
             <div style={{ fontSize: 13, color: T.textMuted, marginTop: 3 }}>
-              {order.product}{order.styleNumber ? ` - ${order.styleNumber}` : ''} · {order.buyerCompany || '—'} · {order.totalQty?.toLocaleString()} pcs{dueText(order) ? ` · ${dueText(order)}` : ''}
+              {order.product}{order.styleNumber ? ` - ${order.styleNumber}` : ''} · {order.buyerCompany || '—'} · {order.totalQty ? `${order.totalQty.toLocaleString()} pcs` : 'quantity not set'}{dueText(order) ? ` · ${dueText(order)}` : ''}
             </div>
           </div>
           <Btn variant="secondary" onClick={() => setShowUp(true)} icon={<Paperclip size={13} />}>Upload Document</Btn>

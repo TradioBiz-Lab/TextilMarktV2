@@ -3,7 +3,7 @@ import { DashboardSummary } from '../../components/DashboardSummary.jsx'
 import { capsFor } from '../../caps.js'
 import { FileIntoStyle } from '../../components/FileIntoStyle.jsx'
 import { ShoppingBag, Factory, Package, Siren, Target, Check, Shirt, Layers, ClipboardList, Megaphone, ChevronRight, Building2, Truck, FlaskConical, RefreshCw, Scissors } from '../../icons.jsx'
-import { T, ST, productionMetrics, productionOrders, developmentOrders, replenOrders, isExpiringSoon, isExpired, getToday, dayNumber, effectiveEta, withBuyerPrefix, fmtDate, styleStatus, masterOrderStatus, inFlightStages } from '../../constants.js'
+import { T, ST, productionMetrics, productionOrders, developmentOrders, replenOrders, phaseOf, isExpiringSoon, isExpired, getToday, dayNumber, effectiveEta, withBuyerPrefix, fmtDate, styleStatus, masterOrderStatus, inFlightStages } from '../../constants.js'
 import { StatCard, Card, Grid, EmptyState, Mono, PageHeader, Badge, Btn, FlexRow, Modal, Select, Textarea, Input, Alert, LoadingScreen, DocCard } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
 
@@ -92,7 +92,8 @@ export function AdminDashboard({ onNavigate, onOpen }) {
   const delayed = orders.filter(o => ['Delayed', 'On Hold'].includes(styleStatus(o)))
   const expDocs = docs.filter(d => d.isActive !== false && (isExpiringSoon(d.expiryDate) || isExpired(d.expiryDate)))
   const prod = productionMetrics(orders)
-  const ordersByMO = buildOrdersByMasterOrder(orders, masterOrders)
+  // Orders by Status lists every style, so styles in New Product Development and Replen show here too (the tiles above count them).
+  const ordersByMO = buildOrdersByMasterOrder(allOrders, masterOrders)
 
   const myOpenItems = (actionItems || []).filter(a => a.status === 'open' && String(a.assigneeId) === String(currentUser?.id)).map(a => ({ ...a, _kind: 'item' }))
   const todayNum = dayNumber(getToday())
@@ -244,11 +245,12 @@ export function AdminDashboard({ onNavigate, onOpen }) {
                 <StatCard key="pdeliv" label="Delivered" value={prod.productsDelivered.toLocaleString()} icon={<Truck size={19} color={T.success} />} bg={T.successBg} onClick={go('reports')} hint="Open Reports" />,
                 <StatCard key="pprod" label="In production" value={prod.productsInProduction.toLocaleString()} icon={<Package size={19} color="#92400e" />} bg="#fef9c3" onClick={go('orders')} hint="Open Orders" />,
               ])}
-              {group(caps.isAdmin ? 'Network' : (caps.isBuyer ? 'Your factories' : 'Your customers'), caps.isAdmin ? [
+              {/* A customer does not get a factories tile for now. */}
+              {!caps.isBuyer && group(caps.isAdmin ? 'Network' : 'Your customers', caps.isAdmin ? [
                 <StatCard key="buyers" label="Customers" value={buyers.length} icon={<Building2 size={19} color="#1d4ed8" />} bg="#dbeafe" onClick={openUsers('buyer')} hint="Open the customers in User Setup" />,
                 <StatCard key="mfrs" label="Manufacturers" value={mfrs.length} icon={<Factory size={19} color="#92400e" />} bg="#fef9c3" onClick={openUsers('manufacturer')} hint="Open the manufacturers in User Setup" />,
               ] : [
-                <StatCard key="cp" label={caps.isBuyer ? 'Factories' : 'Customers'} value={counterparties} icon={caps.isBuyer ? <Factory size={19} color="#92400e" /> : <Building2 size={19} color="#1d4ed8" />} bg={caps.isBuyer ? '#fef9c3' : '#dbeafe'} />,
+                <StatCard key="cp" label="Customers" value={counterparties} icon={<Building2 size={19} color="#1d4ed8" />} bg="#dbeafe" />,
               ])}
             </div>
           </div>
@@ -276,7 +278,12 @@ export function AdminDashboard({ onNavigate, onOpen }) {
                       onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.borderColor = T.border }}
                     >
                       <span style={{ fontSize: 13, fontWeight: 700, color: T.text, flex: 1 }}>{group.label}{group.season ? ` · ${group.season}` : ''}</span>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, whiteSpace: 'nowrap' }}>{group.orders.length} style{group.orders.length !== 1 ? 's' : ''}</span>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, whiteSpace: 'nowrap' }}>{group.orders.length} style{group.orders.length !== 1 ? 's' : ''}{(() => {
+                        // Say how many are still in New Product Development or Replen, so they are not lost in the count.
+                        const npd = group.orders.filter(o => phaseOf(o) === 'development').length
+                        const rep = group.orders.filter(o => phaseOf(o) === 'replen').length
+                        return npd || rep ? ` (${[npd ? `${npd} NPD` : '', rep ? `${rep} Replen` : ''].filter(Boolean).join(', ')})` : ''
+                      })()}</span>
                       <span style={{ padding: '3px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: st.bg, color: st.c, border: `1px solid ${st.c}22`, whiteSpace: 'nowrap' }}>{overallStatus}</span>
                     </div>
                   )

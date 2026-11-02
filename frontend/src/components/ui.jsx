@@ -347,7 +347,8 @@ export function Card({ children, style: s, pad = true, onClick, id }) {
 // form, one press used to close both and throw away what was typed in the form underneath.
 const openModals = []
 
-export function Modal({ title, subtitle, onClose, children, size = 'md' }) {
+// `float` keeps the dialog centred like a card on a phone too, instead of sliding up from the bottom as a sheet.
+export function Modal({ title, subtitle, onClose, children, size = 'md', float = false }) {
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
   // Only a press that STARTED on the backdrop closes it: dragging out of a text field and releasing
@@ -366,7 +367,7 @@ export function Modal({ title, subtitle, onClose, children, size = 'md' }) {
   }, [])
   const w = { sm: 420, md: 500, lg: 680, xl: 820, xxl: 1040, wide: 1240 }[size] || 500
   return (
-    <div className="modal-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }} onMouseDown={e => { backdropDown.current = e.target === e.currentTarget }} onClick={e => { if (e.target === e.currentTarget && backdropDown.current) onClose() }}>
+    <div className={float ? 'modal-backdrop modal-float' : 'modal-backdrop'} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }} onMouseDown={e => { backdropDown.current = e.target === e.currentTarget }} onClick={e => { if (e.target === e.currentTarget && backdropDown.current) onClose() }}>
       <div className="modal-inner" role="dialog" aria-modal="true" style={{ background: T.surface, border: `1px solid ${T.border}`, width: '100%', maxWidth: w, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
         <div className="modal-head" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, padding: '20px 24px 16px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
           <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>

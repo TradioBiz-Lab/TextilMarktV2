@@ -19,6 +19,8 @@ export function EditOrderModal({ order, onClose, onSave }) {
     totalQty: order.totalQty != null ? String(order.totalQty) : '',
     delivery: order.delivery ? new Date(order.delivery).toISOString().slice(0, 10) : '',
     ecommerceLink: order.ecommerceLink || '',
+    techPackLink: order.techPackLink || '',
+    brand: order.brand || '',
     callout: order.callout || '',
   })
   const [colourways, setColourways] = useState(
@@ -69,6 +71,8 @@ export function EditOrderModal({ order, onClose, onSave }) {
       colourways: colourways.filter(c => c.name.trim()).map(c => ({ name: c.name.trim(), code: c.code.trim(), hex: c.hex.trim() })),
       fabricDetails: fabrics.filter(fb => fb.name.trim()).map(fb => ({ name: fb.name.trim(), composition: fb.composition.trim(), gsm: fb.gsm.trim(), supplier: fb.supplier.trim() })),
       ecommerceLink: f.ecommerceLink.trim(),
+      techPackLink: f.techPackLink.trim(),
+      brand: f.brand.trim(),
       callout: f.callout.trim(),
     }
 
@@ -211,6 +215,19 @@ export function EditOrderModal({ order, onClose, onSave }) {
             value={f.ecommerceLink}
             onChange={set('ecommerceLink')}
             placeholder="https://…"
+          />
+          <Input
+            label="Tech Pack Link"
+            value={f.techPackLink}
+            onChange={set('techPackLink')}
+            placeholder="https://…"
+          />
+          <Input
+            label="Brand"
+            value={f.brand}
+            onChange={set('brand')}
+            placeholder="e.g. FYLTR"
+            maxLength={60}
           />
           <Input
             label="Callout"

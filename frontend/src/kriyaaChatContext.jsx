@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useRef } from 'react'
 import { useApp } from './context.jsx'
-import { assistantApi } from './api.js'
+import { assistantApi, styleImportsApi } from './api.js'
+import { sheetFileProblem, readSheetFile, withAttachment } from './styleImport.js'
 
 // One shared conversation, consumed by both the floating widget
 // (components/KriyaaWidget.jsx, always mounted from Shell) and the dedicated
@@ -12,11 +13,17 @@ import { assistantApi } from './api.js'
 const KriyaaChatContext = createContext(null)
 
 export function KriyaaChatProvider({ children }) {
-  const { refreshOrders, refreshActionItems } = useApp()
+  const { refreshOrders, refreshActionItems, currentUser } = useApp()
   const [messages, setMessages] = useState([]) // [{role, content, at}]
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [slow, setSlow] = useState(false)
+  // A sheet of styles the admin attached with the paperclip: { id, filename } once uploaded. It rides on the next message
+  // (see withAttachment), where Kriyaa's preview and create tools find its id. Only admins can create styles.
+  const [attachment, setAttachment] = useState(null)
+  const [attaching, setAttaching] = useState(false)
+  const [attachError, setAttachError] = useState('')
+  const canAttach = currentUser?.role === 'admin'
   // Shared across EVERY mounted Kriyaa surface — KriyaaWidget is always
   // mounted globally (from Shell.jsx) alongside KriyaaPage whenever the
   // admin is actually on the Kriyaa page, so there can be up to four
@@ -36,6 +43,20 @@ export function KriyaaChatProvider({ children }) {
   // first message in the history.
   const sendingRef = useRef(false)
 
+  const attach = useCallback(async file => {
+    const problem = sheetFileProblem(file)
+    if (problem) { setAttachError(problem); return }
+    setAttaching(true); setAttachError('')
+    try {
+      const { filename, data } = await readSheetFile(file)
+      const up = await styleImportsApi.upload(filename, data)
+      setAttachment({ id: up.id, filename: up.filename })
+    } catch (err) {
+      setAttachError(err?.message || 'Could not upload that file.')
+    } finally { setAttaching(false) }
+  }, [])
+  const clearAttachment = useCallback(() => { setAttachment(null); setAttachError('') }, [])
+
   // overrideText lets a caller (a suggestion chip, or a voice transcript)
   // send specific text in the same tick without waiting on the
   // setInput('...') state update to land — the default (no arg) keeps
@@ -53,9 +74,11 @@ export function KriyaaChatProvider({ children }) {
   // turns; a per-turn-varying language directive there would bust that
   // cache on every voice turn and leak into unrelated later turns).
   const send = useCallback(async (overrideText, { voiceOriginated = false, languageCode = null } = {}) => {
-    const text = (overrideText ?? input).trim()
-    if (!text || busy || sendingRef.current) return
+    const typed = (overrideText ?? input).trim()
+    if ((!typed && !attachment) || busy || sendingRef.current) return
+    const text = withAttachment(typed, attachment)
     sendingRef.current = true
+    setAttachment(null)
     const userMsg = { role: 'user', content: text, at: new Date() }
     const nextMessages = [...messages, userMsg]
     setMessages(nextMessages)
@@ -83,10 +106,10 @@ export function KriyaaChatProvider({ children }) {
       setBusy(false)
       setSlow(false)
     }
-  }, [input, busy, messages, refreshOrders, refreshActionItems])
+  }, [input, busy, messages, attachment, refreshOrders, refreshActionItems])
 
   return (
-    <KriyaaChatContext.Provider value={{ messages, input, setInput, busy, slow, send, lastAutoSpokenRef }}>
+    <KriyaaChatContext.Provider value={{ messages, input, setInput, busy, slow, send, lastAutoSpokenRef, attachment, attaching, attachError, canAttach, attach, clearAttachment }}>
       {children}
     </KriyaaChatContext.Provider>
   )

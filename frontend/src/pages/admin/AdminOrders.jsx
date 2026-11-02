@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavState } from '../../navState.js'
-import { Plus, Search, Folder, Package, Check, Ban, AlertTriangle, ChevronDown, ChevronUp, ArrowRight, X } from '../../icons.jsx'
+import { Plus, Search, Folder, FileSpreadsheet, Package, Check, Ban, AlertTriangle, ChevronDown, ChevronUp, ArrowRight, X } from '../../icons.jsx'
 import {
   T, SEASONS, ORDER_STATUSES, seasonsFor,
   isStageDone, stageIsOverdue, stageKindOf, stageProgressLabel, stageVariance, stageActualVariance, stagePct, fmtStageDate, effectiveEta, styleStatus,
@@ -14,6 +14,8 @@ import { PromoteModal } from '../../components/PromoteModal.jsx'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { QuickStageModal } from './QuickStageModal.jsx'
 import { CreateStyleWizard } from './CreateStyleWizard.jsx'
+import { StyleImportModal } from './StyleImportModal.jsx'
+import { StyleRequestsPanel } from '../../components/StyleRequestsPanel.jsx'
 import { MasterOrderTermsFields } from './MasterOrderTermsFields.jsx'
 
 // ── Matrix view: styles across the top, TNA steps down the side ────────────
@@ -85,6 +87,11 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
   // The master order the wizard opens on: the one a page asked for, or one just created from inside the wizard.
   const [wizardMo, setWizardMo] = useState(openWizardFor || '')
   const [moFromWizard, setMoFromWizard] = useState(false)
+  // Import styles window: open or not, and the master order it should have chosen (one made from inside it).
+  const [showImport, setShowImport] = useState(false)
+  const [importMo, setImportMo] = useState('')
+  const [moFromImport, setMoFromImport] = useState(false)
+  const [requestsKey, setRequestsKey] = useState(0)   // bumped when a request is sent, so "Your requests" reads again
 
   // ── Create Master Order state ──
   const [showMO, setShowMO] = useState(false)
@@ -183,9 +190,26 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
         />
       )}
 
+      {showImport && (
+        <StyleImportModal
+          masterOrders={masterOrders}
+          presetMasterOrderId={importMo}
+          forReview={caps.isBuyer}
+          onClose={() => { setShowImport(false); setImportMo('') }}
+          onNewMasterOrder={caps.createOrders ? () => { setMoFromImport(true); setShowMO(true) } : undefined}
+          onDone={result => {
+            setShowImport(false); setImportMo('')
+            if (result.pending) { toast('Sent to Tradio for review', 'success'); setRequestsKey(k => k + 1); return }
+            const n = result.created.length
+            if (n) toast(`${n} style${n !== 1 ? 's' : ''} imported`, 'success')
+            if (n && result.masterOrderId && onOpenMo) onOpenMo(result.masterOrderId)
+          }}
+        />
+      )}
+
       {/* ── Create Master Order Modal ── */}
       {showMO && (
-        <Modal title="Create Master Order" subtitle="One customer buy, e.g. a season's range. Styles are created under it." onClose={() => { if (!moSaving) { setShowMO(false); setMoFromWizard(false); resetMoForm() } }} size="md">
+        <Modal title="Create Master Order" subtitle="One customer buy, e.g. a season's range. Styles are created under it." onClose={() => { if (!moSaving) { setShowMO(false); setMoFromWizard(false); setMoFromImport(false); resetMoForm() } }} size="md">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <Select label="Customer *" value={mo.buyerId} onChange={e => setMo({ ...mo, buyerId: e.target.value })}>
               <option value="">Select customer...</option>
@@ -212,7 +236,7 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
             </div>
             {moErr && <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {moErr}</div>}
             <FlexRow justify="flex-end" gap={8}>
-              <Btn variant="secondary" disabled={moSaving} onClick={() => { setShowMO(false); setMoFromWizard(false); resetMoForm() }}>Cancel</Btn>
+              <Btn variant="secondary" disabled={moSaving} onClick={() => { setShowMO(false); setMoFromWizard(false); setMoFromImport(false); resetMoForm() }}>Cancel</Btn>
               <Btn disabled={!mo.buyerId || !mo.orderName.trim() || moSaving} onClick={async () => {
                 setMoErr('')
                 setMoSaving(true)
@@ -237,6 +261,7 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
                   resetMoForm()
                   // Made from inside Create Style: back to the wizard with it chosen. Otherwise straight to its page.
                   if (moFromWizard) { setWizardMo(moId); setMoFromWizard(false) }
+                  else if (moFromImport) { setImportMo(moId); setMoFromImport(false) }
                   else if (onOpenMo) onOpenMo(moId)
                 } catch (err) {
                   setMoErr(err?.message || 'Failed to create master order')
@@ -252,12 +277,16 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
         subtitle={caps.createOrders ? 'Create styles, assign manufacturers, and manage the full order lifecycle'
           : caps.isBuyer ? 'Every style you have placed, and where each one stands'
           : 'Every style assigned to your factory, and where each one stands'}
-        action={caps.createOrders ? (
+        action={caps.createOrders || caps.importStyles || (caps.submitRequirement && onSubmitReq) ? (
           <FlexRow gap={8}>
-            <Btn variant="secondary" onClick={() => { setMoFromWizard(false); setShowMO(true) }} icon={<Folder size={13} />}>New Master Order</Btn>
-            <Btn onClick={() => setShowWizard(true)} icon={<Plus size={13} />}>Create Style</Btn>
+            {caps.createOrders && <Btn variant="secondary" onClick={() => { setMoFromWizard(false); setMoFromImport(false); setShowMO(true) }} icon={<Folder size={13} />}>New Master Order</Btn>}
+            {caps.importStyles && <Btn variant="secondary" onClick={() => setShowImport(true)} icon={<FileSpreadsheet size={13} />}>Import styles</Btn>}
+            {caps.createOrders && <Btn onClick={() => setShowWizard(true)} icon={<Plus size={13} />}>Create Style</Btn>}
+            {!caps.createOrders && caps.submitRequirement && onSubmitReq && <Btn onClick={onSubmitReq} icon={<Plus size={13} />}>Submit Requirement</Btn>}
           </FlexRow>
-        ) : (caps.submitRequirement && onSubmitReq ? <Btn onClick={onSubmitReq} icon={<Plus size={13} />}>Submit Requirement</Btn> : null)} />
+        ) : null} />
+
+      {caps.isBuyer && <StyleRequestsPanel reloadKey={requestsKey} />}
 
       <FlexRow gap={6} style={{ marginBottom: 10 }}>
         {PHASES.map(([id, label]) => (

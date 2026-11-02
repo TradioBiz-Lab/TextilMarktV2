@@ -273,6 +273,12 @@ const orderSchema = new mongoose.Schema({
   photos: [stylePhotoSchema],
   fabricDetails: [fabricSchema],
   ecommerceLink: { type: String, default: '', trim: true, maxlength: 2000 },
+  // Link to the style's tech pack when it lives online (a shared drive or folder). The uploaded file version is a Document.
+  techPackLink:  { type: String, default: '', trim: true, maxlength: 2000 },
+  // The customer's own brand the style is for (a customer can sell several, e.g. Cocoblu's FYLTR). Free text.
+  brand:         { type: String, default: '', trim: true, maxlength: 60 },
+  // For a replen ordered from a style already in production: the style it reorders (its id). null otherwise.
+  replenOf:      { type: String, default: null },
   // Order-level risk/escalation note — the "Callouts" column the team maintains
   // by hand today (e.g. "delayed by a week due to lab dip submission delay").
   callout:  { type: String, default: '', maxlength: 500 },

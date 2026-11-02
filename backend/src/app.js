@@ -28,6 +28,8 @@ import floorRouter from './routes/floor.js'
 import droppedRouter from './routes/dropped.js'
 import planTemplatesRouter from './routes/planTemplates.js'
 import manufacturersRouter from './routes/manufacturers.js'
+import styleImportsRouter from './routes/styleImports.js'
+import styleRequestsRouter from './routes/styleRequests.js'
 
 // ── Validate required env vars at startup ──────────────────────────────────
 const isProd = process.env.NODE_ENV === 'production'
@@ -182,6 +184,8 @@ app.use('/api/floor',         floorRouter)
 app.use('/api/dropped',       droppedRouter)
 app.use('/api/plan-templates', planTemplatesRouter)
 app.use('/api/manufacturers', manufacturersRouter)
+app.use('/api/style-imports', styleImportsRouter)
+app.use('/api/style-requests', styleRequestsRouter)
 
 // ── Health check ────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

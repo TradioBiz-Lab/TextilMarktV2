@@ -15,6 +15,14 @@ describe('what each role may do', () => {
     expect(capsFor(buyer).manageMaterials).toBe(false)
   })
 
+  test('Tradio and a customer can order a replen and import styles; a factory cannot', () => {
+    for (const u of [admin, buyer]) { expect(capsFor(u).orderReplen).toBe(true); expect(capsFor(u).importStyles).toBe(true) }
+    expect(capsFor(mfr).orderReplen).toBe(false)
+    expect(capsFor(mfr).importStyles).toBe(false)
+    // creating a style through the full form, and master orders, stay with Tradio
+    expect(capsFor(buyer).createOrders).toBe(false)
+  })
+
   test('a manufacturer writes only its own split', () => {
     expect(canWriteStage(mfr, asgn, { name: 'Cutting' })).toBe(true)
     expect(canWriteStage(mfr, { mid: 'someone-else' }, { name: 'Cutting' })).toBe(false)

@@ -3,7 +3,7 @@ import { useNavState } from '../../navState.js'
 import { CalendarClock, AlertTriangle, Package, Ban, CircleDot, CheckCircle2, Search, BarChart3, Folder, MessageCircle, Calendar, ChevronDown, ChevronRight, Play, Download, ArrowRight, Sparkles } from '../../icons.jsx'
 import {
   T, dayNumber, getToday, fmtN, effectiveEta, planProgress, deliveryStatus, splitDue,
-  stageStatusOf, stageIsOverdue, isStageDone, inFlightStages, stageProgressLabel, stageVariance, productionOrders, preProductionOrders, styleOnHold, fmtDate, dueDates,
+  stageStatusOf, stageIsOverdue, isStageDone, inFlightStages, stageProgressLabel, stageVariance, phaseOf, PHASES, PHASE_LABEL, isPreProduction, styleOnHold, fmtDate, dueDates,
 } from '../../constants.js'
 import { toCsvCell } from '../../csvCell.js'
 import { Btn, Card, EmptyState, FlexRow, Modal, Mono, LoadingScreen, PageHeader, ProductThumb, StatCard, activateOnKey } from '../../components/ui.jsx'
@@ -156,6 +156,16 @@ function GanttChart({ asgn }) {
   )
 }
 
+const STAGE_PILL = {
+  development: { bg: '#ede9fe', fg: '#5b21b6', bd: '#c4b5fd' },
+  replen: { bg: '#ccfbf1', fg: '#0f766e', bd: '#5eead4' },
+}
+/** A small badge for a style that is not in production (New Product Development or Replen). */
+function StagePill({ order }) {
+  const t = STAGE_PILL[phaseOf(order)]
+  return t ? <span style={{ marginLeft: 6, fontSize: 9.5, fontWeight: 800, padding: '1px 7px', borderRadius: 8, background: t.bg, color: t.fg, border: `1px solid ${t.bd}`, whiteSpace: 'nowrap' }}>{PHASE_LABEL[phaseOf(order)]}</span> : null
+}
+
 function GanttModal({ order, asgn, onClose, onOpen }) {
   const multi = (order.assignments || []).length > 1
   return (
@@ -176,9 +186,9 @@ function GanttModal({ order, asgn, onClose, onOpen }) {
 
 export function ReportingPage({ onOpen, initialMo }) {
   const { orders: allOrders, masterOrders, currentUser, loading, loadError } = useApp()
-  // The report is about styles in production; the ones still being sampled are left out and counted below the title.
-  const orders = useMemo(() => productionOrders(allOrders), [allOrders])
-  const inDevelopment = preProductionOrders(allOrders).length
+  // Every style is here: in production, in New Product Development, or Replen. The stage filter narrows it.
+  const [stageFilter, setStageFilter] = useNavState('reports.stage', 'All')
+  const orders = useMemo(() => (allOrders || []).filter(o => stageFilter === 'All' || phaseOf(o) === stageFilter), [allOrders, stageFilter])
   const onHold = orders.filter(styleOnHold).length
   const [q, setQ] = useNavState('reports.q', '')
   const [healthFilter, setHealthFilter] = useNavState('reports.health', 'All')
@@ -231,7 +241,7 @@ export function ReportingPage({ onOpen, initialMo }) {
     }))
   }, [orders, todayNum])
 
-  // Styles in production with no manufacturer yet have no plan to report on, but they are part of what was ordered.
+  // Styles with no manufacturer yet have no plan to report on, but they are part of what was ordered.
   const unassigned = useMemo(() => {
     const m = q.trim().toLowerCase()
     if (healthFilter !== 'All' && healthFilter !== 'unassigned') return []
@@ -334,7 +344,7 @@ export function ReportingPage({ onOpen, initialMo }) {
     <div>
       <PageHeader
         title="Order Status"
-        subtitle={`Where every style stands right now: what's open, what's stuck, what's next${inDevelopment ? `. ${inDevelopment} ${inDevelopment === 1 ? 'style' : 'styles'} in New Product Development or Replen not included.` : ''}${onHold ? ` ${onHold} on hold not included.` : ''}`}
+        subtitle={`Where every style stands right now: what's open, what's stuck, what's next${onHold ? `. ${onHold} on hold not included.` : ''}`}
         action={(
           <FlexRow gap={8}>
             <Btn variant="secondary" icon={<Download size={16} />} onClick={exportExcel} disabled={filtered.length === 0 || exporting}>{exporting ? 'Preparing…' : 'Export to Excel'}</Btn>
@@ -367,12 +377,19 @@ export function ReportingPage({ onOpen, initialMo }) {
           <option value="All">All styles</option>
           {Object.entries(HEALTH).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
+        <select
+          value={stageFilter} onChange={e => setStageFilter(e.target.value)} aria-label="Stage"
+          style={{ border: `1px solid ${T.border}`, borderRadius: 9, padding: '9px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit', cursor: 'pointer' }}
+        >
+          <option value="All">All stages</option>
+          {PHASES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
       </FlexRow>
 
       {groups.length === 0 ? (
-        <Card><EmptyState icon={<BarChart3 size={26} color={T.textLight} />} title={q || healthFilter !== 'All' ? 'No matching styles' : 'No styles in production yet'} desc={q || healthFilter !== 'All' ? 'Try adjusting the search or filter' : 'Styles show here once a manufacturer is working on them'} /></Card>
+        <Card><EmptyState icon={<BarChart3 size={26} color={T.textLight} />} title={q || healthFilter !== 'All' || stageFilter !== 'All' ? 'No matching styles' : 'No styles yet'} desc={q || healthFilter !== 'All' || stageFilter !== 'All' ? 'Try adjusting the search or filter' : 'Styles show here as soon as they are created'} /></Card>
       ) : groups.map(g => {
-        const isOpen = !!expanded[g.key] || !!q || healthFilter !== 'All'
+        const isOpen = !!expanded[g.key] || !!q || healthFilter !== 'All' || stageFilter !== 'All'
         return (
           <Card key={g.key} pad={false} style={{ marginBottom: 12 }} id={`rp-group-${g.moId}`}>
             <FlexRow
@@ -415,7 +432,7 @@ export function ReportingPage({ onOpen, initialMo }) {
                                 <div style={{ fontSize: 13, fontWeight: 600, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>
                                   {r.order.product}
                                 </div>
-                                <Mono style={{ fontSize: 10 }}>{r.order.id}{multi ? `-${r.asgn.sub}` : ''}</Mono>
+                                <Mono style={{ fontSize: 10 }}>{r.order.id}{multi ? `-${r.asgn.sub}` : ''}</Mono><StagePill order={r.order} />
                                 <div style={{ fontSize: 10, color: T.textLight }}>{r.asgn.mfrCompany || '—'} · {fmtN(r.asgn.qty)} pcs</div>
                               </div>
                             </FlexRow>
@@ -486,7 +503,7 @@ export function ReportingPage({ onOpen, initialMo }) {
                 <ProductThumb order={o} />
                 <div style={{ flex: 1, minWidth: 160 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{o.product}{o.styleNumber ? ` (${o.styleNumber})` : ''}</div>
-                  <div style={{ fontSize: 10, color: T.textLight }}><Mono style={{ fontSize: 10 }}>{o.id}</Mono> · {fmtN(o.totalQty)} pcs · No manufacturer yet</div>
+                  <div style={{ fontSize: 10, color: T.textLight }}><Mono style={{ fontSize: 10 }}>{o.id}</Mono><StagePill order={o} /> · {o.totalQty ? `${fmtN(o.totalQty)} pcs` : 'quantity not set'} · No manufacturer yet</div>
                 </div>
                 <Chip tone={HEALTH.unassigned}>{HEALTH.unassigned.label}</Chip>
                 <span style={{ fontSize: 12, color: T.textMuted, fontFamily: "'JetBrains Mono',monospace" }}>{fmtDate(o.delivery)}</span>

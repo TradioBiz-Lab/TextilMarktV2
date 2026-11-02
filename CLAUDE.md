@@ -53,13 +53,13 @@ backend/src/
   middleware/auth.js  # requireAuth / requireAdmin / requireMaster / sanitizeBody
   middleware/asyncErrors.js # forwards rejected async handlers to the error handler
   models/             # User, Order, Document, Notification, AuditLog, Ribbon, MasterOrder,
-                       # ActionItem, DroppedRecord, InboundMessage, Manufacturer (Partner Directory)
+                       # ActionItem, DroppedRecord, InboundMessage, Manufacturer (Partner Directory), StyleImportUpload, StyleRequest
   routes/             # auth, viewAs, orders, documents, users, notifications, audit, ribbons,
                        # masterOrders, signup, actionItems, assistant (Kriyaa), voice, inbound,
-                       # review, floor, dropped, manufacturers (Partner Directory, admin only)
+                       # review, floor, dropped, manufacturers (Partner Directory, admin only), styleImports (Excel/CSV style import), styleRequests (review queue for customer requests, master admin)
   lib/                # email, stageMath, notify, redact, dropRecord, sarvam, ai/, inbound/,
                        # partners (validation, query), partnerImport (CSV + bulk import),
-                       # partnerSeed (spreadsheet mapping), partnerImagePrompts
+                       # partnerSeed (spreadsheet mapping), partnerImagePrompts, styleImport (read + check a sheet of styles), links
 backend/scripts/      # one-off admin tools; dry run unless --apply, never read backend/.env:
                        # importManufacturers, syncPlatformManufacturers, partnersImageReport, uploadPartnerTiles
 frontend/src/
@@ -71,6 +71,7 @@ frontend/src/
   constants.js        # T theme object (design tokens), STATUS_FLOW, DEFAULT_STAGE_NAMES
   pages/admin/...      # the screens ALL roles use (Dashboard, Orders, Order detail, Documents, ...)
   pages/admin/Partner*.jsx, Partners*.jsx  # Partner Directory (admin only): list, detail, form, CSV import
+  pages/admin/StyleImportModal.jsx, components/KriyaaAttach.jsx, styleImport.js  # Import styles window; Kriyaa's paperclip; pure helpers
   pages/shared/...     # Reports, Action Items
   partners.js         # Partner Directory constants and pure helpers (tabs, score tone, MOQ claim rule, list query)
   components/Partner*.jsx, TagInput.jsx  # partner card, shared badges/tile/copy chip, tag input
@@ -107,6 +108,23 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   added or reassigned) only when its directory record has the status Live (`status: 'live'`, `lib/liveManufacturers.js`); a new
   manufacturer account gets a Pilot record automatically, and Tradio sets it to Live on the partner's page. See docs/SCHEMA.md `manufacturers`.
 
+- **Importing styles from a sheet.** `routes/styleImports.js` (Tradio for any master order, a customer for its own only; a
+  customer's "create" only sends the sheet to the review queue below): upload an .xlsx or .csv (kept an hour in
+  `StyleImportUpload`), preview every row, then create. `lib/styleImport.js` is pure and reads Excel straight from the zip
+  with JSZip (exceljs is a dev-only dependency and crashes on workbooks with absolute part paths, like the Cocoblu one);
+  pictures float over cells, so each is matched to the row its middle sits on. The same code runs for preview and commit,
+  rows already in the master order are skipped, and styles are made as NPD or Replen with no manufacturer or plan. Factory,
+  cost and price columns are ignored on purpose. Kriyaa reaches it through `preview_style_import` and
+  `create_styles_from_import` (admins only; the admin attaches the file with the paperclip; the message then starts with an
+  `[Attached style sheet ...]` line, see `frontend/src/styleImport.js`); creating needs the admin's confirmation.
+- **Order replen.** `POST /api/orders/:id/replen { quantity, note? }` (customer on its own styles, or Tradio): copies a style in
+  production into a new Replen style (same master order, `replenOf` set, no factory) and refuses a repeat within 30 seconds.
+  Tradio's own request creates it at once; a customer's becomes a review request.
+- **The review queue for customers.** A customer never creates a style directly: its sheet import and its replen order become
+  `StyleRequest` entries that a master admin approves or declines on the Style Requests page (`routes/styleRequests.js`,
+  master admin only; the customer sees and can cancel its own). Approval creates the styles with `createRows` /
+  `createReplenFrom`, the same code Tradio's own paths use, and re-checks the sheet first. The full Create Style form and
+  master orders stay with Tradio.
 - **No router library.** `App.jsx` holds the current view in state and switch-renders the right
   page component per role; navigation is done by calling a passed-down `onNavigate(view, params)`
   function, not by URL. When adding a new page/view, wire it into this switch rather than

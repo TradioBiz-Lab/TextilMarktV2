@@ -5,7 +5,7 @@
 // Two tables: one row per style x manufacturer split (the summary the page shows), and one row per
 // TNA step (the full plan behind it). Customers get exactly what they can already see on screen:
 // nothing here is read from fields a customer is not sent.
-import { effectiveEta, stageKindOf, stageStatusOf, STAGE_STATUS_LABELS, stageVariance, stageActualVariance, stageProgressLabel } from './constants.js'
+import { effectiveEta, stageKindOf, stageStatusOf, STAGE_STATUS_LABELS, stageVariance, stageActualVariance, stageProgressLabel, PHASE_LABEL } from './constants.js'
 
 const KIND_LABEL = { quantity: 'Quantity', milestone: 'Approval', checklist: 'Checklist' }
 const isDate = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)
@@ -26,6 +26,7 @@ export function reportModel(rows, { masterOrders = [], isBuyer = false, healthLa
     { key: 'mo', label: 'Master order', width: 24, type: 'text', get: moName },
     { key: 'id', label: 'Order ID', width: 28, type: 'text', get: r => r.order.id },
     { key: 'style', label: 'Style', width: 30, type: 'text', get: r => r.order.product || '' },
+    { key: 'phase', label: 'Stage', width: 24, type: 'text', get: r => PHASE_LABEL[r.order.phase || 'production'] || '' },
     { key: 'mfr', label: 'Manufacturer', width: 22, type: 'text', get: r => r.asgn.mfrCompany || '' },
     { key: 'qty', label: 'Ordered qty', width: 12, type: 'number', get: r => r.asgn.qty ?? null },
     { key: 'got', label: 'Delivered qty', width: 13, type: 'number', get: r => r.delivery.deliveredQty ?? null },

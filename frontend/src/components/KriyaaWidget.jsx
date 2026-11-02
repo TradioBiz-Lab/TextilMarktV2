@@ -6,6 +6,7 @@ import { useKriyaaChat } from '../kriyaaChatContext.jsx'
 import { useKriyaaVoice } from '../useKriyaaVoice.js'
 import { useVoiceMode } from '../useVoiceMode.js'
 import { KriyaaVoiceMode } from './KriyaaVoiceMode.jsx'
+import { KriyaaAttachButton, KriyaaAttachStatus, KriyaaMessageText } from './KriyaaAttach.jsx'
 
 function fmtTime(d) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -18,7 +19,7 @@ function fmtTime(d) {
 // `open` (visibility) toggle, so the same thread continues whether the
 // admin uses the bubble or navigates to the full page.
 export function KriyaaWidget() {
-  const { messages, input, setInput, busy, slow, send } = useKriyaaChat()
+  const { messages, input, setInput, busy, slow, send, attachment } = useKriyaaChat()
   const [open, setOpen] = useState(false)
   const bottomRef = useRef(null)
   // active: false while the panel is closed — releases the mic/stops
@@ -81,7 +82,7 @@ export function KriyaaWidget() {
                   border: m.role === 'user' ? 'none' : `1px solid ${m.isError ? T.dangerBorder : T.border}`,
                   fontSize: 12.5, lineHeight: 1.5, whiteSpace: 'pre-wrap',
                 }}>
-                  {m.content}
+                  <KriyaaMessageText content={m.content} onUserBubble={m.role === 'user'} />
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5 }}>
                     <span style={{ fontSize: 9, opacity: 0.65 }}>{fmtTime(m.at)}</span>
                     {m.role === 'assistant' && m.voiceOriginated && (
@@ -112,7 +113,9 @@ export function KriyaaWidget() {
                   : (voice.recErrorMsg || voice.voiceError)}
               </div>
             )}
+            <KriyaaAttachStatus pad="6px 12px 0" fontSize={10.5} />
             <div style={{ padding: 12, display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+              <KriyaaAttachButton size={34} radius={8} iconSize={15} />
               <button onClick={voice.toggleMic} disabled={voice.disabled && voice.recState !== 'recording'} title="Voice input"
                 style={{
                   flexShrink: 0, width: 34, height: 34, borderRadius: 8, border: 'none', cursor: voice.disabled && voice.recState !== 'recording' ? 'not-allowed' : 'pointer',
@@ -138,7 +141,7 @@ export function KriyaaWidget() {
                   placeholder="Ask, or tell it what changed…"
                 />
               </div>
-              <Btn size="sm" onClick={() => send()} disabled={busy || !input.trim()}>{busy ? '…' : 'Send'}</Btn>
+              <Btn size="sm" onClick={() => send()} disabled={busy || (!input.trim() && !attachment)}>{busy ? '…' : 'Send'}</Btn>
             </div>
           </div>
 

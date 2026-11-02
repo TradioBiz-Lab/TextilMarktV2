@@ -396,6 +396,13 @@ export function AppProvider({ children }) {
     return order
   }, [])
 
+  const orderReplen = useCallback(async (orderId, data) => {
+    const order = await ordersApi.orderReplen(orderId, data)
+    // A customer's replen is only a request until a master admin approves it: there is no style to add yet.
+    if (!order.pending) setOrders(p => [order, ...p])
+    return order
+  }, [])
+
   const addAssignment = useCallback(async (orderId, { mfrId, qty, sub, delivery }) => {
     const order = await ordersApi.addAssignment(orderId, { mfrId, qty, sub, delivery })
     setOrders(p => p.map(o => o.id === orderId ? order : o))
@@ -724,7 +731,7 @@ export function AppProvider({ children }) {
       login, logout,
       updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
       bulkUpdateStages, addStageItem, updateStageItem, removeStageItem,
-      updateAssignment, addAssignment, reassignAssignment, setDeliveredQty, insertStage, moveStage, startPlan, uploadDoc, updateDoc, deleteDoc, getDocVersions, fileDocInto, setStylePhotos, createOrder, createMasterOrder, updateMasterOrder, deleteMasterOrder,
+      updateAssignment, addAssignment, reassignAssignment, setDeliveredQty, insertStage, moveStage, startPlan, uploadDoc, updateDoc, deleteDoc, getDocVersions, fileDocInto, setStylePhotos, createOrder, orderReplen, createMasterOrder, updateMasterOrder, deleteMasterOrder,
       editOrder, deleteOrder, escalateOrder,
       createUser, updateUser, toggleUser, resetUserPw,
       markAllRead, markOneRead, getDocData, refreshAudit, loadMoreAudit,

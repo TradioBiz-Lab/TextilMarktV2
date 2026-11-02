@@ -68,6 +68,8 @@ export const ordersApi = {
   list: () => api.get('/orders'),
   get: id => api.get(`/orders/${id}`),
   create: data => api.post('/orders', data),
+  // Reorders a style in production as a new Replen style: { quantity, note? }.
+  orderReplen: (id, data) => api.post(`/orders/${id}/replen`, data),
   update: (id, data) => api.post(`/orders/${id}`, data),
   // The customer's own style: its product photos (Tradio uses update).
   setPhotos: (id, photos) => api.post(`/orders/${id}/photos`, { photos }),
@@ -168,6 +170,22 @@ export const actionItemsApi = {
   create: data => api.post('/action-items', data),
   update: (id, data) => api.post(`/action-items/${id}`, data),
   addUpdate: (id, text) => api.post(`/action-items/${id}/updates`, { text }),
+}
+
+// Spreadsheets of styles (Excel or CSV): upload, preview every row, then create. Admin only.
+export const styleImportsApi = {
+  upload: (filename, data) => api.post('/style-imports', { filename, data }, { timeout: 60000 }),
+  preview: (id, masterOrderId) => api.post(`/style-imports/${id}/preview`, { masterOrderId }, { timeout: 60000 }),
+  commit: (id, masterOrderId, skipInvalid) => api.post(`/style-imports/${id}/commit`, { masterOrderId, ...(skipInvalid ? { skipInvalid: true } : {}) }, { timeout: 120000 }),
+}
+
+// What a customer asks to add (a sheet of styles, a replen) waits here for a master admin.
+export const styleRequestsApi = {
+  list: status => api.get('/style-requests', { params: status ? { status } : undefined }),
+  preview: id => api.post(`/style-requests/${id}/preview`, {}, { timeout: 60000 }),
+  approve: id => api.post(`/style-requests/${id}/approve`, {}, { timeout: 120000 }),
+  decline: (id, reason) => api.post(`/style-requests/${id}/decline`, reason ? { reason } : {}),
+  cancel: id => api.post(`/style-requests/${id}/cancel`, {}),
 }
 
 export const assistantApi = {

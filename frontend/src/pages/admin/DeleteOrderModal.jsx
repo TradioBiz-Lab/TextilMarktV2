@@ -56,7 +56,7 @@ export function DeleteOrderModal({ order, onClose, onConfirm }) {
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
               <span style={{ fontSize: 12, color: T.textMuted, width: 100, flexShrink: 0 }}>Quantity</span>
-              <span style={{ fontSize: 12, color: T.text }}>{order.totalQty?.toLocaleString()} pcs</span>
+              <span style={{ fontSize: 12, color: T.text }}>{order.totalQty ? `${order.totalQty.toLocaleString()} pcs` : 'quantity not set'}</span>
             </div>
           </div>
 

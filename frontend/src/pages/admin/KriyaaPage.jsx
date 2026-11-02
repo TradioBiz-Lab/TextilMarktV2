@@ -6,6 +6,7 @@ import { useKriyaaChat } from '../../kriyaaChatContext.jsx'
 import { useKriyaaVoice } from '../../useKriyaaVoice.js'
 import { useVoiceMode } from '../../useVoiceMode.js'
 import { KriyaaVoiceMode } from '../../components/KriyaaVoiceMode.jsx'
+import { KriyaaAttachButton, KriyaaAttachStatus, KriyaaMessageText } from '../../components/KriyaaAttach.jsx'
 import { useApp } from '../../context.jsx'
 
 function fmtTime(d) {
@@ -70,7 +71,7 @@ function SuggestionGrid({ role, onPick }) {
 // page never loses context. This page is just a bigger, more comfortable
 // surface for a longer back-and-forth.
 export function KriyaaPage() {
-  const { messages, input, setInput, busy, slow, send } = useKriyaaChat()
+  const { messages, input, setInput, busy, slow, send, attachment } = useKriyaaChat()
   const { currentUser } = useApp()
   const bottomRef = useRef(null)
   // This page is a real unmount on navigation (App.jsx's hand-rolled
@@ -135,7 +136,7 @@ export function KriyaaPage() {
                 fontSize: 13.5, lineHeight: 1.55, whiteSpace: 'pre-wrap',
                 boxShadow: m.role === 'user' ? '0 2px 6px rgba(249,115,22,0.18)' : 'none',
               }}>
-                {m.content}
+                <KriyaaMessageText content={m.content} onUserBubble={m.role === 'user'} />
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 6 }}>
                   <span style={{ fontSize: 10, opacity: 0.6 }}>{fmtTime(m.at)}</span>
                   {m.role === 'assistant' && m.voiceOriginated && (
@@ -169,7 +170,9 @@ export function KriyaaPage() {
                 : (voice.recErrorMsg || voice.voiceError)}
             </div>
           )}
+          <KriyaaAttachStatus />
           <div style={{ padding: 14, display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+            <KriyaaAttachButton size={38} radius={T.radius.sm} iconSize={16} />
             <button onClick={voice.toggleMic} disabled={voice.disabled && voice.recState !== 'recording'} title="Voice input"
               style={{
                 flexShrink: 0, width: 38, height: 38, borderRadius: T.radius.sm, border: 'none', cursor: voice.disabled && voice.recState !== 'recording' ? 'not-allowed' : 'pointer',
@@ -195,7 +198,7 @@ export function KriyaaPage() {
                 placeholder="Ask about pending items, or tell it what changed…"
               />
             </div>
-            <Btn onClick={() => send()} disabled={busy || !input.trim()}>{busy ? 'Sending…' : 'Send'}</Btn>
+            <Btn onClick={() => send()} disabled={busy || (!input.trim() && !attachment)}>{busy ? 'Sending…' : 'Send'}</Btn>
           </div>
         </div>
 

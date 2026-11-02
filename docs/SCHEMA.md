@@ -19,6 +19,8 @@
 | `inboundmessages` | Raw factory messages (photo, voice, text) and what the AI did with them | ObjectId |
 | `droppedrecords` | Permanent record of every dropped style and deleted master order, with a full copy | ObjectId |
 | `manufacturers` | Partner Directory: Tradio's internal sourcing CRM of manufacturers and suppliers (admin only) | ObjectId |
+| `stylerequests` | A customer's request to add styles (a sheet, or a replen) waiting for a master admin to approve or decline | ObjectId |
+| `styleimportuploads` | A sheet of styles (Excel or CSV) waiting to be previewed and created; removed after an hour | String (`imp_` + 16 hex) |
 
 ---
 
@@ -105,6 +107,12 @@ Uses a human-readable custom string `_id` for traceability.
                                   retyped per step. A qty-per-colour-per-size grid is
                                   deliberately out of scope.
   ecommerceLink String            default: "", max 2000 chars — optional public product-page URL
+  techPackLink  String            default: "", max 2000 chars — optional web link to the tech pack
+                                  when it lives online (an uploaded tech pack is a `documents` entry)
+  brand         String            default: "", max 60 — the customer's own brand the style is for
+                                  (a customer can sell several, e.g. Cocoblu's FYLTR). Free text.
+  replenOf      String            default: null — for a replen ordered from a style in production
+                                  (POST /api/orders/:id/replen): the id of the style it reorders
   callout       String            default: "", max 500 chars — order-level risk/escalation
                                   note, e.g. "delayed a week — lab dip submission slipped"
   assignments   [Assignment]      embedded array, one entry per manufacturer split — MAY be
@@ -819,6 +827,56 @@ Scripts (`backend/scripts/`, dry run unless `--apply`, run with `node --env-file
 existing ones by filling blanks and adding contacts, keywords and brands without replacing anything a person entered, takes the out-of-scope
 entries off the active list with an audit entry, and appends new partners to `reports/partners_needing_images.md`), `uploadPartnerTiles.mjs` (attaches a folder of generated tiles, named as that report asks, shrinking each to 640px with macOS `sips`), `syncPlatformManufacturers.mjs` (a record for every active manufacturer-role
 user, idempotent on `linkedUserId`), `setPartnerBrands.mjs` (fills brands from the Cocoblu vendor file and the platform manufacturers' customers), `partnersImageReport.mjs` (`--all` lists every active partner, to redo the tiles), `uploadPartnerTiles.mjs --replace` swaps tiles already attached.
+
+---
+
+## 13. `styleimportuploads` (sheets of styles to import)
+
+Created by `POST /api/style-imports` (Tradio, or a customer for its own master orders; a customer's sheet is then copied into a `stylerequests` entry when it sends it), read by the preview and commit routes of the same router, and by
+Kriyaa's `preview_style_import` / `create_styles_from_import` tools, which call those routes over loopback. A MongoDB TTL
+index on `createdAt` removes each upload an hour after it is made, so nothing here is permanent.
+
+```
+_id         String      "imp_" + 16 hex characters (the id Kriyaa is given in the attached-sheet line)
+userId      ObjectId    the admin who uploaded it; nobody else can preview or create from it
+filename    String      max 200
+data        Buffer      the .xlsx or .csv bytes, max 8MB
+committing  Boolean     true while a create is running, so a double click or repeated call cannot create twice
+createdAt   Date        TTL: 3600 seconds
+```
+
+What a sheet may contain (`lib/styleImport.js`): required per row are Brand, Style No, Description, a picture (floating over
+the row in Excel, or a web address in the Image column), Fabric and Stage (NPD or Replen); a replen also needs its Amazon
+link. Optional: Category (guessed from the description when blank, and flagged as a guess), Tech pack link, Quantity,
+Colours. Factory, cost and price columns are ignored and never stored. A row whose style number is already in the master
+order is skipped, never duplicated. Styles are created as `development` or `replen`, with no manufacturer and no plan.
+
+---
+
+## 14. `stylerequests` (the review queue for what customers add)
+
+A customer cannot create styles directly. Its sheet of NPD/Replen styles (`routes/styleImports.js`) or its replen of a style
+in production (`POST /api/orders/:id/replen`) becomes one of these, and a master admin approves or declines it from the Style
+Requests page (`routes/styleRequests.js`). Only approval creates styles, with the same code Tradio's own import and replen use.
+Tradio's own admins are not queued: they create at once.
+
+```
+kind          String      import | replen
+status        String      pending | processing (only while an approval runs) | approved | declined | cancelled
+buyerId       ObjectId    the customer the styles belong to
+requestedBy   ObjectId    the customer user who sent it
+masterOrderId String      the master order the styles go under (a replen: the original style's)
+-- import
+filename, data (Buffer, select:false), uploadId, skipInvalid (create the valid rows only), summary { total, ok, errors, exists }
+-- replen
+sourceOrderId, product, styleNumber, quantity, note
+-- decision
+decidedBy, decidedAt, decisionNote (max 300, shown to the customer), createdOrderIds[], failedCount
+```
+
+The sheet is read again at approval (a style that has appeared since is skipped; if nothing is left, the request stays in
+the queue), and the sheet bytes are dropped once the request is decided. A customer can cancel its own waiting request.
+Customers and master admins are notified at each step.
 
 ---
 

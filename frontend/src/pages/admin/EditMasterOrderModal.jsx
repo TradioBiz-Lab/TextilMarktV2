@@ -107,7 +107,7 @@ export function EditMasterOrderModal({ mo, onClose, onDeleted }) {
                       <div style={{ fontSize: 13, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {o.product}{o.styleNumber ? ` (${o.styleNumber})` : ''}
                       </div>
-                      <div style={{ fontSize: 11, color: T.textMuted }}><Mono style={{ fontSize: 11 }}>{o.id}</Mono> · {o.totalQty?.toLocaleString()} pcs
+                      <div style={{ fontSize: 11, color: T.textMuted }}><Mono style={{ fontSize: 11 }}>{o.id}</Mono> · {o.totalQty ? `${o.totalQty.toLocaleString()} pcs` : 'quantity not set'}
                         {styleOnHold(o) && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: '#475569', background: '#e2e8f0', borderRadius: 999, padding: '1px 7px' }}>On hold</span>}
                       </div>
                     </div>
