@@ -276,6 +276,15 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
   if (loading) return <LoadingScreen />
   if (!order) return null
 
+  // Dropping a style: the server keeps the permanent record, then the page says so and goes back.
+  const confirmDrop = async (id, reason) => {
+    const name = `${order.product}${order.styleNumber ? ` (${order.styleNumber})` : ''}`
+    await deleteOrder(id, reason)
+    toast(`${name} is dropped. A full copy is kept on the Audit Log page.`, 'success', 6000)
+    setShowDelete(false)
+    onBack()
+  }
+
   // Buyers can own approval steps, so the order's own buyer is a valid choice too. Without it a
   // buyer-owned stage showed as "Unassigned" and saving the dialog would have cleared the owner.
   const responsibleUsers = users.filter(u => u.isActive && (u.role === 'admin' || u.role === 'manufacturer' || (u.role === 'buyer' && String(u.id) === String(order.buyerId))))
@@ -1174,7 +1183,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
         )}
         {showDelete && (
           <DeleteOrderModal order={order} onClose={() => setShowDelete(false)}
-            onConfirm={async (id, reason) => { await deleteOrder(id, reason); toast(`Style ${id} dropped`, 'success'); setShowDelete(false); onBack() }} />
+            onConfirm={confirmDrop} />
         )}
 
         {renderSummary({ unassigned: true })}
@@ -1303,12 +1312,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onBack }) {
         <DeleteOrderModal
           order={order}
           onClose={() => setShowDelete(false)}
-          onConfirm={async (id, reason) => {
-            await deleteOrder(id, reason)
-            toast(`Style ${id} dropped`, 'success')
-            setShowDelete(false)
-            onBack()
-          }}
+          onConfirm={confirmDrop}
         />
       )}
 
