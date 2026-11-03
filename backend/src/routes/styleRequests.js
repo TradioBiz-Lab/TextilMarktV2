@@ -275,7 +275,9 @@ router.get('/', readLimiter, async (req, res) => {
     if (!isMaster(req.user)) return fail(res, 403, 'Master admin only')
     const status = req.query.status
     const filter = status === 'all' ? {} : status === 'decided' ? { status: { $in: ['approved', 'declined', 'cancelled'] } } : { status: { $in: ['pending', 'processing'] } }
-    const docs = await populated(StyleRequest.find(filter).select('-items.photos').sort(status === 'decided' ? { decidedAt: -1, createdAt: -1 } : { createdAt: 1 }).limit(100))
+    await releaseStale()
+    // Everything waiting is listed (oldest first: first come, first decided); the decided list is the latest 100.
+    const docs = await populated(StyleRequest.find(filter).select('-items.photos').sort(status === 'decided' ? { decidedAt: -1, createdAt: -1 } : { createdAt: 1 }).limit(status === 'decided' || status === 'all' ? 100 : 1000))
     res.json(await itemsForList(docs))
   } catch (err) { console.error('[style requests]', err); fail(res, 500, 'Server error') }
 })
@@ -310,6 +312,11 @@ router.post('/:id/preview', readLimiter, async (req, res) => {
 
 /** A declined or cancelled request lets go of its files, so they can be sent again. */
 const releaseFiles = doc => Document.updateMany({ styleRequestId: doc._id, orderId: null }, { $set: { styleRequestId: null } })
+/**
+ * An approval that never finished (the server restarted in the middle) leaves its request "processing" for good. Ten
+ * minutes on, it is put back in the queue; an approval takes seconds, so a live one is never touched.
+ */
+const releaseStale = () => StyleRequest.updateMany({ status: 'processing', updatedAt: { $lt: new Date(Date.now() - 10 * 60_000) } }, { $set: { status: 'pending' } }).catch(() => {})
 /** Put a request that was being approved back in the queue after a failure. */
 const release = id => StyleRequest.updateOne({ _id: id, status: 'processing' }, { $set: { status: 'pending' } }).catch(() => {})
 /** Move the files sent with an item onto the style made from it. */
@@ -320,6 +327,7 @@ const fileOnto = (doc, item, orderId) => (item.docIds?.length
 // POST /api/style-requests/:id/approve  { masterOrderId? }   (master admin) -> creates the styles under that master order
 router.post('/:id/approve', decideLimiter, masterOnly, async (req, res) => {
   if (!OBJECT_ID_RE.test(req.params.id)) return fail(res, 404, 'Request not found.')
+  await releaseStale()
   const pending = await StyleRequest.findOne({ _id: req.params.id, status: 'pending' }).lean()
   if (!pending) return fail(res, 409, 'That request is not waiting for review (it may already be decided, or being approved).')
   const target = await targetFor(pending, req.body?.masterOrderId)

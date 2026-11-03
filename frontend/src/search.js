@@ -1,7 +1,7 @@
 // The search in the top bar: one box for a customer, a master order, a style (by name, Tradio ID or the customer's style ID,
 // including just its last digits), ranked so the likely target comes first. Pure, so it is tested on its own; it searches
 // only what the signed-in user already has (the server sends each role its own orders and master orders).
-import { PHASE_LABEL, phaseOf } from './constants.js'
+import { PHASE_LABEL, phaseOf, styleStatus } from './constants.js'
 
 const low = s => String(s ?? '').toLowerCase().trim()
 const compact = s => low(s).replace(/[^a-z0-9]/g, '')
@@ -38,6 +38,10 @@ function scoreItem(tokens, fields) {
   return total
 }
 
+// A style in production says where it stands (the same words as everywhere else); NPD and Replen say their stage.
+const STATUS_BADGE = { Delivered: 'Delivered', 'On Hold': 'On hold', Delayed: 'Delayed', Processing: 'In production' }
+const badgeOf = o => (phaseOf(o) === 'production' ? STATUS_BADGE[styleStatus(o)] || PHASE_LABEL.production : PHASE_LABEL[phaseOf(o)] || '')
+
 /** The searchable items: styles and master orders, each with the fields it can be found by. */
 export function buildSearchIndex({ orders = [], masterOrders = [] } = {}) {
   const moById = Object.fromEntries((masterOrders || []).map(m => [m.id, m]))
@@ -46,8 +50,8 @@ export function buildSearchIndex({ orders = [], masterOrders = [] } = {}) {
     return {
       kind: 'style', id: o.id, order: o,
       title: o.product || o.id,
-      sub: [o.styleNumber, o.buyerCompany, mo?.orderName].filter(Boolean).join(' · '),
-      badge: PHASE_LABEL[phaseOf(o)] || '',
+      sub: [o.styleNumber, o.buyerCompany, mo?.orderName, o.totalQty ? `${Number(o.totalQty).toLocaleString('en-IN')} pcs` : ''].filter(Boolean).join(' · '),
+      badge: badgeOf(o),
       fields: [
         { text: o.styleNumber, weight: 1.2, styleId: true },
         { text: o.id, weight: 1, styleId: true },

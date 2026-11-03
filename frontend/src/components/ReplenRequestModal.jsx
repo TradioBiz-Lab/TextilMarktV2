@@ -84,6 +84,14 @@ export function ReplenRequestModal({ preselect = [], onClose, onSent, admin = fa
     }
   }
 
+  // Tradio's new master order, made from the Import tab (the Choose tab makes it as it adds the replens).
+  const makeMasterOrder = async () => {
+    setErr(''); setSaving(true)
+    try { const made = await createMasterOrder({ id: 'auto', buyerId, orderName: newMo.orderName.trim(), season: newMo.season || undefined }); setNewMo(null); setMoId(made.id) }
+    catch (e) { setErr(e?.message || 'Could not create the master order.') }
+    finally { setSaving(false) }
+  }
+
   const tabBtn = (id, text, icon) => (
     <button onClick={() => setTab(id)} aria-pressed={tab === id}
       style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 800, padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', border: `1px solid ${tab === id ? T.primaryDeep : T.border}`, background: tab === id ? T.primaryDeep : T.surface, color: tab === id ? '#fff' : T.text }}>
@@ -100,13 +108,20 @@ export function ReplenRequestModal({ preselect = [], onClose, onSent, admin = fa
           {tabBtn('import', 'Import from Excel or CSV', <FileSpreadsheet size={13} />)}
         </FlexRow>
 
+        {/* Tradio picks (or makes) the master order once, for both tabs: a customer with none yet is no dead end. */}
+        {admin && <MasterOrderPicker buyerId={buyerId} value={moId} onChange={setMoId} newMo={newMo} setNewMo={setNewMo} label="Master order the replens go under *" />}
+        {tab === 'import' && admin && newMo && (
+          <FlexRow gap={8} style={{ flexWrap: 'wrap' }}>
+            <Btn size="sm" disabled={saving || !newMo.orderName.trim()} onClick={makeMasterOrder}>{saving ? 'Creating…' : 'Create this master order, then import into it'}</Btn>
+            {err && <span style={{ fontSize: 12, color: T.danger, fontWeight: 600 }}>{err}</span>}
+          </FlexRow>
+        )}
         {tab === 'import' && (admin
-          ? <StyleImportModal embedded defaultStage="replen" masterOrders={customerMos} presetMasterOrderId={moId} onClose={onClose} onDone={r => { refreshOrders().catch(() => {}); onSent(r) }} />
+          ? !newMo && <StyleImportModal key={moId || 'none'} embedded defaultStage="replen" masterOrders={customerMos} presetMasterOrderId={moId} onClose={onClose} onDone={r => { refreshOrders().catch(() => {}); onSent(r) }} />
           : <StyleImportModal embedded forReview noMasterOrder defaultStage="replen" masterOrders={[]} onClose={onClose} onDone={() => onSent()} />)}
 
         {tab === 'choose' && (
           <>
-            {admin && <MasterOrderPicker buyerId={buyerId} value={moId} onChange={setMoId} newMo={newMo} setNewMo={setNewMo} label="Master order the replens go under *" />}
             <div style={{ position: 'relative' }}>
               <Search size={14} color={T.textLight} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
               <input value={q} onChange={e => setQ(e.target.value)} placeholder="Find a style by name or style ID" aria-label="Find a style"

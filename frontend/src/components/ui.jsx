@@ -554,7 +554,8 @@ export function FileUpload({ file, onFile, error, onError, mimeTypes, extensions
         <div style={{ width: 40, height: 40, borderRadius: 10, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon size={19} color={T.success} /></div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</div>
-          <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{fmtSize(file.size)} · {file.mimeType?.split('/')[1]?.toUpperCase() || 'FILE'}</div>
+          {/* The file's own extension (XLSX), not its media type (VND.OPENXMLFORMATS-...), which ran off a phone screen. */}
+          <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmtSize(file.size)} · {(/\.([a-z0-9]{1,5})$/i.exec(file.name || '')?.[1] || file.mimeType?.split('/')[1] || 'file').toUpperCase()}</div>
         </div>
         <button onClick={() => { onFile(null); onError && onError('') }} style={{ background: '#fff', border: `1px solid ${T.border}`, borderRadius: 8, cursor: 'pointer', padding: '4px 10px', fontSize: 12, color: T.danger, fontWeight: 600, fontFamily: 'inherit' }}>Remove</button>
       </div>

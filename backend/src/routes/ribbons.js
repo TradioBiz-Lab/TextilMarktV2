@@ -48,6 +48,17 @@ router.get('/all', requireAuth, requireAdmin, async (req, res) => {
   }
 })
 
+/**
+ * When a ribbon stops showing. A day picked in the form ("2026-11-05") means through the end of that day in India, not
+ * midnight UTC (which is 05:30 IST, so the ribbon used to vanish on the morning of its last day). Anything else is a time.
+ */
+function expiryOf(v) {
+  if (!v) return { at: null }
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return { at: new Date(`${v}T23:59:59.999+05:30`) }
+  const d = new Date(v)
+  return isNaN(d.getTime()) ? { error: 'Invalid expiry date' } : { at: d }
+}
+
 // POST /api/ribbons — create a ribbon (admin only)
 router.post('/', requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -57,6 +68,8 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Audience must be one of: all, buyer, manufacturer' })
     if (type && !VALID_TYPES.includes(type))
       return res.status(400).json({ error: 'Type must be one of: urgent, warning, info' })
+    const expiry = expiryOf(expiresAt)
+    if (expiry.error) return res.status(400).json({ error: expiry.error })
 
     // Deactivate any existing active ribbon for same audience (only if not user-targeted)
     if (!targetUserIds || targetUserIds.length === 0) {
@@ -71,7 +84,7 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
       type: type || 'info',
       audience,
       targetUserIds: targetUserIds || [],
-      expiresAt: expiresAt || null,
+      expiresAt: expiry.at,
       createdBy: req.user.id,
     })
 
@@ -107,7 +120,11 @@ router.post('/:id', requireAuth, requireAdmin, async (req, res) => {
       update.audience = audience
     }
     if (isActive !== undefined) update.isActive = isActive
-    if (expiresAt !== undefined) update.expiresAt = expiresAt || null
+    if (expiresAt !== undefined) {
+      const expiry = expiryOf(expiresAt)
+      if (expiry.error) return res.status(400).json({ error: expiry.error })
+      update.expiresAt = expiry.at
+    }
 
     const ribbon = await Ribbon.findByIdAndUpdate(req.params.id, { $set: update }, { new: true }).lean()
     if (!ribbon) return res.status(404).json({ error: 'Ribbon not found' })

@@ -204,3 +204,22 @@ describe('a customer is never told which factory makes its styles', () => {
     assert.deepEqual([doc.uploadedByName, doc.uploadedByCompany], ['Tradio production', 'Tradio'])
   })
 })
+
+describe('the smaller leftovers', () => {
+  test('a ribbon set to expire on a day shows through the end of that day in India', async () => {
+    const master = await makeMaster()
+    const res = await as(master).post('/api/ribbons', { message: 'Diwali break', audience: 'all', expiresAt: '2099-11-05' })
+    assert.equal(res.status, 201, JSON.stringify(res.body))
+    assert.equal(new Date(res.body.expiresAt).toISOString(), '2099-11-05T18:29:59.999Z')
+    assert.equal((await as(master).post('/api/ribbons', { message: 'x', audience: 'all', expiresAt: 'soon' })).status, 400)
+  })
+
+  test('a request left "processing" by a restart goes back in the queue, and every waiting one is listed', async () => {
+    const { master, buyer } = await arrange()
+    const stuck = await StyleRequest.create({ kind: 'npd', status: 'processing', buyerId: buyer._id, requestedBy: buyer._id, items: [{ product: 'New product (Red)', styleNumber: 'X-1', colours: ['Red'] }] })
+    await StyleRequest.collection.updateOne({ _id: stuck._id }, { $set: { updatedAt: new Date(Date.now() - 11 * 60_000) } })
+    const list = await as(master).get('/api/style-requests')
+    assert.equal(list.body.find(r => r.id === String(stuck._id))?.status, 'pending')
+    assert.equal((await StyleRequest.findById(stuck._id).lean()).status, 'pending')
+  })
+})

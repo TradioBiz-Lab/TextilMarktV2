@@ -290,6 +290,9 @@ table { border-collapse: collapse; width: 100%; }
 
 /* The top-bar search: on a phone it is a small box until it is used, then it spans the bar so there is room to type. */
 @media (max-width: 640px) {
+  /* Kriyaa's round button floats over the page: smaller on a phone, and room below the content so it never covers the end. */
+  .kriyaa-fab { width: 44px !important; height: 44px !important; bottom: 14px !important; right: 14px !important; }
+  .main-content { padding-bottom: 72px; }
   .global-search { margin: 0 8px !important; }
   .global-search:focus-within { position: absolute !important; left: 12px; right: 12px; top: 9px; max-width: none !important; margin: 0 !important; z-index: 500; }
 }

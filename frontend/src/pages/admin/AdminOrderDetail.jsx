@@ -759,7 +759,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
     ]
     const pendingCount = checklist.filter(c => !c.uploaded).length
     const docChip = (ok, text) => (
-      <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 10, whiteSpace: 'nowrap', flexShrink: 0, ...(ok ? { background: '#dcfce7', color: '#166534', border: '1px solid #86efac' } : { background: '#ffedd5', color: '#9a3412', border: '1px solid #fdba74' }) }}>{ok ? '\u2713 ' : ''}{text}</span>
+      <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 10, whiteSpace: 'nowrap', flexShrink: 0, ...(ok ? { background: '#dcfce7', color: '#166534', border: '1px solid #86efac' } : { background: '#ffedd5', color: '#9a3412', border: '1px solid #fdba74' }) , display: 'inline-flex', alignItems: 'center', gap: 3 }}>{ok && <Check size={10} />}{text}</span>
     )
             const refTypes = Object.keys(refDocLabels)
             // The customer PO filed on the master order shows in every style under it.

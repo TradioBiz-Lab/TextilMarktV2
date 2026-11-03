@@ -151,7 +151,7 @@ export function KriyaaWidget() {
 
       <button
         onClick={() => setOpen(p => !p)}
-        title="Kriyaa - AI assistant"
+        title="Kriyaa - AI assistant" aria-label="Kriyaa, the AI assistant" className="kriyaa-fab"
         style={{
           position: 'fixed', bottom: 24, right: 24, zIndex: 500,
           width: 52, height: 52, borderRadius: '50%', border: 'none', cursor: 'pointer',

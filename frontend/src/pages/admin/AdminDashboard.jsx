@@ -375,7 +375,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
               {expDocs.map(d => (
                 <div key={d.id} style={{ background: T.warningBg, border: `1px solid ${T.warningBorder}`, borderRadius: 8, padding: '8px 12px' }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: T.warning }}>{d.name}</div>
-                  <div style={{ fontSize: 11, color: '#92400e' }}>{isExpired(d.expiryDate) ? 'Expired' : 'Expiring soon'} - {d.expiryDate}</div>
+                  <div style={{ fontSize: 11, color: '#92400e' }}>{isExpired(d.expiryDate) ? 'Expired' : 'Expiring soon'} - {fmtDate(d.expiryDate)}</div>
                 </div>
               ))}
               {delayed.length === 0 && expDocs.length === 0 && <EmptyState icon={<Check size={26} color={T.success} strokeWidth={2.5} />} title="No active alerts" desc="All orders and documents are in good standing" />}
@@ -414,7 +414,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
                             <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: isActive ? T.successBg : '#e2e8f0', color: isActive ? T.success : T.textLight, border: `1px solid ${isActive ? T.successBorder : T.border}` }}>
                               {expired ? 'Expired' : r.isActive ? 'Active' : 'Inactive'}
                             </span>
-                            {r.expiresAt && <span style={{ fontSize: 10, color: T.textMuted }}>Expires {r.expiresAt}</span>}
+                            {r.expiresAt && <span style={{ fontSize: 10, color: T.textMuted }}>Expires {fmtDate(r.expiresAt)}</span>}
                           </div>
                         </div>
                         <FlexRow gap={6} style={{ flexShrink: 0, alignSelf: 'center' }}>

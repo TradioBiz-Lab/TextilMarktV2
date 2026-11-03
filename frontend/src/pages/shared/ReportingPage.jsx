@@ -361,8 +361,8 @@ export function ReportingPage({ onOpen, initialMo }) {
         <StatCard icon={<CheckCircle2 size={19} color={T.success} />} label="On track" value={stats.ontrack} color={T.success} />
       </div>
 
-      <FlexRow gap={8} style={{ marginBottom: 14 }}>
-        <div style={{ position: 'relative', flex: 1 }}>
+      <FlexRow gap={8} style={{ marginBottom: 14, flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: '1 1 220px', minWidth: 0 }}>
           <Search size={14} color={T.textLight} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
           <input
             value={q} onChange={e => setQ(e.target.value)}

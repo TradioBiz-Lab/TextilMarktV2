@@ -68,4 +68,16 @@ describe('search in the top bar', () => {
     expect(searchItems(index, '   ')).toEqual([])
     expect(searchItems(index, 'ss26', 2)).toHaveLength(2)
   })
+
+  test('a style in production shows where it stands; NPD and Replen show their stage', () => {
+    const idx = buildSearchIndex({ orders: [
+      { id: 'D', product: 'Done', phase: 'production', assignments: [{ status: 'Delivered', stages: [] }] },
+      { id: 'H', product: 'Held', phase: 'production', assignments: [{ status: 'On Hold', stages: [{ name: 'Cutting', status: 'in_progress' }] }] },
+      { id: 'R', product: 'Again', phase: 'replen', totalQty: 1200, assignments: [] },
+    ] })
+    const badge = id => idx.find(i => i.id === id).badge
+    expect([badge('D'), badge('H')]).toEqual(['Delivered', 'On hold'])
+    expect(badge('R')).not.toMatch(/Delivered|hold|production/i)
+    expect(idx.find(i => i.id === 'R').sub).toMatch(/1,200 pcs/)
+  })
 })
