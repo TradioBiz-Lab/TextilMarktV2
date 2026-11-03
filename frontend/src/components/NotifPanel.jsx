@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react'
-import { Bell, AlertTriangle, RefreshCw, Package, X } from '../icons.jsx'
+import { Bell, AlertTriangle, RefreshCw, Package, X, ArrowRight } from '../icons.jsx'
 import { T, fmtDate } from '../constants.js'
 import { EmptyState, activateOnKey } from './ui.jsx'
 import { useApp } from '../context.jsx'
+import { notifText } from '../notifText.js'
 
 function fmtAge(at) {
   if (!at) return ''
@@ -14,7 +15,7 @@ function fmtAge(at) {
 }
 
 export function NotifPanel({ onClose, onOpenOrder }) {
-  const { notifs, markAllRead, markOneRead } = useApp()
+  const { notifs, markAllRead, markOneRead, orders, masterOrders } = useApp()
   const panelRef = useRef(null)
 
   useEffect(() => {
@@ -58,9 +59,9 @@ export function NotifPanel({ onClose, onOpenOrder }) {
                   {n.type === 'alert' ? <AlertTriangle size={16} /> : n.type === 'status' ? <RefreshCw size={16} /> : <Package size={16} />}
                 </span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, color: T.text, fontWeight: n.read ? 400 : 600, lineHeight: 1.5 }}>{n.msg}</div>
+                  <div style={{ fontSize: 12, color: T.text, fontWeight: n.read ? 400 : 600, lineHeight: 1.5 }}>{notifText(n.msg, orders, masterOrders)}</div>
                   {n.orderId && onOpenOrder && (
-                    <div style={{ fontSize: 10, color: T.primary, marginTop: 2, fontWeight: 600 }}>View order →</div>
+                    <div style={{ fontSize: 10, color: T.primary, marginTop: 2, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3 }}>View order <ArrowRight size={10} /></div>
                   )}
                   <div style={{ fontSize: 10, color: T.textLight, marginTop: 3 }}>{fmtAge(n.at)}</div>
                 </div>

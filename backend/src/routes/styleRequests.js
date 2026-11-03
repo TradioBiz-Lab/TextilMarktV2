@@ -1,10 +1,12 @@
+import { createHash } from 'node:crypto'
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
 import { requireAuth } from '../middleware/auth.js'
 import { Order, MasterOrder, User, AuditLog, Document } from '../db/index.js'
 import { StyleRequest } from '../models/StyleRequest.js'
 import { MEASUREMENT_LABELS } from '../models/Document.js'
-import { createReplenFrom, validateAndCreateOrder, stylePhotos } from './orders.js'
+import { createReplenFrom, validateAndCreateOrder, stylePhotos, replenEligible, REPLEN_NOT_ELIGIBLE } from './orders.js'
+import { isoDay } from '../lib/masterOrderDetails.js'
 import { analyse, createRows } from './styleImports.js'
 import { ImportError } from '../lib/styleImport.js'
 import { cleanLink } from '../lib/links.js'
@@ -35,6 +37,20 @@ const OBJECT_ID_RE = /^[a-f0-9]{24}$/i
 const ORDER_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
 const MAX_ITEMS = { replen: 50, npd: 20 }
+
+// What was just sent, so the same thing sent again within 30 seconds (a double click, a retry, two at once) is refused.
+// In memory: the app runs as one process (see CLAUDE.md, "Single-instance assumption", which this joins).
+const RECENT_MS = 30_000
+const recent = new Map()   // key -> time it was claimed
+/** Claims `key` for 30 seconds: true the first time, false while it is still claimed. */
+function claimOnce(key) {
+  const now = Date.now()
+  for (const [k, at] of recent) if (now - at > RECENT_MS) recent.delete(k)
+  if (recent.has(key)) return false
+  recent.set(key, now)
+  return true
+}
+const fingerprint = value => createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 32)
 // What a customer may attach to an item: the style's measurement sheets, tech pack and pattern.
 const ITEM_DOC_TYPES = ['measurements', 'tech_pack', 'pattern']
 
@@ -59,9 +75,18 @@ function linkField(item, key, label, errors) {
 function quantityField(item, errors) {
   const v = item?.quantity ?? item?.totalQty
   if (v == null || v === '') return null
+  if (typeof v !== 'number' && typeof v !== 'string') { errors.push('Quantity must be a whole number.'); return null }
   const n = Number(v)
-  if (!Number.isInteger(n) || n < 1 || n > 10_000_000) { errors.push('Quantity must be a whole number.'); return null }
+  if (!Number.isInteger(n) || n < 1 || n > 10_000_000) { errors.push('Quantity must be a whole number from 1 to 1,00,00,000.'); return null }
   return n
+}
+/** The expected delivery date: a real calendar day (2026-02-31 is not), today or later in India. */
+function deliveryField(item, errors) {
+  const v = textField(item, 'delivery', 'Expected delivery date', 10, errors, { required: true })
+  if (!v) return ''
+  if (!isoDay(v)) errors.push('Expected delivery date is not a real date.')
+  else if (v < getToday()) errors.push('Expected delivery date is in the past.')
+  return v
 }
 function coloursField(item, errors) {
   const v = item?.colours
@@ -89,11 +114,10 @@ async function docsField(item, user, errors, taken) {
 async function replenItem(raw, user, taken, ownerId = user.id) {
   const errors = []
   const sourceOrderId = typeof raw?.sourceOrderId === 'string' && ORDER_ID_RE.test(raw.sourceOrderId) ? raw.sourceOrderId : null
-  const src = sourceOrderId && await Order.findById(sourceOrderId, 'buyerId product styleNumber phase').lean()
+  const src = sourceOrderId && await Order.findById(sourceOrderId, 'buyerId product styleNumber phase assignments').lean()
   if (!src || String(src.buyerId) !== String(ownerId)) return { errors: ['That style was not found.'] }
-  if ((src.phase || 'production') !== 'production') errors.push('Only a style in production can be reordered.')
-  const delivery = textField(raw, 'delivery', 'Expected delivery date', 10, errors, { required: true })
-  if (delivery && !ISO_DAY.test(delivery)) errors.push('Expected delivery date is not a date.')
+  if (!replenEligible(src)) errors.push(REPLEN_NOT_ELIGIBLE)
+  const delivery = deliveryField(raw, errors)
   const item = {
     sourceOrderId, product: src.product, styleNumber: src.styleNumber || '',
     colours: coloursField(raw, errors), quantity: quantityField(raw, errors), delivery,
@@ -104,19 +128,19 @@ async function replenItem(raw, user, taken, ownerId = user.id) {
   return { item, errors }
 }
 
-/** One new style from the customer's short form: its colours, quantity (optional), expected delivery date and tech pack link.
- *  It is called "New product" with its colours until Tradio names it on the style page. */
+/** One new style from the customer's short form: its own style number, colours, quantity (optional), expected delivery date
+ *  and tech pack link. It is called "New product" with its colours until Tradio names it on the style page. */
 async function npdItem(raw) {
   const errors = []
+  const styleNumber = textField(raw, 'styleNumber', 'Your style no.', 60, errors, { required: true })
   const colours = coloursField(raw, errors)
   if (!errors.length && !colours.length) errors.push('Add at least one colour.')
-  const delivery = textField(raw, 'delivery', 'Expected delivery date', 10, errors, { required: true })
-  if (delivery && !ISO_DAY.test(delivery)) errors.push('Expected delivery date is not a date.')
+  const delivery = deliveryField(raw, errors)
   const techPackLink = linkField(raw, 'techPackLink', 'Tech pack link', errors)
   if (!errors.length && !techPackLink) errors.push('The tech pack link is missing.')
   const item = {
     product: `New product${colours.length ? ` (${colours.join(', ')})` : ''}`.slice(0, 300),
-    colours, quantity: quantityField(raw, errors), delivery, techPackLink, docIds: [],
+    styleNumber, colours, quantity: quantityField(raw, errors), delivery, techPackLink, docIds: [],
   }
   return { item, errors }
 }
@@ -141,7 +165,11 @@ router.post('/', sendLimiter, async (req, res) => {
       const first = problems[0]
       return fail(res, 400, `${kind === 'replen' ? `Style ${first.index + 1}` : `Style ${first.index + 1}`}: ${first.errors[0]}`, { problems })
     }
-    const request = await StyleRequest.create({ kind, buyerId: req.user.id, requestedBy: req.user.id, items })
+    const sentKey = `send|${req.user.id}|${kind}|${fingerprint(items.map(({ docIds, ...it }) => it))}`
+    if (!claimOnce(sentKey)) return fail(res, 409, 'This request was just sent.')
+    let request
+    try { request = await StyleRequest.create({ kind, buyerId: req.user.id, requestedBy: req.user.id, items }) }
+    catch (err) { recent.delete(sentKey); throw err }
     const docIds = items.flatMap(i => i.docIds)
     if (docIds.length) await Document.updateMany({ _id: { $in: docIds } }, { $set: { styleRequestId: request._id } })
     const what = kind === 'replen' ? `a replen of ${dayLabel(items.length)}` : `${dayLabel(items.length)} for New Product Development`
@@ -171,6 +199,10 @@ router.post('/direct-replen', sendLimiter, async (req, res) => {
       if (errors.length) return fail(res, 400, `Style ${i + 1}: ${errors[0]}${errors[0] === 'That style was not found.' ? ' (it has to be this master order\'s customer\'s)' : ''}`)
       items.push(item)
     }
+    // A double click must not add the replens twice (checked once the styles are known to be fine, so a corrected retry goes through).
+    const sentKey = `direct|${req.user.id}|${mo._id}|${fingerprint(items.map(it => it.sourceOrderId).sort())}`
+    if (!claimOnce(sentKey) || await Order.exists({ replenOf: { $in: items.map(it => it.sourceOrderId) }, masterOrderId: mo._id, createdAt: { $gt: new Date(Date.now() - RECENT_MS) } }))
+      return fail(res, 409, 'A replen of one of these styles was just added.')
     const created = [], failed = []
     for (const [i, it] of items.entries()) {
       const src = await Order.findById(it.sourceOrderId).lean()
@@ -268,7 +300,7 @@ router.post('/:id/preview', readLimiter, async (req, res) => {
     if (!doc.data) return res.json({ request: item, rows: null })
     const chosen = typeof req.body?.masterOrderId === 'string' && req.body.masterOrderId ? req.body.masterOrderId : doc.masterOrderId
     const mo = chosen && ORDER_ID_RE.test(chosen) ? await MasterOrder.findById(chosen).lean() : null
-    const analysis = await analyse({ data: doc.data, filename: doc.filename }, mo && String(mo.buyerId) === String(doc.buyerId) ? mo : null, { requireTechPackForNpd: true })
+    const analysis = await analyse({ data: doc.data, filename: doc.filename }, mo && String(mo.buyerId) === String(doc.buyerId) ? mo : null, { requireTechPackForNpd: true, defaultPhase: doc.defaultPhase })
     res.json({ request: item, ...analysis, rows: analysis.rows.map(({ payload, ...row }) => row) })
   } catch (err) {
     if (err instanceof ImportError) return fail(res, 400, err.message)
@@ -276,6 +308,8 @@ router.post('/:id/preview', readLimiter, async (req, res) => {
   }
 })
 
+/** A declined or cancelled request lets go of its files, so they can be sent again. */
+const releaseFiles = doc => Document.updateMany({ styleRequestId: doc._id, orderId: null }, { $set: { styleRequestId: null } })
 /** Put a request that was being approved back in the queue after a failure. */
 const release = id => StyleRequest.updateOne({ _id: id, status: 'processing' }, { $set: { status: 'pending' } }).catch(() => {})
 /** Move the files sent with an item onto the style made from it. */
@@ -301,7 +335,7 @@ router.post('/:id/approve', decideLimiter, masterOnly, async (req, res) => {
     let created = [], failed = []
     if (doc.kind === 'import') {
       if (!doc.data) return refuse(409, 'The sheet is no longer kept for this request.')
-      const analysis = await analyse({ data: doc.data, filename: doc.filename }, mo, { requireTechPackForNpd: true })
+      const analysis = await analyse({ data: doc.data, filename: doc.filename }, mo, { requireTechPackForNpd: true, defaultPhase: doc.defaultPhase })
       const { ok, errors, exists } = analysis.summary
       if (errors && !doc.skipInvalid) return refuse(409, `${errors} row${errors !== 1 ? 's' : ''} in the sheet now ${errors !== 1 ? 'have' : 'has'} problems (look at the preview), so nothing was created. Decline it and ask for a corrected sheet.`)
       if (!ok) return refuse(409, exists ? 'Every style in the sheet is already in this master order.' : 'There are no valid rows to create.')
@@ -319,7 +353,7 @@ router.post('/:id/approve', decideLimiter, masterOnly, async (req, res) => {
             for (let attempt = 0; attempt < 4; attempt++) {
               const id = await nextStyleId(buyer.code, it.category, mo.season)
               made = await validateAndCreateOrder({
-                id, buyerId: String(mo.buyerId), masterOrderId: mo._id, season: mo.season || undefined, phase: 'development', createdAt: getToday(),
+                id, buyerId: String(mo.buyerId), masterOrderId: mo._id, season: mo.season || undefined, phase: 'development',
                 // The short form sends colours, quantity and delivery; requests from the earlier guided form carry the fuller shape.
                 product: it.product, styleNumber: it.styleNumber, category: it.category, brand: it.brand, ...((it.totalQty ?? it.quantity) ? { totalQty: it.totalQty ?? it.quantity } : {}),
                 colourways: it.colourways || (it.colours || []).map(name => ({ name })), fabricDetails: it.fabricDetails, ecommerceLink: it.ecommerceLink, techPackLink: it.techPackLink,
@@ -362,6 +396,7 @@ router.post('/:id/decline', decideLimiter, masterOnly, async (req, res) => {
     const its = itemsOf(doc)
     const what = doc.kind === 'import' ? `Your request of ${doc.filename}` : doc.kind === 'npd' ? `Your New Product Development request (${dayLabel(its.length)})`
       : its.length === 1 ? `Your replen request for ${its[0].product}${its[0].styleNumber ? ` (${its[0].styleNumber})` : ''}` : `Your replen request (${dayLabel(its.length)})`
+    await releaseFiles(doc)
     await AuditLog.create({ byUser: req.user.id, action: 'Style Request Declined', detail: `${doc.kind === 'import' ? doc.filename : `${doc.kind}: ${its.map(i => i.styleNumber || i.product).join(', ')}`}${reason ? `: ${reason}` : ''}` })
     await notify([doc.requestedBy], { type: 'order', msg: `${what} was declined${reason ? `: ${reason}` : '.'}` })
     res.json({ declined: true })
@@ -376,6 +411,7 @@ router.post('/:id/cancel', decideLimiter, async (req, res) => {
     const doc = await StyleRequest.findOneAndUpdate({ _id: req.params.id, requestedBy: req.user.id, status: 'pending' },
       { $set: { status: 'cancelled', decidedAt: new Date() }, $unset: { data: 1 } }, { new: true })
     if (!doc) return fail(res, 409, 'That request can no longer be cancelled.')
+    await releaseFiles(doc)
     await AuditLog.create({ byUser: req.user.id, action: 'Style Request Cancelled', detail: doc.kind === 'import' ? doc.filename : `${doc.kind}: ${itemsOf(doc).map(i => i.styleNumber || i.product).join(', ')}` })
     res.json({ cancelled: true })
   } catch (err) { console.error('[style requests cancel]', err); fail(res, 500, 'Server error') }

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, createContext, useContext, isValidElement, cloneElement } from 'react'
+import { useState, useRef, useEffect, useCallback, createContext, useContext, isValidElement, cloneElement, useId } from 'react'
 import { Folder, Link2, Package, Factory, Eye, Download, FileText, StickyNote, AlertTriangle, CheckCircle2, Info, X, Image as ImageIcon, Paperclip, Upload, ChevronLeft, ChevronRight, Crown, Check, Pencil, Trash2, Lock } from '../icons.jsx'
 import { T, ST, DOC_TYPES, STAGE_DOC_TYPES, DOC_ICONS, STATUS_FLOW, DEFAULT_STAGE_NAMES, isExpiringSoon, isExpired, stageNameForDoc, fmtDate, fileUploadPropsFor, PO_INVOICE_DOC_TYPES, MEASUREMENT_LABELS, MEASUREMENT_LABEL_NAME } from '../constants.js'
 import { useApp } from '../context.jsx'
@@ -303,10 +303,12 @@ export function Btn({ children, onClick, variant = 'primary', size = 'md', disab
 }
 
 export function Input({ label, error, hint, style: s, inputStyle, ...p }) {
+  // The label names the field (for screen readers, and a click on it focuses the box).
+  const auto = useId(), id = p.id || auto
   return (
     <div style={s}>
-      {label && <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>{label}</label>}
-      <input {...p} style={{ width: '100%', border: `1px solid ${error ? T.danger : T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit', ...inputStyle }} />
+      {label && <label htmlFor={id} style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>{label}</label>}
+      <input {...p} id={id} aria-invalid={error ? true : undefined} style={{ width: '100%', border: `1px solid ${error ? T.danger : T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit', ...inputStyle }} />
       {error && <div style={{ fontSize: 11, color: T.danger, marginTop: 3 }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {error}</div>}
       {hint && !error && <div style={{ fontSize: 11, color: T.textLight, marginTop: 3 }}>{hint}</div>}
     </div>
@@ -314,19 +316,21 @@ export function Input({ label, error, hint, style: s, inputStyle, ...p }) {
 }
 
 export function Select({ label, children, style: s, ...p }) {
+  const auto = useId(), id = p.id || auto
   return (
     <div style={s}>
-      {label && <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>{label}</label>}
-      <select {...p} style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit', cursor: 'pointer' }}>{children}</select>
+      {label && <label htmlFor={id} style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>{label}</label>}
+      <select {...p} id={id} style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit', cursor: 'pointer' }}>{children}</select>
     </div>
   )
 }
 
 export function Textarea({ label, hint, ...p }) {
+  const auto = useId(), id = p.id || auto
   return (
     <div>
-      {label && <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>{label}</label>}
-      <textarea {...p} style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit', resize: 'vertical', minHeight: 72 }} />
+      {label && <label htmlFor={id} style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>{label}</label>}
+      <textarea {...p} id={id} style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13, color: T.text, background: T.surface, fontFamily: 'inherit', resize: 'vertical', minHeight: 72 }} />
       {hint && <div style={{ fontSize: 11, color: T.textLight, marginTop: 3 }}>{hint}</div>}
     </div>
   )

@@ -143,7 +143,8 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
               Step {step} of {STEPS.length} - {STEPS[step - 1]}
             </div>
           </div>
-          <button onClick={onClose} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.textMuted }}><X size={15} /></button>
+          {/* Not while styles are being created: the creation would go on, and then jump to a style anyway. */}
+          <button onClick={onClose} disabled={saving} aria-label="Close" style={{ background: '#f1f5f9', border: 'none', cursor: saving ? 'wait' : 'pointer', width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.textMuted }}><X size={15} /></button>
         </div>
 
         <div className="dialog-body" style={{ padding: '20px 24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -371,7 +372,7 @@ export function CreateStyleWizard({ masterOrders, presetMasterOrderId, onClose, 
           {err && <div style={{ fontSize: 12, color: T.danger, fontWeight: 600, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 8, padding: '8px 12px' }}><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} /> {err}</div>}
 
           <FlexRow justify="space-between" style={{ marginTop: 4, flexWrap: 'wrap', gap: 8 }}>
-            <Btn variant="secondary" onClick={step === 1 ? onClose : () => setStep(step - 1)}>
+            <Btn variant="secondary" disabled={saving} onClick={step === 1 ? onClose : () => setStep(step - 1)}>
               {step === 1 ? 'Cancel' : <><ChevronLeft size={13} style={{ marginRight: -2 }} /> Back</>}
             </Btn>
             {step < STEPS.length ? (

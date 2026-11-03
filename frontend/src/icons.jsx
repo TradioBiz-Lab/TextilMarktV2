@@ -3,6 +3,7 @@ import {
   ArrowClockwise as P_ArrowClockwise,
   ArrowLeft as P_ArrowLeft,
   ArrowRight as P_ArrowRight,
+  ArrowUpRight as P_ArrowUpRight,
   ArrowsClockwise as P_ArrowsClockwise,
   ArrowsLeftRight as P_ArrowsLeftRight,
   Bell as P_Bell,
@@ -133,6 +134,7 @@ export const AlertTriangle = make(P_Warning, 'AlertTriangle')
 export const ArrowLeft = make(P_ArrowLeft, 'ArrowLeft')
 export const ArrowLeftRight = make(P_ArrowsLeftRight, 'ArrowLeftRight')
 export const ArrowRight = make(P_ArrowRight, 'ArrowRight')
+export const ArrowUpRight = make(P_ArrowUpRight, 'ArrowUpRight')
 export const AudioLines = make(P_Waveform, 'AudioLines')
 export const Ban = make(P_Prohibit, 'Ban')
 export const PauseCircle = make(P_PauseCircle, 'PauseCircle')

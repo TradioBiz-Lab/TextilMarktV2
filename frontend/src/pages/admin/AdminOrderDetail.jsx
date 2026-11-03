@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, Fragment } from 'react'
 import { useNavState } from '../../navState.js'
 import Papa from 'papaparse'
-import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight, ChevronUp, ChevronDown, Trash2, ArrowRight, Folder, LayoutGrid, RefreshCw } from '../../icons.jsx'
+import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight, ChevronUp, ChevronDown, Trash2, ArrowRight, ArrowUpRight, Folder, LayoutGrid, RefreshCw } from '../../icons.jsx'
 import {
   T, ORDER_STATUSES, evidenceTypesFor, productDocForStep, DOC_ICONS,
   stageKindOf, kindForCustomerOwner, stageStatusOf, stageIsOverdue, stageVariance, stageActualVariance, isStageDone, effectiveEta,
@@ -26,6 +26,7 @@ import { EditOrderModal } from './EditOrderModal.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
 import { QuickStageModal } from './QuickStageModal.jsx'
 import { ownerForSplit, ownerCopyLabel } from '../../ownerCopy.js'
+import { ProductLinkEditor } from '../../components/ProductLinkEditor.jsx'
 
 
 // Bulk Edit row: step, start, end, responsible, target qty, description, evidence, NA / Undo.
@@ -159,7 +160,9 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
   const [addingMfr, setAddingMfr] = useState(false)
   const [refDocFiles, setRefDocFiles] = useState({ measurements: null, tech_pack: null, pattern: null })
   // Every measurement sheet says what it is (Customer Submission, Fit Approval, PP Approval) when it is uploaded.
-  const [measurementLabel, setMeasurementLabel] = useState('')
+  // A customer's sheet is usually its own submission, so that is where it starts; Tradio picks each time.
+  const defaultMeasurementLabel = currentUser?.role === 'buyer' ? 'customer_submission' : ''
+  const [measurementLabel, setMeasurementLabel] = useState(defaultMeasurementLabel)
   const [refDocErrs, setRefDocErrs] = useState({})
   const [refDocUploading, setRefDocUploading] = useState(null) // which type is mid-upload
   const [openFolders, setOpenFolders] = useState({}) // PO and Invoice / Delivery documents: folded away until opened
@@ -706,13 +709,14 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
     setRefDocUploading(type)
     try {
       await uploadDoc({
-        type, name: `${refDocLabels[type]}, ${order.id}`, issuer: '', issueDate: getToday(),
+        // The file keeps the name it was sent with (FYL-SS26-WDR-4010.xlsx), so it can be found again.
+        type, name: file.name || `${refDocLabels[type]}, ${order.id}`, issuer: '', issueDate: getToday(),
         expiryDate: null, orderId: order.id, mfrId: null,
         ...(type === 'measurements' ? { measurementLabel } : {}),
         ...fileUploadPayload(file),
       })
       setRefDocFiles(p => ({ ...p, [type]: null }))
-      if (type === 'measurements') setMeasurementLabel('')
+      if (type === 'measurements') setMeasurementLabel(defaultMeasurementLabel)
       toast(`${refDocLabels[type]} uploaded`, 'success')
     } catch (e) {
       toast(typeof e === 'string' ? e : (e?.message || 'Upload failed'), 'error')
@@ -894,7 +898,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
                   order.brand && ['Brand', <span style={val}>{order.brand}</span>],
                   ['Tradio Style ID', <span style={val}>{order.id}</span>],
                   order.replenOf && ['Replen of', onOpenOrder
-                    ? <button onClick={() => onOpenOrder(order.replenOf)} style={{ ...val, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', color: T.primaryDeep }}>{order.replenOf} ↗</button>
+                    ? <button onClick={() => onOpenOrder(order.replenOf)} style={{ ...val, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', color: T.primaryDeep }}>{order.replenOf} <ArrowUpRight size={11} style={{ verticalAlign: -1 }} /></button>
                     : <span style={val}>{order.replenOf}</span>],
                 ].filter(Boolean)
                 return (
@@ -903,14 +907,14 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
                   </div>
                 )
               })()}
-              {order.ecommerceLink && (
+              {currentUser?.role === 'buyer' ? <ProductLinkEditor key={order.id} order={order} /> : order.ecommerceLink && (
                 /^https?:\/\//i.test(order.ecommerceLink)
-                  ? <a href={order.ecommerceLink} target="_blank" rel="noopener noreferrer" style={{ display: 'block', marginTop: 4, fontSize: 11, fontWeight: 600, color: T.primaryDeep }}>{order.ecommerceLink} ↗</a>
+                  ? <a href={order.ecommerceLink} target="_blank" rel="noopener noreferrer" style={{ display: 'block', marginTop: 4, fontSize: 11, fontWeight: 600, color: T.primaryDeep }}>{order.ecommerceLink} <ArrowUpRight size={11} style={{ verticalAlign: -1 }} /></a>
                   : <span style={{ display: 'block', marginTop: 4, fontSize: 11, color: T.textMuted }}>{order.ecommerceLink}</span>
               )}
               {order.techPackLink && (
                 /^https?:\/\//i.test(order.techPackLink)
-                  ? <a href={order.techPackLink} target="_blank" rel="noopener noreferrer" style={{ display: 'block', marginTop: 4, fontSize: 11, fontWeight: 600, color: T.primaryDeep }}>Tech pack: {order.techPackLink} ↗</a>
+                  ? <a href={order.techPackLink} target="_blank" rel="noopener noreferrer" style={{ display: 'block', marginTop: 4, fontSize: 11, fontWeight: 600, color: T.primaryDeep }}>Tech pack: {order.techPackLink} <ArrowUpRight size={11} style={{ verticalAlign: -1 }} /></a>
                   : <span style={{ display: 'block', marginTop: 4, fontSize: 11, color: T.textMuted }}>Tech pack: {order.techPackLink}</span>
               )}
 
@@ -1281,7 +1285,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
           </div>
           <Btn variant="secondary" onClick={() => setShowUp(true)} icon={<Paperclip size={13} />}>Upload Document</Btn>
         </FlexRow>
-        <div style={{ marginBottom: 12, fontSize: 13, fontWeight: 600, color: T.textMuted }}>Select a manufacturer to manage that transaction:</div>
+        <div style={{ marginBottom: 12, fontSize: 13, fontWeight: 600, color: T.textMuted }}>{currentUser?.role === 'buyer' ? 'Choose a production lot to see its plan:' : 'Select a manufacturer to manage that transaction:'}</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {order.assignments.map(a => {
             const stages = a.stages || []
@@ -1298,7 +1302,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
                   <MfrProfileLink mfrId={a.mid} mfrName={a.mfrCompany || '—'} docs={docs} onGetData={getDocData} />
                   <span style={{ fontSize: 10, color: T.textLight, background: '#f1f5f9', padding: '1px 6px', borderRadius: 4 }}>{a.sub}</span>
                   <Badge status={a.status} />
-                  <span style={{ marginLeft: 'auto', fontSize: 12, color: T.textMuted }}>{a.qty?.toLocaleString()} pcs</span>
+                  {a.qty != null && <span style={{ marginLeft: 'auto', fontSize: 12, color: T.textMuted }}>{a.qty.toLocaleString()} pcs</span>}
                 </div>
                 <div style={{ height: 6, background: '#f1f5f9', borderRadius: 4, overflow: 'hidden', marginBottom: 6 }}>
                   <div style={{ height: 6, background: pct >= 100 ? T.success : T.primary, borderRadius: 4, width: `${pct}%`, transition: 'width 0.3s' }} />
@@ -1668,13 +1672,13 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
                           <span style={{ color: T.textLight, fontSize: 12 }}> ({a.sub})</span>
                         </div>
                         <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>
-                          {a.qty?.toLocaleString()} pcs
+                          {a.qty != null && `${a.qty.toLocaleString()} pcs · `}
                           {a.deliveredQty != null && (
                             <span style={{ fontWeight: 700, color: a.deliveredQty === a.qty ? T.textMuted : '#b45309' }}>
-                              {` · ${a.deliveredQty.toLocaleString()} delivered${a.deliveredQty === a.qty ? '' : ` (${a.deliveredQty > a.qty ? '+' : ''}${(a.deliveredQty - a.qty).toLocaleString()})`}`}
+                              {`${a.deliveredQty.toLocaleString()} delivered${a.deliveredQty === a.qty ? '' : ` (${a.deliveredQty > a.qty ? '+' : ''}${(a.deliveredQty - a.qty).toLocaleString()})`} · `}
                             </span>
                           )}
-                          {` · Updated ${fmtDate(a.updatedAt)}`}
+                          {`Updated ${fmtDate(a.updatedAt)}`}
                         </div>
                       </div>
                       <FlexRow gap={8}>

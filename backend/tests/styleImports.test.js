@@ -85,6 +85,56 @@ describe('reading an Excel workbook', () => {
   })
 })
 
+describe('a sheet with no Stage column', () => {
+  test('takes the stage of the window it was sent from, and is refused anywhere else', async () => {
+    const noStage = await workbook([HEADER.slice(0, 6), good(1).slice(0, 6)], { images: { 2: PNG(2) } })
+    const table = await readTable(noStage, 'brand.xlsx')
+    assert.throws(() => analyseTable(table), /missing these columns: Stage/)
+    const replen = analyseTable(table, { defaultPhase: 'replen' })
+    assert.equal(replen.summary.ok, 1, JSON.stringify(replen.rows[0].problems))
+    assert.equal(replen.rows[0].payload.phase, 'replen')
+    // A Stage the sheet does give still wins.
+    assert.equal(analyseTable(await readTable(await workbook([HEADER, good(2)], { images: { 2: PNG(2) } }), 'b.xlsx'), { defaultPhase: 'development' }).rows[0].payload.phase, 'replen')
+  })
+})
+
+// A crafted workbook of a few KB used to stall the server for every user (bug bash, 3 Nov 2026).
+describe('a crafted workbook cannot stall the server', () => {
+  /** Sets the size a zip says one of its entries inflates to, in both headers, without changing the data. */
+  function lieAboutSize(buf, name, size) {
+    for (let i = 0; i < buf.length - 4; i++) {
+      if (buf.readUInt32LE(i) === 0x04034b50 && buf.toString('utf8', i + 30, i + 30 + buf.readUInt16LE(i + 26)) === name) buf.writeUInt32LE(size, i + 22)
+      if (buf.readUInt32LE(i) === 0x02014b50 && buf.toString('utf8', i + 46, i + 46 + buf.readUInt16LE(i + 28)) === name) buf.writeUInt32LE(size, i + 24)
+    }
+    return buf
+  }
+
+  test('a picture anchored two billion rows down is set aside at once', async () => {
+    const zip = await JSZip.loadAsync(await workbook([HEADER, good(1)], { images: { 2: PNG(2) } }))
+    zip.file('xl/drawings/drawing1.xml', (await zip.file('xl/drawings/drawing1.xml').async('string')).replaceAll('<xdr:row>1</xdr:row>', '<xdr:row>2000000000</xdr:row>'))
+    const started = Date.now()
+    const table = await readTable(await zip.generateAsync({ type: 'nodebuffer' }), 'a.xlsx')
+    assert.ok(Date.now() - started < 1000, `took ${Date.now() - started}ms`)
+    assert.equal(table.rows[1].image, null)
+    assert.ok(table.warnings.some(w => /could not be matched/.test(w)))
+  })
+
+  test('tens of thousands of rows left open are read in a single pass', async () => {
+    const zip = await JSZip.loadAsync(await workbook([HEADER, good(1)]))
+    zip.file('xl/worksheets/sheet1.xml', `<worksheet><sheetData>${'<row r="9"><c r="A9" t="inlineStr"><is><t>x'.repeat(40000)}</sheetData></worksheet>`)
+    const started = Date.now()
+    await readTable(await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }), 'a.xlsx').catch(() => {})
+    assert.ok(Date.now() - started < 1000, `took ${Date.now() - started}ms`)
+  })
+
+  test('a part that claims to be small but inflates past the limit is refused while it is being read', async () => {
+    const zip = await JSZip.loadAsync(await workbook([HEADER, good(1)]))
+    zip.file('xl/worksheets/sheet1.xml', `<worksheet><sheetData>${' '.repeat(30 * 1024 * 1024)}</sheetData></worksheet>`)
+    const buf = lieAboutSize(await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }), 'xl/worksheets/sheet1.xml', 1000)
+    await assert.rejects(readTable(buf, 'a.xlsx'), /too large to read/)
+  })
+})
+
 describe('checking the rows', () => {
   test('an Excel sheet with pictures and good data is all ok, with the picture kept', async () => {
     const buf = await workbook([HEADER, good(1), good(2)], { images: { 2: PNG(2), 3: PNG(3) } })

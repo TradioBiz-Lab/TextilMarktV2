@@ -87,4 +87,23 @@ describe('dashboard summary: Replen and New Product Development', () => {
     expect(text).toMatch(/1 order delivered; nothing else in production is moving \(1 on hold and 1 style waiting for a factory\)\./)
     expect(text).not.toMatch(/nothing is in progress/)
   })
+
+  test('styles that are all on hold are said, never "no orders yet"; with live work they join the mix', async () => {
+    const held = order({ id: 'H', assignments: [{ mid: 'm1', qty: 10, status: 'On Hold', stages: [stage()] }] })
+    const alone = await run([held], 'buyer')
+    expect(alone).toMatch(/1 style is on hold, so nothing in production is moving\./)
+    expect(alone).not.toMatch(/No orders yet/)
+    expect(await run([order(), held], 'buyer')).toMatch(/1 on hold/)
+  })
+
+  test('a late style leads the summary, named with its style number', async () => {
+    const late = order({ styleNumber: 'FYLSS26WSK-4001', product: 'Schifli Skirt', assignments: [{ mid: 'm1', qty: 100, mfrCompany: 'T', status: 'Delayed', stages: [stage({ baselineEta: '2020-01-01' })] }] })
+    const [first] = (await generateSummary({ role: 'buyer', user: { id: 'b1' }, orders: [late, order({ id: 'ORD-2' })], actionItems: [] })).lines
+    expect(first).toMatch(/^Needs attention: \*\*Schifli Skirt\*\* \(4001\)/)
+  })
+
+  test('one delivered order reads naturally', async () => {
+    const done = order({ assignments: [{ mid: 'm1', qty: 100, status: 'Delivered', stages: [stage({ isDelivery: true, status: 'done', unitsDone: 1 })] }] })
+    expect(await run([done])).toMatch(/The 1 order in production is delivered/)
+  })
 })

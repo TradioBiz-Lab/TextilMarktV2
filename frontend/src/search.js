@@ -81,7 +81,8 @@ export function buildSearchIndex({ orders = [], masterOrders = [] } = {}) {
 
 /** The best matches for `query`, best first. */
 export function searchItems(index, query, limit = 8) {
-  const tokens = String(query ?? '').trim().split(/\s+/).filter(Boolean)
+  // A word that is only symbols ("&", "-") matches nothing, so it is dropped rather than failing the whole search.
+  const tokens = String(query ?? '').trim().split(/\s+/).filter(t => compact(t))
   if (!tokens.length) return []
   return index
     .map(item => ({ item, score: scoreItem(tokens, item.fields) }))

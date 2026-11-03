@@ -71,6 +71,7 @@ export const ordersApi = {
   update: (id, data) => api.post(`/orders/${id}`, data),
   // The customer's own style: its product photos (Tradio uses update).
   setPhotos: (id, photos) => api.post(`/orders/${id}/photos`, { photos }),
+  setProductLink: (id, ecommerceLink) => api.post(`/orders/${id}/product-link`, { ecommerceLink }),
   // `reason` is optional and is kept, with a full copy of the style, in the dropped record.
   delete: (id, reason) => api.post(`/orders/${id}/delete`, reason ? { reason } : {}),
   updateAssignment: (orderId, mfrId, status, note) =>
@@ -175,8 +176,8 @@ export const actionItemsApi = {
 // Spreadsheets of styles (Excel or CSV): upload, preview every row, then create. Admin only.
 export const styleImportsApi = {
   upload: (filename, data) => api.post('/style-imports', { filename, data }, { timeout: 60000 }),
-  preview: (id, masterOrderId) => api.post(`/style-imports/${id}/preview`, { masterOrderId }, { timeout: 60000 }),
-  commit: (id, masterOrderId, skipInvalid) => api.post(`/style-imports/${id}/commit`, { masterOrderId, ...(skipInvalid ? { skipInvalid: true } : {}) }, { timeout: 120000 }),
+  preview: (id, masterOrderId, defaultPhase) => api.post(`/style-imports/${id}/preview`, { masterOrderId, ...(defaultPhase ? { defaultPhase } : {}) }, { timeout: 60000 }),
+  commit: (id, masterOrderId, skipInvalid, defaultPhase) => api.post(`/style-imports/${id}/commit`, { masterOrderId, ...(skipInvalid ? { skipInvalid: true } : {}), ...(defaultPhase ? { defaultPhase } : {}) }, { timeout: 120000 }),
 }
 
 // What a customer asks to add (a sheet of styles, a replen) waits here for a master admin.

@@ -45,13 +45,15 @@ export function KriyaaChatProvider({ children }) {
 
   const attach = useCallback(async file => {
     const problem = sheetFileProblem(file)
-    if (problem) { setAttachError(problem); return }
+    // A failed attach must not leave an earlier sheet riding on the next message unseen.
+    if (problem) { setAttachment(null); setAttachError(problem); return }
     setAttaching(true); setAttachError('')
     try {
       const { filename, data } = await readSheetFile(file)
       const up = await styleImportsApi.upload(filename, data)
       setAttachment({ id: up.id, filename: up.filename })
     } catch (err) {
+      setAttachment(null)
       setAttachError(err?.message || 'Could not upload that file.')
     } finally { setAttaching(false) }
   }, [])

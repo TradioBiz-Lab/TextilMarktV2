@@ -50,7 +50,7 @@ export function ProductPhotos({ order, canEdit }) {
             <input type="file" multiple accept="image/jpeg,image/png,image/webp" disabled={busy} style={{ display: 'none' }}
               onChange={e => { const fs = [...(e.target.files || [])]; e.target.value = ''; if (fs.length) upload(fs) }} />
           </label>
-          {names.length === 0 && <span style={{ fontSize: 11, color: T.textLight }}>Add colourways in Edit Style to tag photos by colour.</span>}
+          {names.length === 0 && currentUser?.role === 'admin' && <span style={{ fontSize: 11, color: T.textLight }}>Add colourways in Edit Style to tag photos by colour.</span>}
         </FlexRow>
       )}
       {photos.length === 0 ? (

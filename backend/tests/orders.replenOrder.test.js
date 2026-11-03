@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 
 import { startTestDb, stopTestDb, clearDb } from './helpers/db.js'
 import { startServer, stopServer, as } from './helpers/client.js'
-import { makeMaster, makeBuyer, makeMfr, makeMasterOrder } from './helpers/factories.js'
+import { makeMaster, makeBuyer, makeMfr, makeMasterOrder, markDelivered } from './helpers/factories.js'
 import { Order } from '../src/models/Order.js'
 import { Notification } from '../src/models/Notification.js'
 import { StyleRequest } from '../src/models/StyleRequest.js'
@@ -28,6 +28,7 @@ async function arrange(extra = {}) {
     colourways: [{ name: 'Blue' }], fabricDetails: [{ name: 'Cotton Poplin', composition: '100% Cotton' }], photos: [{ image: PHOTO }], ...extra,
   })
   assert.equal(made.status, 201, JSON.stringify(made.body))
+  await markDelivered('SRC-001')
   return { admin, buyer, mo }
 }
 
@@ -96,6 +97,7 @@ describe('ordering a replen', () => {
     const buyer = await makeBuyer()
     const made = await as(admin).post('/api/orders', { id: 'SRC-002', buyerId: String(buyer._id), product: 'Skirt', category: 'SKIRT', season: 'SS26', phase: 'production', totalQty: 50, imageUrl: 'https://img.example.com/s.jpg' })
     assert.equal(made.status, 201, JSON.stringify(made.body))
+    await markDelivered('SRC-002')
     const res = await as(admin).post('/api/orders/SRC-002/replen', { quantity: 20 })
     assert.equal(res.status, 201, JSON.stringify(res.body))
     assert.equal((await Order.findById(res.body.id).lean()).imageUrl, 'https://img.example.com/s.jpg')

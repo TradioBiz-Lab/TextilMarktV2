@@ -20,7 +20,8 @@ router.get('/feed', requireAuth, async (req, res) => {
   const orders = await Order.find(orderFilter, '_id updatedAt').lean()
   const orderIds = orders.map(o => o._id)
   const newestOrder = orders.reduce((m, o) => Math.max(m, o.updatedAt ? new Date(o.updatedAt).getTime() : 0), 0)
-  const msgs = await InboundMessage.find({ orderId: { $in: orderIds }, state: { $in: ['auto_applied', 'applied', 'needs_review'] } })
+  // A factory sees only its own messages, never another factory's on a style they share.
+  const msgs = await InboundMessage.find({ orderId: { $in: orderIds }, state: { $in: ['auto_applied', 'applied', 'needs_review'] }, ...(req.user.role === 'manufacturer' ? { factoryId: req.user.id } : {}) })
     .select('-dataUrl').sort({ updatedAt: -1 }).limit(60).lean()
   const items = msgs.map(m => ({
     id: String(m._id), type: m.type, orderId: m.orderId, stage: m.stageApplied,

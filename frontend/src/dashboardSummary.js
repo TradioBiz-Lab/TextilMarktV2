@@ -90,16 +90,19 @@ function attentionLine(rows, role) {
   const bad = rows.filter(r => r.health === 'blocked' || r.health === 'late').sort((a, b) => severity(b) - severity(a))
   if (!bad.length) return 'Nothing is delayed or blocked right now, every live order is on plan.'
   const bits = bad.slice(0, 2).map(r => {
-    const who = role === 'admin' ? ` (${r.order.buyerCompany || 'unknown customer'})` : ''
+    // The customer's own style number (its last digits are how people say it), and for Tradio the customer too.
+    const ref = String(r.order.styleNumber || '').match(/(\d+)\D*$/)?.[1]
+    const who = [ref, role === 'admin' ? r.order.buyerCompany || 'unknown customer' : ''].filter(Boolean).join(', ')
+    const whoText = who ? ` (${who})` : ''
     if (r.health === 'blocked') {
       const s = r.blocked[0].stage
-      return `**${r.order.product}**${who} is blocked at ${s.name}${s.blockedReason ? `, ${s.blockedReason.toLowerCase()}` : ''}`
+      return `**${r.order.product}**${whoText} is blocked at ${s.name}${s.blockedReason ? `, ${s.blockedReason.toLowerCase()}` : ''}`
     }
     const s = r.worstLate?.stage
     const via = role === 'admin' && r.splits.length > 1 && r.asgn.mfrCompany ? ` via ${r.asgn.mfrCompany}` : ''
     return r.worstLate
-      ? `**${r.order.product}**${who} is ${plural(r.daysLate, 'day')} past plan at ${s.name}${via}`
-      : `**${r.order.product}**${who} is past its delivery date`
+      ? `**${r.order.product}**${whoText} is ${plural(r.daysLate, 'day')} past plan at ${s.name}${via}`
+      : `**${r.order.product}**${whoText} is past its delivery date`
   })
   const more = bad.length - bits.length
   return `Needs attention: ${bits.join('; ')}${more > 0 ? `, plus ${plural(more, 'other order')}` : ''}.`
@@ -151,18 +154,22 @@ function build({ role, user, orders, actionItems, preOrders }) {
   const delivered = orderRows.length - live.length
   const count = h => live.filter(r => r.health === h).length
   const lines = []
+  // Styles on hold make no rows (paused work is not late work), so they are counted here to be said out loud.
+  const mine = a => role !== 'manufacturer' || String(a.mid) === String(user?.id)
+  const held = (orders || []).filter(o => { const splits = (o.assignments || []).filter(mine); return splits.length && splits.every(a => a.status === 'On Hold') }).length
 
   if (!live.length) {
     // With nothing in production, the Replen and New Product Development lines are the news.
-    if (!orderRows.length && pipeline.length) return pipeline
+    if (!orderRows.length && !held && pipeline.length) return pipeline
     // Styles on hold or still waiting for a factory make no rows; say so rather than "nothing is in progress".
-    const held = (orders || []).filter(o => (o.assignments || []).length && o.assignments.every(a => a.status === 'On Hold')).length
     const waitingForFactory = role === 'manufacturer' ? 0 : (orders || []).filter(o => !(o.assignments || []).length).length
     const rest = [held ? `${held} on hold` : '', waitingForFactory ? `${plural(waitingForFactory, 'style')} waiting for a factory` : ''].filter(Boolean)
     lines.push(orderRows.length
       ? rest.length
         ? `${plural(orderRows.length, 'order')} delivered; nothing else in production is moving (${list(rest)}).`
-        : `All ${plural(orderRows.length, 'order')} in production ${orderRows.length === 1 ? 'is' : 'are'} delivered, nothing is in progress.`
+        : orderRows.length === 1 ? 'The 1 order in production is delivered, nothing is in progress.' : `All ${plural(orderRows.length, 'order')} in production are delivered, nothing is in progress.`
+      : held
+        ? `${plural(held, 'style')} ${held === 1 ? 'is' : 'are'} on hold, so nothing in production is moving${waitingForFactory ? `; ${plural(waitingForFactory, 'style')} ${waitingForFactory === 1 ? 'is' : 'are'} waiting for a factory` : ''}.`
       : (() => {
         // Styles that exist but have no manufacturer yet produce no rows, so they used to read as "no orders".
         const unassigned = role === 'manufacturer' ? 0 : (orders || []).filter(o => !(o.assignments || []).length).length
@@ -173,7 +180,7 @@ function build({ role, user, orders, actionItems, preOrders }) {
     return [...lines, ...pipeline]
   }
 
-  const mix = `${count('ontrack')} on track, ${count('late')} delayed, ${count('blocked')} blocked`
+  const mix = `${count('ontrack')} on track, ${count('late')} delayed, ${count('blocked')} blocked${held ? `, ${held} on hold` : ''}`
   if (role === 'admin') {
     const customers = new Set(live.map(r => r.order.buyerCompany)).size
     const factories = new Set(liveSplits.map(r => r.asgn.mfrCompany)).size
@@ -186,7 +193,9 @@ function build({ role, user, orders, actionItems, preOrders }) {
     lines.push(`You have **${plural(live.length, 'live order')}** (${pcs.toLocaleString('en-IN')} pcs) for ${plural(customers, 'customer')}: ${mix}.`)
   }
 
-  lines.push(attentionLine(live, role))
+  // What is late or blocked leads the summary; when nothing is, the all-clear follows the counts.
+  if (live.some(r => r.health === 'blocked' || r.health === 'late')) lines.unshift(attentionLine(live, role))
+  else lines.push(attentionLine(live, role))
   lines.push(...pipeline)
 
   // The action-items line differs most by role: it answers "what is waiting on me".

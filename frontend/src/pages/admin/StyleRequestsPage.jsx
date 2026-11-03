@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Inbox, Check, X, AlertTriangle, FileSpreadsheet, RefreshCw, FlaskConical } from '../../icons.jsx'
+import { Inbox, Check, X, AlertTriangle, FileSpreadsheet, RefreshCw, FlaskConical, ArrowUpRight } from '../../icons.jsx'
 import { T, MEASUREMENT_LABEL_NAME, fmtDate } from '../../constants.js'
 import { Btn, Card, EmptyState, FlexRow, LoadingScreen, Modal, PageHeader, Textarea, useToast } from '../../components/ui.jsx'
 import { StyleImportPreview } from '../../components/StyleImportPreview.jsx'
@@ -158,6 +158,7 @@ export function StyleRequestsPage({ onOpen, onOpenMo }) {
   const [open, setOpen] = useState(null)
   const load = useCallback(() => {
     setItems(null)
+    setError('')   // a failed load must not stay on screen once a later one works
     return styleRequestsApi.list(tab).then(setItems).catch(e => setError(e?.message || 'Could not load the requests.'))
   }, [tab])
   useEffect(() => { load() }, [load])
@@ -197,7 +198,7 @@ export function StyleRequestsPage({ onOpen, onOpenMo }) {
                   </div>
                   <span style={{ fontSize: 11, fontWeight: 800, color: st.fg, background: st.bg, border: `1px solid ${st.bd}`, borderRadius: 999, padding: '2px 10px' }}>{st.label}</span>
                   {r.status === 'approved' && r.createdOrderIds.length > 0 && (
-                    <button onClick={() => onOpen?.(r.createdOrderIds[0])} style={{ fontSize: 12, fontWeight: 700, color: T.primaryDeep, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>Open {r.createdOrderIds.length > 1 ? `first of ${r.createdOrderIds.length}` : r.createdOrderIds[0]} ↗</button>
+                    <button onClick={() => onOpen?.(r.createdOrderIds[0])} style={{ fontSize: 12, fontWeight: 700, color: T.primaryDeep, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>Open {r.createdOrderIds.length > 1 ? `first of ${r.createdOrderIds.length}` : r.createdOrderIds[0]} <ArrowUpRight size={11} style={{ verticalAlign: -1 }} /></button>
                   )}
                   {r.status === 'pending' && <Btn size="sm" onClick={() => setOpen(r)}>Review</Btn>}
                 </div>

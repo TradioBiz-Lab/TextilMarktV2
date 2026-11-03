@@ -126,6 +126,10 @@ async function assertDocAccess(user, { orderId, mfrId, type }) {
 
 const router = Router()
 
+// A customer is not told which factory uploaded a file: a factory's upload reads as Tradio's.
+const forViewer = (doc, req) => (req.user.role === 'buyer' && doc.uploadedByRole === 'manufacturer'
+  ? { ...doc, uploadedByName: 'Tradio production', uploadedByCompany: 'Tradio' } : doc)
+
 const mapDoc = (d, includeData = false) => {
   // uploadedBy may be a populated object (after .populate()) or a raw ObjectId
   const uploaderObj = d.uploadedBy && typeof d.uploadedBy === 'object' && d.uploadedBy.name
@@ -204,7 +208,7 @@ router.get('/', requireAuth, async (req, res) => {
       }).sort({ createdAt: -1 })).lean()
     }
 
-    res.json(docs.map(d => mapDoc(d, false)))
+    res.json(docs.map(d => forViewer(mapDoc(d, false), req)))
   } catch (err) {
     console.error('[documents]', err)
     res.status(500).json({ error: 'Server error' })
@@ -356,7 +360,7 @@ router.get('/:id/data', requireAuth, async (req, res) => {
     if (!live) return res.status(404).json({ error: 'Document not found' })
     const denied = await readError(req.user, doc)
     if (denied) return res.status(denied.status).json({ error: denied.error })
-    res.json(mapDoc(doc, true))
+    res.json(forViewer(mapDoc(doc, true), req))
   } catch (err) {
     console.error('[documents]', err)
     res.status(500).json({ error: 'Server error' })
@@ -371,7 +375,7 @@ router.get('/:id/versions', requireAuth, async (req, res) => {
     const denied = await readError(req.user, doc)
     if (denied) return res.status(denied.status).json({ error: denied.error })
     const versions = await Document.find({ versionOf: doc._id }).select('-dataUrl').populate('uploadedBy', 'name role adminType company').sort({ version: -1, replacedAt: -1 }).lean()
-    res.json(versions.map(v => mapDoc(v, false)))
+    res.json(versions.map(v => forViewer(mapDoc(v, false), req)))
   } catch (err) {
     console.error('[documents]', err)
     res.status(500).json({ error: 'Server error' })
@@ -461,12 +465,18 @@ router.post('/', requireAuth, uploadLimiter, async (req, res) => {
     try {
       await assertDocAccess(req.user, { orderId, mfrId, type })
     } catch (e) {
+      // A malformed id (an object, say) is a bad request, and the database's own message is not for the client.
+      if (e.name === 'CastError') return res.status(400).json({ error: 'Invalid order or manufacturer' })
       return res.status(e.status || 403).json({ error: e.message })
     }
+    // Step evidence is Tradio's and the factory's to give (caps.uploadStageEvidence), not the customer's.
+    if (req.user.role === 'buyer' && (isStage || hasMaterialLineIndex))
+      return res.status(403).json({ error: 'Only Tradio or the factory adds evidence to a step' })
 
     const doc = await Document.create({
       type, name,
-      mfrId:      mfrId     || null,
+      // A factory's file on a style is its own split's: another factory on the same style must not see it.
+      mfrId:      req.user.role === 'manufacturer' && orderId ? req.user.id : (mfrId || null),
       orderId:    orderId   || null,
       masterOrderId: masterOrderId || null,
       stageIndex: stageIndex != null && stageIndex !== '' ? stageIndex : null,
@@ -662,10 +672,14 @@ router.post('/:id/lock', requireAuth, requireMaster, async (req, res) => {
 
     if (!doc.measurementLabel) return res.status(400).json({ error: 'Give this sheet a label (Customer Submission, Fit Approval or PP Approval) before locking it' })
     if (!doc.dataUrl && !doc.externalUrl) return res.status(400).json({ error: 'There is no file to lock' })
-    // One Locked Measurement per style: lock this one, then release any other.
-    const others = await Document.find({ orderId: doc.orderId, type: 'measurements', locked: true, _id: { $ne: doc._id } }, { name: 1 }).lean()
+    // One Locked Measurement per style: lock this one, then keep only the newest lock on the style. Every lock does this
+    // after its own write, so two locks at the same moment still leave exactly one (the later), whatever the timing.
     await Document.updateOne({ _id: doc._id }, { $set: { locked: true, lockedBy: req.user.id, lockedAt: new Date() } })
-    if (others.length) await Document.updateMany({ _id: { $in: others.map(o => o._id) } }, { $set: { locked: false, lockedBy: null, lockedAt: null } })
+    const lockedNow = await Document.find({ orderId: doc.orderId, type: 'measurements', locked: true }, { name: 1, lockedAt: 1 }).lean()
+    const newest = lockedNow.reduce((w, d) => (!w || +d.lockedAt > +w.lockedAt || (+d.lockedAt === +w.lockedAt && String(d._id) > String(w._id)) ? d : w), null)
+    const others = lockedNow.filter(d => String(d._id) !== String(newest._id) && String(d._id) !== String(doc._id))
+    const released = lockedNow.filter(d => String(d._id) !== String(newest._id))
+    if (released.length) await Document.updateMany({ _id: { $in: released.map(o => o._id) } }, { $set: { locked: false, lockedBy: null, lockedAt: null } })
     await AuditLog.create({ byUser: req.user.id, action: 'Measurement Locked', detail: `${where}, ${MEASUREMENT_LABEL_NAMES[doc.measurementLabel]}${others.length ? `; the lock moved from ${others.map(o => o.name).join(', ')}` : ''}` })
     const order = await Order.findById(doc.orderId, { buyerId: 1, product: 1 }).lean()
     await notify([order?.buyerId, ...await adminIds()], { type: 'order', msg: `Locked Measurement set for ${order?.product || doc.orderId}: ${doc.name} (${MEASUREMENT_LABEL_NAMES[doc.measurementLabel]})`, orderId: doc.orderId }, { exceptUserId: req.user.id })

@@ -16,7 +16,7 @@ describe('how a request reads', () => {
   test('new product development names the style, or how many', () => {
     expect(requestTitle({ kind: 'npd', items: [{ product: 'Wrap Dress', styleNumber: 'FYL-5001' }] })).toBe('New product: Wrap Dress (FYL-5001)')
     expect(requestTitle({ kind: 'npd', items: [{ product: 'A' }, { product: 'B' }, { product: 'C' }] })).toBe('New product development: 3 styles')
-    expect(requestTitle({ kind: 'npd', items: [{ product: 'New product (Olive, Black)' }] })).toBe('New product (Olive, Black)')
+    expect(requestTitle({ kind: 'npd', items: [{ product: 'New product (Olive, Black)', styleNumber: 'FYL-5001' }] })).toBe('New product (Olive, Black) (FYL-5001)')
   })
 
   test('a sheet names the file and how many styles are ready', () => {
@@ -42,13 +42,14 @@ describe('who sees the review queue', () => {
 })
 
 describe('a new style on the New product development form', () => {
-  const ok = { colours: ['Olive'], quantity: '', delivery: '2027-01-20', techPackLink: 'https://drive.example.com/tp' }
+  const ok = { styleNumber: 'FYL-5001', colours: ['Olive'], quantity: '', delivery: '2099-01-20', techPackLink: 'https://drive.example.com/tp' }
   test('is ready with colours, a delivery date and a tech pack link; the quantity may wait', () => {
     expect(npdMissing(ok)).toBe('')
     expect(npdMissing({ ...ok, quantity: '800' })).toBe('')
   })
   test('says what it still needs', () => {
-    expect(npdMissing({ colours: [], quantity: '', delivery: '', techPackLink: ' ' })).toBe('needs a colour, the expected delivery date, the tech pack link')
+    expect(npdMissing({ styleNumber: ' ', colours: [], quantity: '', delivery: '', techPackLink: ' ' })).toBe('needs your style no., a colour, the expected delivery date, the tech pack link')
     expect(npdMissing({ ...ok, quantity: '2.5' })).toBe('the quantity has to be a whole number')
+    expect(npdMissing({ ...ok, delivery: '2026-01-01' }, '2026-11-03')).toBe('has an expected delivery date in the past')
   })
 })

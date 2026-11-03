@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useId } from 'react'
 import { X } from '../icons.jsx'
 import { T } from '../constants.js'
 import { snakeOf, labelOf } from '../partners.js'
@@ -13,6 +13,7 @@ export function TagInput({ label, value, onChange, suggestions = [], placeholder
   const norm = t => (snake ? snakeOf(t) : keepCase ? String(t).trim().replace(/\s+/g, ' ') : String(t).trim().toLowerCase().replace(/\s+/g, ' '))
   const sameTag = (a, b) => (keepCase ? a.toLowerCase() === b.toLowerCase() : a === b)
   const show = t => (snake ? labelOf(t) : t)
+  const id = useId()
 
   const add = raw => {
     const fresh = String(raw).split(/[,;]/).map(norm).filter(t => t && t.length <= 60 && !value.some(v => sameTag(v, t)))
@@ -25,7 +26,7 @@ export function TagInput({ label, value, onChange, suggestions = [], placeholder
 
   return (
     <div style={{ position: 'relative' }}>
-      {label && <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>{label}</label>}
+      {label && <label htmlFor={id} style={{ display: 'block', fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>{label}</label>}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center', border: `1px solid ${focus ? T.primary : T.border}`, borderRadius: 8, padding: '5px 8px', background: T.surface, minHeight: 38 }}>
         {value.map(t => (
           <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 4px 2px 9px', borderRadius: T.radius.pill, fontSize: T.fontSize.sm, fontWeight: 600, background: T.primaryLight, color: T.primaryDeep, border: `1px solid ${T.warningBorder}` }}>
@@ -34,7 +35,7 @@ export function TagInput({ label, value, onChange, suggestions = [], placeholder
               style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', display: 'flex', color: T.primaryDeep }}><X size={11} /></button>
           </span>
         ))}
-        <input value={text} placeholder={value.length ? '' : placeholder}
+        <input id={id} value={text} placeholder={value.length ? '' : placeholder}
           onChange={e => { const v = e.target.value; if (/[,;]/.test(v)) add(v); else setText(v) }}
           onKeyDown={e => {
             if (e.key === 'Enter') { e.preventDefault(); if (text.trim()) add(text) }

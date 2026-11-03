@@ -16,6 +16,11 @@ const index = buildSearchIndex({ orders, masterOrders })
 const find = q => searchItems(index, q).map(r => r.id)
 
 describe('search in the top bar', () => {
+  test('a word that is only a symbol does not empty the search', () => {
+    expect(find('H1 & H2 26')).toContain('MO-CBNB-SS26-001')
+    expect(find('H1 - H2')).toContain('MO-CBNB-SS26-001')
+  })
+
   test('the last four digits of a customer style ID find that style first', () => {
     expect(find('4002')[0]).toBe('CBNB-DRESS-SS26-001')
     expect(find('4004')[0]).toBe('CBNB-DRESS-SS26-005')

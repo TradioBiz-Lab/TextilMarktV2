@@ -112,12 +112,17 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   customer's "create" only sends the sheet to the review queue below): upload an .xlsx or .csv (kept an hour in
   `StyleImportUpload`), preview every row, then create. `lib/styleImport.js` is pure and reads Excel straight from the zip
   with JSZip (exceljs is a dev-only dependency and crashes on workbooks with absolute part paths, like the Cocoblu one);
-  pictures float over cells, so each is matched to the row its middle sits on. The same code runs for preview and commit,
-  rows already in the master order are skipped, and styles are made as NPD or Replen with no manufacturer or plan. Factory,
+  pictures float over cells, so each is matched to the row its middle sits on. The reader is hardened against crafted files:
+  entries are inflated with a running byte count (a zip's own size claims are not trusted), elements are scanned in one forward
+  pass (`elements()`; no lazy regex over the whole part), and row numbers are capped at Excel's limit. Keep it that way: a few-KB
+  workbook used to stall the server for every user. The same code runs for preview and commit,
+  rows already in the master order are skipped, and styles are made as NPD or Replen with no manufacturer or plan. A sheet
+  with no Stage column is fine in the Order replen and New product windows: they send `defaultPhase` (replen / development). Factory,
   cost and price columns are ignored on purpose. Kriyaa reaches it through `preview_style_import` and
   `create_styles_from_import` (admins only; the admin attaches the file with the paperclip; the message then starts with an
   `[Attached style sheet ...]` line, see `frontend/src/styleImport.js`); creating needs the admin's confirmation.
-- **Replens.** Only a delivered style can be reordered (`replenEligible` in constants.js; on hold or still in production, no).
+- **Replens.** Only a delivered style can be reordered (`replenEligible` in constants.js, enforced by the server's `replenEligible` in
+  routes/orders.js; on hold or still in production, no). Expected delivery dates must be real days, today or later (IST).
   One window for both roles (`components/ReplenRequestModal.jsx`): tick several styles, each folded until opened, with colours,
   quantity, links and expected delivery date (measurement sheets go on the style page later). A customer's "Order replen" sends a request for review; Tradio's
   "Add replen" picks the master order (or makes one) and creates them at once (`POST /api/style-requests/direct-replen`). The
@@ -125,7 +130,7 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
 - **The review queue for customers.** A customer never creates a style directly, and never picks a master order. Its home page
   has two ways in (`components/CustomerActions.jsx`): Order replen (tick several styles in production, each with colours,
   quantity, links and expected delivery date; or a tab to send a sheet) and New product development
-  (`components/NpdRequestModal.jsx`: per new style only its colours, quantity (optional), expected delivery date and tech pack
+  (`components/NpdRequestModal.jsx`: per new style only its own style no., colours, quantity (optional), expected delivery date and tech pack
   link, all but the quantity required; it is called "New product (colours)" until Tradio names it; or the same Import tab, where
   NPD rows need the Tech pack link). Each becomes a `StyleRequest` (kinds import, replen, npd); files go up first with no
   style and `styleRequestId` set. These requests become
@@ -134,6 +139,9 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   makes one there); approval creates the styles with `createRows` / `createReplenFrom` / `validateAndCreateOrder`, the same
   code Tradio's own paths use, re-checks a sheet first, and moves the request's files onto the new styles. The full Create Style form and
   master orders stay with Tradio.
+- **Customers on their style page** paste the product link themselves (`POST /api/orders/:id/product-link`,
+  `components/ProductLinkEditor.jsx`); a measurement sheet they upload starts as Customer Submission, and uploaded reference
+  files keep their own file names. Notifications are shown with style names, not IDs (`frontend/src/notifText.js`).
 - **Search in the top bar.** `components/GlobalSearch.jsx` over `search.js` (pure, tested): searches the orders and master orders
   already in the app store (so each role finds only its own) by customer, master order name / ID / PO number, product, Tradio
   style ID and the customer's style ID, including just its last digits. Enter opens the best match: a style's page or a master
@@ -161,6 +169,11 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   `enrichOrder(order)`, or a manufacturer's write response leaks every other split.
   Manufacturers also cannot write plan fields (`eta`, `startDate`, `totalUnits`, `kind`,
   `responsibleId`, `description`); `PLAN_ONLY_STAGE_KEYS` in `routes/orders.js` is the gate.
+  Two factories on one style must not see each other's work: a manufacturer's file on a style is always filed under its own
+  split (`mfrId` is forced in `routes/documents.js`), and the floor feed (`routes/floor.js`) shows a factory only its own messages.
+  **A customer is never told which factory makes its styles** (Ankit, 4 Nov 2026): `enrichOrder(..., { forBuyer })` sends a
+  buyer "Tradio production" (or "Production lot N") instead of the factory's name, people and split quantities, and a factory's
+  upload reads as Tradio's (`forViewer` in routes/documents.js). Every order response to a buyer must go through it.
 - **Kriyaa tool input is untrusted.** IDs from the model are validated against strict shapes
   before they go into a loopback URL, and request bodies are rebuilt from an allowlist
   (`stageTarget` / `pick` in `routes/assistant.js`). Don't interpolate tool input into a path.
@@ -189,7 +202,8 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   sequential order-ID generation (e.g. for bulk order creation), are only safe because AppSail
   runs a single process today. If AppSail autoscaling is ever enabled, both need a shared/
   DB-backed store — track this as one combined item, not two, since the fix is the same shape
-  for both.
+  for both. The same goes for the 30-second "just sent" guard on style requests and Add replen (`claimOnce` in
+  routes/styleRequests.js).
 - **Local sandbox.** Local dev and production share one Atlas cluster — `backend/.env.sandbox`
   (gitignored, not committed) points at an explicit, distinct database name
   (`textilmarkt_sandbox`) on that same cluster, so local work never touches real

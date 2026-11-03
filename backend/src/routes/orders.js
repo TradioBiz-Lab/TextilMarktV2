@@ -25,6 +25,7 @@ import { PlanTemplate } from '../models/PlanTemplate.js'
 import { StyleRequest } from '../models/StyleRequest.js'
 import { materialDetails, newMaterialDetails } from '../lib/materialFields.js'
 import { normalizeLink, isHttpUrl, cleanLink } from '../lib/links.js'
+import { isoDay } from '../lib/masterOrderDetails.js'
 
 // Categories are now free-text — no validation needed
 const MAX_PRODUCT_PHOTO_SIZE = 1024 * 1024 // 1MB raw - reference thumbnail, not full-res
@@ -191,7 +192,10 @@ async function notifyNewOwners(orderId, actor, entries) {
 // reshape or reschedule the plan. The UI hides these controls, this is the real gate.
 const PLAN_ONLY_STAGE_KEYS = ['kind', 'totalUnits', 'responsibleId', 'description', 'eta', 'startDate']
 
-const enrichOrder = (o, viewerMfrId = null) => {
+// What a customer is told about who makes its styles: Tradio, never the factory (its name, its people, its split's quantity).
+const TRADIO_PRODUCTION = 'Tradio production'
+
+const enrichOrder = (o, viewerMfrId = null, { forBuyer = false } = {}) => {
   const buyer = o.buyerId && typeof o.buyerId === 'object' && o.buyerId.company ? o.buyerId : null
   // Manufacturers only see their own assignment — not competitors' qty/status/notes
   const allAssignments = o.assignments || []
@@ -215,16 +219,17 @@ const enrichOrder = (o, viewerMfrId = null) => {
   brand: o.brand || '',
   replenOf: o.replenOf || null,
   callout: o.callout || '',
-  assignments: visibleAssignments.map(a => {
+  assignments: visibleAssignments.map((a, ai) => {
     const mfr = a.mfrId && typeof a.mfrId === 'object' && a.mfrId.company ? a.mfrId : null
+    const lot = visibleAssignments.length > 1 ? `Production lot ${ai + 1}` : TRADIO_PRODUCTION
     return {
       id:         a._id,
       mid:        mfr ? mfr._id.toString() : (a.mfrId?.toString?.() ?? a.mfrId),
-      mfrCompany: mfr?.company  ?? null,
-      mfrCode:    mfr?.code     ?? null,
-      mfrName:    mfr?.name     ?? null,
-      qty:        a.qty,
-      deliveredQty: a.deliveredQty ?? null,
+      mfrCompany: forBuyer ? lot : mfr?.company ?? null,
+      mfrCode:    forBuyer ? null : mfr?.code ?? null,
+      mfrName:    forBuyer ? lot : mfr?.name ?? null,
+      qty:        forBuyer ? null : a.qty,
+      deliveredQty: forBuyer ? null : a.deliveredQty ?? null,
       // Delayed is worked out from the plan, never stored by hand (lib/splitStatus.js).
       status:     splitStatus(o, a),
       sub:        a.sub,
@@ -232,13 +237,14 @@ const enrichOrder = (o, viewerMfrId = null) => {
       updatedAt:  a.updatedAt,
       stages:     (a.stages || []).map(s => {
         const responsible = s.responsibleId && typeof s.responsibleId === 'object' && s.responsibleId.name ? s.responsibleId : null
+        const hideWho = forBuyer && responsible?.role === 'manufacturer'
         return {
           name: s.name, unitsDone: s.unitsDone,
           totalUnits: s.totalUnits, startDate: s.startDate || null, eta: s.eta, stageDate: s.stageDate || null, note: s.note,
           responsibleId: responsible ? responsible._id.toString() : (s.responsibleId?.toString?.() ?? s.responsibleId ?? null),
-          responsibleName: responsible?.name ?? null,
+          responsibleName: hideWho ? TRADIO_PRODUCTION : responsible?.name ?? null,
           responsibleRole: responsible?.role ?? null,
-          responsibleCompany: responsible?.company ?? null,
+          responsibleCompany: hideWho ? 'Tradio' : responsible?.company ?? null,
           description: s.description || '',
           // Legacy stages carry none of these — resolved here (the only
           // serialization point) rather than by migrating live documents.
@@ -263,7 +269,7 @@ const enrichOrder = (o, viewerMfrId = null) => {
           updates: (s.updates || []).map(u => ({
             text: u.text,
             byUser: u.byUser?._id?.toString() ?? u.byUser?.toString(),
-            byUserName: u.byUser?.name ?? null,
+            byUserName: forBuyer && u.byUser?.role === 'manufacturer' ? TRADIO_PRODUCTION : u.byUser?.name ?? null,
             at: u.at,
           })),
           materials: (s.materials || []).map(m => ({
@@ -281,7 +287,7 @@ const enrichOrder = (o, viewerMfrId = null) => {
 // Every response that carries an order must be scoped to the caller: a manufacturer
 // only ever sees its own assignment (same boundary as the read routes above).
 const enrichFor = (order, req) =>
-  enrichOrder(order, req.user.role === 'manufacturer' ? String(req.user.id) : null)
+  enrichOrder(order, req.user.role === 'manufacturer' ? String(req.user.id) : null, { forBuyer: req.user.role === 'buyer' })
 
 // A follow-up write that must happen once the main one has (re-pointing document links after
 // a stage moves) is retried briefly, and failure is logged loudly rather than swallowed.
@@ -323,9 +329,9 @@ router.get('/', requireAuth, async (req, res) => {
     else if (req.user.role === 'buyer')   query = Order.find({ buyerId: req.user.id })
     else                                  query = Order.find({ 'assignments.mfrId': req.user.id })
 
-    const orders = await query.populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').sort({ createdAt: -1 }).lean()
+    const orders = await query.populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role').sort({ createdAt: -1 }).lean()
     const viewerMfrId = req.user.role === 'manufacturer' ? req.user.id : null
-    res.json(orders.map(o => enrichOrder(o, viewerMfrId)))
+    res.json(orders.map(o => enrichOrder(o, viewerMfrId, { forBuyer: req.user.role === 'buyer' })))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -335,7 +341,7 @@ router.get('/', requireAuth, async (req, res) => {
 // GET /api/orders/:id
 router.get('/:id', requireAuth, async (req, res) => {
   try {
-    const order = await Order.findById(req.params.id).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+    const order = await Order.findById(req.params.id).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role').lean()
     if (!order) return res.status(404).json({ error: 'Order not found' })
 
     const buyerIdStr = order.buyerId?._id?.toString() ?? order.buyerId?.toString()
@@ -351,7 +357,7 @@ router.get('/:id', requireAuth, async (req, res) => {
     }
 
     const viewerMfrId = req.user.role === 'manufacturer' ? req.user.id : null
-    res.json(enrichOrder(order, viewerMfrId))
+    res.json(enrichOrder(order, viewerMfrId, { forBuyer: req.user.role === 'buyer' }))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -393,6 +399,9 @@ export async function validateAndCreateOrder({ id, buyerId, product, styleNumber
   const badSeason = await seasonError(buyerId, season)
   if (badSeason) return { ok: false, error: badSeason }
   const deliveryDate = delivery ? new Date(delivery) : null
+  // 2026-02-31 must be refused, not rolled over to 3 March.
+  if (typeof delivery === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(delivery) && !isoDay(delivery))
+    return { ok: false, error: 'Invalid delivery date' }
   if (deliveryDate && isNaN(deliveryDate.getTime()))
     return { ok: false, error: 'Invalid delivery date' }
   // Manufacturer assignment is optional at creation — a style can be created
@@ -713,7 +722,7 @@ router.post('/', requireAuth, requireAdmin, createOrderLimiter, async (req, res)
       return res.status(status).json({ error: result.error })
     }
 
-    const order = await Order.findById(result.order._id).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+    const order = await Order.findById(result.order._id).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role').lean()
 
     await AuditLog.create({
       byUser: req.user.id,
@@ -863,7 +872,7 @@ router.post('/:orderId/assignments/:mfrId', requireAuth, updateLimiter, async (r
         'assignments.$.updatedAt': new Date(),
       }},
       { new: true }
-    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role').lean()
 
     if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
 
@@ -916,14 +925,15 @@ router.post('/:orderId/assignments', requireAuth, requireAdmin, updateLimiter, a
     let deliveryISO = existing.delivery ? new Date(existing.delivery).toISOString().slice(0, 10) : null
     let setDelivery = null
     if (!isPreProduction(existing.phase) && !deliveryISO && delivery !== undefined && delivery !== null && delivery !== '') {
-      if (typeof delivery !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(delivery) || isNaN(new Date(delivery).getTime()))
+      if (!isoDay(delivery))
         return res.status(400).json({ error: 'Invalid delivery date (YYYY-MM-DD)' })
       deliveryISO = delivery
       setDelivery = new Date(delivery)
     }
 
-    const order = await Order.findByIdAndUpdate(
-      orderId,
+    // Only if that manufacturer is still not on the style: a double click or a retry must not add the same split twice.
+    const order = await Order.findOneAndUpdate(
+      { _id: orderId, 'assignments.mfrId': { $ne: mfrId } },
       // Starts with just the mandatory Delivery step; the TNA builder adds the rest in front of it. A style still
       // in New Product Development starts with the standard development plan instead, and no Delivery step yet.
       { ...(setDelivery ? { $set: { delivery: setDelivery, ...(existing.baselineDelivery ? {} : { baselineDelivery: setDelivery }) } } : {}),
@@ -932,7 +942,8 @@ router.post('/:orderId/assignments', requireAuth, requireAdmin, updateLimiter, a
         ? makeDevelopmentStages(getToday())
         : [makeDeliveryStage(deliveryISO || 'NA')] } } },
       { new: true }
-    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role').lean()
+    if (!order) return res.status(400).json({ error: 'This manufacturer is already assigned to this style' })
 
     await AuditLog.create({
       byUser: req.user.id,
@@ -1003,7 +1014,7 @@ router.post('/:orderId/assignments/:mfrId/reassign', requireAuth, requireAdmin, 
     const order = await Order.findById(orderId)
       .populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS)
       .populate('assignments.stages.responsibleId', 'name company code role')
-      .populate('assignments.stages.updates.byUser', 'name').lean()
+      .populate('assignments.stages.updates.byUser', 'name role').lean()
 
     const former = await User.findById(oldId, 'company').lean()
     await AuditLog.create({
@@ -1051,7 +1062,7 @@ router.post('/:orderId/assignments/:mfrId/delivered-qty', requireAuth, updateLim
       { _id: orderId, 'assignments.mfrId': mfrObjectId },
       { $set: { 'assignments.$[asgn].deliveredQty': value, 'assignments.$[asgn].updatedAt': new Date() } },
       { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }], new: true }
-    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role').lean()
     if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
 
     const gap = value == null ? '' : value === asgn.qty ? ' (matches the order)' : ` (${value > asgn.qty ? `${value - asgn.qty} over` : `${asgn.qty - value} short of`} ${asgn.qty} ordered)`
@@ -1285,7 +1296,7 @@ router.post('/:orderId/assignments/:mfrId/stages/bulk', requireAuth, updateLimit
       { _id: orderId, 'assignments.mfrId': mfrObjectId },
       { $set: setFields },
       { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }], new: true }
-    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role').lean()
 
     if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
 
@@ -1366,7 +1377,7 @@ router.post('/:orderId/assignments/:mfrId/stages/start-plan', requireAuth, requi
     const updated = await Order.findById(orderId)
       .populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS)
       .populate('assignments.stages.responsibleId', 'name company code role')
-      .populate('assignments.stages.updates.byUser', 'name').lean()
+      .populate('assignments.stages.updates.byUser', 'name role').lean()
     res.json(enrichFor(updated, req))
   } catch (err) {
     console.error('[orders]', err)
@@ -1484,7 +1495,7 @@ router.post('/:orderId/assignments/:mfrId/stages/insert', requireAuth, requireAd
     const order = await Order.findById(orderId)
       .populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS)
       .populate('assignments.stages.responsibleId', 'name company code role')
-      .populate('assignments.stages.updates.byUser', 'name').lean()
+      .populate('assignments.stages.updates.byUser', 'name role').lean()
 
     await AuditLog.create({
       byUser: req.user.id,
@@ -1675,7 +1686,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex', requireAuth, upda
       { _id: orderId, 'assignments.mfrId': mfrObjectId },
       { $set: setFields },
       { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }], new: true }
-    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role').lean()
 
     if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
 
@@ -1942,7 +1953,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/eta', requireAuth, 
       { _id: orderId, 'assignments.mfrId': mfrObjectId },
       { $set: setFields },
       { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }], new: true }
-    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role').lean()
 
     if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
 
@@ -2025,7 +2036,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/move', requireAuth,
     const order = await Order.findById(orderId)
       .populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS)
       .populate('assignments.stages.responsibleId', 'name company code role')
-      .populate('assignments.stages.updates.byUser', 'name').lean()
+      .populate('assignments.stages.updates.byUser', 'name role').lean()
     await AuditLog.create({
       byUser: req.user.id,
       action: 'Stage Moved',
@@ -2095,7 +2106,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/delete', requireAut
     const order = await Order.findById(orderId)
       .populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS)
       .populate('assignments.stages.responsibleId', 'name company code role')
-      .populate('assignments.stages.updates.byUser', 'name').lean()
+      .populate('assignments.stages.updates.byUser', 'name role').lean()
 
     await AuditLog.create({
       byUser: req.user.id,
@@ -2146,7 +2157,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/updates', requireAu
       { _id: orderId, 'assignments.mfrId': mfrObjectId },
       { $push: { [`assignments.$[asgn].stages.${stageIndex}.updates`]: { text: text.trim(), byUser: req.user.id, at: new Date() } } },
       { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }], new: true }
-    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role').lean()
 
     if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
 
@@ -2214,7 +2225,7 @@ async function loadStageForItems(req, res) {
 const ITEMS_POPULATE = q => q
   .populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS)
   .populate('assignments.stages.responsibleId', 'name company code role')
-  .populate('assignments.stages.updates.byUser', 'name')
+  .populate('assignments.stages.updates.byUser', 'name role')
 
 // Add one item, or — with fromColourways — one per colourway on the order, so
 // the same three colour names aren't retyped on every per-colour step.
@@ -2405,7 +2416,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials', require
       { _id: orderId, 'assignments.mfrId': mfrObjectId },
       { $push: { [`assignments.$[asgn].stages.${stageIndex}.materials`]: line } },
       { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }], new: true }
-    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role').lean()
 
     if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
 
@@ -2492,7 +2503,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineInde
       { _id: orderId, 'assignments.mfrId': mfrObjectId },
       { $set: setFields },
       { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }], new: true }
-    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role').lean()
 
     if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
 
@@ -2559,7 +2570,7 @@ router.post('/:orderId/assignments/:mfrId/stages/:stageIndex/materials/:lineInde
       { _id: orderId, 'assignments.mfrId': mfrObjectId },
       { $pull: { [pullField]: null } },
       { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }], new: true }
-    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role').lean()
 
     if (!order) return res.status(404).json({ error: 'Order or assignment not found' })
 
@@ -2662,7 +2673,7 @@ router.post('/:id/photos', requireAuth, updateLimiter, async (req, res) => {
     const r = stylePhotos(req.body?.photos, existing.colourways || [])
     if (r.error) return res.status(400).json({ error: r.error })
     const order = await Order.findByIdAndUpdate(existing._id, { $set: { photos: r.photos, ...mainPhotoFields(r.photos) } }, { new: true })
-      .populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+      .populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role').lean()
     await AuditLog.create({ byUser: req.user.id, action: 'Style Photos Updated', detail: `${existing._id}: ${r.photos.length} photo${r.photos.length === 1 ? '' : 's'}, by the customer` })
     await notify(await adminIds(), { type: 'order', msg: `${req.user.company || 'The customer'} updated the photos of ${existing._id}`, orderId: existing._id }, { exceptUserId: req.user.id })
     res.json(enrichFor(order, req))
@@ -2672,6 +2683,28 @@ router.post('/:id/photos', requireAuth, updateLimiter, async (req, res) => {
   }
 })
 
+// POST /api/orders/:id/product-link  { ecommerceLink }  - the customer gives (or changes, or clears) its own style's product
+// page, e.g. its Amazon listing, straight from the style page. Shortened and checked like every other link.
+router.post('/:id/product-link', requireAuth, updateLimiter, async (req, res) => {
+  try {
+    if (req.user.role !== 'buyer') return res.status(403).json({ error: 'Tradio edits the product link from Edit Style' })
+    const existing = await Order.findById(req.params.id, 'buyerId product ecommerceLink').lean()
+    if (!existing || String(existing.buyerId) !== String(req.user.id)) return res.status(404).json({ error: 'Order not found' })
+    const r = cleanLink(req.body?.ecommerceLink, 'Product link')
+    if (r.error) return res.status(400).json({ error: r.error })
+    const link = r.link || ''
+    const order = await Order.findByIdAndUpdate(existing._id, { $set: { ecommerceLink: link } }, { new: true })
+      .populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role').lean()
+    if (link !== (existing.ecommerceLink || '')) {
+      await AuditLog.create({ byUser: req.user.id, action: 'Product Link Updated', detail: `${existing._id}: ${link || 'cleared'}, by the customer` })
+      await notify(await adminIds(), { type: 'order', msg: `${req.user.company || 'The customer'} ${link ? 'added the product link of' : 'removed the product link of'} ${existing.product}`, orderId: existing._id }, { exceptUserId: req.user.id })
+    }
+    res.json(enrichFor(order, req))
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
 
 /** The quantity and note of a replen request, checked: { quantity, note } or { error }. */
 export function replenInput(body) {
@@ -2688,16 +2721,32 @@ export function replenInput(body) {
  * factory. Returns { ok: true, order } or { ok: false, error }. Writes no audit entry and sends no notification: the
  * caller does, because who is told depends on who asked and who approved.
  */
+/** A style that can be reordered: in production and delivered by every factory on it (frontend `replenEligible` mirrors this). */
+export function replenEligible(o) {
+  const splits = o?.assignments || []
+  if ((o?.phase || 'production') !== 'production' || !splits.length) return false
+  return splits.every(a => {
+    if (a.status === 'Delivered') return true
+    const stages = a.stages || []
+    const step = stages.find(s => s.isDelivery)
+    return step ? deriveStageStatus(step) === 'done' : stages.length > 0 && stages.every(s => deriveStageStatus(s) === 'done')
+  })
+}
+export const REPLEN_NOT_ELIGIBLE = 'Only a delivered style can be reordered.'
+
 export async function createReplenFrom(src, { quantity, note = '', colourways, ecommerceLink, techPackLink, delivery, masterOrderId } = {}) {
-  if ((src.phase || 'production') !== 'production') return { ok: false, error: 'A replen can be ordered for a style that is in production.' }
+  if (!replenEligible(src)) return { ok: false, error: REPLEN_NOT_ELIGIBLE }
   const buyer = await User.findById(src.buyerId, 'code company').lean()
   if (!buyer) return { ok: false, error: 'Customer not found' }
+  // A replen put under another master order takes that master order's season (and its style ID says so).
+  const mo = masterOrderId && masterOrderId !== src.masterOrderId ? await MasterOrder.findById(masterOrderId, 'season').lean() : null
+  const season = mo?.season || src.season
   const photos = (src.photos || []).map(p => ({ image: p.image, colourway: p.colourway || '' }))
   let result
   for (let attempt = 0; attempt < 4; attempt++) {
-    const id = await nextStyleId(buyer.code, src.category, src.season)
+    const id = await nextStyleId(buyer.code, src.category, season)
     result = await validateAndCreateOrder({
-      id, buyerId: String(src.buyerId), product: src.product, styleNumber: src.styleNumber, category: src.category, season: src.season,
+      id, buyerId: String(src.buyerId), product: src.product, styleNumber: src.styleNumber, category: src.category, season,
       phase: 'replen', totalQty: quantity || undefined, masterOrderId: masterOrderId || src.masterOrderId || undefined, replenOf: src._id,
       brand: src.brand, callout: note, delivery: delivery || undefined,
       // What the customer asked for this time wins; anything left blank comes from the style being reordered.
@@ -2719,7 +2768,7 @@ router.post('/:id/replen', requireAuth, createOrderLimiter, async (req, res) => 
     if (req.user.role !== 'buyer' && req.user.role !== 'admin') return res.status(403).json({ error: 'Only the customer or Tradio can order a replen' })
     const src = await Order.findById(req.params.id).lean()
     if (!src || (req.user.role === 'buyer' && String(src.buyerId) !== String(req.user.id))) return res.status(404).json({ error: 'Order not found' })
-    if ((src.phase || 'production') !== 'production') return res.status(400).json({ error: 'A replen can be ordered for a style that is in production.' })
+    if (!replenEligible(src)) return res.status(400).json({ error: REPLEN_NOT_ELIGIBLE })
     const input = replenInput(req.body)
     if (input.error) return res.status(400).json({ error: input.error })
     const { quantity, note } = input
@@ -2740,7 +2789,7 @@ router.post('/:id/replen', requireAuth, createOrderLimiter, async (req, res) => 
     if (await Order.exists({ replenOf: src._id, createdAt: { $gt: new Date(Date.now() - 30_000) } })) return res.status(409).json({ error: 'A replen of this style was just ordered.' })
     const made = await createReplenFrom(src, { quantity, note })
     if (!made.ok) return res.status(400).json({ error: made.error })
-    const order = await Order.findById(made.order._id).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+    const order = await Order.findById(made.order._id).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role').lean()
     await AuditLog.create({ byUser: req.user.id, action: 'Replen Ordered', detail: `${order._id} - replen of ${src._id}, ${quantity.toLocaleString('en-IN')} pcs` })
     await notify([src.buyerId], { type: 'order', msg: `A replen of ${what} was ordered for you: ${order._id}`, orderId: order._id }, { exceptUserId: req.user.id })
     res.status(201).json(enrichFor(order, req))
@@ -2998,7 +3047,7 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
       orderId,
       { $set: updates },
       { new: true }
-    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+    ).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role').lean()
 
     if (!order) return res.status(404).json({ error: 'Order not found' })
 
@@ -3027,7 +3076,7 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
       reshaped = true
     }
     if (reshaped) {
-      const fresh = await Order.findById(orderId).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name').lean()
+      const fresh = await Order.findById(orderId).populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role').lean()
       if (fresh) Object.assign(order, fresh)
     }
 

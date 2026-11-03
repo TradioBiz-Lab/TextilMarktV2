@@ -17,6 +17,7 @@ export function shortenAmazonLink(url) {
 /** What a link box should hold after the person typed or pasted `value`: the short form when it is an Amazon product link, else unchanged. */
 export function autoShortenLink(value) {
   const t = String(value ?? '').trim()
-  const s = shortenAmazonLink(t)
+  // A link pasted without https:// ("www.amazon.in/...") is still shortened, the way the server reads it (normalizeLink).
+  const s = shortenAmazonLink(/^[\w-]+(\.[\w-]+)+(:\d+)?([/?#]\S*)?$/.test(t) ? `https://${t}` : t)
   return s !== t ? s : value
 }

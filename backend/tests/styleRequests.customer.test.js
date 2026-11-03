@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 
 import { startTestDb, stopTestDb, clearDb } from './helpers/db.js'
 import { startServer, stopServer, as } from './helpers/client.js'
-import { makeMaster, makeBuyer, makeMfr, makeMasterOrder } from './helpers/factories.js'
+import { makeMaster, makeBuyer, makeMfr, makeMasterOrder, markDelivered } from './helpers/factories.js'
 import { Order } from '../src/models/Order.js'
 import { Document } from '../src/models/Document.js'
 import { StyleRequest } from '../src/models/StyleRequest.js'
@@ -29,6 +29,7 @@ async function arrange() {
     const r = await as(master).post('/api/orders', { id, buyerId: String(buyer._id), masterOrderId: mo._id, product: `Dress ${sn}`, styleNumber: sn, category: 'DRESS', season: 'SS26', phase: 'production', totalQty: 300, ecommerceLink: 'https://www.amazon.in/dp/B0AAAAAAA1', colourways: [{ name: 'Blue' }] })
     assert.equal(r.status, 201, JSON.stringify(r.body))
   }
+  await markDelivered('SRC-1', 'SRC-2')
   return { master, buyer, mo, replenMo }
 }
 const sheetDoc = (buyer, label = 'customer_submission') => as(buyer).post('/api/documents', { type: 'measurements', name: 'Spec', orderId: null, measurementLabel: label, dataUrl: `data:${XLSX};base64,${Buffer.from('PK').toString('base64')}`, fileName: 'spec.xlsx', mimeType: XLSX })
@@ -39,7 +40,7 @@ describe('a replen of several styles', () => {
     const spec = await sheetDoc(buyer, 'pp_approval')
     assert.equal(spec.status, 201, JSON.stringify(spec.body))
     const sent = await as(buyer).post('/api/style-requests', { kind: 'replen', items: [
-      { sourceOrderId: 'SRC-1', colours: ['Red', 'Black', 'Red'], quantity: 1200, ecommerceLink: 'https://www.amazon.in/Title/dp/B0BBBBBBB2?th=1', techPackLink: 'drive.example.com/tp', delivery: '2026-12-15', docIds: [spec.body.id] },
+      { sourceOrderId: 'SRC-1', colours: ['Red', 'Black', 'Red'], quantity: 1200, ecommerceLink: 'https://www.amazon.in/Title/dp/B0BBBBBBB2?th=1', techPackLink: 'drive.example.com/tp', delivery: '2099-12-15', docIds: [spec.body.id] },
       { sourceOrderId: 'SRC-2', delivery: '2027-01-10' },
     ] })
     assert.equal(sent.status, 201, JSON.stringify(sent.body))
@@ -56,7 +57,7 @@ describe('a replen of several styles', () => {
     assert.deepEqual(a.colourways.map(c => c.name), ['Red', 'Black'])
     assert.equal(a.ecommerceLink, 'https://www.amazon.in/dp/B0BBBBBBB2')
     assert.equal(a.techPackLink, 'https://drive.example.com/tp')
-    assert.equal(new Date(a.delivery).toISOString().slice(0, 10), '2026-12-15')
+    assert.equal(new Date(a.delivery).toISOString().slice(0, 10), '2099-12-15')
     // Left blank: copied from the style being reordered, and the quantity can wait.
     assert.deepEqual([b.colourways.map(c => c.name), b.ecommerceLink, b.totalQty], [['Blue'], 'https://www.amazon.in/dp/B0AAAAAAA1', null])
     const filed = await Document.findById(spec.body.id).lean()
@@ -69,7 +70,7 @@ describe('a replen of several styles', () => {
 
   test('without a choice, the master order the reordered styles share is used', async () => {
     const { master, buyer, mo } = await arrange()
-    const sent = await as(buyer).post('/api/style-requests', { kind: 'replen', items: [{ sourceOrderId: 'SRC-1', delivery: '2026-12-15' }] })
+    const sent = await as(buyer).post('/api/style-requests', { kind: 'replen', items: [{ sourceOrderId: 'SRC-1', delivery: '2099-12-15' }] })
     const ok = await as(master).post(`/api/style-requests/${sent.body.requestId}/approve`)
     assert.equal(ok.status, 200, JSON.stringify(ok.body))
     assert.equal((await Order.findById(ok.body.created[0].id).lean()).masterOrderId, mo._id)
@@ -82,17 +83,17 @@ describe('a replen of several styles', () => {
     assert.equal((await send([])).status, 400)
     assert.equal((await send([{ sourceOrderId: 'SRC-1' }])).status, 400, 'the expected delivery date is needed')
     assert.equal((await send([{ sourceOrderId: 'SRC-1', delivery: 'soon' }])).status, 400)
-    assert.equal((await send([{ sourceOrderId: 'SRC-1', delivery: '2026-12-15' }, { sourceOrderId: 'SRC-1', delivery: '2026-12-15' }])).status, 400)
-    assert.equal((await send([{ sourceOrderId: 'SRC-1', delivery: '2026-12-15', quantity: 1.5 }])).status, 400)
-    assert.equal((await send([{ sourceOrderId: 'SRC-1', delivery: '2026-12-15', ecommerceLink: 'javascript:alert(1)' }])).status, 400)
-    assert.equal((await send([{ sourceOrderId: 'NOPE', delivery: '2026-12-15' }])).status, 400)
-    assert.equal((await as(other).post('/api/style-requests', { kind: 'replen', items: [{ sourceOrderId: 'SRC-1', delivery: '2026-12-15' }] })).status, 400, 'another customer\'s style')
+    assert.equal((await send([{ sourceOrderId: 'SRC-1', delivery: '2099-12-15' }, { sourceOrderId: 'SRC-1', delivery: '2099-12-15' }])).status, 400)
+    assert.equal((await send([{ sourceOrderId: 'SRC-1', delivery: '2099-12-15', quantity: 1.5 }])).status, 400)
+    assert.equal((await send([{ sourceOrderId: 'SRC-1', delivery: '2099-12-15', ecommerceLink: 'javascript:alert(1)' }])).status, 400)
+    assert.equal((await send([{ sourceOrderId: 'NOPE', delivery: '2099-12-15' }])).status, 400)
+    assert.equal((await as(other).post('/api/style-requests', { kind: 'replen', items: [{ sourceOrderId: 'SRC-1', delivery: '2099-12-15' }] })).status, 400, 'another customer\'s style')
     const theirs = await sheetDoc(other)
-    assert.equal((await send([{ sourceOrderId: 'SRC-1', delivery: '2026-12-15', docIds: [theirs.body.id] }])).status, 400, 'another customer\'s file')
+    assert.equal((await send([{ sourceOrderId: 'SRC-1', delivery: '2099-12-15', docIds: [theirs.body.id] }])).status, 400, 'another customer\'s file')
     const mine = await sheetDoc(buyer)
-    assert.equal((await send([{ sourceOrderId: 'SRC-1', delivery: '2026-12-15', docIds: [mine.body.id] }])).status, 201)
-    assert.equal((await send([{ sourceOrderId: 'SRC-2', delivery: '2026-12-15', docIds: [mine.body.id] }])).status, 400, 'a file already sent with a request')
-    assert.equal((await as(master).post('/api/style-requests', { kind: 'replen', items: [{ sourceOrderId: 'SRC-1', delivery: '2026-12-15' }] })).status, 403)
+    assert.equal((await send([{ sourceOrderId: 'SRC-1', delivery: '2099-12-15', docIds: [mine.body.id] }])).status, 201)
+    assert.equal((await send([{ sourceOrderId: 'SRC-2', delivery: '2099-12-15', docIds: [mine.body.id] }])).status, 400, 'a file already sent with a request')
+    assert.equal((await as(master).post('/api/style-requests', { kind: 'replen', items: [{ sourceOrderId: 'SRC-1', delivery: '2099-12-15' }] })).status, 403)
     assert.equal((await as(await makeMfr()).post('/api/style-requests', { kind: 'replen', items: [] })).status, 403)
     assert.equal(await Order.countDocuments(), 2)
   })
@@ -101,7 +102,7 @@ describe('a replen of several styles', () => {
     const { master, buyer } = await arrange()
     const other = await makeBuyer()
     const otherMo = await makeMasterOrder({ buyerId: other._id, createdBy: master._id })
-    const sent = await as(buyer).post('/api/style-requests', { kind: 'replen', items: [{ sourceOrderId: 'SRC-1', delivery: '2026-12-15' }] })
+    const sent = await as(buyer).post('/api/style-requests', { kind: 'replen', items: [{ sourceOrderId: 'SRC-1', delivery: '2099-12-15' }] })
     const res = await as(master).post(`/api/style-requests/${sent.body.requestId}/approve`, { masterOrderId: otherMo._id })
     assert.equal(res.status, 400)
     assert.equal((await StyleRequest.findById(sent.body.requestId).lean()).status, 'pending')
@@ -109,7 +110,7 @@ describe('a replen of several styles', () => {
 })
 
 describe('new styles from the short form', () => {
-  const style = (over = {}) => ({ colours: ['Olive', 'Black'], quantity: 800, delivery: '2027-01-20', techPackLink: 'https://drive.example.com/tp', ...over })
+  const style = (over = {}) => ({ styleNumber: 'FYL-5001', colours: ['Olive', 'Black'], quantity: 800, delivery: '2099-01-20', techPackLink: 'https://drive.example.com/tp', ...over })
 
   test('colours, quantity, delivery and tech pack link become an NPD style under the chosen master order', async () => {
     const { master, buyer, mo } = await arrange()
@@ -120,16 +121,16 @@ describe('new styles from the short form', () => {
     const ok = await as(master).post(`/api/style-requests/${sent.body.requestId}/approve`, { masterOrderId: mo._id })
     assert.equal(ok.status, 200, JSON.stringify(ok.body))
     const o = await Order.findById(ok.body.created[0].id).lean()
-    assert.deepEqual([o.phase, o.product, o.masterOrderId, o.totalQty, o.techPackLink], ['development', 'New product (Olive, Black)', mo._id, 800, 'https://drive.example.com/tp'])
+    assert.deepEqual([o.phase, o.product, o.styleNumber, o.masterOrderId, o.totalQty, o.techPackLink], ['development', 'New product (Olive, Black)', 'FYL-5001', mo._id, 800, 'https://drive.example.com/tp'])
     assert.deepEqual(o.colourways.map(c => c.name), ['Olive', 'Black'])
-    assert.equal(new Date(o.delivery).toISOString().slice(0, 10), '2027-01-20')
+    assert.equal(new Date(o.delivery).toISOString().slice(0, 10), '2099-01-20')
   })
 
-  test('the quantity may wait; the colours, delivery date and tech pack link may not', async () => {
+  test('the quantity may wait; the style no., colours, delivery date and tech pack link may not', async () => {
     const { buyer } = await arrange()
     const send = item => as(buyer).post('/api/style-requests', { kind: 'npd', items: [item] })
     assert.equal((await send(style({ quantity: '' }))).status, 201)
-    for (const [over, why] of [[{ colours: [] }, /colour/], [{ delivery: '' }, /delivery/], [{ delivery: 'soon' }, /date/], [{ techPackLink: '' }, /tech pack/], [{ techPackLink: 'javascript:1' }, /./], [{ quantity: 2.5 }, /whole number/]]) {
+    for (const [over, why] of [[{ styleNumber: '' }, /style no/], [{ colours: [] }, /colour/], [{ delivery: '' }, /delivery/], [{ delivery: 'soon' }, /date/], [{ techPackLink: '' }, /tech pack/], [{ techPackLink: 'javascript:1' }, /./], [{ quantity: 2.5 }, /whole number/]]) {
       const res = await send(style(over))
       assert.equal(res.status, 400, JSON.stringify(over))
       assert.match(res.body.error, why)

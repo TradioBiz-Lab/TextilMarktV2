@@ -8,6 +8,7 @@ import bcrypt from 'bcryptjs'
 import { User } from '../../src/models/User.js'
 import { MasterOrder } from '../../src/models/MasterOrder.js'
 import { Manufacturer } from '../../src/models/Manufacturer.js'
+import { Order } from '../../src/models/Order.js'
 
 export const TEST_PASSWORD = 'Test@1234'
 
@@ -47,6 +48,12 @@ export const makeAdmin  = (o = {}) => makeUser({ ...o, role: 'admin', adminType:
 export const makeMaster = (o = {}) => makeUser({ ...o, role: 'admin', adminType: 'master' })
 export const makeBuyer  = (o = {}) => makeUser({ ...o, role: 'buyer' })
 export const makeMfr    = (o = {}) => makeUser({ ...o, role: 'manufacturer' })
+
+/** Give each style one split, delivered by a new factory, so it can be reordered (only a delivered style can be). */
+export async function markDelivered(...ids) {
+  const mfr = await makeMfr()
+  await Order.updateMany({ _id: { $in: ids } }, { $set: { assignments: [{ mfrId: mfr._id, qty: 1, status: 'Delivered', sub: 'M1', note: '', stages: [] }] } })
+}
 
 export function makeMasterOrder({ buyerId, createdBy, id, orderName = 'Test Master Order', season = 'FW26' }) {
   return MasterOrder.create({ _id: id || `MO-TEST-${Date.now()}-${++codeSeq}`, buyerId, createdBy, orderName, season })

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { AlertTriangle, FlaskConical, FileSpreadsheet, Plus, Trash2 } from '../icons.jsx'
-import { T } from '../constants.js'
+import { T, getToday, pastDateNote } from '../constants.js'
 import { Btn, FlexRow, Input, Modal } from './ui.jsx'
 import { TagInput } from './TagInput.jsx'
 import { styleRequestsApi } from '../api.js'
@@ -8,9 +8,9 @@ import { npdMissing } from '../styleRequests.js'
 import { StyleImportModal } from '../pages/admin/StyleImportModal.jsx'
 
 let _key = 1
-const blank = () => ({ key: _key++, colours: [], quantity: '', delivery: '', techPackLink: '' })
+const blank = () => ({ key: _key++, styleNumber: '', colours: [], quantity: '', delivery: '', techPackLink: '' })
 
-// The customer's New product development: for each new style, its colours, quantity (optional), expected delivery date and
+// The customer's New product development: for each new style, its own style no., colours, quantity (optional), expected delivery date and
 // tech pack link, and nothing else; Tradio names it and picks the master order when it reviews the request. Or, on the second
 // tab, a sheet of styles.
 export function NpdRequestModal({ onClose, onSent }) {
@@ -19,7 +19,8 @@ export function NpdRequestModal({ onClose, onSent }) {
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
-  const update = (key, patch) => setStyles(p => p.map(s => (s.key === key ? { ...s, ...patch } : s)))
+  // A change clears the last error: it was about what is being fixed.
+  const update = (key, patch) => { setErr(''); setStyles(p => p.map(s => (s.key === key ? { ...s, ...patch } : s))) }
 
   const send = async () => {
     setErr('')
@@ -27,7 +28,7 @@ export function NpdRequestModal({ onClose, onSent }) {
     if (i !== -1) { setErr(`Style ${i + 1} ${npdMissing(styles[i])}.`); return }
     setSaving(true)
     try {
-      const items = styles.map(s => ({ colours: s.colours, ...(String(s.quantity).trim() ? { quantity: Math.floor(Number(s.quantity)) } : {}), delivery: s.delivery, techPackLink: s.techPackLink.trim() }))
+      const items = styles.map(s => ({ styleNumber: s.styleNumber.trim(), colours: s.colours, ...(String(s.quantity).trim() ? { quantity: Math.floor(Number(s.quantity)) } : {}), delivery: s.delivery, techPackLink: s.techPackLink.trim() }))
       const r = await styleRequestsApi.create('npd', items)
       onSent(r)
     } catch (e) {
@@ -51,7 +52,7 @@ export function NpdRequestModal({ onClose, onSent }) {
           {tabBtn('import', 'Import from Excel or CSV', <FileSpreadsheet size={13} />)}
         </FlexRow>
 
-        {tab === 'import' && <StyleImportModal embedded forReview noMasterOrder masterOrders={[]} onClose={onClose} onDone={r => onSent({ count: r?.summary?.ok })} />}
+        {tab === 'import' && <StyleImportModal embedded forReview noMasterOrder defaultStage="development" masterOrders={[]} onClose={onClose} onDone={r => onSent({ count: r?.summary?.ok })} />}
 
         {tab === 'enter' && (
           <>
@@ -64,10 +65,11 @@ export function NpdRequestModal({ onClose, onSent }) {
                       <button onClick={() => setStyles(p => p.filter(x => x.key !== s.key))} aria-label={`Remove style ${i + 1}`} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textLight, display: 'flex' }}><Trash2 size={14} /></button>
                     )}
                   </FlexRow>
+                  <Input label="Your style no. *" value={s.styleNumber} onChange={e => update(s.key, { styleNumber: e.target.value })} placeholder="e.g. FYLSS26WD-4011" maxLength={60} />
                   <TagInput label="Colours *" value={s.colours} onChange={v => update(s.key, { colours: v })} keepCase placeholder="Type a colour, then Enter" />
                   <div className="form-grid-2" style={{ gap: 10 }}>
-                    <Input label="Quantity (optional)" type="number" min="1" step="1" value={s.quantity} onChange={e => update(s.key, { quantity: e.target.value })} placeholder="e.g. 1200" />
-                    <Input label="Expected delivery date *" type="date" value={s.delivery} onChange={e => update(s.key, { delivery: e.target.value })} />
+                    <Input label="Quantity (optional)" inputMode="numeric" value={s.quantity} onChange={e => update(s.key, { quantity: e.target.value.replace(/[,\s]/g, '') })} placeholder="e.g. 1200" />
+                    <Input label="Expected delivery date *" type="date" min={getToday()} value={s.delivery} onChange={e => update(s.key, { delivery: e.target.value })} error={pastDateNote(s.delivery)} />
                   </div>
                   <Input label="Tech pack link *" value={s.techPackLink} onChange={e => update(s.key, { techPackLink: e.target.value })} placeholder="https://…" />
                 </div>

@@ -25,6 +25,7 @@ const styleRequestSchema = new mongoose.Schema({
   data:        { type: Buffer, select: false },
   uploadId:    { type: String, default: null },
   skipInvalid: { type: Boolean, default: false },
+  defaultPhase: { type: String, enum: ['replen', 'development', null], default: null },   // the stage of a row with none (see lib/styleImport.js)
   summary:     { type: mongoose.Schema.Types.Mixed, default: null },                         // { total, ok, errors, exists } when it was sent
 
   // replen

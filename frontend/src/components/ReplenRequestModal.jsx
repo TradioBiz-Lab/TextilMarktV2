@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { AlertTriangle, RefreshCw, Search, FileSpreadsheet, ChevronRight } from '../icons.jsx'
-import { T, replenEligible, fmtDate } from '../constants.js'
+import { T, replenEligible, fmtDate, getToday, pastDateNote } from '../constants.js'
 import { Btn, FlexRow, Input, Modal, ProductThumb, useToast } from './ui.jsx'
 import { TagInput } from './TagInput.jsx'
 import { MasterOrderPicker } from './MasterOrderPicker.jsx'
@@ -45,14 +45,17 @@ export function ReplenRequestModal({ preselect = [], onClose, onSent, admin = fa
     if (chosen[o.id]) { setChosen(p => { const n = { ...p }; delete n[o.id]; return n }); if (openId === o.id) setOpenId(null) }
     else { setChosen(p => ({ ...p, [o.id]: startFor(o) })); setOpenId(o.id) }
   }
-  const update = (id, patch) => setChosen(p => ({ ...p, [id]: { ...p[id], ...patch } }))
+  // A change clears the last error: it was about what is being fixed.
+  const update = (id, patch) => { setErr(''); setChosen(p => ({ ...p, [id]: { ...p[id], ...patch } })) }
   const missingDate = ids.filter(id => !chosen[id].delivery)
+  const pastDate = ids.filter(id => chosen[id].delivery && chosen[id].delivery < getToday())
   const badQty = ids.filter(id => chosen[id].quantity !== '' && !(Number.isInteger(Number(chosen[id].quantity)) && Number(chosen[id].quantity) > 0))
 
   const send = async () => {
     setErr('')
     if (!ids.length) { setErr('Choose at least one style.'); return }
     if (missingDate.length) { setErr('Add the expected delivery date for every style you chose.'); setOpenId(missingDate[0]); return }
+    if (pastDate.length) { setErr('An expected delivery date is in the past.'); setOpenId(pastDate[0]); return }
     if (badQty.length) { setErr('A quantity has to be a whole number.'); setOpenId(badQty[0]); return }
     if (admin && !moId && !newMo) { setErr('Choose the master order these replens go under.'); return }
     if (admin && newMo && !newMo.orderName.trim()) { setErr('Give the new master order a name.'); return }
@@ -98,8 +101,8 @@ export function ReplenRequestModal({ preselect = [], onClose, onSent, admin = fa
         </FlexRow>
 
         {tab === 'import' && (admin
-          ? <StyleImportModal embedded masterOrders={customerMos} presetMasterOrderId={moId} onClose={onClose} onDone={r => { refreshOrders().catch(() => {}); onSent(r) }} />
-          : <StyleImportModal embedded forReview noMasterOrder masterOrders={[]} onClose={onClose} onDone={() => onSent()} />)}
+          ? <StyleImportModal embedded defaultStage="replen" masterOrders={customerMos} presetMasterOrderId={moId} onClose={onClose} onDone={r => { refreshOrders().catch(() => {}); onSent(r) }} />
+          : <StyleImportModal embedded forReview noMasterOrder defaultStage="replen" masterOrders={[]} onClose={onClose} onDone={() => onSent()} />)}
 
         {tab === 'choose' && (
           <>
@@ -135,8 +138,8 @@ export function ReplenRequestModal({ preselect = [], onClose, onSent, admin = fa
                       <div style={{ padding: '0 12px 12px 41px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                         <TagInput label="Colours" value={c.colours} onChange={v => update(o.id, { colours: v })} keepCase placeholder="Type a colour, then Enter" />
                         <div className="form-grid-2" style={{ gap: 10 }}>
-                          <Input label="Quantity (optional)" type="number" min="1" step="1" value={c.quantity} onChange={e => update(o.id, { quantity: e.target.value })} placeholder="e.g. 1200" />
-                          <Input label="Expected delivery date *" type="date" value={c.delivery} onChange={e => update(o.id, { delivery: e.target.value })} />
+                          <Input label="Quantity (optional)" inputMode="numeric" value={c.quantity} onChange={e => update(o.id, { quantity: e.target.value.replace(/[,\s]/g, '') })} placeholder="e.g. 1200" />
+                          <Input label="Expected delivery date *" type="date" min={getToday()} value={c.delivery} onChange={e => update(o.id, { delivery: e.target.value })} error={pastDateNote(c.delivery)} />
                         </div>
                         <div className="form-grid-2" style={{ gap: 10 }}>
                           <Input label="Product link" value={c.ecommerceLink} onChange={e => update(o.id, { ecommerceLink: autoShortenLink(e.target.value) })} placeholder="https://www.amazon.in/dp/…" />

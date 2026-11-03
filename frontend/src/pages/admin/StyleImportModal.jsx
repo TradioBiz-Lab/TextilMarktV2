@@ -17,7 +17,7 @@ function EmbeddedFrame({ subtitle, children }) {
 // For a customer (`forReview`) the last step does not create: it sends the sheet to Tradio's master admin to approve, who
 // also chooses the master order then (`noMasterOrder` hides the choice). `embedded` draws it inside another window (the
 // customer's Order replen) instead of its own.
-export function StyleImportModal({ masterOrders, presetMasterOrderId, onClose, onNewMasterOrder, onDone, forReview = false, noMasterOrder = false, embedded = false }) {
+export function StyleImportModal({ masterOrders, presetMasterOrderId, onClose, onNewMasterOrder, onDone, forReview = false, noMasterOrder = false, embedded = false, defaultStage = null }) {
   const Frame = embedded ? EmbeddedFrame : Modal
   const { refreshOrders } = useApp()
   const [masterOrderId, setMasterOrderId] = useState(presetMasterOrderId || '')
@@ -35,12 +35,12 @@ export function StyleImportModal({ masterOrders, presetMasterOrderId, onClose, o
     if (!uploadId || (!masterOrderId && !noMasterOrder)) { setPreview(null); return }
     let stale = false
     setBusy('preview'); setErr(''); setPreview(null)
-    styleImportsApi.preview(uploadId, masterOrderId)
+    styleImportsApi.preview(uploadId, masterOrderId, defaultStage)
       .then(p => { if (!stale) setPreview(p) })
       .catch(e => { if (!stale) setErr(e?.message || 'Could not read that file.') })
       .finally(() => { if (!stale) setBusy('') })
     return () => { stale = true }
-  }, [uploadId, masterOrderId, noMasterOrder])
+  }, [uploadId, masterOrderId, noMasterOrder, defaultStage])
 
   const choose = async f => {
     if (!f) return
@@ -60,7 +60,7 @@ export function StyleImportModal({ masterOrders, presetMasterOrderId, onClose, o
   const create = async () => {
     setBusy('create'); setErr('')
     try {
-      const r = await styleImportsApi.commit(uploadId, masterOrderId, preview.summary.errors > 0)
+      const r = await styleImportsApi.commit(uploadId, masterOrderId, preview.summary.errors > 0, defaultStage)
       setResult(r)
       if (!r.pending) refreshOrders().catch(() => {})
     } catch (e) { setErr(e?.message || (forReview ? 'Could not send the sheet.' : 'Could not create the styles.')) }
@@ -134,7 +134,8 @@ export function StyleImportModal({ masterOrders, presetMasterOrderId, onClose, o
               <span style={{ fontSize: 12 }}>Excel (.xlsx) or CSV, up to 100 styles</span>
             </button>
             <div style={{ fontSize: 12, color: T.textMuted, marginTop: 10, lineHeight: 1.6 }}>
-              <b>Every row needs:</b> Brand, Style No, Description, a picture, Fabric and Stage (NPD or Replen). A replen also needs its Amazon link.
+              <b>Every row needs:</b> Brand, Style No, Description, a picture, Fabric{defaultStage ? '' : ' and Stage (NPD or Replen)'}. A replen also needs its Amazon link.
+              {defaultStage && <><br />No Stage column is needed: every row here is {defaultStage === 'replen' ? 'a Replen' : 'a new product (NPD)'} unless the sheet says otherwise.</>}
               {forReview && <><br />A new product (Stage NPD) also needs its <b>Tech pack link</b>.</>}
               <br /><b>Optional:</b> Category (worked out from the description when blank), {forReview ? '' : 'Tech pack link, '}Quantity, Colours.
               <br />In Excel, place each picture over its row; in a CSV, give a web address in the Image column.

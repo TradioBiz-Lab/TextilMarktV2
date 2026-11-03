@@ -3,7 +3,7 @@ import { DashboardSummary } from '../../components/DashboardSummary.jsx'
 import { capsFor } from '../../caps.js'
 import { FileIntoStyle } from '../../components/FileIntoStyle.jsx'
 import { CustomerActions } from '../../components/CustomerActions.jsx'
-import { ShoppingBag, Factory, Package, Siren, Target, Check, Shirt, Layers, ClipboardList, Megaphone, ChevronRight, Building2, Truck, FlaskConical, RefreshCw, Scissors } from '../../icons.jsx'
+import { ShoppingBag, Factory, Package, Siren, Target, Check, Shirt, Layers, ClipboardList, Megaphone, ChevronRight, Building2, Truck, FlaskConical, RefreshCw, Scissors, ArrowRight, Clock } from '../../icons.jsx'
 import { T, ST, productionMetrics, productionOrders, developmentOrders, replenOrders, phaseOf, isExpiringSoon, isExpired, getToday, dayNumber, effectiveEta, withBuyerPrefix, fmtDate, styleStatus, masterOrderStatus, inFlightStages } from '../../constants.js'
 import { StatCard, Card, Grid, EmptyState, Mono, PageHeader, Badge, Btn, FlexRow, Modal, Select, Textarea, Input, Alert, LoadingScreen, DocCard } from '../../components/ui.jsx'
 import { useApp } from '../../context.jsx'
@@ -94,6 +94,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
   const delayed = orders.filter(o => ['Delayed', 'On Hold'].includes(styleStatus(o)))
   const expDocs = docs.filter(d => d.isActive !== false && (isExpiringSoon(d.expiryDate) || isExpired(d.expiryDate)))
   const prod = productionMetrics(orders)
+  const lateStyles = allOrders.filter(o => styleStatus(o) === 'Delayed').length
   // Orders by Status lists every style, so styles in New Product Development and Replen show here too (the tiles above count them).
   const ordersByMO = buildOrdersByMasterOrder(allOrders, masterOrders)
 
@@ -237,6 +238,8 @@ export function AdminDashboard({ onNavigate, onOpen }) {
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18, marginBottom: 22 }}>
             {group('Styles', [
+              // What is late comes first, so it is the first thing anyone sees.
+              <StatCard key="late" label="Late" value={lateStyles} icon={<Clock size={19} color={lateStyles ? T.danger : T.textMuted} />} bg={lateStyles ? T.dangerBg : '#f1f5f9'} onClick={go('orders', { status: 'Delayed' })} hint="Open the late styles" />,
               <StatCard key="total" label="Total" value={allOrders.length} icon={<Shirt size={19} color={T.primaryDeep} />} bg={T.primaryLight} onClick={go('orders')} hint="Open Orders" />,
               <StatCard key="deliv" label="Delivered" value={prod.stylesDelivered} icon={<Truck size={19} color={T.success} />} bg={T.successBg} onClick={go('reports')} hint="Open Reports" />,
               <StatCard key="prod" label="In production" value={prod.stylesInProduction} note={prod.stylesOnHold ? `incl. ${prod.stylesOnHold} on hold` : undefined} icon={<Scissors size={19} color="#92400e" />} bg="#fef9c3" onClick={go('orders')} hint="Open Orders" />,
@@ -309,7 +312,7 @@ export function AdminDashboard({ onNavigate, onOpen }) {
             <Target size={15} /> My Action Items
             <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, background: '#f1f5f9', border: `1px solid ${T.border}`, borderRadius: 10, padding: '2px 9px' }}>{combinedOpen.length}</span>
           </span>
-          <Btn size="sm" variant="secondary" onClick={e => { e.stopPropagation(); onNavigate && onNavigate('action_items') }}>Open Action Items →</Btn>
+          <Btn size="sm" variant="secondary" onClick={e => { e.stopPropagation(); onNavigate && onNavigate('action_items') }} icon={<ArrowRight size={13} />}>Open Action Items</Btn>
         </FlexRow>
         {!openSections.actions ? null : combinedOpen.length === 0 ? (
           <EmptyState icon={<Check size={26} color={T.success} strokeWidth={2.5} />} compact title="All caught up" desc="No open action items assigned to you" />

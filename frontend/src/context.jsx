@@ -468,6 +468,13 @@ export function AppProvider({ children }) {
   // A customer escalates one of its styles to Tradio's master admins.
   const escalateOrder = useCallback((id, reason) => ordersApi.escalate(id, reason), [])
 
+  // The customer gives the product link (its Amazon listing, say) of its own style.
+  const setProductLink = useCallback(async (id, link) => {
+    const updated = await ordersApi.setProductLink(id, link)
+    setOrders(p => p.map(o => o.id === id ? updated : o))
+    return updated
+  }, [])
+
   // The customer sets the photos of its own style.
   const setStylePhotos = useCallback(async (id, photos) => {
     const updated = await ordersApi.setPhotos(id, photos)
@@ -732,7 +739,7 @@ export function AppProvider({ children }) {
       login, logout,
       updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
       bulkUpdateStages, addStageItem, updateStageItem, removeStageItem,
-      updateAssignment, addAssignment, reassignAssignment, setDeliveredQty, insertStage, moveStage, startPlan, uploadDoc, updateDoc, lockDoc, deleteDoc, getDocVersions, fileDocInto, setStylePhotos, createOrder, createMasterOrder, updateMasterOrder, deleteMasterOrder,
+      updateAssignment, addAssignment, reassignAssignment, setDeliveredQty, insertStage, moveStage, startPlan, uploadDoc, updateDoc, lockDoc, deleteDoc, getDocVersions, fileDocInto, setStylePhotos, setProductLink, createOrder, createMasterOrder, updateMasterOrder, deleteMasterOrder,
       editOrder, deleteOrder, escalateOrder,
       createUser, updateUser, toggleUser, resetUserPw,
       markAllRead, markOneRead, getDocData, refreshAudit, loadMoreAudit,

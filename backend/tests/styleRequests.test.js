@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 
 import { startTestDb, stopTestDb, clearDb } from './helpers/db.js'
 import { startServer, stopServer, as } from './helpers/client.js'
-import { makeAdmin, makeMaster, makeBuyer, makeMfr, makeMasterOrder } from './helpers/factories.js'
+import { makeAdmin, makeMaster, makeBuyer, makeMfr, makeMasterOrder, markDelivered } from './helpers/factories.js'
 import { Order } from '../src/models/Order.js'
 import { Notification } from '../src/models/Notification.js'
 import { StyleRequest } from '../src/models/StyleRequest.js'
@@ -148,6 +148,7 @@ describe('deciding', () => {
     const { master, buyer, mo } = await arrange()
     const made = await as(master).post('/api/orders', { id: 'SRC-1', buyerId: String(buyer._id), masterOrderId: mo._id, product: 'Dress', category: 'DRESS', season: 'SS26', phase: 'production', totalQty: 100 })
     assert.equal(made.status, 201)
+    await markDelivered('SRC-1')
     const sent = await as(buyer).post('/api/orders/SRC-1/replen', { quantity: 50 })
     assert.equal(sent.status, 202)
     await Order.deleteOne({ _id: 'SRC-1' })

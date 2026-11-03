@@ -11,6 +11,8 @@ export function StyleRequestsPanel({ reloadKey }) {
   const toast = useToast()
   const [items, setItems] = useState([])
   const [busyId, setBusyId] = useState('')
+  const [confirmId, setConfirmId] = useState('')   // the request whose "Cancel request" was pressed once: a second press cancels
+  const [all, setAll] = useState(false)
   const load = useCallback(() => styleRequestsApi.list().then(setItems).catch(() => {}), [])
   useEffect(() => { load() }, [load, reloadKey])
 
@@ -19,13 +21,17 @@ export function StyleRequestsPanel({ reloadKey }) {
   const shown = items.filter(r => r.status === 'pending' || (r.status !== 'cancelled' && new Date(r.decidedAt || r.createdAt).getTime() > fortnightAgo))
   if (!shown.length) return null
   const waiting = shown.filter(r => r.status === 'pending').length
+  // A long list would push the rest of the home page down: the latest few, and the rest on request.
+  const LIMIT = 5
+  const listed = all ? shown : shown.slice(0, LIMIT)
 
   const cancel = async r => {
-    setBusyId(r.id)
-    try { await styleRequestsApi.cancel(r.id); toast('Request cancelled', 'success'); await load() }
+    setBusyId(r.id); setConfirmId('')
+    try { await styleRequestsApi.cancel(r.id); toast('Request cancelled', 'success') }
     catch (e) { toast(e?.message || 'Could not cancel it.', 'error') }
-    finally { setBusyId('') }
+    finally { setBusyId(''); load() }   // also after a failure: it may have been decided meanwhile
   }
+  const small = { fontSize: 12, fontWeight: 700, background: 'none', border: `1px solid ${T.border}`, borderRadius: 8, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' }
 
   return (
     <Card style={{ marginBottom: 12 }}>
@@ -35,7 +41,7 @@ export function StyleRequestsPanel({ reloadKey }) {
         {waiting > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: '#92400e', background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 999, padding: '1px 9px' }}>{waiting} waiting for Tradio</span>}
       </FlexRow>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {shown.map(r => {
+        {listed.map(r => {
           const st = REQUEST_STATUS[r.status]
           return (
             <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 8, background: '#fafbfc' }}>
@@ -50,15 +56,23 @@ export function StyleRequestsPanel({ reloadKey }) {
                   {r.status === 'approved' && r.createdOrderIds.length ? ` · ${r.createdOrderIds.length} style${r.createdOrderIds.length !== 1 ? 's' : ''} added` : ''}
                 </div>
               </div>
-              {r.status === 'pending' && (
-                <button onClick={() => cancel(r)} disabled={busyId === r.id} style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, background: 'none', border: `1px solid ${T.border}`, borderRadius: 8, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>
-                  {busyId === r.id ? 'Cancelling…' : 'Cancel request'}
-                </button>
-              )}
+              {r.status === 'pending' && (confirmId === r.id
+                ? <FlexRow gap={6}>
+                    <button onClick={() => cancel(r)} style={{ ...small, color: '#fff', background: T.danger, borderColor: T.danger }}>Yes, cancel it</button>
+                    <button onClick={() => setConfirmId('')} style={{ ...small, color: T.textMuted }}>Keep it</button>
+                  </FlexRow>
+                : <button onClick={() => setConfirmId(r.id)} disabled={busyId === r.id} style={{ ...small, color: T.textMuted }}>
+                    {busyId === r.id ? 'Cancelling…' : 'Cancel request'}
+                  </button>)}
             </div>
           )
         })}
       </div>
+      {shown.length > LIMIT && (
+        <button onClick={() => setAll(v => !v)} style={{ ...small, marginTop: 8, color: T.primaryDeep }}>
+          {all ? 'Show fewer' : `Show all ${shown.length}`}
+        </button>
+      )}
     </Card>
   )
 }

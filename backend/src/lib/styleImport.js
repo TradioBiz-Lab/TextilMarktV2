@@ -17,6 +17,8 @@ export class ImportError extends Error {}
 export const MAX_ROWS = 100
 const MAX_XML_BYTES = 20 * 1024 * 1024   // uncompressed size of any one XML part: a guard against a zip bomb
 const MAX_IMAGE_READ = 5 * 1024 * 1024   // a picture larger than this is not even read out of the zip
+const MAX_SHEET_ROW = 1_048_576          // Excel's last row: a picture anchored below it is not real
+const MAX_PICTURES = 2000                // pictures looked at in one sheet
 const MAX_PHOTO_BYTES = 1024 * 1024      // the same cap a style's photo has everywhere else (routes/orders.js)
 const PREVIEW_IMAGE_BYTES = 150 * 1024   // a picture this small or smaller is sent back for the preview
 
@@ -28,8 +30,33 @@ const decode = s => s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (m, 
   try { return String.fromCodePoint(code) } catch { return m }
 })
 const attr = (tag, name) => { const m = new RegExp(`(?:^|\\s)${name}="([^"]*)"`).exec(tag); return m ? decode(m[1]) : null }
+/**
+ * Each `<tag ...>body</tag>` (or `<tag .../>`) in `xml`, as { attrs, body, start, end }, in one forward pass. A tag left
+ * open ends the scan, so a crafted file cannot make every later search run to the end of the text again (which made
+ * the old lazy regexes quadratic). Elements of the same name never nest in the parts read here.
+ */
+function* elements(xml, tag) {
+  const open = new RegExp(`<(?:\\w+:)?${tag}(?=[\\s>/])`, 'g')
+  const close = new RegExp(`</(?:\\w+:)?${tag}>`, 'g')
+  for (let m; (m = open.exec(xml));) {
+    const gt = xml.indexOf('>', m.index)
+    if (gt === -1) return
+    if (xml[gt - 1] === '/') { yield { attrs: xml.slice(m.index + m[0].length, gt - 1), body: '', start: m.index, end: gt + 1 }; open.lastIndex = gt + 1; continue }
+    close.lastIndex = gt + 1
+    const c = close.exec(xml)
+    if (!c) return
+    yield { attrs: xml.slice(m.index + m[0].length, gt), body: xml.slice(gt + 1, c.index), start: m.index, end: c.index + c[0].length }
+    open.lastIndex = close.lastIndex
+  }
+}
 /** All the text in a shared-string or inline-string element (rich text has several runs; phonetic hints are skipped). */
-const textOf = xml => [...String(xml).replace(/<(?:\w+:)?rPh[\s\S]*?<\/(?:\w+:)?rPh>/g, '').matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)].map(m => decode(m[1])).join('')
+function textOf(xml) {
+  xml = String(xml)
+  let kept = '', from = 0
+  for (const e of elements(xml, 'rPh')) { kept += xml.slice(from, e.start); from = e.end }
+  kept += xml.slice(from)
+  return [...elements(kept, 't')].map(e => decode(e.body)).join('')
+}
 
 const colIndex = letters => [...letters].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1
 
@@ -40,11 +67,31 @@ const resolveTarget = (baseFile, target) => {
   return parts.join('/')
 }
 
+/**
+ * A zip entry's bytes, counted as they are inflated: past `max` the read stops. The size a zip states about its own
+ * entries is not trusted, since a crafted file can claim 1KB for a part that inflates to gigabytes.
+ */
+function readBounded(file, max) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    let total = 0, done = false
+    const stream = file.internalStream('uint8array')
+    stream.on('data', chunk => {
+      if (done) return
+      total += chunk.length
+      if (total > max) { done = true; stream.pause(); reject(new ImportError('That workbook is too large to read.')); return }
+      chunks.push(Buffer.from(chunk.buffer, chunk.byteOffset, chunk.length))
+    }).on('error', err => { if (!done) { done = true; reject(err) } })
+      .on('end', () => { if (!done) { done = true; resolve(Buffer.concat(chunks)) } })
+      .resume()
+  })
+}
+
 async function readPart(zip, path) {
   const file = zip.file(path)
   if (!file) return null
   if ((file._data?.uncompressedSize ?? 0) > MAX_XML_BYTES) throw new ImportError('That workbook is too large to read.')
-  return file.async('string')
+  return (await readBounded(file, MAX_XML_BYTES)).toString('utf8')
 }
 
 /** The relationships of a part: id -> { type, target (resolved to a zip path unless external), external }. */
@@ -86,22 +133,22 @@ export async function readXlsx(buffer) {
 
   const ssRel = [...wbRels.values()].find(r => /\/sharedStrings$/.test(r.type))
   const ssXml = await readPart(zip, ssRel?.target || 'xl/sharedStrings.xml')
-  const shared = ssXml ? [...ssXml.matchAll(/<si(?:\s[^>]*)?>([\s\S]*?)<\/si>/g)].map(m => textOf(m[1])) : []
+  const shared = ssXml ? [...elements(ssXml, 'si')].map(e => textOf(e.body)) : []
 
   // Cells, row by row. Row heights are kept: a picture is placed by height, not by row number.
   const defaultHeight = parseFloat(attr((/<sheetFormatPr\s[^>]*>/.exec(sheetXml) || [''])[0], 'defaultRowHeight')) || 15
   const rows = new Map()
   const heights = new Map()
-  for (const rm of sheetXml.matchAll(/<row\s([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g)) {
-    const rowNumber = parseInt(attr(rm[1], 'r'), 10)
-    if (!Number.isFinite(rowNumber)) continue
-    const ht = parseFloat(attr(rm[1], 'ht'))
-    if (Number.isFinite(ht)) heights.set(rowNumber, ht)
+  for (const rm of elements(sheetXml, 'row')) {
+    const rowNumber = parseInt(attr(rm.attrs, 'r'), 10)
+    if (!Number.isFinite(rowNumber) || rowNumber < 1 || rowNumber > MAX_SHEET_ROW) continue
+    const ht = parseFloat(attr(rm.attrs, 'ht'))
+    if (Number.isFinite(ht) && ht >= 0) heights.set(rowNumber, ht)
     const values = []
-    for (const cm of (rm[2] || '').matchAll(/<c\s([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
-      const ref = /^([A-Z]+)\d+$/.exec(attr(cm[1], 'r') || '')
+    for (const cm of elements(rm.body, 'c')) {
+      const ref = /^([A-Z]{1,3})\d+$/.exec(attr(cm.attrs, 'r') || '')
       if (!ref) continue
-      const type = attr(cm[1], 't'), body = cm[2] || ''
+      const type = attr(cm.attrs, 't'), body = cm.body
       const v = /<v(?:\s[^>]*)?>([\s\S]*?)<\/v>/.exec(body)
       let text = ''
       if (type === 's') text = shared[parseInt(v?.[1], 10)] ?? ''
@@ -131,19 +178,24 @@ export async function readXlsx(buffer) {
   const drawingXml = drawingRel && await readPart(zip, drawingRel.target)
   if (drawingXml) {
     const drawRels = await readRels(zip, drawingRel.target)
-    const rowTop = n => { let y = 0; for (let r = 1; r <= n; r++) y += (heights.get(r) ?? defaultHeight) * 12700; return y } // row n+1's top edge, in EMU
+    // Row n+1's top edge, in EMU: n rows of the default height, corrected for the rows that have their own (so the cost is
+    // the rows in the sheet, never the row number a picture claims).
+    const rowTop = n => { let y = n * defaultHeight; for (const [r, h] of heights) if (r <= n) y += h - defaultHeight; return y * 12700 }
     const rowAt = y => { let r = 1, top = 0; for (;;) { const h = (heights.get(r) ?? defaultHeight) * 12700; if (y < top + h || r > 5000) return r; top += h; r++ } }
-    let unplaced = 0
-    for (const am of drawingXml.matchAll(/<(?:\w+:)?(oneCellAnchor|twoCellAnchor|absoluteAnchor)\b[\s\S]*?<\/(?:\w+:)?\1>/g)) {
-      const anchor = am[0]
+    let unplaced = 0, seen = 0
+    const anchors = [...elements(drawingXml, 'oneCellAnchor'), ...elements(drawingXml, 'twoCellAnchor'), ...elements(drawingXml, 'absoluteAnchor')].sort((a, b) => a.start - b.start)
+    for (const am of anchors) {
+      if (++seen > MAX_PICTURES) { warnings.push(`Only the first ${MAX_PICTURES} pictures are read.`); break }
+      const anchor = am.body
       const embed = /\bembed="([^"]+)"/.exec(anchor)
       if (!embed) continue
       const pos = tag => {
-        const m = new RegExp(`<(?:\\w+:)?${tag}>[\\s\\S]*?<(?:\\w+:)?row>(\\d+)<[\\s\\S]*?<(?:\\w+:)?rowOff>(-?\\d+)<`).exec(anchor)
-        return m ? { row: parseInt(m[1], 10), off: parseInt(m[2], 10) } : null
+        const el = elements(anchor, tag).next().value
+        const row = el && /<(?:\w+:)?row>(\d+)</.exec(el.body), off = el && /<(?:\w+:)?rowOff>(-?\d+)</.exec(el.body)
+        return row && off ? { row: parseInt(row[1], 10), off: parseInt(off[1], 10) } : null
       }
       const from = pos('from'), to = pos('to')
-      if (!from) { unplaced++; continue }
+      if (!from || from.row > MAX_SHEET_ROW || (to && to.row > MAX_SHEET_ROW)) { unplaced++; continue }
       const top = rowTop(from.row) + from.off
       let bottom = to ? rowTop(to.row) + to.off : null
       if (bottom === null) { const ext = /<(?:\w+:)?ext\s[^>]*\bcy="(\d+)"/.exec(anchor); bottom = ext ? top + parseInt(ext[1], 10) : top }
@@ -157,7 +209,11 @@ export async function readXlsx(buffer) {
       const size = file?._data?.uncompressedSize ?? 0
       if (!file) { unplaced++; continue }
       if (size > MAX_IMAGE_READ) { row.image = { mime: IMAGE_TYPES[ext] || null, ext, bytes: size, tooLarge: true }; continue }
-      const data = await file.async('nodebuffer')
+      let data
+      try { data = await readBounded(file, MAX_IMAGE_READ) } catch (err) {
+        if (!(err instanceof ImportError)) throw err
+        row.image = { mime: IMAGE_TYPES[ext] || null, ext, bytes: MAX_IMAGE_READ + 1, tooLarge: true }; continue
+      }
       row.image = { mime: IMAGE_TYPES[ext] || null, ext, bytes: data.length, data }
     }
     if (unplaced) warnings.push(`${unplaced} picture${unplaced !== 1 ? 's' : ''} in the sheet could not be matched to a row.`)
@@ -264,9 +320,12 @@ const photoProblem = image => {
  * `existing` is a Map of lower-cased style number -> id of the style already in the master order.
  * `requireTechPackForNpd`: a customer's sheet, where a new product (NPD) row must carry its tech pack link.
  */
-export function analyseTable(table, { existing = new Map(), requireTechPackForNpd = false } = {}) {
+// `defaultPhase` ('replen' or 'development'): the stage of a row whose sheet has no Stage, or whose Stage cell is blank. The
+// Order replen and New product windows send it, since everything sent there is that stage (a brand's own sheet has no Stage).
+export function analyseTable(table, { existing = new Map(), requireTechPackForNpd = false, defaultPhase = null } = {}) {
+  if (!['replen', 'development'].includes(defaultPhase)) defaultPhase = null
   const { headerIndex, columns, ignored } = findColumns(table)
-  const missing = REQUIRED_COLUMNS.filter(k => columns[k] === undefined)
+  const missing = REQUIRED_COLUMNS.filter(k => columns[k] === undefined && !(k === 'stage' && defaultPhase))
   if (missing.length) throw new ImportError(`The sheet is missing these columns: ${missing.map(k => COLUMN_LABELS[k]).join(', ')}.`)
 
   const dataRows = table.rows.slice(headerIndex + 1).filter(r => r.image || r.values.some(v => tidy(v)))
@@ -289,11 +348,12 @@ export function analyseTable(table, { existing = new Map(), requireTechPackForNp
     // Stage: only the two that need no quantity or delivery date. A production style goes through Create Style.
     const stageText = cell(row, columns, 'stage')
     let phase = null
-    if (!stageText) problems.push('Stage is missing (NPD or Replen).')
+    if (!stageText && defaultPhase) phase = defaultPhase
+    else if (!stageText) problems.push('Stage is missing (NPD or Replen).')
     else {
       phase = STAGES.find(([re]) => re.test(stageText))?.[1] || null
       if (!phase) problems.push(/^production$/i.test(stageText)
-        ? 'Stage "Production" cannot be imported here, since a production style needs a quantity and delivery date. Use Create Style for it.'
+        ? 'Stage "Production" cannot be imported here, since a production style needs a quantity and delivery date. Tradio sets those up.'
         : `Stage "${stageText}" is not NPD or Replen.`)
     }
 

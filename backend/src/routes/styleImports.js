@@ -57,6 +57,9 @@ async function loadMasterOrder(masterOrderId, res, user) {
   return { mo, buyer }
 }
 
+/** The stage a window says a row without one is: 'replen' or 'development', else none. */
+const phaseOf = body => (['replen', 'development'].includes(body?.defaultPhase) ? body.defaultPhase : null)
+
 /** The file's rows, checked against the styles already in the master order. */
 /** `opts.requireTechPackForNpd`: a customer's sheet (see analyseTable). */
 export async function analyse(upload, mo, opts = {}) {
@@ -77,7 +80,7 @@ export async function createRows(analysis, { mo, buyer }) {
       // The server numbers each style, retrying if a number was just taken (the same as the Create Style form).
       for (let attempt = 0; attempt < 4; attempt++) {
         const id = await nextStyleId(buyer.code, row.payload.category, mo.season)
-        result = await validateAndCreateOrder({ ...row.payload, id, buyerId: String(mo.buyerId), season: mo.season || undefined, masterOrderId: mo._id, createdAt: getToday() })
+        result = await validateAndCreateOrder({ ...row.payload, id, buyerId: String(mo.buyerId), season: mo.season || undefined, masterOrderId: mo._id })
         if (result.ok || result.error !== 'Order ID already exists') break
       }
       if (result.ok) created.push({ row: row.row, id: result.order._id, styleNumber: row.styleNumber, product: row.product })
@@ -119,7 +122,7 @@ router.post('/:id/preview', readLimiter, async (req, res) => {
   try {
     const upload = await loadUpload(req, res); if (!upload) return
     const target = await loadMasterOrder(req.body?.masterOrderId, res, req.user); if (!target) return
-    const analysis = await analyse(upload, target.mo, { requireTechPackForNpd: req.user.role === 'buyer' })
+    const analysis = await analyse(upload, target.mo, { requireTechPackForNpd: req.user.role === 'buyer', defaultPhase: phaseOf(req.body) })
     res.json({
       uploadId: upload._id, filename: upload.filename,
       masterOrder: target.mo ? { id: target.mo._id, orderName: target.mo.orderName, season: target.mo.season || '', buyerCompany: target.buyer.company } : null,
@@ -138,7 +141,12 @@ router.post('/:id/commit', createLimiter, async (req, res) => {
     upload = await loadUpload(req, res); if (!upload) return
     const target = await loadMasterOrder(req.body?.masterOrderId, res, req.user); if (!target) return
     const { mo, buyer } = target
-    const analysis = await analyse(upload, mo, { requireTechPackForNpd: req.user.role === 'buyer' })
+    // One commit at a time per upload, taken before the sheet is checked: a double click or a repeated call must not make
+    // the styles (or the customer's request) twice, and a second commit must not act on a check made before the first.
+    const locked = await StyleImportUpload.findOneAndUpdate({ _id: upload._id, committing: { $ne: true } }, { $set: { committing: true } })
+    if (!locked) return fail(res, 409, await StyleRequest.exists({ kind: 'import', uploadId: upload._id }) ? 'This sheet was already sent for review.' : 'This import is already running.')
+    holdsLock = true
+    const analysis = await analyse(upload, mo, { requireTechPackForNpd: req.user.role === 'buyer', defaultPhase: phaseOf(req.body) })
     const { ok, errors, exists } = analysis.summary
     if (errors && req.body?.skipInvalid !== true)
       return fail(res, 409, `${errors} row${errors !== 1 ? 's have' : ' has'} problems, so nothing was created. Fix the sheet, or create only the ${ok} valid row${ok !== 1 ? 's' : ''}.`, { summary: analysis.summary })
@@ -150,17 +158,13 @@ router.post('/:id/commit', createLimiter, async (req, res) => {
       const skipInvalid = req.body?.skipInvalid === true
       const request = await StyleRequest.create({
         kind: 'import', buyerId: mo ? mo.buyerId : req.user.id, requestedBy: req.user.id, masterOrderId: mo?._id || null, filename: upload.filename, data: upload.data, uploadId: upload._id,
-        skipInvalid, summary: analysis.summary,
+        skipInvalid, summary: analysis.summary, defaultPhase: phaseOf(req.body),
       })
       await AuditLog.create({ byUser: req.user.id, action: 'Style Request Sent', detail: `${ok} style${ok !== 1 ? 's' : ''} from ${upload.filename}${mo ? ` under ${mo._id}` : ''}, by the customer, waiting for review` })
+      holdsLock = false   // sent: the upload stays taken, so it cannot be sent again
       await notify(await masterAdminIds(), { type: 'order', msg: `${buyer.company || 'A customer'} sent ${ok} style${ok !== 1 ? 's' : ''} for review${mo ? ` under ${mo.orderName}` : ''}. They are waiting for your approval.` })
       return res.status(202).json({ pending: true, requestId: request._id, masterOrderId: mo?._id || null, summary: analysis.summary })
     }
-
-    // One create at a time per upload: a double click or a repeated call must not make the styles twice.
-    const locked = await StyleImportUpload.findOneAndUpdate({ _id: upload._id, committing: { $ne: true } }, { $set: { committing: true } })
-    if (!locked) return fail(res, 409, 'This import is already running.')
-    holdsLock = true
 
     const { created, failed } = await createRows(analysis, { mo, buyer })
 
