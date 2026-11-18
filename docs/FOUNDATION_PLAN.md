@@ -104,7 +104,17 @@ GitHub Actions agrees: the last runs on `main` (`eeb3699`, plus the weekly sched
 | Local in-memory runner | `scripts/dev-local.mjs` | Shared dev tool. |
 | Demo range and its files | `db/demo*.js`, `demo-docs/`, `demo-images/` ... | Stays off main (CI guard). |
 
-### Decisions I need from you
+### Decisions (answered by Ankit, 18 Nov 2026)
+
+All five as proposed: **Q1** a standalone brand imports a sheet straight into its own master orders (the review queue
+is Live only). **Q2** a standalone brand creates replen and NPD styles itself (replen still only for delivered styles).
+**Q3** in standalone the brand locks a measurement sheet. **Q4** hidden factory names and the Live gate are Live only.
+**Q5** company codes are unique per Organization; the unique index on `users.code` goes.
+
+Also learned 18 Nov: the Atlas cluster is **M0 (free)**, so Live has **no Atlas backups**; the `mongodump` copy in
+`docs/RUNBOOK.md` 5.3 Path B is its only backup until that changes.
+
+The questions as asked:
 
 - **Q1. Import in standalone.** Should a standalone brand import a sheet straight into styles (my proposal), or should
   its factory approve, the way the master admin does in Live?
