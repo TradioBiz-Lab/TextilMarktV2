@@ -80,16 +80,19 @@ old page), for example `https://textilmarktv2-yaybylkx.onslate.in/?v=1518`, and 
 
 ## 4. Record what is live (one command after a good deploy)
 
+Run it inside `TextilMarktV1-main` (the `Tradio Consolidated` folder above it is not a git repository):
+
 ```bash
-git tag live-$(date +%Y-%m-%d)-1 && git push origin --tags
+T=live-$(date +%Y-%m-%d)-1 && git tag $T && git push origin $T
 ```
 
-Use `-2`, `-3` for a second deploy the same day. `git tag --list 'live-*'` shows the history. Tags are never moved
+Push the one tag by name, never `--tags`, which would also publish unrelated local tags (such as
+`archive/tna-2026-10`). Use `-2`, `-3` for a second deploy the same day. `git tag --list 'live-*'` shows the history. Tags are never moved
 or deleted; a new deploy gets a new tag.
 
 **The first tag.** No `live-*` tag exists yet. Live's backend was last deployed from `eeb3699` (3 Nov), if nothing has
 been deployed since; once you confirm that, tag it so there is something to roll back to:
-`git tag live-2026-11-03-1 eeb3699 && git push origin --tags`.
+`git tag live-2026-11-03-1 eeb3699 && git push origin live-2026-11-03-1` (inside `TextilMarktV1-main`).
 
 ---
 
