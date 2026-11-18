@@ -17,7 +17,8 @@ from their own directories.
 npm install
 npm run dev     # node --watch src/app.js — auto-restarts on file change
 npm start       # node src/app.js — no watch, used in production (Procfile/AppSail)
-npm test        # node --test over tests/**/*.test.js (node's built-in runner, no test framework)
+npm test        # node tests/run.mjs: node's built-in runner over every tests/**/*.test.js (works on Node 20,
+                # which cannot expand that pattern itself); `npm test -- tests/x.test.js` runs one file
 npm run test:watch
 
 # Frontend (React + Vite), from frontend/
@@ -28,6 +29,13 @@ npm run preview  # serve the production build locally
 ```
 
 No lint/format tooling (ESLint/Prettier) is configured in either package — don't assume `npm run lint` exists.
+
+**Node 20** everywhere: AppSail's managed runtimes stop at 20 (`backend/app-config.json` `stack: node20`), `.nvmrc`
+says 20, both `package.json` files require `>=20.19.0` (mongodb-memory-server's floor), and CI runs every suite on
+20 and 22. `GET /api/health` reports the running Node major as `node`.
+
+**Deploying, rolling back and backups are in `docs/RUNBOOK.md`.** Backend first, then push `main` for the frontend;
+tag what went live (`live-YYYY-MM-DD-N`). The tech foundation programme's plan is `docs/FOUNDATION_PLAN.md`.
 
 Backend requires a `.env` in `backend/` with at minimum `JWT_SECRET` and `MONGO_DB_URI` (see
 `REQUIRED_ENV` in `backend/src/app.js`); `FRONTEND_URL` is additionally required when
@@ -308,6 +316,9 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   the approval steps to the buyer. Only Tradio marks a step blocked. Materials and items routes carry an *explicit* buyer deny;
   do not remove it, as those checks previously excluded buyers only as a side effect of
   buyers never being assignable as `responsibleId`.
+- **Tests never read `backend/.env`.** `src/loadEnv.js` (app.js's first import) loads it only when `NODE_ENV` is not
+  `test`, and `tests/run.mjs` sets `NODE_ENV=test` for the whole run (`tests/loadEnv.test.js`). On a laptop that file
+  holds Live's connection string; in the hosted sandbox's folder it once switched the suite into standalone mode.
 - **Tests run against an ephemeral in-memory mongod, never Atlas.** `backend/tests/helpers/db.js`
   overwrites `MONGO_DB_URI` with a `mongodb-memory-server` instance and refuses to start if the
   resulting connection host isn't local — `clearDb()` wipes every collection, and dev and prod

@@ -20,9 +20,15 @@ permissions:
 
 jobs:
   backend:
-    name: Backend tests
+    # Node 20 is what AppSail runs (its managed runtimes stop at 20; see docs/RUNBOOK.md). 22 is tested too so
+    # moving up later is a known quantity. .nvmrc pins local work to 20.
+    name: Backend tests (Node ${{ matrix.node }})
     runs-on: ubuntu-22.04   # mongod binaries are published for this image
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
     defaults:
       run:
         working-directory: backend
@@ -34,7 +40,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - uses: actions/cache@v6
@@ -45,9 +51,13 @@ jobs:
       - run: npm test   # node's built-in runner against an in-memory mongod; never touches Atlas
 
   frontend:
-    name: Frontend tests and build
+    name: Frontend tests and build (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
     defaults:
       run:
         working-directory: frontend
@@ -55,7 +65,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
@@ -92,7 +102,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 20
       - name: Backend
         working-directory: backend
         run: npm audit --omit=dev --audit-level=high

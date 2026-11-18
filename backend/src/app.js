@@ -1,4 +1,4 @@
-import 'dotenv/config'
+import './loadEnv.js'
 import crypto from 'node:crypto'
 import express from 'express'
 import cors from 'cors'
@@ -196,6 +196,7 @@ app.get('/api/health', (_req, res) => {
     ok:     dbOk,
     db:     dbOk ? 'connected' : 'unavailable',
     uptime: Math.floor(process.uptime()),
+    node:   process.versions.node.split('.')[0],   // major only: how a deploy is checked against .nvmrc (docs/RUNBOOK.md)
   })
 })
 
