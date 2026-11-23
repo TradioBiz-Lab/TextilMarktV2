@@ -26,6 +26,7 @@ import { StyleRequest } from '../models/StyleRequest.js'
 import { materialDetails, newMaterialDetails } from '../lib/materialFields.js'
 import { normalizeLink, isHttpUrl, cleanLink } from '../lib/links.js'
 import { isoDay } from '../lib/masterOrderDetails.js'
+import { cleanSizeBreakup, sizeBreakupOut } from '../lib/sizeBreakup.js'
 
 // Categories are now free-text — no validation needed
 const MAX_PRODUCT_PHOTO_SIZE = 1024 * 1024 // 1MB raw - reference thumbnail, not full-res
@@ -215,6 +216,8 @@ const enrichOrder = (o, viewerMfrId = null, { forBuyer = false } = {}) => {
   baselineDelivery: o.baselineDelivery || null,
   deliveryVarianceDays: deliveryVarianceDays(o),
   colourways: (o.colourways || []).map(c => ({ name: c.name, code: c.code || '', hex: c.hex || '' })),
+  // Pieces per colour and size. Production information: every viewer of the style is sent it.
+  sizeBreakup: sizeBreakupOut(o.sizeBreakup),
   photos: (o.photos || []).map(p => ({ image: p.image, colourway: p.colourway || '' })),
   fabricDetails: (o.fabricDetails || []).map(f => ({ name: f.name, composition: f.composition || '', gsm: f.gsm || '', supplier: f.supplier || '' })),
   ecommerceLink: o.ecommerceLink || '',
@@ -3135,6 +3138,37 @@ router.post('/:id/delete', requireAuth, requireAdmin, async (req, res) => {
     })
 
     res.json({ ok: true, recordId: String(record._id) })
+  } catch (err) {
+    console.error('[orders]', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/orders/:id/size-breakup { sizes: [..], rows: [{ colour, qty: [..] }] } - the pieces of each colour in each size.
+// Tradio sets it on any style; a customer on its own. An empty grid clears it. A factory reads it, never writes it.
+router.post('/:id/size-breakup', requireAuth, updateLimiter, async (req, res) => {
+  try {
+    const { role } = req.user
+    if (role !== 'admin' && role !== 'buyer') return res.status(403).json({ error: 'Only Tradio or the customer sets the size breakup' })
+    const existing = await Order.findById(req.params.id, 'buyerId product totalQty sizeBreakup assignments.mfrId').lean()
+    // A customer is not told whether a style that is not its own exists.
+    if (!existing || (role === 'buyer' && String(existing.buyerId) !== String(req.user.id))) return res.status(404).json({ error: 'Order not found' })
+    const cleaned = cleanSizeBreakup(req.body)
+    if (cleaned.error) return res.status(400).json({ error: cleaned.error })
+    const value = cleaned.value ? { ...cleaned.value, updatedBy: req.user.id, updatedAt: new Date() } : null
+    const order = await Order.findByIdAndUpdate(existing._id, { $set: { sizeBreakup: value } }, { new: true })
+      .populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role').lean()
+    const before = sizeBreakupOut(existing.sizeBreakup); const after = sizeBreakupOut(value)
+    if (JSON.stringify(before && { sizes: before.sizes, rows: before.rows }) !== JSON.stringify(after && { sizes: after.sizes, rows: after.rows })) {
+      const who = role === 'buyer' ? 'the customer' : req.user.name
+      const what = after ? `${after.total} pieces in ${after.sizes.length} size${after.sizes.length === 1 ? '' : 's'} and ${after.rows.length} colour${after.rows.length === 1 ? '' : 's'}` : 'cleared'
+      await AuditLog.create({ byUser: req.user.id, action: 'Size Breakup Updated', detail: `${existing._id}: ${what}${before ? ` (was ${before.total} pieces)` : ''}, by ${who}` })
+      // The other side hears of it, and so does each factory making the style. Never the person who did it.
+      const msg = `${role === 'buyer' ? (req.user.company || 'The customer') : 'Tradio'} ${after ? (before ? 'changed' : 'added') : 'removed'} the size breakup of ${existing.product}`
+      const factories = (existing.assignments || []).map(a => a.mfrId).filter(Boolean)
+      await notify([...(role === 'buyer' ? await adminIds() : [existing.buyerId]), ...factories], { type: 'order', msg, orderId: existing._id }, { exceptUserId: req.user.id })
+    }
+    res.json(enrichFor(order, req))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
