@@ -7,6 +7,7 @@ import { Order }        from '../models/Order.js'
 import { User }        from '../models/User.js'
 import { AuditLog }    from '../models/AuditLog.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
+import { COORDINATOR_ROLE } from '../lib/coordinator.js'
 import { parseMasterOrderDetails, masterOrderDetailsOut } from '../lib/masterOrderDetails.js'
 import { nextMasterOrderId } from '../lib/ids.js'
 import { seasonError } from '../lib/seasons.js'
@@ -17,7 +18,8 @@ const router = Router()
 // date, the notes, and the price, currency and payment terms stay with Tradio and the customer. The ship-by date is the factory's deadline as well, so it stays.
 const detailsFor = (mo, viewer) => {
   const d = masterOrderDetailsOut(mo)
-  return viewer?.role === 'manufacturer' ? { ...d, poNumber: '', poDate: null, notes: '', currency: '', price: null, paymentTerms: '' } : d
+  // A coordinator sees what a factory sees: none of the customer's commercial terms.
+  return viewer?.role === 'manufacturer' || viewer?.role === COORDINATOR_ROLE ? { ...d, poNumber: '', poDate: null, notes: '', currency: '', price: null, paymentTerms: '' } : d
 }
 
 const enrich = (mo, viewer) => ({
@@ -42,6 +44,9 @@ router.get('/', requireAuth, async (req, res) => {
     if (req.user.role === 'buyer') filter = { buyerId: req.user.id }
     else if (req.user.role === 'manufacturer') {
       const ids = await Order.distinct('masterOrderId', { 'assignments.mfrId': req.user.id, masterOrderId: { $ne: null } })
+      filter = { _id: { $in: ids } }
+    } else if (req.user.role === COORDINATOR_ROLE) {
+      const ids = await Order.distinct('masterOrderId', { 'assignments.mfrId': { $in: req.user.factoryIds }, masterOrderId: { $ne: null } })
       filter = { _id: { $in: ids } }
     }
     const mos = await MasterOrder.find(filter)

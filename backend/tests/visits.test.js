@@ -33,6 +33,7 @@ describe('checking in', () => {
 
     const mine = await as(coord).get('/api/visits/mine')
     assert.equal(mine.body.open.id, res.body.id)
+    assert.equal(mine.body.open.factoryName, 'Neobrands', 'the bar on every screen names the factory')
     assert.deepEqual(mine.body.factories, [{ id: String(f._id), name: 'Neobrands', city: 'Jaipur', hasLocation: true, directionsUrl: 'https://www.google.com/maps?q=26.85,75.8' }])
     assert.equal(mine.body.today.length, 1)
   })

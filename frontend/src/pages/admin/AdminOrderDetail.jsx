@@ -21,6 +21,7 @@ import { useApp } from '../../context.jsx'
 import { normalizeCsvDate } from '../../csvDates.js'
 import { ReplenRequestModal } from '../../components/ReplenRequestModal.jsx'
 import { capsFor, canWriteStage, canSetAssignmentStatus, canManageStepLists } from '../../caps.js'
+import { CoordinatorOrderTop } from '../../components/CoordinatorOrderTop.jsx'
 import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
@@ -813,6 +814,8 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* A coordinator on the factory floor gets the essentials first; the full page follows, read only. */}
+        {caps.isCoord && <CoordinatorOrderTop order={order} factoryId={effectiveMid || initialMid} />}
         {/* ── Page header: identity + actions ── */}
         <FlexRow style={{ flexWrap: 'wrap' }} gap={10}>
           <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>

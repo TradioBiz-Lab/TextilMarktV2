@@ -77,7 +77,7 @@ router.get('/mine', coordinatorOnly, async (req, res) => {
           hasLocation: !!pin, directionsUrl: pin ? mapsUrlFor(pin.lat, pin.lng) : null,
         }
       }),
-      open: open ? visitOut(open) : null,
+      open: open ? visitOut({ ...open, factoryId: { _id: open.factoryId, company: factories.find(f => String(f._id) === String(open.factoryId))?.company ?? null } }) : null,
       today: today.map(visitOut),
     })
   } catch (err) { serverError(res, err) }

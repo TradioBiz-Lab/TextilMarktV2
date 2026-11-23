@@ -70,9 +70,10 @@ export function AppProvider({ children }) {
     try {
       // A coordinator has his own short list: the server refuses him everything else (lib/coordinator.js).
       if (user.role === 'coordinator') {
-        const [n, r, v] = await Promise.all([notificationsApi.list(), ribbonsApi.list(), visitsApi.mine()])
+        // The styles, papers and master orders are those at his factories: the server sends no others.
+        const [n, r, v, o, d, mo] = await Promise.all([notificationsApi.list(), ribbonsApi.list(), visitsApi.mine(), ordersApi.list(), documentsApi.list(), masterOrdersApi.list()])
         if (gen !== sessionGenRef.current) return
-        setNotifs(n); setServerRibbons(r); setVisits(v)
+        setNotifs(n); setServerRibbons(r); setVisits(v); setOrders(o); setDocs(d); setMasterOrders(mo)
         setUsers([{ id: user.id, name: user.name, company: user.company, email: user.email, role: user.role }])
         return
       }

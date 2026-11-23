@@ -18,6 +18,9 @@ import { StyleRequestsPage } from './pages/admin/StyleRequestsPage.jsx'
 import { PartnerDetailPage } from './pages/admin/PartnerDetailPage.jsx'
 import { VisitsPage } from './pages/admin/VisitsPage.jsx'
 import { FactoriesPage } from './pages/coordinator/FactoriesPage.jsx'
+import { FactoryOrdersPage } from './pages/coordinator/FactoryOrdersPage.jsx'
+import { FactoryProductsPage } from './pages/coordinator/FactoryProductsPage.jsx'
+import { masterOrderTarget } from './coordinatorStyles.js'
 import { capsFor } from './caps.js'
 import { LiveRefresh } from './components/LiveRefresh.jsx'
 import { KriyaaChatProvider } from './kriyaaChatContext.jsx'
@@ -91,6 +94,8 @@ function Inner() {
   const [reportsMo, setReportsMo] = useState(null)   // master order to open on the Reports page
   const [selMo, setSelMo] = useState(null)           // master order open on its own page
   const [selPartner, setSelPartner] = useState(null)  // partner open on its detail page (admins only)
+  const [selFactory, setSelFactory] = useState(null)  // a coordinator's factory, and the client open within it
+  const [selClient, setSelClient] = useState(null)
 
   // ── Navigation with real history ──
   // Every screen change is a snapshot pushed onto a stack that is mirrored into the browser's own
@@ -101,10 +106,10 @@ function Inner() {
   const [navKey, setNavKey] = useState(0) // changes with every history step, so each screen opens fresh from its own entry
   // Where a session starts: a coordinator at his factories, everyone else at the dashboard.
   const isCoord = user?.role === 'coordinator'
-  const BLANK = { view: isCoord ? 'factories' : 'dashboard', selOid: null, selMid: null, ordersStatus: null, ordersMo: null, ordersPhase: null, reportsMo: null, selPartner: null }
+  const BLANK = { view: isCoord ? 'factories' : 'dashboard', selOid: null, selMid: null, ordersStatus: null, ordersMo: null, ordersPhase: null, reportsMo: null, selPartner: null, selFactory: null, selClient: null }
   const apply = useCallback(s => {
     setView(s.view); setSelOid(s.selOid); setSelMid(s.selMid)
-    setOrdersStatus(s.ordersStatus); setOrdersMo(s.ordersMo); setOrdersPhase(s.ordersPhase ?? null); setOrdersNewStyle(!!s.ordersNewStyle); setUsersTab(s.usersTab ?? null); setReportsMo(s.reportsMo); setSelMo(s.selMo ?? null); setSelPartner(s.selPartner ?? null)
+    setOrdersStatus(s.ordersStatus); setOrdersMo(s.ordersMo); setOrdersPhase(s.ordersPhase ?? null); setOrdersNewStyle(!!s.ordersNewStyle); setUsersTab(s.usersTab ?? null); setReportsMo(s.reportsMo); setSelMo(s.selMo ?? null); setSelPartner(s.selPartner ?? null); setSelFactory(s.selFactory ?? null); setSelClient(s.selClient ?? null)
     setNavKey(k => k + 1)
   }, [])
   // The entry being shown, which holds what its screen remembers (navState.js) and how far it was scrolled.
@@ -180,6 +185,8 @@ function Inner() {
     reportsMo: v === 'reports' ? (params?.mo ?? null) : null,
     selMo: v === 'master_order' ? (params?.mo ?? null) : null,
     selPartner: v === 'partner_detail' ? (params?.id ?? null) : null,
+    selFactory: params?.factoryId ?? null,
+    selClient: params?.clientId ?? null,
   })
   const openMo = id => navTo('master_order', { mo: id })
   const openOrder = (id, mid) => {
@@ -193,7 +200,17 @@ function Inner() {
 
   const renderView = () => {
     // A coordinator has his own screens and no others (the server refuses him the rest).
-    if (isCoord) return <FactoriesPage />
+    if (isCoord) {
+      const home = { view: 'factories' }
+      const openFactory = factoryId => navTo('factory_orders', { factoryId })
+      if (view === 'factory_orders' && selFactory) return <FactoryOrdersPage factoryId={selFactory} onBack={() => goBack(home)} onOpenClient={clientId => navTo('factory_products', { factoryId: selFactory, clientId })} />
+      if (view === 'factory_products' && selFactory && selClient) return <FactoryProductsPage factoryId={selFactory} clientId={selClient} focusMo={selMo} onBack={() => goBack({ view: 'factory_orders', selFactory })} onOpen={id => openOrder(id, selFactory)} />
+      // A master order (from the search, or the button on a style's page) opens as its client's products at a factory.
+      const openMoForCoord = (moId, preferFactory) => { const to = masterOrderTarget(orders, moId, preferFactory); if (to) go({ view: 'factory_products', selFactory: to.factoryId, selClient: to.clientId, selMo: moId }) }
+      if (view === 'master_order' && selMo) { const to = masterOrderTarget(orders, selMo); if (to) return <FactoryProductsPage factoryId={to.factoryId} clientId={to.clientId} focusMo={selMo} onBack={() => goBack(home)} onOpen={id => openOrder(id, to.factoryId)} /> }
+      if (view === 'order_detail' && selOid) return <AdminOrderDetail orderId={selOid} initialMid={selMid} onOpenMo={moId => openMoForCoord(moId, selMid)} onOpenOrder={openOrder} onBack={() => goBack(home)} />
+      return <FactoriesPage onOpenFactory={openFactory} />
+    }
 
     // Action Items and the daily update are one page now — the same job, split
     // across two screens. Shared by all three roles; it scopes rows to what the
@@ -225,7 +242,7 @@ function Inner() {
 
   return (
     <KriyaaChatProvider>
-      {!isCoord && <LiveRefresh />}
+      <LiveRefresh />
       <Shell view={view} setView={navTo} onOpenOrder={openOrder}>
         <NavEntryContext.Provider value={currentEntry}>
           <Fragment key={navKey}>{renderView()}</Fragment>

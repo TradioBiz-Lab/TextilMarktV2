@@ -16,7 +16,21 @@ export const COORDINATOR_ALLOWED = [
   ['GET', /^\/api\/visits\/mine$/],
   ['POST', /^\/api\/visits\/check-in$/],
   ['POST', new RegExp(`^/api/visits/${ID}/check-out$`)],
+  // Phase 2: the styles at his factories, read only. Each of these routes scopes what it returns to req.user.factoryIds.
+  ['GET', /^\/api\/orders$/],
+  ['GET', new RegExp(`^/api/orders/${ID}$`)],
+  ['GET', /^\/api\/documents$/],
+  ['GET', new RegExp(`^/api/documents/${ID}/(data|versions)$`)],
+  ['GET', /^\/api\/master-orders$/],
+  ['GET', /^\/api\/floor\/feed$/],
 ]
+
+/**
+ * Whose splits of a style a viewer is sent: a factory its own, a coordinator those at his factories, anyone else all
+ * (null). The value goes to enrichOrder, which drops every other split.
+ */
+export const viewerSplits = user => (user?.role === 'manufacturer' ? String(user.id)
+  : user?.role === COORDINATOR_ROLE ? (user.factoryIds || []).map(String) : null)
 
 /** The path as the gate compares it: no query string, no trailing slash. */
 export const gatePath = url => String(url || '').split('?')[0].replace(/\/+$/, '')

@@ -8,7 +8,8 @@
 //                evidence; cannot create/edit/delete orders or move planned dates
 //   buyer        read-only, except a stage assigned to them (usually an approval):
 //                they may post notes on it and set its status
-//   coordinator  Tradio's Ops & QC coordinator: checks in and out at his allocated factories and nothing else here
+//   coordinator  Tradio's Ops & QC coordinator: checks in and out at his allocated factories and reads the styles
+//                made there (read only: no control on these screens is his)
 //                (the server refuses every request not on its list, backend/src/lib/coordinator.js)
 export function capsFor(user) {
   const role = user?.role
@@ -29,7 +30,7 @@ export function capsFor(user) {
     uploadProductPhoto: isAdmin || isBuyer,   // a customer on its own styles (POST /orders/:id/photos)
     uploadReferenceDocs: isAdmin || isBuyer,   // tech pack, measurements, pattern, lab dip
     // The customer's PO and Tradio's invoice: Tradio and the customer only, never a factory (the server enforces it).
-    seePoInvoice: !isMfr,
+    seePoInvoice: !isMfr && !isCoord,   // a coordinator sees what a factory sees: no commercial papers
     uploadPoInvoice: isAdmin || isBuyer,        // the customer uploads its PO; only Tradio issues invoices (uploadInvoices)
     uploadInvoices: isAdmin,
     uploadDeliveryDocs: isAdmin || isMfr,       // packing lists, carton stickers: Tradio and the factory that ships

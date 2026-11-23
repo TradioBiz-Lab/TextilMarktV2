@@ -3,6 +3,7 @@ import mongoose from 'mongoose'
 import rateLimit from 'express-rate-limit'
 import { Document, Order, User, Notification, AuditLog, MasterOrder } from '../db/index.js'
 import { requireAuth, requireAdmin, requireMaster } from '../middleware/auth.js'
+import { COORDINATOR_ROLE } from '../lib/coordinator.js'
 import { MEASUREMENT_LABELS, MEASUREMENT_LABEL_NAMES } from '../models/Document.js'
 import { sendEmail, emailBuyerDocumentReceived } from '../lib/email.js'
 import { notify, adminIds } from '../lib/notify.js'
@@ -194,6 +195,17 @@ router.get('/', requireAuth, async (req, res) => {
         ],
       }).sort({ createdAt: -1 })).lean()
 
+    } else if (req.user.role === COORDINATOR_ROLE) {
+      // A coordinator: the papers of the styles at his factories (tech packs, measurements and the like, which carry no
+      // factory) and those factories' own files. Never another factory's, never a commercial paper.
+      const ids = req.user.factoryIds
+      const orderIds = (await Order.find({ 'assignments.mfrId': { $in: ids } }, { _id: 1 }).lean()).map(o => o._id)
+      docs = await populateUploader(Document.find({
+        isActive: true,
+        type: { $nin: HIDDEN_FROM_FACTORIES },
+        $or: [{ mfrId: { $in: ids } }, { orderId: { $in: orderIds }, mfrId: null }],
+      }).sort({ createdAt: -1 })).lean()
+
     } else {
       const mfrOrders = await Order.find({ 'assignments.mfrId': req.user.id }, { _id: 1 }).lean()
       const orderIds  = mfrOrders.map(o => o._id)
@@ -327,6 +339,15 @@ async function readError(user, doc) {
                        (!doc.orderId && doc.mfrId && mfrIds.includes(doc.mfrId.toString()))
       if (!allowed) return { status: 403, error: 'Access denied' }
     }
+  }
+
+  if (user.role === COORDINATOR_ROLE) {
+    if (HIDDEN_FROM_FACTORIES.includes(doc.type)) return { status: 403, error: 'Access denied' }
+    const ids = user.factoryIds || []
+    // One of his factories' own files, or a general paper (no factory) of a style at one of his factories.
+    if (doc.mfrId) return ids.includes(doc.mfrId.toString()) ? null : { status: 403, error: 'Access denied' }
+    const inScope = doc.orderId && await Order.exists({ _id: doc.orderId, 'assignments.mfrId': { $in: ids } })
+    return inScope ? null : { status: 403, error: 'Access denied' }
   }
 
   if (user.role === 'manufacturer') {

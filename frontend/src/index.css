@@ -294,6 +294,8 @@ table { border-collapse: collapse; width: 100%; }
   .kriyaa-fab { width: 44px !important; height: 44px !important; bottom: 14px !important; right: 14px !important; }
   .main-content { padding-bottom: 72px; }
   .global-search { margin: 0 8px !important; }
+  /* A coordinator's bar also carries the language button: the logo keeps only its mark so the search has room. */
+  .coord-header .header-logo .brand-text { display: none !important; }
   .global-search:focus-within { position: absolute !important; left: 12px; right: 12px; top: 9px; max-width: none !important; margin: 0 !important; z-index: 500; }
 }
 

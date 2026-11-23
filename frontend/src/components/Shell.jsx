@@ -146,7 +146,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
 
         <nav style={{ flex: 1, padding: sidebarCollapsed ? '8px 4px' : '8px', display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto' }}>
           {nav.map(n => {
-            const active = view === n.id || (n.id === 'orders' && (view === 'order_detail' || view === 'submit_req')) || (n.id === 'partners' && view === 'partner_detail')
+            const active = view === n.id || (n.id === 'factories' && isCoord) || (n.id === 'orders' && (view === 'order_detail' || view === 'submit_req')) || (n.id === 'partners' && view === 'partner_detail')
             const Icon = n.icon
             return (
               <button key={n.id} onClick={() => handleNav(n.id)} title={sidebarCollapsed ? n.label : undefined}
@@ -165,6 +165,12 @@ export function Shell({ view, setView, children, onOpenOrder }) {
           {!sidebarCollapsed && <span style={{ fontSize: 11, fontWeight: 600 }}>Collapse</span>}
         </button>
 
+        {isCoord && !sidebarCollapsed && (
+          <button type="button" onClick={logout}
+            style={{ margin: '0 8px 8px', minHeight: 44, borderRadius: 9, border: `1px solid ${T.sidebarBorder}`, background: 'transparent', color: '#e2e8f0', fontSize: 14, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            <LogOut size={16} /> Sign out
+          </button>
+        )}
         {!sidebarCollapsed && (
           <div style={{ padding: '12px 14px', borderTop: `1px solid ${T.sidebarBorder}` }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
@@ -187,7 +193,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
       <div onClick={collapseOnPageClick} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
 
         {/* Header */}
-        <header className="shell-header" style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, height: 54, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, position: 'relative', zIndex: 300 }}>
+        <header className={`shell-header${isCoord ? ' coord-header' : ''}`} style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, height: 54, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, position: 'relative', zIndex: 300 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {/* Hamburger for mobile */}
             <button className="hamburger-btn" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
@@ -195,7 +201,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
             </button>
             <div className="header-logo"><Logo size={28} /></div>
           </div>
-          {!isCoord && <GlobalSearch onOpenOrder={onOpenOrder} onOpenMo={id => setView('master_order', { mo: id })} />}
+          <GlobalSearch onOpenOrder={onOpenOrder} onOpenMo={id => setView('master_order', { mo: id })} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {/* The coordinator's screens come in Hindi and English; the button names the other language. */}
             {isCoord && (
@@ -218,7 +224,8 @@ export function Shell({ view, setView, children, onOpenOrder }) {
                 <div style={{ fontSize: 10, color: T.textLight }}>{user?.role === 'admin' ? (user?.adminType === 'master' ? 'Master Admin' : 'Admin User') : isCoord ? 'Ops & QC Coordinator' : user?.role} · {user?.code}</div>
               </div>
             </div>
-            <Btn variant="secondary" size="sm" onClick={logout}>Sign out</Btn>
+            {/* On a coordinator's phone the bar has no room for it: Sign out is in the menu instead. */}
+            {!isCoord && <Btn variant="secondary" size="sm" onClick={logout}>Sign out</Btn>}
           </div>
         </header>
 

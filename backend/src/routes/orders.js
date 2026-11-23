@@ -72,6 +72,7 @@ const mainPhotoFields = photos => {
   return { imageDataUrl: main && main.startsWith('data:') ? main : null, imageUrl: main && !main.startsWith('data:') ? main : null }
 }
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
+import { COORDINATOR_ROLE, viewerSplits } from '../lib/coordinator.js'
 import { ORDER_PHASES, isPreProduction } from '../lib/phases.js'
 // Email triggers for orders are intentionally suppressed — order activity is portal-notifications only
 
@@ -199,8 +200,10 @@ const enrichOrder = (o, viewerMfrId = null, { forBuyer = false } = {}) => {
   const buyer = o.buyerId && typeof o.buyerId === 'object' && o.buyerId.company ? o.buyerId : null
   // Manufacturers only see their own assignment — not competitors' qty/status/notes
   const allAssignments = o.assignments || []
-  const visibleAssignments = viewerMfrId
-    ? allAssignments.filter(a => (a.mfrId?._id?.toString() ?? a.mfrId?.toString()) === viewerMfrId)
+  // viewerMfrId is one factory (a manufacturer), a list (a coordinator's factories; an empty list shows no split), or null for all.
+  const viewers = viewerMfrId == null ? null : [].concat(viewerMfrId).map(String)
+  const visibleAssignments = viewers
+    ? allAssignments.filter(a => viewers.includes(a.mfrId?._id?.toString() ?? a.mfrId?.toString()))
     : allAssignments
   return {
   id: o._id, masterOrderId: o.masterOrderId || null,
@@ -287,7 +290,7 @@ const enrichOrder = (o, viewerMfrId = null, { forBuyer = false } = {}) => {
 // Every response that carries an order must be scoped to the caller: a manufacturer
 // only ever sees its own assignment (same boundary as the read routes above).
 const enrichFor = (order, req) =>
-  enrichOrder(order, req.user.role === 'manufacturer' ? String(req.user.id) : null, { forBuyer: req.user.role === 'buyer' })
+  enrichOrder(order, viewerSplits(req.user), { forBuyer: req.user.role === 'buyer' })
 
 // A follow-up write that must happen once the main one has (re-pointing document links after
 // a stage moves) is retried briefly, and failure is logged loudly rather than swallowed.
@@ -327,11 +330,12 @@ router.get('/', requireAuth, async (req, res) => {
     let query
     if (req.user.role === 'admin')        query = Order.find()
     else if (req.user.role === 'buyer')   query = Order.find({ buyerId: req.user.id })
+    // A coordinator: the styles at the factories allocated to him, and only those factories' splits of them.
+    else if (req.user.role === COORDINATOR_ROLE) query = Order.find({ 'assignments.mfrId': { $in: req.user.factoryIds } })
     else                                  query = Order.find({ 'assignments.mfrId': req.user.id })
 
     const orders = await query.populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role').sort({ createdAt: -1 }).lean()
-    const viewerMfrId = req.user.role === 'manufacturer' ? req.user.id : null
-    res.json(orders.map(o => enrichOrder(o, viewerMfrId, { forBuyer: req.user.role === 'buyer' })))
+    res.json(orders.map(o => enrichFor(o, req)))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -356,8 +360,12 @@ router.get('/:id', requireAuth, async (req, res) => {
       if (!assigned) return res.status(403).json({ error: 'Forbidden' })
     }
 
-    const viewerMfrId = req.user.role === 'manufacturer' ? req.user.id : null
-    res.json(enrichOrder(order, viewerMfrId, { forBuyer: req.user.role === 'buyer' }))
+    if (req.user.role === COORDINATOR_ROLE) {
+      const atHisFactory = (order.assignments || []).some(a => req.user.factoryIds.includes(a.mfrId?._id?.toString() ?? a.mfrId?.toString()))
+      if (!atHisFactory) return res.status(403).json({ error: 'Forbidden' })
+    }
+
+    res.json(enrichFor(order, req))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
