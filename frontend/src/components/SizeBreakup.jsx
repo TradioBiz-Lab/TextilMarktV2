@@ -6,39 +6,43 @@ import { useApp } from '../context.jsx'
 import { capsFor } from '../caps.js'
 import { breakupTotals, editorGrid, editorPayload, fitRows, parseSizes, totalNote } from '../sizeBreakup.js'
 
-const cell = { padding: '7px 10px', fontSize: 13, textAlign: 'right', borderTop: `1px solid ${T.border}`, whiteSpace: 'nowrap' }
-const head = { padding: '7px 10px', fontSize: 11, fontWeight: 800, color: T.textMuted, textAlign: 'right', whiteSpace: 'nowrap', background: '#f8fafc' }
+const cellBase = { padding: '7px 10px', fontSize: 13, textAlign: 'right', borderTop: `1px solid ${T.border}`, whiteSpace: 'nowrap' }
+const headBase = { padding: '7px 10px', fontSize: 11, fontWeight: 800, color: T.textMuted, textAlign: 'right', whiteSpace: 'nowrap', background: '#f8fafc' }
+const cell = cellBase; const head = headBase
 
 /**
  * The grid itself, read only: colours down the side, sizes across, totals on both edges. `large` is for a phone on the
- * factory floor (the coordinator's view): bigger figures, same grid.
+ * factory floor (the coordinator's view): bigger figures, same grid. `labels` are its three words, for another language.
  */
-export function SizeBreakupTable({ breakup, large = false }) {
+export function SizeBreakupTable({ breakup, large = false, labels = { colour: 'Colour', total: 'Total', pieces: 'Pieces' } }) {
   if (!breakup?.sizes?.length) return null
   const { bySize, byColour, total } = breakupTotals(breakup)
   const fs = large ? 15 : 13
   const named = breakup.rows.some(r => r.colour)
+  // On a phone the grid is tight side to side, so five sizes and the total fit a narrow screen without scrolling.
+  const pad = large ? { padding: '8px 5px' } : {}
+  const cell = { ...cellBase, ...pad }; const head = { ...headBase, ...pad }
   return (
     <div className="table-scroll" style={{ border: `1px solid ${T.border}`, borderRadius: 10, background: '#fff' }}>
       <table style={{ borderCollapse: 'collapse', width: '100%' }}>
         <thead>
           <tr>
-            <th style={{ ...head, textAlign: 'left' }}>{named ? 'Colour' : ''}</th>
+            <th style={{ ...head, textAlign: 'left' }}>{named ? labels.colour : ''}</th>
             {breakup.sizes.map(s => <th key={s} style={{ ...head, fontSize: large ? 13 : 11 }}>{s}</th>)}
-            <th style={{ ...head, fontSize: large ? 13 : 11 }}>Total</th>
+            <th style={{ ...head, fontSize: large ? 13 : 11 }}>{labels.total}</th>
           </tr>
         </thead>
         <tbody>
           {breakup.rows.map((r, ri) => (
             <tr key={ri}>
-              <td style={{ ...cell, fontSize: fs, textAlign: 'left', fontWeight: 700, color: T.text, whiteSpace: 'normal' }}>{r.colour || 'Pieces'}</td>
+              <td style={{ ...cell, fontSize: fs, textAlign: 'left', fontWeight: 700, color: T.text, whiteSpace: 'normal', ...(large ? { paddingLeft: 10, overflowWrap: 'break-word' } : {}) }}>{r.colour || labels.pieces}</td>
               {breakup.sizes.map((_, i) => <td key={i} style={{ ...cell, fontSize: fs, color: r.qty[i] ? T.text : T.textLight }}>{r.qty[i] || 0}</td>)}
               <td style={{ ...cell, fontSize: fs, fontWeight: 800, color: T.text }}>{byColour[ri]}</td>
             </tr>
           ))}
           {breakup.rows.length > 1 && (
             <tr style={{ background: '#f8fafc' }}>
-              <td style={{ ...cell, fontSize: fs, textAlign: 'left', fontWeight: 800, color: T.text }}>Total</td>
+              <td style={{ ...cell, fontSize: fs, textAlign: 'left', fontWeight: 800, color: T.text }}>{labels.total}</td>
               {bySize.map((n, i) => <td key={i} style={{ ...cell, fontSize: fs, fontWeight: 800, color: T.text }}>{n}</td>)}
               <td style={{ ...cell, fontSize: fs, fontWeight: 800, color: T.primaryDeep }}>{total}</td>
             </tr>
