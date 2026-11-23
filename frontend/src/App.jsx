@@ -16,6 +16,8 @@ import { ReviewQueuePage } from './pages/admin/ReviewQueuePage.jsx'
 import { PartnersPage } from './pages/admin/PartnersPage.jsx'
 import { StyleRequestsPage } from './pages/admin/StyleRequestsPage.jsx'
 import { PartnerDetailPage } from './pages/admin/PartnerDetailPage.jsx'
+import { VisitsPage } from './pages/admin/VisitsPage.jsx'
+import { FactoriesPage } from './pages/coordinator/FactoriesPage.jsx'
 import { capsFor } from './caps.js'
 import { LiveRefresh } from './components/LiveRefresh.jsx'
 import { KriyaaChatProvider } from './kriyaaChatContext.jsx'
@@ -97,7 +99,9 @@ function Inner() {
   // order's master order, so coming back re-opens (and scrolls to) the group you were in.
   const hist = useRef({ stack: [], idx: -1 })
   const [navKey, setNavKey] = useState(0) // changes with every history step, so each screen opens fresh from its own entry
-  const BLANK = { view: 'dashboard', selOid: null, selMid: null, ordersStatus: null, ordersMo: null, ordersPhase: null, reportsMo: null, selPartner: null }
+  // Where a session starts: a coordinator at his factories, everyone else at the dashboard.
+  const isCoord = user?.role === 'coordinator'
+  const BLANK = { view: isCoord ? 'factories' : 'dashboard', selOid: null, selMid: null, ordersStatus: null, ordersMo: null, ordersPhase: null, reportsMo: null, selPartner: null }
   const apply = useCallback(s => {
     setView(s.view); setSelOid(s.selOid); setSelMid(s.selMid)
     setOrdersStatus(s.ordersStatus); setOrdersMo(s.ordersMo); setOrdersPhase(s.ordersPhase ?? null); setOrdersNewStyle(!!s.ordersNewStyle); setUsersTab(s.usersTab ?? null); setReportsMo(s.reportsMo); setSelMo(s.selMo ?? null); setSelPartner(s.selPartner ?? null)
@@ -188,6 +192,9 @@ function Inner() {
   }
 
   const renderView = () => {
+    // A coordinator has his own screens and no others (the server refuses him the rest).
+    if (isCoord) return <FactoriesPage />
+
     // Action Items and the daily update are one page now — the same job, split
     // across two screens. Shared by all three roles; it scopes rows to what the
     // viewer may act on, and the server enforces the same boundary.
@@ -210,6 +217,7 @@ function Inner() {
       if (view === 'users' && user.adminType === 'master') return <UserSetup key={usersTab || 'all'} initialTab={usersTab} />
       // The Partner Directory is admin-only sourcing data; capsFor gates it here and the server refuses every other role.
       if (view === 'partners' && capsFor(user).seePartners) return <PartnersPage onNavigate={navTo} />
+      if (view === 'visits' && capsFor(user).seeVisits) return <VisitsPage onNavigate={navTo} />
       if (view === 'partner_detail' && selPartner && capsFor(user).seePartners) return <PartnerDetailPage key={selPartner} partnerId={selPartner} onNavigate={navTo} onBack={() => goBack({ view: 'partners' })} />
     }
     return <div style={{ textAlign: 'center', padding: '60px', color: T.textLight }}>Page not found</div>
@@ -217,7 +225,7 @@ function Inner() {
 
   return (
     <KriyaaChatProvider>
-      <LiveRefresh />
+      {!isCoord && <LiveRefresh />}
       <Shell view={view} setView={navTo} onOpenOrder={openOrder}>
         <NavEntryContext.Provider value={currentEntry}>
           <Fragment key={navKey}>{renderView()}</Fragment>

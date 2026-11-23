@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken'
 import { User } from '../db/index.js'
 import { requestContext } from '../lib/requestContext.js'
+import { COORDINATOR_ROLE, coordinatorMay } from '../lib/coordinator.js'
 
 // ── NoSQL injection protection: strip $ keys from req.body ──
 function sanitizeValue(val) {
@@ -43,7 +44,7 @@ export async function requireAuth(req, res, next) {
 
   // Confirm user still exists, is active, and token was issued after last password change
   try {
-    const dbUser = await User.findById(req.user.id, 'isActive passwordChangedAt role adminType company name email code mustChangePw').lean()
+    const dbUser = await User.findById(req.user.id, 'isActive passwordChangedAt role adminType company name email code mustChangePw assignedFactories language').lean()
     if (!dbUser || !dbUser.isActive) return res.status(401).json({ error: 'Unauthorized' })
     if (dbUser.passwordChangedAt && req.user.iat) {
       if (req.user.iat * 1000 < dbUser.passwordChangedAt.getTime()) {
@@ -60,6 +61,9 @@ export async function requireAuth(req, res, next) {
     req.user.email = dbUser.email
     req.user.code = dbUser.code
     req.user.mustChangePw = !!dbUser.mustChangePw
+    req.user.language = dbUser.language || 'hi'
+    // A coordinator's factories, read fresh on every request: taking one away takes its styles away at once.
+    req.user.factoryIds = dbUser.role === COORDINATOR_ROLE ? (dbUser.assignedFactories || []).map(String) : []
   } catch {
     return res.status(500).json({ error: 'Server error' })
   }
@@ -68,6 +72,12 @@ export async function requireAuth(req, res, next) {
   // only by the frontend, so the full API stayed open to anyone who skipped that screen.
   if (req.user.mustChangePw && !MUST_CHANGE_PW_ALLOWED.has(req.originalUrl.split('?')[0].replace(/\/+$/, ''))) {
     return res.status(403).json({ error: 'You must change your temporary password first', code: 'MUST_CHANGE_PW' })
+  }
+
+  // A coordinator may make only the requests on its list (lib/coordinator.js): everything else is refused here, before
+  // any route's own checks, most of which would let an unknown role through as if it were an admin.
+  if (req.user.role === COORDINATOR_ROLE && !coordinatorMay(req.method, req.originalUrl)) {
+    return res.status(403).json({ error: 'This is not available to a coordinator account', code: 'COORDINATOR_NOT_ALLOWED' })
   }
 
   // Everything after this point (handlers, model hooks) can see who is really acting.

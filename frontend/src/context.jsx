@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { authApi, ordersApi, documentsApi, usersApi, notificationsApi, auditApi, ribbonsApi, masterOrdersApi, actionItemsApi, partnerDirectoryApi, setStoredToken, setAuthToken } from './api.js'
+import { authApi, ordersApi, documentsApi, usersApi, notificationsApi, auditApi, ribbonsApi, masterOrdersApi, actionItemsApi, partnerDirectoryApi, visitsApi, setStoredToken, setAuthToken } from './api.js'
+import { getPosition } from './geolocate.js'
 import { emptyQuery } from './partners.js'
 import { isExpiringSoon, isExpired, dayNumber, getToday } from './constants.js'
 
@@ -27,6 +28,8 @@ export function AppProvider({ children }) {
   const [serverRibbons, setServerRibbons] = useState([])
   const [masterOrders, setMasterOrders] = useState([])
   const [actionItems, setActionItems] = useState([])
+  // A coordinator's factories, his open visit and today's visits (GET /visits/mine). Null for every other role.
+  const [visits, setVisits]           = useState(null)
   const [loading, setLoading]         = useState(false)
   const [loadError, setLoadError]     = useState(false)
   // The Partner Directory (admins only): loaded when its page opens, not with the rest at sign-in. The list page's
@@ -65,6 +68,14 @@ export function AppProvider({ children }) {
     setLoading(true)
     setLoadError(false)
     try {
+      // A coordinator has his own short list: the server refuses him everything else (lib/coordinator.js).
+      if (user.role === 'coordinator') {
+        const [n, r, v] = await Promise.all([notificationsApi.list(), ribbonsApi.list(), visitsApi.mine()])
+        if (gen !== sessionGenRef.current) return
+        setNotifs(n); setServerRibbons(r); setVisits(v)
+        setUsers([{ id: user.id, name: user.name, company: user.company, email: user.email, role: user.role }])
+        return
+      }
       // Single batch: fetch everything in parallel
       const isAdmin = user.role === 'admin'
       const promises = [
@@ -131,6 +142,7 @@ export function AppProvider({ children }) {
     setServerRibbons([])
     setMasterOrders([])
     setActionItems([])
+    setVisits(null)
     docDataCache.current = {}
     clearPartnerState()
   }, [clearPartnerState])
@@ -487,6 +499,31 @@ export function AppProvider({ children }) {
     setOrders(p => p.filter(o => o.id !== id))
   }, [])
 
+  // ── Factory visits (coordinator) ──
+  const refreshVisits = useCallback(async () => {
+    const v = await visitsApi.mine()
+    setVisits(v)
+    return v
+  }, [])
+  // Both taps read the phone's position first; with none there is no check-in (the server refuses it too).
+  const checkIn = useCallback(async factoryId => {
+    const point = await getPosition()
+    const visit = await visitsApi.checkIn(factoryId, point)
+    await refreshVisits()
+    return visit
+  }, [refreshVisits])
+  const checkOut = useCallback(async visitId => {
+    const point = await getPosition()
+    const visit = await visitsApi.checkOut(visitId, point)
+    await refreshVisits()
+    return visit
+  }, [refreshVisits])
+  // The language of a coordinator's screens, kept on his account.
+  const setLanguage = useCallback(async language => {
+    setCurrentUser(u => (u ? { ...u, language } : u))
+    try { await authApi.setLanguage(language) } catch { /* the screen has already switched; it is asked again next time */ }
+  }, [])
+
   const createUser = useCallback(async (data) => {
     const user = await usersApi.create(data)
     setUsers(p => [...p, user])
@@ -735,7 +772,7 @@ export function AppProvider({ children }) {
   return (
     <AppContext.Provider value={{
       currentUser, users, orders, ordersAt, docs, notifs, audit, auditTotal, loading, loadError, unread, ribbons, masterOrders,
-      actionItems,
+      actionItems, visits, refreshVisits, checkIn, checkOut, setLanguage,
       login, logout,
       updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
       bulkUpdateStages, addStageItem, updateStageItem, removeStageItem,

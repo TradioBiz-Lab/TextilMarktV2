@@ -3,7 +3,7 @@ import mongoose from 'mongoose'
 const userSchema = new mongoose.Schema({
   email:        { type: String, required: true, unique: true, lowercase: true, trim: true },
   passwordHash: { type: String, required: true },
-  role:         { type: String, required: true, enum: ['admin', 'buyer', 'manufacturer'] },
+  role:         { type: String, required: true, enum: ['admin', 'buyer', 'manufacturer', 'coordinator'] },
   adminType:    { type: String, enum: ['master', 'user'], default: null },
   company:      { type: String, required: true, trim: true },
   name:         { type: String, required: true, trim: true },
@@ -15,6 +15,8 @@ const userSchema = new mongoose.Schema({
   isActive:     { type: Boolean, default: true },
   // A customer's own seasons (for example H1, H2); empty means the standard SS/FW list (lib/seasons.js).
   seasons:      { type: [String], default: undefined },
+  // An Ops & QC coordinator's factories (manufacturer accounts): the only ones he can check in at or see. Empty for every other role.
+  assignedFactories: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], default: undefined },
   mustChangePw:      { type: Boolean, default: false },
   passwordChangedAt: { type: Date, default: null },
   // Self-service reset (POST /api/auth/forgot-password): only a hash of the emailed token is kept, and it expires.

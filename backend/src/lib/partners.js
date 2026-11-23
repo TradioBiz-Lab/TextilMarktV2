@@ -1,4 +1,5 @@
 import { PARTNER_TYPES, PARTNER_CLUSTERS, PARTNER_STATUSES, PARTNER_PRIORITIES, PARTNER_CATEGORIES, LEGACY_CLUSTERS } from '../models/Manufacturer.js'
+import { parseMapsLocation } from './geo.js'
 
 // Validation, normalisation and query parsing for the Partner Directory (models/Manufacturer.js,
 // routes/manufacturers.js). Everything that reaches a partner document or a Mongo filter goes through here, so
@@ -334,6 +335,12 @@ export function cleanPartnerInput(body, { partial = false, defaultType = null } 
     }
   }
 
+  // Where the unit is: a Google Maps link or "lat, lng". Empty clears it.
+  if (has('mapsLocation')) {
+    const loc = parseMapsLocation(blank(body.mapsLocation) ? '' : body.mapsLocation)
+    if (loc?.error) fail(loc.error); else data.geo = loc
+  }
+
   // Pipeline
   if (has('status')) {
     if (!PARTNER_STATUSES.includes(body.status)) fail('Invalid status'); else data.status = body.status
@@ -545,6 +552,7 @@ export function toPartner(p) {
     status: p.status || 'new', priority: p.priority || 'C',
     source: p.source || '', keywords: p.keywords || [], notes: p.notes || '', isActive: p.isActive !== false, isLive: !!p.isLive,
     imageUrl: p.imageUrl || '', hasUpload: !!p.imageUploadedAt, logoUrl: p.logoUrl || '',
+    geo: p.geo && p.geo.lat != null && p.geo.lng != null ? { lat: p.geo.lat, lng: p.geo.lng, mapsUrl: p.geo.mapsUrl || '' } : null,
     linkedUserId: p.linkedUserId ? String(p.linkedUserId) : null, onPlatform: !!p.linkedUserId,
     createdBy: p.createdBy ? String(p.createdBy) : null, updatedBy: p.updatedBy ? String(p.updatedBy) : null,
     createdAt: p.createdAt, updatedAt: p.updatedAt,

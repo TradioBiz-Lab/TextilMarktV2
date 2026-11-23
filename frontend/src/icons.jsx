@@ -79,6 +79,9 @@ import {
   ShoppingBag as P_ShoppingBag,
   ShoppingCart as P_ShoppingCart,
   SignOut as P_SignOut,
+  SignIn as P_SignIn,
+  NavigationArrow as P_NavigationArrow,
+  Translate as P_Translate,
   Siren as P_Siren,
   SlidersHorizontal as P_SlidersHorizontal,
   Sparkle as P_Sparkle,
@@ -214,6 +217,9 @@ export const List = make(P_ListBullets, 'List')
 export const ListChecks = make(P_ListChecks, 'ListChecks')
 export const ListTodo = make(P_ListBullets, 'ListTodo')
 export const LogOut = make(P_SignOut, 'LogOut')
+export const LogIn = make(P_SignIn, 'LogIn')
+export const Navigation = make(P_NavigationArrow, 'Navigation')
+export const Languages = make(P_Translate, 'Languages')
 export const Mail = make(P_Envelope, 'Mail')
 export const Megaphone = make(P_Megaphone, 'Megaphone')
 export const Menu = make(P_List, 'Menu')

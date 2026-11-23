@@ -62,6 +62,7 @@ export const authApi = {
   changePassword: (currentPassword, newPassword) => api.post('/auth/change-password', { currentPassword, newPassword }),
   forgotPassword: email => api.post('/auth/forgot-password', { email }),
   resetPassword: (token, password) => api.post('/auth/reset-password', { token, password }),
+  setLanguage: language => api.post('/auth/language', { language }),
 }
 
 export const ordersApi = {
@@ -263,6 +264,14 @@ export const reviewApi = {
   reject: id => api.post(`/review/${id}/reject`, {}),
   // Authenticated image fetch as a Blob (an <img src> can't carry our auth).
   media: id => api.get(`/review/${id}/media`, { responseType: 'blob' }),
+}
+
+// Factory visits: a coordinator's check-in and check-out, and the admins' list of them.
+export const visitsApi = {
+  mine: () => api.get('/visits/mine'),
+  checkIn: (factoryId, point) => api.post('/visits/check-in', { factoryId, ...point }),
+  checkOut: (id, point) => api.post(`/visits/${id}/check-out`, point),
+  list: (params = {}) => api.get('/visits', { params }),
 }
 
 export const floorApi = {

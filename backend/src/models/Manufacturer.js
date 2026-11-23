@@ -39,6 +39,15 @@ const manufacturerSchema = new mongoose.Schema({
   city:    { type: String, trim: true, default: '', maxlength: 120 },
   address: { type: String, trim: true, default: '', maxlength: 500 },
   pincode: { type: String, trim: true, default: '', maxlength: 12 },
+  // Where the unit is, read from a pasted Google Maps link or "lat, lng" (lib/geo.js). A coordinator's check-in is
+  // measured against it. mapsUrl is always built from the coordinates.
+  geo: {
+    lat: { type: Number, default: null, min: -90, max: 90 },
+    lng: { type: Number, default: null, min: -180, max: 180 },
+    mapsUrl: { type: String, default: '', maxlength: 200 },
+    setBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    setAt: { type: Date, default: null },
+  },
 
   // Garment units only. Product and fabric tokens are snake_case (sports_bra, poly_spandex) so filters line up.
   products: { type: [String], default: [] },

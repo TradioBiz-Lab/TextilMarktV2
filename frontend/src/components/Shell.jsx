@@ -1,6 +1,8 @@
 import { Logo } from './Brand.jsx'
 import { useState, useEffect } from 'react'
-import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot, Hexagon, Inbox, Factory } from '../icons.jsx'
+import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot, Hexagon, Inbox, Factory, MapPin, Languages, CheckCircle2, LogOut } from '../icons.jsx'
+import { t, langOf } from '../coordinatorText.js'
+import { timeIST } from '../visits.js'
 import { T } from '../constants.js'
 import { capsFor } from '../caps.js'
 import { Btn, RibbonBanner } from './ui.jsx'
@@ -51,7 +53,19 @@ function NetworkBanner() {
 
 
 export function Shell({ view, setView, children, onOpenOrder }) {
-  const { currentUser: user, logout, unread, ribbons } = useApp()
+  const { currentUser: user, logout, unread, ribbons, visits, checkOut, setLanguage } = useApp()
+  const isCoord = user?.role === 'coordinator'
+  const lang = langOf(user)
+  const [barBusy, setBarBusy] = useState(false)
+  const [barError, setBarError] = useState('')
+  // Check out from anywhere: the coordinator is often several screens deep when he leaves the factory.
+  const checkOutFromBar = async () => {
+    if (!visits?.open) return
+    setBarBusy(true); setBarError('')
+    try { await checkOut(visits.open.id) }
+    catch (e) { setBarError(e?.code ? t(e.code === 'unavailable' ? 'location_weak' : 'location_body', lang) : (e?.message || t('failed', lang))) }
+    finally { setBarBusy(false) }
+  }
   const [notifOpen, setNotifOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -61,7 +75,8 @@ export function Shell({ view, setView, children, onOpenOrder }) {
   // A customer reads the plan first: Reports sits right under the Dashboard and Orders is called Order TnA.
   const isCustomer = user?.role === 'buyer'
   const reportsTab = { id: 'reports', icon: BarChart3, label: 'Reports' }
-  const nav = !user ? [] : [
+  // A coordinator has one place: his factories. Everything he does starts there.
+  const nav = !user ? [] : isCoord ? [{ id: 'factories', icon: Factory, label: t('factories_title', lang) }] : [
     { id: 'dashboard', icon: Home, label: 'Dashboard' },
     ...(isCustomer ? [reportsTab] : []),
     { id: 'action_items', icon: ListChecks, label: 'Action Items' },
@@ -73,17 +88,18 @@ export function Shell({ view, setView, children, onOpenOrder }) {
     ...(user.role === 'admin' ? [{ id: 'audit', icon: History, label: 'Audit Log' }] : []),
     ...(capsFor(user).seeStyleRequests ? [{ id: 'style_requests', icon: Inbox, label: 'Style Requests' }] : []),
     ...(capsFor(user).seePartners ? [{ id: 'partners', icon: Factory, label: 'Partners' }] : []),
+    ...(capsFor(user).seeVisits ? [{ id: 'visits', icon: MapPin, label: 'Factory Visits' }] : []),
     ...(user.role === 'admin' && user.adminType === 'master' ? [{ id: 'users', icon: Users, label: 'User Setup' }] : []),
   ]
 
   const roleLabel = user?.role === 'admin'
     ? (user?.adminType === 'master' ? 'Master Admin' : 'Admin Portal')
-    : user?.role === 'buyer' ? 'Buyer Portal' : 'Manufacturer Portal'
+    : user?.role === 'buyer' ? 'Buyer Portal' : isCoord ? 'Ops & QC Coordinator' : 'Manufacturer Portal'
 
-  const ROLE_DOT = { master: '#A78BFA', admin: T.primary, buyer: '#7DD3FC', manufacturer: '#FDBA74' }
+  const ROLE_DOT = { master: '#A78BFA', admin: T.primary, buyer: '#7DD3FC', manufacturer: '#FDBA74', coordinator: '#86EFAC' }
   const roleDot = user?.role === 'admin'
     ? (user?.adminType === 'master' ? ROLE_DOT.master : ROLE_DOT.admin)
-    : user?.role === 'buyer' ? ROLE_DOT.buyer : ROLE_DOT.manufacturer
+    : user?.role === 'buyer' ? ROLE_DOT.buyer : isCoord ? ROLE_DOT.coordinator : ROLE_DOT.manufacturer
 
   // Clicking empty space on the page folds the sidebar to icons, so the work gets the width. A click on a control or a
   // row does its own job and leaves the layout alone, and so does any click inside a pop-up (every dialog, shared or
@@ -179,8 +195,15 @@ export function Shell({ view, setView, children, onOpenOrder }) {
             </button>
             <div className="header-logo"><Logo size={28} /></div>
           </div>
-          <GlobalSearch onOpenOrder={onOpenOrder} onOpenMo={id => setView('master_order', { mo: id })} />
+          {!isCoord && <GlobalSearch onOpenOrder={onOpenOrder} onOpenMo={id => setView('master_order', { mo: id })} />}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {/* The coordinator's screens come in Hindi and English; the button names the other language. */}
+            {isCoord && (
+              <button type="button" onClick={() => setLanguage(lang === 'hi' ? 'en' : 'hi')} aria-label="Change language"
+                style={{ background: '#f8fafc', border: `1px solid ${T.border}`, borderRadius: 9, height: 36, padding: '0 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: T.text, fontFamily: 'inherit' }}>
+                <Languages size={16} color={T.textMuted} /> {t('switch_language', lang)}
+              </button>
+            )}
             <div style={{ position: 'relative' }}>
               <button data-notif-toggle onClick={() => setNotifOpen(p => !p)}
                 style={{ background: '#f8fafc', border: `1px solid ${T.border}`, borderRadius: 9, width: 36, height: 36, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Bell size={18} color={T.textMuted} /></button>
@@ -192,7 +215,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
               <div style={{ width: 32, height: 32, borderRadius: '50%', background: T.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: T.primary }}>{user?.name?.[0]}</div>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{user?.name}</div>
-                <div style={{ fontSize: 10, color: T.textLight }}>{user?.role === 'admin' ? (user?.adminType === 'master' ? 'Master Admin' : 'Admin User') : user?.role} · {user?.code}</div>
+                <div style={{ fontSize: 10, color: T.textLight }}>{user?.role === 'admin' ? (user?.adminType === 'master' ? 'Master Admin' : 'Admin User') : isCoord ? 'Ops & QC Coordinator' : user?.role} · {user?.code}</div>
               </div>
             </div>
             <Btn variant="secondary" size="sm" onClick={logout}>Sign out</Btn>
@@ -207,6 +230,21 @@ export function Shell({ view, setView, children, onOpenOrder }) {
           <RibbonBanner ribbons={ribbons} />
         </div>
 
+        {/* While he is checked in, every coordinator screen says where and lets him check out in one tap. */}
+        {isCoord && visits?.open && (
+          <div style={{ flexShrink: 0, background: '#15803d', color: '#fff', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 10, zIndex: 298 }}>
+            <CheckCircle2 size={20} style={{ flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, lineHeight: 1.3 }}>
+              {t('bar_checked_in', lang, { name: visits.open.factoryName || '', time: timeIST(visits.open.checkIn.at) })}
+              {barError && <div style={{ fontSize: 12, fontWeight: 600, color: '#fef08a', marginTop: 2 }}>{barError}</div>}
+            </div>
+            <button type="button" onClick={checkOutFromBar} disabled={barBusy}
+              style={{ flexShrink: 0, minHeight: 40, padding: '0 14px', borderRadius: 10, border: 'none', background: '#fff', color: '#15803d', fontSize: 14, fontWeight: 800, fontFamily: 'inherit', cursor: barBusy ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, opacity: barBusy ? 0.6 : 1 }}>
+              <LogOut size={16} /> {barBusy ? '…' : t('check_out', lang)}
+            </button>
+          </div>
+        )}
+
         {/* Notification panel */}
         {notifOpen && <NotifPanel onClose={() => setNotifOpen(false)} onOpenOrder={onOpenOrder} />}
 
@@ -218,7 +256,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
           gate), rendered unconditionally so its conversation survives
           navigating between pages within the session. */}
       {/* Hidden on the Kriyaa page itself: the page IS the chat, and the floating button would sit on top of its Send button. The conversation lives in KriyaaChatProvider, so it carries over. */}
-      {user && view !== 'kriyaa' && <KriyaaWidget />}
+      {user && !isCoord && view !== 'kriyaa' && <KriyaaWidget />}
     </div>
   )
 }

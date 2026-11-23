@@ -19,6 +19,7 @@ function initialForm(p, initialType) {
     status: p?.status || 'new', isActive: p ? p.isActive : true,
     categories: p?.categories || [],
     cluster: p?.cluster || '', city: p?.city || '', address: p?.address || '', pincode: p?.pincode || '',
+    mapsLocation: p?.geo ? `${p.geo.lat}, ${p.geo.lng}` : '',
     fabrics: p?.fabrics || [], fabricTypes: p?.fabricTypes || [], trimCategories: p?.trimCategories || [],
     machineCount: num(p?.machineCount), flatlock: num(p?.machines?.flatlock || ''), coverstitch: num(p?.machines?.coverstitch || ''), overlock: num(p?.machines?.overlock || ''), singleNeedle: num(p?.machines?.singleNeedle || ''),
     moqPerStyleColour: num(p?.moqPerStyleColour), moqNote: p?.moqNote || '',
@@ -57,6 +58,8 @@ export function PartnerFormModal({ partner, initialType, onClose, onSaved }) {
       contacts: f.contacts, website: f.website, logoUrl: f.logoUrl, gstin: f.gstin, udyam: f.udyam, mcaCin: f.mcaCin,
       source: f.source, keywords: f.keywords, brands: f.brands, notes: f.notes,
     }
+    // The location is sent only when it was touched, so an untouched pin is never rewritten.
+    if (f.mapsLocation.trim() !== (partner?.geo ? `${partner.geo.lat}, ${partner.geo.lng}` : '')) body.mapsLocation = f.mapsLocation.trim()
     const breakdownSum = ['flatlock', 'coverstitch', 'overlock', 'singleNeedle'].reduce((a, k) => a + (Number(f[k]) || 0), 0)
     // A hidden section is left as it was (editing) or empty (adding); it is never sent blank over saved data.
     if (show.garment) {
@@ -123,6 +126,11 @@ export function PartnerFormModal({ partner, initialType, onClose, onSaved }) {
             <Input label="Address" value={f.address} onChange={e => set('address', e.target.value)} maxLength={500} />
             <Input label="Pincode" value={f.pincode} onChange={e => set('pincode', e.target.value)} maxLength={12} />
           </Grid>
+          <div style={{ marginTop: 12 }}>
+            <Input label="Location on the map" value={f.mapsLocation} onChange={e => set('mapsLocation', e.target.value)} maxLength={2000} placeholder="Paste the full Google Maps link, or 26.8512, 75.8056"
+              hint="Where the unit is. A coordinator's check-in is measured against it. Open the place in Google Maps and copy the full link from the address bar (a short maps.app.goo.gl link does not carry the location), or type latitude, longitude." />
+            {partner?.geo?.mapsUrl && <a href={partner.geo.mapsUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', marginTop: 6, fontSize: 12, fontWeight: 600, color: T.info }}>Open the saved location in Google Maps</a>}
+          </div>
         </div>
 
         {(show.garment || show.fabricTypes || show.trimCategories) && (

@@ -8,14 +8,17 @@
 //                evidence; cannot create/edit/delete orders or move planned dates
 //   buyer        read-only, except a stage assigned to them (usually an approval):
 //                they may post notes on it and set its status
+//   coordinator  Tradio's Ops & QC coordinator: checks in and out at his allocated factories and nothing else here
+//                (the server refuses every request not on its list, backend/src/lib/coordinator.js)
 export function capsFor(user) {
   const role = user?.role
   const isAdmin = role === 'admin'
   const isMaster = isAdmin && user?.adminType === 'master'
   const isMfr = role === 'manufacturer'
   const isBuyer = role === 'buyer'
+  const isCoord = role === 'coordinator'
   return {
-    role, isAdmin, isMaster, isMfr, isBuyer,
+    role, isAdmin, isMaster, isMfr, isBuyer, isCoord,
     // Order lifecycle
     createOrders: isAdmin, editOrders: isAdmin, deleteOrders: isAdmin, assignManufacturers: isAdmin,
     // Planning (dates, stages, TNA import) is the coordinator's
@@ -38,6 +41,8 @@ export function capsFor(user) {
     // Admin-only surfaces
     seeStyleRequests: isMaster /* the review queue for what customers ask to add: master admins decide it (the server enforces it) */,
     seeUsers: isAdmin, seeAudit: isAdmin, seePartners: isAdmin /* the Partner Directory: Tradio's sourcing CRM, admins only (the server enforces it) */, seeReviewQueue: false /* retired until the WhatsApp integration; set to isAdmin to bring it back */, seeRibbonsAdmin: isAdmin, seeBuyerRequests: isAdmin,
+    // Factory visits: a coordinator checks in and out; admins read who was where and when.
+    checkInAtFactories: isCoord, seeVisits: isAdmin,
   }
 }
 

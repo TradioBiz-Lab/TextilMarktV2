@@ -265,6 +265,7 @@ export function RoleBadge({ role, adminType }) {
   const map = {
     buyer: { label: 'Buyer', bg: '#dbeafe', c: '#1d4ed8' },
     manufacturer: { label: 'Manufacturer', bg: '#fef9c3', c: '#92400e' },
+    coordinator: { label: 'Ops & QC Coordinator', bg: '#dcfce7', c: '#166534' },
     admin: { label: adminType === 'master' ? 'Master Admin' : 'Admin User', bg: adminType === 'master' ? '#ede9fe' : '#f1f5f9', c: adminType === 'master' ? '#7c3aed' : '#475569' },
   }
   const s = map[role] || { label: role, bg: '#f1f5f9', c: '#475569' }
