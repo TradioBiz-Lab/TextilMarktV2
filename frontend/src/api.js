@@ -72,6 +72,7 @@ export const ordersApi = {
   // The customer's own style: its product photos (Tradio uses update).
   setPhotos: (id, photos) => api.post(`/orders/${id}/photos`, { photos }),
   setProductLink: (id, ecommerceLink) => api.post(`/orders/${id}/product-link`, { ecommerceLink }),
+  setSizeBreakup: (id, breakup) => api.post(`/orders/${id}/size-breakup`, breakup),
   // `reason` is optional and is kept, with a full copy of the style, in the dropped record.
   delete: (id, reason) => api.post(`/orders/${id}/delete`, reason ? { reason } : {}),
   updateAssignment: (orderId, mfrId, status, note) =>

@@ -270,6 +270,17 @@ const orderSchema = new mongoose.Schema({
   // revision (see the edit-order route), never backdated by hand.
   baselineDelivery: { type: Date, default: null },
   colourways: [colourwaySchema],
+  // The size breakup: pieces of each colour in each size, as the customer's order gives it (lib/sizeBreakup.js).
+  // `sizes` are the style's own, in order; each row's `qty` lines up with them. null when the style has none yet.
+  sizeBreakup: {
+    type: new mongoose.Schema({
+      sizes: { type: [String], default: [] },
+      rows: { type: [new mongoose.Schema({ colour: { type: String, default: '' }, qty: { type: [Number], default: [] } }, { _id: false })], default: [] },
+      updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      updatedAt: { type: Date, default: null },
+    }, { _id: false }),
+    default: null,
+  },
   photos: [stylePhotoSchema],
   fabricDetails: [fabricSchema],
   ecommerceLink: { type: String, default: '', trim: true, maxlength: 2000 },

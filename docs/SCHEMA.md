@@ -128,6 +128,25 @@ Uses a human-readable custom string `_id` for traceability.
 }
 ```
 
+### `sizeBreakup` (pieces per colour and size)
+
+```
+sizeBreakup: {
+  sizes     [String]   the style's own sizes, in order ("28", "30", ... or "S", "M", ...); 1 to 24, each up to 12 characters
+  rows      [{ colour: String, qty: [Number] }]   one row per colour; qty lines up with sizes; whole pieces, zero or more
+  updatedBy ObjectId   who last saved it
+  updatedAt Date
+} | null               null (or absent) when the style has none yet
+```
+
+The pieces of each colour in each size, as the customer's order gives it (Cocoblu sends this grid with every purchase
+order). Quantities only: no prices, barcodes or Amazon IDs. Rules are in `backend/src/lib/sizeBreakup.js`. Set with
+`POST /api/orders/:id/size-breakup` by Tradio on any style, or by a customer on its own; an empty grid clears it. A
+factory reads it and cannot write it. Every viewer of the style is sent it (`enrichOrder`), with its `total`. Its total
+is not forced to match `totalQty`: the page says so when they differ. A row's colour need not be one of `colourways`;
+a style with no colours has one unnamed row. The customer (or Tradio) and each factory on the style are notified of a
+change, and it is audited as `Size Breakup Updated`.
+
 ### Embedded: `assignments`
 
 ```

@@ -475,6 +475,13 @@ export function AppProvider({ children }) {
     return updated
   }, [])
 
+  // The size breakup of a style: pieces per colour and size (Tradio, or the customer on its own style).
+  const setSizeBreakup = useCallback(async (id, breakup) => {
+    const updated = await ordersApi.setSizeBreakup(id, breakup)
+    setOrders(p => p.map(o => o.id === id ? updated : o))
+    return updated
+  }, [])
+
   // The customer sets the photos of its own style.
   const setStylePhotos = useCallback(async (id, photos) => {
     const updated = await ordersApi.setPhotos(id, photos)
@@ -739,7 +746,7 @@ export function AppProvider({ children }) {
       login, logout,
       updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
       bulkUpdateStages, addStageItem, updateStageItem, removeStageItem,
-      updateAssignment, addAssignment, reassignAssignment, setDeliveredQty, insertStage, moveStage, startPlan, uploadDoc, updateDoc, lockDoc, deleteDoc, getDocVersions, fileDocInto, setStylePhotos, setProductLink, createOrder, createMasterOrder, updateMasterOrder, deleteMasterOrder,
+      updateAssignment, addAssignment, reassignAssignment, setDeliveredQty, insertStage, moveStage, startPlan, uploadDoc, updateDoc, lockDoc, deleteDoc, getDocVersions, fileDocInto, setStylePhotos, setProductLink, setSizeBreakup, createOrder, createMasterOrder, updateMasterOrder, deleteMasterOrder,
       editOrder, deleteOrder, escalateOrder,
       createUser, updateUser, toggleUser, resetUserPw,
       markAllRead, markOneRead, getDocData, refreshAudit, loadMoreAudit,

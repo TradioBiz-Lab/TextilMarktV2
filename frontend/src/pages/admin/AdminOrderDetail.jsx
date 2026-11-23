@@ -27,6 +27,7 @@ import { DeleteOrderModal } from './DeleteOrderModal.jsx'
 import { QuickStageModal } from './QuickStageModal.jsx'
 import { ownerForSplit, ownerCopyLabel } from '../../ownerCopy.js'
 import { ProductLinkEditor } from '../../components/ProductLinkEditor.jsx'
+import { SizeBreakupSection } from '../../components/SizeBreakup.jsx'
 
 
 // Bulk Edit row: step, start, end, responsible, target qty, description, evidence, NA / Undo.
@@ -961,6 +962,9 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
 
                 </div>
               )}
+
+              {/* Pieces of each colour in each size, as the customer's order gives it. */}
+              <SizeBreakupSection order={order} />
 
               {(order.fabricDetails || []).length > 0 && (
                 <div style={{ marginTop: 16 }}>

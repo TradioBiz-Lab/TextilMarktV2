@@ -33,6 +33,8 @@ export function capsFor(user) {
     submitRequirement: isBuyer,
     // Reorder a production style as a replen, and import a sheet of NPD/Replen styles: Tradio and the customer (its own styles only; the server enforces it).
     orderReplen: isAdmin || isBuyer, importStyles: isAdmin || isBuyer,
+    // The size breakup (pieces per colour and size): Tradio on any style, a customer on its own. A factory reads it.
+    editSizeBreakup: isAdmin || isBuyer,
     escalate: isBuyer,   // a customer raises a style with Tradio's master admins (in-app and email)
     manageCertificates: isMfr,
     // Admin-only surfaces

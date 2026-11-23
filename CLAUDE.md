@@ -147,6 +147,11 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   makes one there); approval creates the styles with `createRows` / `createReplenFrom` / `validateAndCreateOrder`, the same
   code Tradio's own paths use, re-checks a sheet first, and moves the request's files onto the new styles. The full Create Style form and
   master orders stay with Tradio.
+- **Size breakup.** A style's pieces per colour and size (`Order.sizeBreakup`, rules in `lib/sizeBreakup.js`, the grid and
+  its editor in `components/SizeBreakup.jsx`, pure helpers in `frontend/src/sizeBreakup.js`). Sizes are typed per style, so
+  there is no fixed list. Tradio sets it on any style and a customer on its own (`POST /api/orders/:id/size-breakup`,
+  `caps.editSizeBreakup`); a factory only reads it. Quantities only, by Ankit's choice: no prices, barcodes or Amazon IDs.
+  Its total is told against the style's quantity, never forced to match.
 - **Customers on their style page** paste the product link themselves (`POST /api/orders/:id/product-link`,
   `components/ProductLinkEditor.jsx`); a measurement sheet they upload starts as Customer Submission, and uploaded reference
   files keep their own file names. Notifications are shown with style names, not IDs (`frontend/src/notifText.js`).
