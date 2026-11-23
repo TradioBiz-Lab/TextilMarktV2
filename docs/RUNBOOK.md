@@ -261,7 +261,13 @@ Buckets (private, permission template Authenticated, versioning off):
 | `TradioApp` (Live) | `tradio-textilmarkt-live-floor` | `https://tradio-textilmarkt-live-floor-development.zohostratus.in` |
 | `Textimarkt-Sandbox` (Test) | `tradio-textilmarkt-sandbox-floor` | `https://tradio-textilmarkt-sandbox-floor-development.zohostratus.in` |
 
-The Catalyst SDK works only on AppSail, never on a laptop, so it is proven on the server itself, in this order:
+**Proven on Test, 23 Nov 2026.** The coordinator build was put on the Test server for an hour. The storage check passed
+(write, read, remove). With `FILE_STORE=stratus`, a photo and a voice note sent as a coordinator were kept in the bucket
+with nothing in the database, opened again through the app byte for byte, and the bucket refused a direct request (403).
+The Test server was then put back on its standalone build, so Stratus is not in use anywhere yet. Two small test files
+remain in the Test bucket under `field-updates/2026/11/`; they can be deleted in the console.
+
+The Catalyst SDK works only on AppSail, never on a laptop, so on Live it is proven on the server itself, in this order:
 
 1. **Deploy the backend with the bucket named but Stratus still off.** Add one line to `backend/.env` on the deploying
    Mac, then deploy as in section 3. Nothing changes for anyone: files still go to the database.
