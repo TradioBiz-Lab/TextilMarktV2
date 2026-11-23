@@ -1,6 +1,6 @@
 import { Logo } from './Brand.jsx'
 import { useState, useEffect } from 'react'
-import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot, Hexagon, Inbox, Factory, MapPin, Languages, CheckCircle2, LogOut } from '../icons.jsx'
+import { Home, ClipboardList, ListChecks, Folder, ShieldCheck, Package, History, Users, Bell, Menu, ChevronsLeft, WifiOff, Check, BarChart3, Bot, Hexagon, Inbox, Factory, MapPin, Languages, CheckCircle2, LogOut, Camera } from '../icons.jsx'
 import { t, langOf } from '../coordinatorText.js'
 import { timeIST } from '../visits.js'
 import { T } from '../constants.js'
@@ -53,7 +53,7 @@ function NetworkBanner() {
 
 
 export function Shell({ view, setView, children, onOpenOrder }) {
-  const { currentUser: user, logout, unread, ribbons, visits, checkOut, setLanguage } = useApp()
+  const { currentUser: user, logout, unread, ribbons, visits, checkOut, setLanguage, fieldWaiting } = useApp()
   const isCoord = user?.role === 'coordinator'
   const lang = langOf(user)
   const [barBusy, setBarBusy] = useState(false)
@@ -88,6 +88,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
     ...(user.role === 'admin' ? [{ id: 'audit', icon: History, label: 'Audit Log' }] : []),
     ...(capsFor(user).seeStyleRequests ? [{ id: 'style_requests', icon: Inbox, label: 'Style Requests' }] : []),
     ...(capsFor(user).seePartners ? [{ id: 'partners', icon: Factory, label: 'Partners' }] : []),
+    ...(capsFor(user).seeFieldUpdates ? [{ id: 'field_updates', icon: Camera, label: 'Field Updates', badge: fieldWaiting }] : []),
     ...(capsFor(user).seeVisits ? [{ id: 'visits', icon: MapPin, label: 'Factory Visits' }] : []),
     ...(user.role === 'admin' && user.adminType === 'master' ? [{ id: 'users', icon: Users, label: 'User Setup' }] : []),
   ]
@@ -153,6 +154,8 @@ export function Shell({ view, setView, children, onOpenOrder }) {
                 className="sidebar-nav-item" aria-current={active ? 'page' : undefined}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', gap: 10, padding: sidebarCollapsed ? '9px 0' : '9px 12px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: active ? 700 : 500, textAlign: 'left', background: active ? 'rgba(255,255,255,0.12)' : 'transparent', color: active ? '#fff' : 'rgba(255,255,255,0.55)', transition: 'all 0.12s', fontFamily: 'inherit' }}>
                 <Icon size={18} weight={active ? 'fill' : 'regular'} style={{ flexShrink: 0 }} />{!sidebarCollapsed && n.label}
+                {/* How many wait (updates from the floor), so an account manager sees it from any page. */}
+                {n.badge > 0 && <span aria-label={`${n.badge} waiting`} style={{ marginLeft: sidebarCollapsed ? 0 : 'auto', background: '#ef4444', color: '#fff', borderRadius: 10, fontSize: 10, fontWeight: 800, minWidth: 18, height: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px' }}>{n.badge}</span>}
               </button>
             )
           })}

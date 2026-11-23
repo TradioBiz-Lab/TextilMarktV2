@@ -1,9 +1,12 @@
-import { Ruler, Image as ImageIcon, ChevronDown } from '../icons.jsx'
+import { useState } from 'react'
+import { Ruler, Image as ImageIcon, ChevronDown, ChevronRight, Camera, MapPin } from '../icons.jsx'
 import { T } from '../constants.js'
 import { useApp } from '../context.jsx'
 import { t, langOf } from '../coordinatorText.js'
 import { techPackOf, measurementOf, productState } from '../coordinatorStyles.js'
 import { DocCard } from './ui.jsx'
+import { nextSteps, stepState } from '../nextSteps.js'
+import { AddUpdateSheet } from '../pages/coordinator/AddUpdateSheet.jsx'
 
 // One of the two papers he needs on the floor, under a label he can read at a glance. The file opens with the same
 // viewer as everywhere else (the card's View button).
@@ -19,13 +22,71 @@ function Paper({ label, doc, lang, users, getDocData }) {
   )
 }
 
+const STEP_TONE = { done: { bg: '#f1f5f9', fg: '#475569' }, running: { bg: '#dcfce7', fg: '#166534' }, not_started: { bg: '#fff7ed', fg: '#9a3412' } }
+
+// One step to report on: a large row with its name and where it stands.
+function StepButton({ step, lang, onClick }) {
+  const state = stepState(step.stage)
+  const tone = STEP_TONE[state]
+  const s = step.stage
+  return (
+    <button type="button" onClick={onClick}
+      style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', minHeight: 60, textAlign: 'left', background: '#fff', border: `2px solid ${state === 'running' ? '#22c55e' : T.borderHover}`, borderRadius: 14, padding: '10px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>
+      <Camera size={24} color={T.primaryDeep} style={{ flexShrink: 0 }} />
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: 17, fontWeight: 800, color: T.text, lineHeight: 1.25, overflowWrap: 'anywhere' }}>{s.name}</span>
+        <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, fontWeight: 800, padding: '1px 8px', borderRadius: 10, background: tone.bg, color: tone.fg }}>{t(`step_${state}`, lang)}</span>
+          {s.kind === 'quantity' && s.totalUnits > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: T.textMuted }}>{s.unitsDone || 0} / {s.totalUnits}</span>}
+        </span>
+      </span>
+      <ChevronRight size={20} color={T.textLight} />
+    </button>
+  )
+}
+
+// "Add update": the two or three steps he is most likely here for, the rest behind one tap. Only while he is checked
+// in at this factory (the server refuses an update otherwise).
+function AddUpdate({ order, split, lang, visits, onNextProduct }) {
+  const [showOthers, setShowOthers] = useState(false)
+  const [open, setOpen] = useState(null)   // the step index being reported on
+  const here = visits?.open && String(visits.open.factoryId) === String(split.mid)
+  const { suggested, others } = nextSteps(split.stages || [])
+  if (!(split.stages || []).length) return null
+  return (
+    <div style={{ background: '#fff', border: `1.5px solid ${T.border}`, borderRadius: 14, padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ fontSize: 18, fontWeight: 800, color: T.text }}>{t('add_update', lang)}</div>
+      {!here ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 600, color: T.warning, background: T.warningBg, border: `1px solid ${T.warningBorder}`, borderRadius: 12, padding: '10px 12px' }}>
+          <MapPin size={18} style={{ flexShrink: 0 }} /> {t('check_in_to_update', lang, { name: split.mfrCompany || '' })}
+        </div>
+      ) : (
+        <>
+          <div style={{ fontSize: 14, color: T.textMuted }}>{t('choose_step', lang)}</div>
+          {suggested.map(s => <StepButton key={s.index} step={s} lang={lang} onClick={() => setOpen(s.index)} />)}
+          {others.length > 0 && (
+            <button type="button" onClick={() => setShowOthers(v => !v)} aria-expanded={showOthers}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 44, background: 'none', border: 'none', fontSize: 15, fontWeight: 700, color: T.info, cursor: 'pointer', fontFamily: 'inherit' }}>
+              {t('other_steps', lang)} ({others.length}) <ChevronDown size={16} style={{ transform: showOthers ? 'rotate(180deg)' : 'none' }} />
+            </button>
+          )}
+          {showOthers && others.map(s => <StepButton key={s.index} step={s} lang={lang} onClick={() => setOpen(s.index)} />)}
+        </>
+      )}
+      {open != null && split.stages[open] && (
+        <AddUpdateSheet order={order} factoryId={split.mid} stageIndex={open} stage={split.stages[open]} onClose={() => setOpen(null)} onNextProduct={onNextProduct} />
+      )}
+    </div>
+  )
+}
+
 /**
  * The top of the order page as an Ops & QC coordinator sees it on his phone: the picture, what it is, how many, and the
- * two papers he checks against (tech pack, measurements). The full page follows underneath, read only. `children` is
- * where a later phase puts his "Add update" buttons.
+ * two papers he checks against (tech pack, measurements), then the steps he can send an update on. The full page follows
+ * underneath, read only. `onNextProduct` takes him back to the client's products after an update.
  */
-export function CoordinatorOrderTop({ order, factoryId, children }) {
-  const { currentUser, docs, users, getDocData } = useApp()
+export function CoordinatorOrderTop({ order, factoryId, onNextProduct }) {
+  const { currentUser, docs, users, getDocData, visits } = useApp()
   const lang = langOf(currentUser)
   const url = order.imageDataUrl || order.imageUrl
   const split = (order.assignments || []).find(a => String(a.mid) === String(factoryId)) || order.assignments?.[0]
@@ -54,7 +115,7 @@ export function CoordinatorOrderTop({ order, factoryId, children }) {
       )}
       <Paper label={t('tech_pack', lang)} doc={techPackOf(docs, order.id)} lang={lang} users={users} getDocData={getDocData} />
       <Paper label={measurement?.locked ? t('locked_measurement', lang) : t('measurements', lang)} doc={measurement} lang={lang} users={users} getDocData={getDocData} />
-      {children}
+      {split && <AddUpdate order={order} split={split} lang={lang} visits={visits} onNextProduct={onNextProduct} />}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: T.textMuted }}>
         {t('full_details', lang)} <ChevronDown size={14} />
       </div>

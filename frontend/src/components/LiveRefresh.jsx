@@ -17,7 +17,8 @@ const POLL_MS = 15000
  * first tick after it is shown again catches up on anything missed.
  */
 export function LiveRefresh() {
-  const { refreshOrders, refreshDocs, refreshActionItems } = useApp()
+  const { refreshOrders, refreshDocs, refreshActionItems, refreshFieldWaiting, currentUser } = useApp()
+  const isAdmin = currentUser?.role === 'admin'
   const version = useRef(null)
   const itemsVersion = useRef(null)
   // True once a tick was skipped because the tab was hidden. If that happens
@@ -35,7 +36,8 @@ export function LiveRefresh() {
         if (dead) return
         const changed = version.current !== null && f.version !== version.current
         const missedWhileHidden = version.current === null && skippedWhileHidden.current
-        if (changed || missedWhileHidden) { refreshOrders(); refreshDocs() }
+        // An update from the floor adds a note to a style, so the same change tells an admin's menu to recount.
+        if (changed || missedWhileHidden) { refreshOrders(); refreshDocs(); if (isAdmin) refreshFieldWaiting() }
         version.current = f.version
         if (f.itemsVersion != null) {
           if ((itemsVersion.current !== null && f.itemsVersion !== itemsVersion.current) || (itemsVersion.current === null && missedWhileHidden)) refreshActionItems()
@@ -46,7 +48,7 @@ export function LiveRefresh() {
     tick()
     const t = setInterval(tick, POLL_MS)
     return () => { dead = true; clearInterval(t) }
-  }, [refreshOrders, refreshDocs, refreshActionItems])
+  }, [refreshOrders, refreshDocs, refreshActionItems, refreshFieldWaiting, isAdmin])
 
   return null
 }

@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { authApi, ordersApi, documentsApi, usersApi, notificationsApi, auditApi, ribbonsApi, masterOrdersApi, actionItemsApi, partnerDirectoryApi, visitsApi, setStoredToken, setAuthToken } from './api.js'
+import { authApi, ordersApi, documentsApi, usersApi, notificationsApi, auditApi, ribbonsApi, masterOrdersApi, actionItemsApi, partnerDirectoryApi, visitsApi, fieldUpdatesApi, setStoredToken, setAuthToken } from './api.js'
 import { getPosition } from './geolocate.js'
 import { emptyQuery } from './partners.js'
 import { isExpiringSoon, isExpired, dayNumber, getToday } from './constants.js'
@@ -30,6 +30,8 @@ export function AppProvider({ children }) {
   const [actionItems, setActionItems] = useState([])
   // A coordinator's factories, his open visit and today's visits (GET /visits/mine). Null for every other role.
   const [visits, setVisits]           = useState(null)
+  // How many updates from the floor wait for an account manager (admins only), for the menu.
+  const [fieldWaiting, setFieldWaiting] = useState(0)
   const [loading, setLoading]         = useState(false)
   const [loadError, setLoadError]     = useState(false)
   // The Partner Directory (admins only): loaded when its page opens, not with the rest at sign-in. The list page's
@@ -102,6 +104,7 @@ export function AppProvider({ children }) {
         setAudit(auditItems)
         setAuditTotal(auditResult?.total ?? auditItems.length)
         setActionItems(results[7])
+        fieldUpdatesApi.count().then(c => { if (gen === sessionGenRef.current) setFieldWaiting(c?.new || 0) }).catch(() => {})
         // Cert expiry check — fire and forget, don't re-fetch notifications
         documentsApi.checkCertExpiry().catch(() => {})
       } else {
@@ -144,6 +147,7 @@ export function AppProvider({ children }) {
     setMasterOrders([])
     setActionItems([])
     setVisits(null)
+    setFieldWaiting(0)
     docDataCache.current = {}
     clearPartnerState()
   }, [clearPartnerState])
@@ -525,6 +529,18 @@ export function AppProvider({ children }) {
     try { await authApi.setLanguage(language) } catch { /* the screen has already switched; it is asked again next time */ }
   }, [])
 
+  // ── Updates from the floor ──
+  // The coordinator's send: afterwards the style and its papers are read again, so his note and photos show on the page.
+  const sendFieldUpdate = useCallback(async data => {
+    const sent = await fieldUpdatesApi.send(data)
+    ordersApi.list().then(setOrders).catch(() => {})
+    documentsApi.list().then(setDocs).catch(() => {})
+    return sent
+  }, [])
+  const refreshFieldWaiting = useCallback(async () => {
+    try { setFieldWaiting((await fieldUpdatesApi.count())?.new || 0) } catch { /* the menu keeps its last number */ }
+  }, [])
+
   const createUser = useCallback(async (data) => {
     const user = await usersApi.create(data)
     setUsers(p => [...p, user])
@@ -773,7 +789,7 @@ export function AppProvider({ children }) {
   return (
     <AppContext.Provider value={{
       currentUser, users, orders, ordersAt, docs, notifs, audit, auditTotal, loading, loadError, unread, ribbons, masterOrders,
-      actionItems, visits, refreshVisits, checkIn, checkOut, setLanguage,
+      actionItems, visits, refreshVisits, checkIn, checkOut, setLanguage, sendFieldUpdate, fieldWaiting, setFieldWaiting, refreshFieldWaiting,
       login, logout,
       updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
       bulkUpdateStages, addStageItem, updateStageItem, removeStageItem,

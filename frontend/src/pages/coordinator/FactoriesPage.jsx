@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Factory, MapPin, LogIn, LogOut, Navigation, AlertTriangle, CheckCircle2, ChevronRight } from '../../icons.jsx'
 import { T } from '../../constants.js'
 import { useApp } from '../../context.jsx'
@@ -82,6 +82,28 @@ function FactoryCard({ factory, visits, lang, busy, onCheckIn, onCheckOut, onOpe
   )
 }
 
+// Shown once on a coordinator's phone until he says OK: how to keep the app on the home screen. Not shown when it is
+// already opened from there.
+const HINT_KEY = 'tradio_add_home_seen'
+function AddToHomeHint({ lang }) {
+  const [show, setShow] = useState(false)
+  useEffect(() => {
+    try {
+      const installed = window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true
+      setShow(!installed && localStorage.getItem(HINT_KEY) !== '1')
+    } catch { setShow(false) }
+  }, [])
+  if (!show) return null
+  const dismiss = () => { try { localStorage.setItem(HINT_KEY, '1') } catch { /* it will show again, which is harmless */ } setShow(false) }
+  return (
+    <div style={{ background: T.infoBg, border: `1px solid ${T.infoBorder}`, borderRadius: 16, padding: 14, marginTop: 18, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ fontSize: 17, fontWeight: 800, color: T.info }}>{t('add_home_title', lang)}</div>
+      <div style={{ fontSize: 15, lineHeight: 1.5, color: T.text }}>{t('add_home_body', lang)}</div>
+      <BigBtn tone="plain" onClick={dismiss}>{t('got_it', lang)}</BigBtn>
+    </div>
+  )
+}
+
 /**
  * The coordinator's home: his allocated factories. `onOpenFactory(factoryId)` opens a factory's work; it is also
  * called after a successful check-in, so he lands on what is being made there.
@@ -127,6 +149,7 @@ export function FactoriesPage({ onOpenFactory }) {
             ))}
           </div>
         )}
+      <AddToHomeHint lang={lang} />
       {help && <LocationHelp lang={lang} weak={help.weak} onRetry={help.retry} onClose={() => setHelp(null)} />}
     </div>
   )

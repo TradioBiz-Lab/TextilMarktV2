@@ -48,7 +48,7 @@ describe('the coordinator\'s words', () => {
     for (const k of en) expect(marks(COORDINATOR_TEXT.hi[k]), k).toEqual(marks(COORDINATOR_TEXT.en[k]))
   })
   test('no em dashes anywhere', () => {
-    for (const lang of ['en', 'hi']) for (const v of Object.values(COORDINATOR_TEXT[lang])) expect(v.includes('—')).toBe(false)
+    for (const lang of ['en', 'hi']) for (const v of Object.values(COORDINATOR_TEXT[lang])) expect(v.includes(String.fromCharCode(0x2014))).toBe(false)
   })
   test('markers are filled, unknown keys and languages fall back', () => {
     expect(t('checked_in_at', 'en', { time: '10:42' })).toBe('Checked in at 10:42')

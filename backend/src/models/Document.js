@@ -72,6 +72,19 @@ const documentSchema = new mongoose.Schema({
   // A file a customer sent with a style request (routes/styleRequests.js): no style yet; approval moves it onto the style.
   styleRequestId: { type: mongoose.Schema.Types.ObjectId, ref: 'StyleRequest', default: null },
 
+  // A coordinator's update from the factory floor (models/FieldUpdate.js): its photos and voice note point back to it.
+  // `internal` keeps the file from the customer until an admin releases the update; `tradioOnly` (the voice recording)
+  // keeps it from the factory as well, for good.
+  fieldUpdateId: { type: mongoose.Schema.Types.ObjectId, ref: 'FieldUpdate', default: null },
+  internal:      { type: Boolean, default: false },
+  tradioOnly:    { type: Boolean, default: false },
+  // Set when the file's bytes are kept outside the database (lib/fileStore.js); dataUrl is then empty.
+  storage: {
+    driver: { type: String, default: null },
+    bucket: { type: String, default: null },
+    key:    { type: String, default: null },
+  },
+
   // Free-text notes — used for stage evidence entries that capture context (SOP-driven),
   // including text-only stage evidence (no file/link).
   notes:      { type: String, default: null },
@@ -90,6 +103,7 @@ const documentSchema = new mongoose.Schema({
 }, { timestamps: true })
 
 documentSchema.index({ masterOrderId: 1 })
+documentSchema.index({ fieldUpdateId: 1 }, { partialFilterExpression: { fieldUpdateId: { $type: 'objectId' } } })
 documentSchema.index({ versionOf: 1 }, { partialFilterExpression: { versionOf: { $type: 'objectId' } } })
 documentSchema.index({ mfrId: 1, isActive: 1 })
 documentSchema.index({ orderId: 1, isActive: 1 })

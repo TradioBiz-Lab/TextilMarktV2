@@ -10,6 +10,25 @@ Note any visible quality issues (shade variation, lines or streaks on fabric, st
 Return JSON only:
 {"stage": "...", "confidence": 0.0-1.0, "issues": ["..."], "description": "one short line", "style_hint": "any visible tag, label or style code, else null"}`
 
+/**
+ * A coordinator's update from the factory floor, to be turned into suggestions for the account manager.
+ * `ctx` is what is already known from his taps: the client, the product, its colours, the step he picked and the
+ * plan's steps in order (their position is the index to answer with).
+ */
+export const fieldUpdatePrompt = ctx => `You help a garment sourcing company in India. One of its own quality coordinators is standing in a factory and has sent an update about ONE production step of ONE style. His words may be Hindi, English or a mix, and may have been transcribed from speech, so names and numbers can be garbled. Photos, when attached, may show the work, a defect, or a handwritten paper note: read handwriting when you can.
+
+What is already known (he chose these by tapping, they are certain):
+- Client: ${ctx.client || 'unknown'}
+- Product: ${ctx.product || 'unknown'}${ctx.styleNumber ? ` (${ctx.styleNumber})` : ''}
+- Colours of this style: ${ctx.colours?.length ? ctx.colours.join(', ') : 'not recorded'}
+- The step he posted on: index ${ctx.stageIndex}, "${ctx.stageName}"
+- The plan's steps, by index: ${ctx.steps.map((s, i) => `${i}="${s.name}" (${s.status}${s.totalUnits ? `, ${s.unitsDone || 0} of ${s.totalUnits} pieces` : ''})`).join('; ')}
+
+Work out what his update means for the plan. Match a garbled colour or step name to the real one above. Never invent a number: use null when he gave none or it is unclear.
+
+Return JSON only:
+{"summary": "one short plain English sentence of what he reported", "suggested_stage_index": null or the index of a DIFFERENT step this update is clearly about, "units": null or the total pieces done so far on the step that he stated, "status_hint": null or "started" or "finished", "result": null or "pass" or "fail" (only for a check or inspection he reports), "issues": ["each problem he reports, short"], "colours": [{"name": "a colour from the list", "note": "what he said about it"}], "confidence": 0.0-1.0}`
+
 export const DOCUMENT_PROMPT = `This is a production document from an Indian textile or garment factory (challan, invoice, packing list, lab dip card, or similar).
 Extract the fields below. Use null if a field is missing. Do not guess.
 Return JSON only:

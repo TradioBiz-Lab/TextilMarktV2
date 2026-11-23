@@ -17,6 +17,7 @@ import { PartnersPage } from './pages/admin/PartnersPage.jsx'
 import { StyleRequestsPage } from './pages/admin/StyleRequestsPage.jsx'
 import { PartnerDetailPage } from './pages/admin/PartnerDetailPage.jsx'
 import { VisitsPage } from './pages/admin/VisitsPage.jsx'
+import { FieldUpdatesPage } from './pages/admin/FieldUpdatesPage.jsx'
 import { FactoriesPage } from './pages/coordinator/FactoriesPage.jsx'
 import { FactoryOrdersPage } from './pages/coordinator/FactoryOrdersPage.jsx'
 import { FactoryProductsPage } from './pages/coordinator/FactoryProductsPage.jsx'
@@ -235,6 +236,7 @@ function Inner() {
       // The Partner Directory is admin-only sourcing data; capsFor gates it here and the server refuses every other role.
       if (view === 'partners' && capsFor(user).seePartners) return <PartnersPage onNavigate={navTo} />
       if (view === 'visits' && capsFor(user).seeVisits) return <VisitsPage onNavigate={navTo} />
+      if (view === 'field_updates' && capsFor(user).seeFieldUpdates) return <FieldUpdatesPage onOpenStyle={openOrder} />
       if (view === 'partner_detail' && selPartner && capsFor(user).seePartners) return <PartnerDetailPage key={selPartner} partnerId={selPartner} onNavigate={navTo} onBack={() => goBack({ view: 'partners' })} />
     }
     return <div style={{ textAlign: 'center', padding: '60px', color: T.textLight }}>Page not found</div>

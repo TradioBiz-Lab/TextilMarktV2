@@ -20,6 +20,10 @@ const stageUpdateSchema = new mongoose.Schema({
   text:   { type: String, required: true, maxlength: 1000 },
   byUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   at:     { type: Date, default: Date.now },
+  // A coordinator's update from the factory floor (models/FieldUpdate.js). `internal` keeps the note from the customer
+  // until an admin releases the update.
+  fieldUpdateId: { type: mongoose.Schema.Types.ObjectId, ref: 'FieldUpdate', default: null },
+  internal:      { type: Boolean, default: false },
 }, { _id: false })
 
 // One raw-material/trim line to procure for a stage — tracked to PO/received level.

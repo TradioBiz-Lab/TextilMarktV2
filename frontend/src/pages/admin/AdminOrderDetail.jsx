@@ -815,7 +815,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* A coordinator on the factory floor gets the essentials first; the full page follows, read only. */}
-        {caps.isCoord && <CoordinatorOrderTop order={order} factoryId={effectiveMid || initialMid} />}
+        {caps.isCoord && <CoordinatorOrderTop order={order} factoryId={effectiveMid || initialMid} onNextProduct={onBack} />}
         {/* ── Page header: identity + actions ── */}
         <FlexRow style={{ flexWrap: 'wrap' }} gap={10}>
           <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
@@ -1929,7 +1929,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
                                     {(s.updates || []).map((u, ui) => (
                                       <div key={ui} style={{ background: '#fff', borderRadius: 6, padding: '6px 10px', border: `1px solid ${T.border}` }}>
                                         <div style={{ fontSize: 11, color: T.text }}>{u.text}</div>
-                                        <div style={{ fontSize: 9, color: T.textLight, marginTop: 2 }}>{u.byUserName || 'Someone'} · {fmtDate(u.at)}</div>
+                                        <div style={{ fontSize: 9, color: T.textLight, marginTop: 2 }}>{u.byUserName || 'Someone'} · {fmtDate(u.at)}{u.fromFloor ? ' · from the factory floor' : ''}{u.internal ? ' · not shown to the customer yet' : ''}</div>
                                       </div>
                                     ))}
                                   </div>

@@ -274,6 +274,19 @@ export const visitsApi = {
   list: (params = {}) => api.get('/visits', { params }),
 }
 
+// Updates from the factory floor: a coordinator sends them, an account manager (any admin) acts on them.
+export const fieldUpdatesApi = {
+  send: data => api.post('/field-updates', data, { timeout: 90000 }),   // photos on mobile data take a while
+  mine: () => api.get('/field-updates/mine'),
+  list: (params = {}) => api.get('/field-updates', { params }),
+  count: () => api.get('/field-updates/count'),
+  move: (id, stageIndex) => api.post(`/field-updates/${id}/move`, { stageIndex }),
+  action: (id, applied) => api.post(`/field-updates/${id}/action`, applied ? { applied } : {}),
+  dismiss: id => api.post(`/field-updates/${id}/dismiss`),
+  reopen: id => api.post(`/field-updates/${id}/reopen`),
+  release: (id, photoIds) => api.post(`/field-updates/${id}/release`, { photoIds }),
+}
+
 export const floorApi = {
   feed: () => api.get('/floor/feed'),
 }

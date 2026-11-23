@@ -563,7 +563,7 @@ export function QuickStageModal({ orderId, mfrId, stageIndex, onClose, onOpenOrd
             {(stage.updates || []).slice().reverse().map((u, ui) => (
               <div key={ui} style={{ background: '#f8fafc', borderRadius: 6, padding: '6px 10px', border: `1px solid ${T.border}` }}>
                 <div style={{ fontSize: 11, color: T.text }}>{u.text}</div>
-                <div style={{ fontSize: 9, color: T.textLight, marginTop: 2 }}>{u.byUserName || 'Someone'} · {fmtDateTime(u.at)}</div>
+                <div style={{ fontSize: 9, color: T.textLight, marginTop: 2 }}>{u.byUserName || 'Someone'} · {fmtDateTime(u.at)}{u.fromFloor ? ' · from the factory floor' : ''}{u.internal ? ' · not shown to the customer yet' : ''}</div>
               </div>
             ))}
           </div>

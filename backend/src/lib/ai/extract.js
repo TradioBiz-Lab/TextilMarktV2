@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
-import { PHOTO_PROMPT, DOCUMENT_PROMPT, textPrompt } from './prompts.js'
+import { PHOTO_PROMPT, DOCUMENT_PROMPT, textPrompt, fieldUpdatePrompt } from './prompts.js'
 
 const MODEL = () => process.env.ANTHROPIC_MODEL || 'claude-sonnet-5'
 
@@ -85,3 +85,29 @@ export const extractDocument = (buffer, mimeType, opts) =>
 
 export const extractText = (text, activeOrders, opts) =>
   callJson({ content: [{ type: 'text', text: `${textPrompt(activeOrders)}\n\nMessage:\n${text}` }], schema: textSchema, ...opts })
+
+// What a coordinator's update from the factory floor means for the plan, as suggestions for the account manager.
+const nullableInt = z.number().int().min(0).nullish().transform(v => v ?? null)
+export const fieldUpdateSchema = z.object({
+  summary: z.string().nullish().transform(v => (v ?? '').slice(0, 400)),
+  suggested_stage_index: nullableInt,
+  units: nullableInt,
+  status_hint: z.enum(['started', 'finished']).nullish().transform(v => v ?? null),
+  result: z.enum(['pass', 'fail']).nullish().transform(v => v ?? null),
+  issues: z.array(z.string()).nullish().transform(v => (v ?? []).map(x => x.slice(0, 300)).slice(0, 8)),
+  colours: z.array(z.object({ name: z.string(), note: z.string().nullish().transform(v => (v ?? '').slice(0, 300)) })).nullish().transform(v => (v ?? []).slice(0, 12)),
+  confidence: conf,
+})
+
+/**
+ * `photos` are { buffer, mimeType } (at most three are sent). Returns the parsed suggestions, or null when the model
+ * could not be read twice running: the update is then shown to the account manager without suggestions.
+ */
+export const extractFieldUpdate = (text, photos, ctx, opts) =>
+  callJson({
+    content: [
+      ...(photos || []).slice(0, 3).map(p => mediaBlock(p.buffer, p.mimeType)),
+      { type: 'text', text: `${fieldUpdatePrompt(ctx)}\n\nHis update:\n${text || '(no words, only the photos above)'}` },
+    ],
+    schema: fieldUpdateSchema, ...opts,
+  })

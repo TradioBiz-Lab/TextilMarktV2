@@ -23,6 +23,10 @@ export const COORDINATOR_ALLOWED = [
   ['GET', new RegExp(`^/api/documents/${ID}/(data|versions)$`)],
   ['GET', /^\/api\/master-orders$/],
   ['GET', /^\/api\/floor\/feed$/],
+  // Phase 3: an update on a step, with photos and a voice note. He must be checked in at that factory (the route checks).
+  ['POST', /^\/api\/field-updates$/],
+  ['GET', /^\/api\/field-updates\/mine$/],
+  ['POST', /^\/api\/voice\/transcribe$/],
 ]
 
 /**

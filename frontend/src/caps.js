@@ -9,7 +9,8 @@
 //   buyer        read-only, except a stage assigned to them (usually an approval):
 //                they may post notes on it and set its status
 //   coordinator  Tradio's Ops & QC coordinator: checks in and out at his allocated factories and reads the styles
-//                made there (read only: no control on these screens is his)
+//                made there (read only: no control on these screens is his), and sends updates on a step from
+//                the floor, which an admin acts on
 //                (the server refuses every request not on its list, backend/src/lib/coordinator.js)
 export function capsFor(user) {
   const role = user?.role
@@ -44,6 +45,8 @@ export function capsFor(user) {
     seeUsers: isAdmin, seeAudit: isAdmin, seePartners: isAdmin /* the Partner Directory: Tradio's sourcing CRM, admins only (the server enforces it) */, seeReviewQueue: false /* retired until the WhatsApp integration; set to isAdmin to bring it back */, seeRibbonsAdmin: isAdmin, seeBuyerRequests: isAdmin,
     // Factory visits: a coordinator checks in and out; admins read who was where and when.
     checkInAtFactories: isCoord, seeVisits: isAdmin,
+    // Updates from the floor: a coordinator sends them (photos, voice, words on a step); admins read and act on them.
+    sendFieldUpdates: isCoord, seeFieldUpdates: isAdmin,
   }
 }
 

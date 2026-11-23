@@ -269,7 +269,9 @@ const enrichOrder = (o, viewerMfrId = null, { forBuyer = false } = {}) => {
           })),
           itemsDone: (s.items || []).filter(it => it.status === 'done').length,
           itemsTotal: (s.items || []).length,
-          updates: (s.updates || []).map(u => ({
+          // A coordinator's note from the floor is Tradio's own until an admin releases it: a customer is not sent it.
+          updates: (s.updates || []).filter(u => !(forBuyer && u.internal)).map(u => ({
+            ...(u.fieldUpdateId ? { fromFloor: true, ...(forBuyer ? {} : { internal: !!u.internal }) } : {}),
             text: u.text,
             byUser: u.byUser?._id?.toString() ?? u.byUser?.toString(),
             byUserName: forBuyer && u.byUser?.role === 'manufacturer' ? TRADIO_PRODUCTION : u.byUser?.name ?? null,
