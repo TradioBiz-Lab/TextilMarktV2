@@ -11,6 +11,9 @@ import { AuditLog } from '../src/models/AuditLog.js'
 import { Notification } from '../src/models/Notification.js'
 import { setFieldUpdateExtractor, readFieldUpdate } from '../src/routes/fieldUpdates.js'
 import { registerFileDriver } from '../src/lib/fileStore.js'
+import { setCatalystSdk } from '../src/lib/stratusDriver.js'
+import { Readable } from 'node:stream'
+import { makeMaster } from './helpers/factories.js'
 
 before(async () => { await startTestDb(); await startServer(); await FactoryVisit.init() })
 after(async () => { await stopServer(); await stopTestDb() })
@@ -57,7 +60,7 @@ describe('sending an update from the floor', () => {
     assert.equal(u.state, 'new')
     assert.equal(u.deviceAt.toISOString(), '2026-11-23T05:00:00.000Z')
 
-    const docs = await Document.find({ fieldUpdateId: u._id }).sort({ createdAt: 1 }).lean()
+    const docs = await Document.find({ fieldUpdateId: u._id }).sort({ name: 1 }).lean()   // photo 1, photo 2, voice note
     assert.equal(docs.length, 3)
     for (const d of docs) {
       assert.equal(d.type, 'floor_evidence'); assert.equal(d.orderId, 'S-1'); assert.equal(d.stageIndex, 2)
@@ -318,7 +321,7 @@ describe('where the files are kept', () => {
 
   test('a driver that is not set up, or that fails, saves nothing at all', async () => {
     const { api, body } = await arrange()
-    process.env.FILE_STORE = 'stratus'
+    process.env.FILE_STORE = 'nowhere'
     const off = await api.post('/api/field-updates', body({ photos: [PNG] }))
     assert.equal(off.status, 503)
     assert.equal((await api.post('/api/field-updates', body())).status, 201, 'words alone need no file store')
@@ -331,5 +334,75 @@ describe('where the files are kept', () => {
     assert.equal(res.status, 500)
     assert.equal(await FieldUpdate.countDocuments(), 0)
     assert.equal(await Document.countDocuments({ fieldUpdateId: { $ne: null } }), 0)
+  })
+})
+
+describe('Zoho Stratus as the place the files are kept', () => {
+  // A stand-in for zcatalyst-sdk-node: the real one works only inside Catalyst, from the headers its gateway adds.
+  const fakeCatalyst = (store, seen) => ({
+    initialize(obj, opts) {
+      seen.push({ projectId: obj.headers['x-zc-projectid'] ?? null, scope: opts?.scope })
+      return { stratus: () => ({ bucket: name => ({
+        putObject: async (key, body, o) => { if (store.has(`${name}/${key}`)) throw new Error('exists'); store.set(`${name}/${key}`, { body, contentType: o?.contentType }); return true },
+        getObject: async key => { const f = store.get(`${name}/${key}`); if (!f) throw new Error('no such object'); return Readable.from([f.body.subarray(0, 10), f.body.subarray(10)]) },
+        deleteObject: async key => { store.delete(`${name}/${key}`); return { message: 'Object Deletion successful.' } },
+      }) }) }
+    },
+  })
+
+  test('a photo goes to the bucket, not the database, and opens again through the app\'s own checks', async () => {
+    const store = new Map(); const seen = []
+    setCatalystSdk(fakeCatalyst(store, seen))
+    process.env.FILE_STORE = 'stratus'; process.env.STRATUS_BUCKET = 'tradio-test-floor'
+    try {
+      const { admin, buyer, api, body } = await arrange()
+      const sent = await api.post('/api/field-updates', body({ photos: [PNG], audio: AUDIO }))
+      assert.equal(sent.status, 201, JSON.stringify(sent.body))
+      const docs = await Document.find({ fieldUpdateId: sent.body.id }).sort({ name: 1 }).lean()   // the photo, then the voice note
+      assert.deepEqual(docs.map(d => [d.dataUrl, d.storage.driver, d.storage.bucket]), [[null, 'stratus', 'tradio-test-floor'], [null, 'stratus', 'tradio-test-floor']])
+      assert.equal(store.size, 2)
+      assert.deepEqual([...store.values()].map(f => f.contentType).sort(), ['audio/webm', 'image/png'])
+      assert.ok(seen.every(s => s.scope === 'admin'))
+      const opened = await as(admin).get(`/api/documents/${docs[0]._id}/data`)
+      assert.equal(opened.status, 200)
+      assert.equal(opened.body.dataUrl, PNG, 'the stream is read back whole')
+      assert.equal((await as(buyer).get(`/api/documents/${docs[0]._id}/data`)).status, 403)
+    } finally { setCatalystSdk(null); delete process.env.STRATUS_BUCKET }
+  })
+
+  test('without a bucket name nothing is sent and nothing is half-saved', async () => {
+    setCatalystSdk(fakeCatalyst(new Map(), []))
+    process.env.FILE_STORE = 'stratus'; delete process.env.STRATUS_BUCKET
+    try {
+      const { api, body } = await arrange()
+      assert.equal((await api.post('/api/field-updates', body({ photos: [PNG] }))).status, 503)
+      assert.equal(await FieldUpdate.countDocuments(), 0)
+    } finally { setCatalystSdk(null) }
+  })
+
+  test('a master admin can prove it works on a server before switching it on; the result is audited', async () => {
+    const store = new Map()
+    setCatalystSdk(fakeCatalyst(store, []))
+    process.env.STRATUS_BUCKET = 'tradio-test-floor'
+    try {
+      const { admin, api } = await arrange()
+      const master = as(await makeMaster({ name: 'Ankit' }))
+      const where = await master.get('/api/field-updates/storage')
+      assert.deepEqual(where.body, { fileStore: 'mongo', bucket: 'tradio-test-floor', problem: null })
+      const ok = await master.post('/api/field-updates/storage/check', {})
+      assert.equal(ok.status, 200, JSON.stringify(ok.body))
+      assert.deepEqual(ok.body.steps, [{ step: 'write', ok: true }, { step: 'read', ok: true }, { step: 'remove', ok: true }])
+      assert.equal(store.size, 0, 'the check leaves nothing behind')
+      assert.match((await AuditLog.findOne({ action: 'Storage Checked' }).lean()).detail, /tradio-test-floor: works \(by Ankit\)/)
+
+      setCatalystSdk({ initialize: () => { throw new Error('Failed to parse object') } })
+      const bad = await master.post('/api/field-updates/storage/check', {})
+      assert.equal(bad.status, 502)
+      assert.deepEqual(bad.body.steps.map(s => [s.step, s.ok]), [['write', false], ['read', false], ['remove', false]])
+      assert.match(bad.body.steps[0].error, /Failed to parse object/)
+
+      for (const who of [admin]) assert.equal((await as(who).post('/api/field-updates/storage/check', {})).status, 403, 'master only')
+      assert.equal((await api.get('/api/field-updates/storage')).body.code, 'COORDINATOR_NOT_ALLOWED')
+    } finally { setCatalystSdk(null); delete process.env.STRATUS_BUCKET }
   })
 })

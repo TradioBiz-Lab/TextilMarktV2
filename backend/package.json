@@ -28,6 +28,7 @@
     "mongoose": "^8.24.10",
     "papaparse": "^5.7.0",
     "resend": "^6.9.4",
+    "zcatalyst-sdk-node": "3.4.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {

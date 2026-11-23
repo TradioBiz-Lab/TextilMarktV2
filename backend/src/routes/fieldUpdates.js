@@ -2,11 +2,12 @@ import { Router } from 'express'
 import mongoose from 'mongoose'
 import rateLimit from 'express-rate-limit'
 import { FieldUpdate, FactoryVisit, Order, Document, User, AuditLog } from '../db/index.js'
-import { requireAuth, requireAdmin } from '../middleware/auth.js'
+import { requireAuth, requireAdmin, requireMaster } from '../middleware/auth.js'
+import { checkStratus } from '../lib/stratusDriver.js'
 import { COORDINATOR_ROLE } from '../lib/coordinator.js'
 import { openVisitOf } from './visits.js'
 import { validLatLng, isAway, mapsUrlFor, dayIST, startOfDayIST } from '../lib/geo.js'
-import { saveFile, loadFile, fromDataUrl, fileStoreProblem } from '../lib/fileStore.js'
+import { saveFile, loadFile, fromDataUrl, fileStoreProblem, fileDriverName } from '../lib/fileStore.js'
 import { notify, adminIds } from '../lib/notify.js'
 import { extractFieldUpdate } from '../lib/ai/extract.js'
 import { deriveStageStatus } from '../models/Order.js'
@@ -99,7 +100,7 @@ export function setFieldUpdateExtractor(fn) { extractor = fn }
 const aiAvailable = () => !!extractor || (!!process.env.ANTHROPIC_API_KEY && process.env.NODE_ENV !== 'test')
 
 /** Reads one saved update and stores what it suggests. Never throws; a failed reading is recorded as such. */
-export async function readFieldUpdate(id) {
+export async function readFieldUpdate(id, fileCtx) {
   try {
     const u = await FieldUpdate.findById(id).lean()
     if (!u || u.ai?.state !== 'pending') return null
@@ -108,7 +109,7 @@ export async function readFieldUpdate(id) {
     const photoDocs = await Document.find({ fieldUpdateId: u._id, isActive: true, mimeType: /^image\// }).limit(3).lean()
     const photos = []
     for (const d of photoDocs) {
-      const f = fromDataUrl(await loadFile(d))
+      const f = fromDataUrl(await loadFile(d, fileCtx))
       if (f) photos.push({ buffer: f.buffer, mimeType: f.mimeType })
     }
     const ctx = {
@@ -197,7 +198,7 @@ router.post('/', coordinatorOnly, sendLimiter, async (req, res) => {
     const folder = `field-updates/${dayIST(now).slice(0, 4)}/${dayIST(now).slice(5, 7)}/${update._id}`
     const store = async (file, name, extra = {}) => {
       const _id = new mongoose.Types.ObjectId()
-      const kept = await saveFile(`${folder}/${_id}.${file.ext}`, file.buffer, file.mimeType)
+      const kept = await saveFile(`${folder}/${_id}.${file.ext}`, file.buffer, file.mimeType, { req })
       await Document.create({ ...base, ...extra, _id, name, ...kept, fileName: `${name}.${file.ext}`, fileSize: file.buffer.length, mimeType: file.mimeType })
       made.docIds.push(_id)
     }
@@ -224,7 +225,8 @@ router.post('/', coordinatorOnly, sendLimiter, async (req, res) => {
     const docs = await Document.find({ _id: { $in: made.docIds } }, '-dataUrl').lean()
     res.status(201).json(updateOut(update.toObject(), { docs, order }))
     // The AI reads it after the answer has gone: he never waits for it.
-    if (update.ai.state === 'pending') readFieldUpdate(update._id)
+    // (The request's headers are kept for it: a file kept in Stratus is fetched with them.)
+    if (update.ai.state === 'pending') readFieldUpdate(update._id, { req: { headers: req.headers } })
   } catch (err) {
     // Nothing half-saved: the phone keeps its draft and he can try again.
     if (made.docIds.length) await Document.deleteMany({ _id: { $in: made.docIds } }).catch(() => {})
@@ -241,6 +243,19 @@ router.get('/mine', coordinatorOnly, async (req, res) => {
     const docs = await Document.find({ fieldUpdateId: { $in: list.map(u => u._id) }, isActive: true }, '-dataUrl').lean()
     res.json(list.map(u => updateOut(u, { order: orders.get(u.orderId), docs: docs.filter(d => String(d.fieldUpdateId) === String(u._id)) })))
   } catch (err) { serverError(res, err) }
+})
+
+// ── Where the files are kept (master admin) ───────────────────────────────────────────────────────────────────────
+// GET /api/field-updates/storage - where a coordinator's files go on this server.
+// POST /api/field-updates/storage/check - writes, reads and removes a few bytes in Stratus, so it can be proven on a
+// server before FILE_STORE=stratus is set and a photo depends on it. Works whatever FILE_STORE says.
+router.get('/storage', requireMaster, (req, res) => {
+  res.json({ fileStore: fileDriverName(), bucket: process.env.STRATUS_BUCKET ? String(process.env.STRATUS_BUCKET).trim() : null, problem: fileStoreProblem() })
+})
+router.post('/storage/check', requireMaster, async (req, res) => {
+  const result = await checkStratus({ req })
+  await AuditLog.create({ byUser: req.user.id, action: 'Storage Checked', detail: `Stratus bucket ${result.bucket || '(none set)'}: ${result.ok ? 'works' : result.steps.filter(s => !s.ok).map(s => `${s.step} failed (${s.error})`).join('; ')} (by ${req.user.name})`.slice(0, 1000) }).catch(() => {})
+  res.status(result.ok ? 200 : 502).json({ fileStore: fileDriverName(), ...result })
 })
 
 // ── Account manager (any admin) ───────────────────────────────────────────────────────────────────────────────────

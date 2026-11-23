@@ -523,7 +523,8 @@ update), `tradioOnly` (Boolean: the voice recording, kept from the factory and t
 `storage: { driver, bucket, key }` (set when the file's bytes are kept outside the database by `lib/fileStore.js`;
 `dataUrl` is then null and `GET /api/documents/:id/data` fetches the bytes after its usual access checks). Only
 `routes/fieldUpdates.js` writes through the file store; `FILE_STORE` names the driver and defaults to `mongo` (the
-database, as before). A coordinator reads the documents of the styles at his factories like a factory does: nothing in
+database, as before); `stratus` with `STRATUS_BUCKET` keeps them in Zoho Catalyst's file storage (docs/RUNBOOK.md
+section 9). A coordinator reads the documents of the styles at his factories like a factory does: nothing in
 `HIDDEN_FROM_FACTORIES`, nothing of another factory.
 
 ---

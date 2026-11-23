@@ -7,17 +7,22 @@
 // Only routes/fieldUpdates.js writes through here. Every other upload is unchanged.
 const drivers = new Map()
 
-/** A driver is { put(key, buffer, mimeType) -> { bucket? }, get(key, storage) -> Buffer, remove(key, storage) }. */
+/**
+ * A driver is { put(key, buffer, mimeType, ctx) -> { bucket? }, get(key, storage, ctx) -> Buffer, remove(key, storage, ctx) }.
+ * `ctx` is { req }: the incoming request, which a driver that lives inside the hosting platform needs (lib/stratusDriver.js).
+ */
 export function registerFileDriver(name, driver) { drivers.set(name, driver) }
 
-// The Stratus driver is not built yet: it needs a bucket in the Catalyst console and a first proof from AppSail on the
-// hosted sandbox. Until it is registered, asking for it fails loudly here instead of quietly filling the database.
+// A driver that is asked for but not registered fails loudly here instead of quietly filling the database. The Stratus
+// driver (lib/stratusDriver.js) registers itself when the app starts; it also needs STRATUS_BUCKET.
 export const fileDriverName = () => String(process.env.FILE_STORE || 'mongo').trim().toLowerCase()
 
 export function fileStoreProblem() {
   const name = fileDriverName()
-  if (name === 'mongo' || drivers.has(name)) return null
-  return `FILE_STORE=${name} is not available on this server (no such file driver is set up)`
+  if (name === 'mongo') return null
+  if (!drivers.has(name)) return `FILE_STORE=${name} is not available on this server (no such file driver is set up)`
+  if (name === 'stratus' && !String(process.env.STRATUS_BUCKET || '').trim()) return 'FILE_STORE=stratus needs STRATUS_BUCKET, the name of the bucket'
+  return null
 }
 
 const toDataUrl = (buffer, mimeType) => `data:${mimeType};base64,${buffer.toString('base64')}`
@@ -31,27 +36,27 @@ export function fromDataUrl(dataUrl) {
  * Keeps a file and returns the fields to put on its Document: { dataUrl } when the database holds it, or
  * { storage: { driver, bucket, key } } when a driver does.
  */
-export async function saveFile(key, buffer, mimeType) {
+export async function saveFile(key, buffer, mimeType, ctx) {
   const problem = fileStoreProblem()
   if (problem) throw new Error(problem)
   const name = fileDriverName()
   if (name === 'mongo') return { dataUrl: toDataUrl(buffer, mimeType) }
-  const out = await drivers.get(name).put(key, buffer, mimeType)
+  const out = await drivers.get(name).put(key, buffer, mimeType, ctx)
   return { storage: { driver: name, bucket: out?.bucket || null, key } }
 }
 
 /** A document's file as a data URL, wherever it is kept; null when it has none. */
-export async function loadFile(doc) {
+export async function loadFile(doc, ctx) {
   if (!doc?.storage?.driver) return doc?.dataUrl || null
   const driver = drivers.get(doc.storage.driver)
   if (!driver) throw new Error(`This file is kept in "${doc.storage.driver}", which is not set up on this server`)
-  const buffer = await driver.get(doc.storage.key, doc.storage)
+  const buffer = await driver.get(doc.storage.key, doc.storage, ctx)
   return toDataUrl(buffer, doc.mimeType || 'application/octet-stream')
 }
 
 /** Removes a stored file. Never throws: a file left behind is logged, the document's removal goes on. */
-export async function removeFile(doc) {
+export async function removeFile(doc, ctx) {
   if (!doc?.storage?.driver) return
-  try { await drivers.get(doc.storage.driver)?.remove(doc.storage.key, doc.storage) }
+  try { await drivers.get(doc.storage.driver)?.remove(doc.storage.key, doc.storage, ctx) }
   catch (err) { console.error('[fileStore] could not remove', doc.storage.key, err.message) }
 }

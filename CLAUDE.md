@@ -123,8 +123,11 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   `frontend/src/pages/coordinator/` and `components/CoordinatorOrderTop.jsx`, in Hindi and English
   (`frontend/src/coordinatorText.js`: add a key in both, a test checks it). His sign-in lasts 30 days
   (`sessionFor` in routes/auth.js). A factory's location is `geo` on its Partner Directory record (`lib/geo.js`).
-  A coordinator's files go through `lib/fileStore.js` (`FILE_STORE`, default the database); the Zoho Stratus driver is
-  not built yet, see docs/SCHEMA.md `documents`. The app is installable (`frontend/public/manifest.webmanifest`); there
+  A coordinator's files go through `lib/fileStore.js` (`FILE_STORE`, default the database). `FILE_STORE=stratus` with
+  `STRATUS_BUCKET` keeps them in Zoho Stratus (`lib/stratusDriver.js`, the `zcatalyst-sdk-node` package, loaded on first
+  use). That SDK works only on AppSail, from headers Catalyst adds to each request, so it cannot run locally or in tests
+  (they use `setCatalystSdk`); it is proven on a server with `POST /api/field-updates/storage/check` (master admin)
+  before it is switched on: docs/RUNBOOK.md section 9. The newer `@zcatalyst/*` packages need Node 22; AppSail is Node 20. The app is installable (`frontend/public/manifest.webmanifest`); there
   is no service worker.
 
 - **The Partner Directory is admin-only sourcing data.** `routes/manufacturers.js` guards its whole router with

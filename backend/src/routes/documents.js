@@ -394,7 +394,7 @@ router.get('/:id/data', requireAuth, async (req, res) => {
     const denied = await readError(req.user, doc)
     if (denied) return res.status(denied.status).json({ error: denied.error })
     // A file kept outside the database (lib/fileStore.js) is fetched here, after the checks above.
-    if (doc.storage?.driver) doc.dataUrl = await loadFile(doc)
+    if (doc.storage?.driver) doc.dataUrl = await loadFile(doc, { req })
     res.json(forViewer(mapDoc(doc, true), req))
   } catch (err) {
     console.error('[documents]', err)
