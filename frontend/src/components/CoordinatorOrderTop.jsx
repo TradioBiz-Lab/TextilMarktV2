@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Ruler, Image as ImageIcon, ChevronDown, ChevronRight, Camera, MapPin } from '../icons.jsx'
+import { Ruler, Image as ImageIcon, ChevronDown, ChevronRight, Camera, MapPin, LayoutGrid } from '../icons.jsx'
 import { T } from '../constants.js'
 import { useApp } from '../context.jsx'
 import { t, langOf } from '../coordinatorText.js'
 import { techPackOf, measurementOf, productState } from '../coordinatorStyles.js'
 import { DocCard } from './ui.jsx'
+import { SizeBreakupTable } from './SizeBreakup.jsx'
 import { nextSteps, stepState } from '../nextSteps.js'
 import { AddUpdateSheet } from '../pages/coordinator/AddUpdateSheet.jsx'
 
@@ -82,7 +83,7 @@ function AddUpdate({ order, split, lang, visits, onNextProduct }) {
 
 /**
  * The top of the order page as an Ops & QC coordinator sees it on his phone: the picture, what it is, how many, and the
- * two papers he checks against (tech pack, measurements), then the steps he can send an update on. The full page follows
+ * two papers he checks against (tech pack, measurements), the size breakup, then the steps he can send an update on. The full page follows
  * underneath, read only. `onNextProduct` takes him back to the client's products after an update.
  */
 export function CoordinatorOrderTop({ order, factoryId, onNextProduct }) {
@@ -115,6 +116,16 @@ export function CoordinatorOrderTop({ order, factoryId, onNextProduct }) {
       )}
       <Paper label={t('tech_pack', lang)} doc={techPackOf(docs, order.id)} lang={lang} users={users} getDocData={getDocData} />
       <Paper label={measurement?.locked ? t('locked_measurement', lang) : t('measurements', lang)} doc={measurement} lang={lang} users={users} getDocData={getDocData} />
+      {/* How many of each colour in each size: what he counts and checks cartons against. Below the two papers, as Ankit asked. */}
+      <div style={{ background: '#fff', border: `1.5px solid ${order.sizeBreakup ? T.infoBorder : T.border}`, borderRadius: 14, padding: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 800, color: order.sizeBreakup ? T.info : T.textMuted, marginBottom: order.sizeBreakup ? 8 : 0 }}>
+          <LayoutGrid size={20} /> {t('size_breakup', lang)}
+          {order.sizeBreakup
+            ? <span style={{ marginLeft: 'auto', fontSize: 14, fontWeight: 800, color: T.text }}>{t('pieces', lang, { n: order.sizeBreakup.total })}</span>
+            : <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 600, color: T.textLight }}>{t('size_breakup_none', lang)}</span>}
+        </div>
+        {order.sizeBreakup && <SizeBreakupTable breakup={order.sizeBreakup} large labels={{ colour: t('colour', lang), total: t('total', lang), pieces: t('pieces_word', lang) }} />}
+      </div>
       {split && <AddUpdate order={order} split={split} lang={lang} visits={visits} onNextProduct={onNextProduct} />}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: T.textMuted }}>
         {t('full_details', lang)} <ChevronDown size={14} />

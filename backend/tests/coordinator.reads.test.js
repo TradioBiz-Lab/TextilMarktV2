@@ -40,7 +40,7 @@ async function arrange() {
 
 describe('a coordinator reads the styles at his factories, and only those', () => {
   test('the order list and a single order carry only his factories\' splits', async () => {
-    const { api, a } = await arrange()
+    const { api, a, admin } = await arrange()
     const list = await api.get('/api/orders')
     assert.equal(list.status, 200)
     assert.deepEqual(list.body.map(o => o.id), ['SPLIT-1'])
@@ -51,6 +51,11 @@ describe('a coordinator reads the styles at his factories, and only those', () =
 
     const one = await api.get('/api/orders/SPLIT-1')
     assert.equal(one.status, 200)
+    // The size breakup is production information: he reads it, and cannot change it.
+    await as(admin).post('/api/orders/SPLIT-1/size-breakup', { sizes: ['S', 'M'], rows: [{ colour: 'Olivine', qty: [40, 60] }] })
+    assert.equal((await api.get('/api/orders/SPLIT-1')).body.sizeBreakup.total, 100)
+    const write = await api.post('/api/orders/SPLIT-1/size-breakup', { sizes: [], rows: [] })
+    assert.deepEqual([write.status, write.body.code], [403, 'COORDINATOR_NOT_ALLOWED'])
     assert.equal(one.body.assignments.length, 1)
     assert.equal((await api.get('/api/orders/ONLY-B')).status, 403)
     assert.equal((await api.get('/api/orders/NOPE')).status, 404)
