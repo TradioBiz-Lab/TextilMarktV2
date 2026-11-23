@@ -259,7 +259,7 @@ Buckets (private, permission template Authenticated, versioning off):
 | Project | Bucket | URL |
 |---|---|---|
 | `TradioApp` (Live) | `tradio-textilmarkt-live-floor` | `https://tradio-textilmarkt-live-floor-development.zohostratus.in` |
-| `Textimarkt-Sandbox` (Test) | not created yet | |
+| `Textimarkt-Sandbox` (Test) | `tradio-textilmarkt-sandbox-floor` | `https://tradio-textilmarkt-sandbox-floor-development.zohostratus.in` |
 
 The Catalyst SDK works only on AppSail, never on a laptop, so it is proven on the server itself, in this order:
 
