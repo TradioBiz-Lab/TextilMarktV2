@@ -29,6 +29,9 @@ import { isoDay } from '../lib/masterOrderDetails.js'
 import { cleanSizeBreakup, sizeBreakupOut } from '../lib/sizeBreakup.js'
 import { cleanBom, bomOut } from '../lib/bom.js'
 import { openVisitOf } from './visits.js'
+import { readPhoto } from './fieldUpdates.js'
+import { saveFile, removeFile, fileStoreProblem } from '../lib/fileStore.js'
+import { dayIST } from '../lib/geo.js'
 
 // Categories are now free-text — no validation needed
 const MAX_PRODUCT_PHOTO_SIZE = 1024 * 1024 // 1MB raw - reference thumbnail, not full-res
@@ -3278,6 +3281,69 @@ router.post('/:id/bom/:itemId/check', requireAuth, updateLimiter, async (req, re
     // The old tick for this factory goes either way; a new one is then written with who and when.
     await Order.updateOne({ _id: existing._id }, { $pull: { 'bom.items.$[item].checks': { mfrId: mfrObjectId } } }, item)
     if (checked) await Order.updateOne({ _id: existing._id }, { $push: { 'bom.items.$[item].checks': { mfrId: mfrObjectId, by: req.user.id, byName: req.user.name, at: new Date() } } }, item)
+    res.json(enrichFor(await POPULATED(Order.findById(existing._id)).lean(), req))
+  } catch (err) { console.error('[orders]', err); res.status(500).json({ error: 'Server error' }) }
+})
+
+// Who may tick or photograph an item at a factory: a coordinator at one of his factories while checked in there, or Tradio.
+// Returns the style (bom and splits) or sends the refusal itself and returns null.
+async function bomFloorAccess(req, res) {
+  const { role } = req.user
+  if (role !== 'admin' && role !== COORDINATOR_ROLE) { res.status(403).json({ error: 'Only Tradio ticks the bill of materials' }); return null }
+  const mfrId = req.body?.mfrId
+  if (typeof mfrId !== 'string' || !mongoose.Types.ObjectId.isValid(mfrId)) { res.status(400).json({ error: 'Send the factory' }); return null }
+  const existing = await Order.findById(req.params.id, 'bom assignments.mfrId').lean()
+  if (!existing) { res.status(404).json({ error: 'Order not found' }); return null }
+  if (!splitIds(existing).includes(mfrId) || (role === COORDINATOR_ROLE && !req.user.factoryIds.includes(mfrId))) { res.status(403).json({ error: 'That factory is not yours for this style' }); return null }
+  const item = (existing.bom?.items || []).find(i => i.id === req.params.itemId)
+  if (!item) { res.status(404).json({ error: 'That item is not on the bill of materials' }); return null }
+  if (role === COORDINATOR_ROLE) {
+    const visit = await openVisitOf(req.user.id)
+    if (!visit || String(visit.factoryId) !== mfrId) { res.status(409).json({ error: 'Check in at the factory first', code: 'CHECK_IN_FIRST' }); return null }
+  }
+  return { existing, item, mfrId, mfrObjectId: new mongoose.Types.ObjectId(mfrId) }
+}
+
+// POST /api/orders/:id/bom/:itemId/evidence { mfrId, photo } - a photo of the item as seen at the factory (a data URL), or
+// photo: null to take it away. Optional: an item whose own picture says enough needs none. One photo per item per
+// factory; a new one replaces the old. Adding a photo also ticks the item. Kept like his other floor photos (the file
+// store), and not shown to the customer.
+router.post('/:id/bom/:itemId/evidence', requireAuth, updateLimiter, async (req, res) => {
+  try {
+    const ok = await bomFloorAccess(req, res); if (!ok) return
+    const { existing, item, mfrId, mfrObjectId } = ok
+    const photo = req.body.photo
+    let file = null
+    if (photo !== null) {
+      file = readPhoto(photo); if (file.error) return res.status(400).json({ error: file.error })
+      const problem = fileStoreProblem()
+      if (problem) { console.error('[orders]', problem); return res.status(503).json({ error: 'Photos cannot be saved right now. Tell Tradio.' }) }
+    }
+    const sel = { arrayFilters: [{ 'item.id': item.id }] }
+    const old = (item.evidence || []).filter(e => String(e.mfrId) === mfrId)
+    const now = new Date()
+    if (file) {
+      const _id = new mongoose.Types.ObjectId()
+      const name = `${item.name} - BOM photo`
+      const kept = await saveFile(`bom-evidence/${dayIST(now).slice(0, 4)}/${dayIST(now).slice(5, 7)}/${existing._id}/${_id}.${file.ext}`, file.buffer, file.mimeType, { req })
+      await Document.create({
+        _id, type: 'bom_evidence', name, mfrId, orderId: existing._id, bomItemId: item.id, uploadedBy: req.user.id, issuer: 'Bill of materials check at the factory',
+        issueDate: now, internal: true, isActive: true, ...kept, fileName: `${name}.${file.ext}`, fileSize: file.buffer.length, mimeType: file.mimeType,
+      })
+      await Order.updateOne({ _id: existing._id }, { $pull: { 'bom.items.$[item].evidence': { mfrId: mfrObjectId } } }, sel)
+      await Order.updateOne({ _id: existing._id }, { $push: { 'bom.items.$[item].evidence': { mfrId: mfrObjectId, docId: _id, by: req.user.id, byName: req.user.name, at: now } } }, sel)
+      // A photo of it is as good as a tick: the item is marked seen if it was not already.
+      if (!(item.checks || []).some(c => String(c.mfrId) === mfrId)) {
+        await Order.updateOne({ _id: existing._id }, { $push: { 'bom.items.$[item].checks': { mfrId: mfrObjectId, by: req.user.id, byName: req.user.name, at: now } } }, sel)
+      }
+    } else {
+      await Order.updateOne({ _id: existing._id }, { $pull: { 'bom.items.$[item].evidence': { mfrId: mfrObjectId } } }, sel)
+    }
+    // The photo it replaces (or the one taken away) goes, file and all.
+    for (const e of old) {
+      const doc = await Document.findById(e.docId)
+      if (doc) { await removeFile(doc, { req }); await Document.deleteOne({ _id: doc._id }) }
+    }
     res.json(enrichFor(await POPULATED(Order.findById(existing._id)).lean(), req))
   } catch (err) { console.error('[orders]', err); res.status(500).json({ error: 'Server error' }) }
 })

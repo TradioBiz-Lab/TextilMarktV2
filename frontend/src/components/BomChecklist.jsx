@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Pencil, Plus, Trash2, Check, AlertTriangle, ListChecks, Image as ImageIcon, MapPin, Upload, ChevronDown } from '../icons.jsx'
+import { Pencil, Plus, Trash2, Check, AlertTriangle, ListChecks, Image as ImageIcon, MapPin, Upload, ChevronDown, Camera } from '../icons.jsx'
 import { T, fmtDate } from '../constants.js'
 import { Modal, Btn, FlexRow, useToast } from './ui.jsx'
 import { useApp } from '../context.jsx'
 import { capsFor } from '../caps.js'
 import { t } from '../coordinatorText.js'
 import { shrinkImage } from '../capture.js'
-import { bomSections, checkAt, bomProgress, editorRows, blankRow, editorPayload, SHOW_CONSUMPTION } from '../bom.js'
+import { bomSections, checkAt, evidenceAt, bomProgress, editorRows, blankRow, editorPayload, SHOW_CONSUMPTION } from '../bom.js'
 
 // The pictures of a style's items, by item id. Read once per saved version of the list; a list with no picture asks nothing.
 function useBomImages(order) {
@@ -36,13 +36,21 @@ function Thumb({ src, size, onOpen }) {
   return <button type="button" onClick={onOpen} aria-label="See the picture larger" style={{ ...box, cursor: 'zoom-in' }}><img src={src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /></button>
 }
 
+// A photo taken at the factory, fetched when it is on screen (it is kept with the coordinator's other floor photos).
+function EvidenceThumb({ docId, size, onOpen }) {
+  const { getDocData } = useApp()
+  const [src, setSrc] = useState(null)
+  useEffect(() => { let dead = false; setSrc(null); getDocData(docId).then(d => { if (!dead) setSrc(d?.dataUrl || null) }).catch(() => {}); return () => { dead = true } }, [docId, getDocData])
+  return <Thumb src={src} size={size} onOpen={() => src && onOpen(src)} />
+}
+
 /**
  * The checklist as an Ops & QC coordinator uses it on the floor: each item with its picture, how much of it the order
  * needs, and one large tick. He ticks an item when he has seen it at this factory; the tick can be taken back. Ticking
  * needs him to be checked in there (`canTick`); otherwise the list is read only and says why.
  */
 export function BomChecklist({ order, factoryId, factoryName = '', lang, canTick }) {
-  const { checkBomItem } = useApp()
+  const { checkBomItem, setBomEvidence } = useApp()
   const toast = useToast()
   const images = useBomImages(order)
   const [busy, setBusy] = useState('')
@@ -56,6 +64,19 @@ export function BomChecklist({ order, factoryId, factoryName = '', lang, canTick
     catch (e) { toast(e?.message || t('failed', lang), 'error') }
     finally { setBusy('') }
   }
+  // A photo of the item as he sees it: optional. It is shrunk on the phone first; sending one also ticks the item.
+  const addPhoto = async (item, file) => {
+    if (!file) return
+    setBusy(item.id)
+    try { await setBomEvidence(order.id, item.id, factoryId, await shrinkImage(file, { max: 1280, quality: 0.75 })) }
+    catch (e) { toast(e?.message && e.message !== 'not an image' ? e.message : t('bom_photo_failed', lang), 'error') }
+    finally { setBusy('') }
+  }
+  const removePhoto = async item => {
+    setBusy(item.id)
+    try { await setBomEvidence(order.id, item.id, factoryId, null) } catch (e) { toast(e?.message || t('failed', lang), 'error') } finally { setBusy('') }
+  }
+  const link = { display: 'inline-flex', alignItems: 'center', gap: 5, minHeight: 36, fontSize: 13.5, fontWeight: 700, color: T.info, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit' }
   return (
     <div style={{ background: '#fff', border: `1.5px solid ${all ? '#22c55e' : T.infoBorder}`, borderRadius: 14, padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
       <button type="button" onClick={() => setOpen(v => !v)} aria-expanded={open}
@@ -72,17 +93,31 @@ export function BomChecklist({ order, factoryId, factoryName = '', lang, canTick
           <MapPin size={17} style={{ flexShrink: 0 }} /> {t('bom_check_in', lang, { name: factoryName })}
         </div>
       )}
+      {open && canTick && <div style={{ fontSize: 13, color: T.textMuted, lineHeight: 1.4 }}>{t('bom_hint', lang)}</div>}
       {open && bomSections(order.bom).map((sec, si) => (
         <div key={si} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {sec.section && <div style={{ fontSize: 13, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: si ? 4 : 0 }}>{sec.section}</div>}
           {sec.items.map(item => {
             const ticked = !!checkAt(item, factoryId)
+            const proof = evidenceAt(item, factoryId)
             return (
               <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 10, border: `1.5px solid ${ticked ? '#86efac' : T.border}`, background: ticked ? '#f0fdf4' : '#fff', borderRadius: 12, padding: 8 }}>
                 <Thumb src={images[item.id]} size={64} onOpen={() => setZoom(images[item.id])} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 16, fontWeight: 800, color: T.text, lineHeight: 1.25, overflowWrap: 'anywhere' }}>{item.name}</div>
                   {item.description && <div style={{ fontSize: 13, color: T.textMuted, marginTop: 1, overflowWrap: 'anywhere' }}>{item.description}</div>}
+                  {/* His own photo of it at the factory, when he took one. Never required: the picture on the left is often enough. */}
+                  {proof && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                      <EvidenceThumb docId={proof.docId} size={44} onOpen={setZoom} />
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#166534' }}>{t('bom_your_photo', lang)}</span>
+                      {canTick && <label style={link}><Camera size={15} /> {t('bom_change_photo', lang)}<input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={e => { addPhoto(item, e.target.files?.[0]); e.target.value = '' }} /></label>}
+                      {canTick && <button type="button" style={{ ...link, color: T.textMuted }} onClick={() => removePhoto(item)}>{t('bom_remove_photo', lang)}</button>}
+                    </div>
+                  )}
+                  {!proof && canTick && (
+                    <label style={{ ...link, marginTop: 4 }}><Camera size={16} /> {t('bom_add_photo', lang)}<input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={e => { addPhoto(item, e.target.files?.[0]); e.target.value = '' }} /></label>
+                  )}
                   {SHOW_CONSUMPTION && (item.perPiece || item.forOrder) && (
                     <div style={{ fontSize: 13, color: T.text, marginTop: 3 }}>
                       {item.forOrder && <span style={{ fontWeight: 800 }}>{item.forOrder}</span>}
@@ -204,6 +239,11 @@ export function BomSection({ order }) {
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-end', flexShrink: 0 }}>
                     {item.checks.length === 0 && !caps.isBuyer && <span style={{ fontSize: 11, color: T.textLight }}>not checked yet</span>}
+                    {(item.evidence || []).map(e => (
+                      <span key={e.docId} title={`Photo at ${factoryName(e.mfrId)}${e.byName ? ` by ${e.byName}` : ''}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: T.textMuted }}>
+                        <EvidenceThumb docId={e.docId} size={36} onOpen={setZoom} /> photo, {factoryName(e.mfrId)}
+                      </span>
+                    ))}
                     {item.checks.map(c => (
                       <span key={c.mfrId} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: T.successDeep, background: T.successBg, border: `1px solid ${T.successBorder}`, borderRadius: 8, padding: '1px 7px' }}>
                         <Check size={11} strokeWidth={3} /> {factoryName(c.mfrId)}{c.byName ? `, ${c.byName}` : ''}, {fmtDate(c.at)}

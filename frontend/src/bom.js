@@ -18,6 +18,9 @@ export function bomSections(bom) {
 /** The tick on an item at one factory, or null. */
 export const checkAt = (item, factoryId) => (item?.checks || []).find(c => String(c.mfrId) === String(factoryId)) || null
 
+/** The photo taken of an item at one factory, or null. */
+export const evidenceAt = (item, factoryId) => (item?.evidence || []).find(e => String(e.mfrId) === String(factoryId)) || null
+
 /** How many items are ticked at a factory, of how many. */
 export function bomProgress(bom, factoryId) {
   const items = bom?.items || []

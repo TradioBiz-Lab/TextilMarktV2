@@ -34,7 +34,7 @@ export function cleanBom(body, existing) {
     }
     items.push({
       id, section: str(raw.section, 60), name, description: str(raw.description, 200),
-      perPiece: str(raw.perPiece, 40), forOrder: str(raw.forOrder, 40), hasImage, checks: old?.checks || [],
+      perPiece: str(raw.perPiece, 40), forOrder: str(raw.forOrder, 40), hasImage, checks: old?.checks || [], evidence: old?.evidence || [],
     })
   }
   for (const [id, old] of before) if (!seen.has(id) && old.hasImage) dropImages.push(id)
@@ -53,6 +53,9 @@ export function bomOut(bom, viewers = null, { forBuyer = false } = {}) {
       perPiece: i.perPiece || '', forOrder: i.forOrder || '', hasImage: !!i.hasImage,
       checks: forBuyer ? [] : (i.checks || []).filter(c => !viewers || viewers.includes(String(c.mfrId)))
         .map(c => ({ mfrId: String(c.mfrId), byName: c.byName || '', at: c.at })),
+      // A photo of the item taken at a factory: the same viewers as its tick.
+      evidence: forBuyer ? [] : (i.evidence || []).filter(e => !viewers || viewers.includes(String(e.mfrId)))
+        .map(e => ({ mfrId: String(e.mfrId), docId: String(e.docId), byName: e.byName || '', at: e.at })),
     })),
     updatedAt: bom.updatedAt || null,
   }

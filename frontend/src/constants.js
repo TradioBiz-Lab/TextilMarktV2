@@ -49,6 +49,7 @@ export const DOC_TYPES = [
   { v: 'invoice', l: 'Invoice' },
   { v: 'tech_pack', l: 'Tech Pack' },
   { v: 'bom', l: 'BOM (Bill of Materials)' },
+  { v: 'bom_evidence', l: 'BOM photo from the factory' },
   { v: 'cost_sheet', l: 'Cost Sheet' },
   { v: 'RFQ', l: 'RFQ' },
   { v: 'terms', l: 'Terms & Conditions' },
@@ -154,7 +155,7 @@ export const DOC_ICONS = {
   // Stage evidence docs
   material_po: Package, knitting_grn: Layers, knitting_qc: CheckCircle2,
   dyeing_grn: Palette, dyeing_qc: CheckCircle2, processing_grn: Settings2, processing_qc: CheckCircle2,
-  floor_evidence: Camera, cutting_qc: Scissors, stitching_qc: Shirt, final_qc: Trophy,
+  floor_evidence: Camera, bom_evidence: Camera, cutting_qc: Scissors, stitching_qc: Shirt, final_qc: Trophy,
   packing_qc: Package, dispatch_docs: Truck,
   mfr_profile: Factory,
 }

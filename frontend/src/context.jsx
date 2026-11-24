@@ -504,6 +504,11 @@ export function AppProvider({ children }) {
     setOrders(p => p.map(o => o.id === id ? updated : o))
     return updated
   }, [])
+  const setBomEvidence = useCallback(async (id, itemId, mfrId, photo) => {
+    const updated = await ordersApi.setBomEvidence(id, itemId, mfrId, photo)
+    setOrders(p => p.map(o => o.id === id ? updated : o))
+    return updated
+  }, [])
   const getBomImages = useCallback(id => ordersApi.bomImages(id), [])
 
   const setSizeBreakup = useCallback(async (id, breakup) => {
@@ -814,7 +819,7 @@ export function AppProvider({ children }) {
       updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
       bulkUpdateStages, addStageItem, updateStageItem, removeStageItem,
       updateAssignment, addAssignment, reassignAssignment, setDeliveredQty, insertStage, moveStage, startPlan, uploadDoc, updateDoc, lockDoc, deleteDoc, getDocVersions, fileDocInto, setStylePhotos, setProductLink, setSizeBreakup, createOrder, createMasterOrder, updateMasterOrder, deleteMasterOrder,
-      editOrder, deleteOrder, escalateOrder, setBom, checkBomItem, getBomImages,
+      editOrder, deleteOrder, escalateOrder, setBom, checkBomItem, setBomEvidence, getBomImages,
       createUser, updateUser, toggleUser, resetUserPw,
       markAllRead, markOneRead, getDocData, refreshAudit, loadMoreAudit,
       refreshOrders, refreshDocs, listAllRibbons, createRibbon, updateRibbon, removeRibbon,

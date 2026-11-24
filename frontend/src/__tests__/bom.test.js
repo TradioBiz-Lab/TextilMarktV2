@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { bomSections, checkAt, bomProgress, editorRows, blankRow, editorPayload } from '../bom.js'
+import { bomSections, checkAt, evidenceAt, bomProgress, editorRows, blankRow, editorPayload } from '../bom.js'
 
 const bom = { items: [
   { id: 'a', section: 'Fabric', name: 'Shell', description: '', perPiece: '1.6 m', forOrder: '1,360 m', hasImage: true, checks: [{ mfrId: 'f1', byName: 'Ravi', at: '2026-11-24' }] },
@@ -17,6 +17,8 @@ describe('the bill of materials checklist', () => {
     expect(checkAt(bom.items[0], 'f2')).toBe(null)
     expect(bomProgress(bom, 'f1')).toEqual({ done: 1, total: 3 })
     expect(bomProgress(null, 'f1')).toEqual({ done: 0, total: 0 })
+    expect(evidenceAt({ evidence: [{ mfrId: 'f1', docId: 'd1' }] }, 'f1').docId).toBe('d1')
+    expect(evidenceAt(bom.items[0], 'f1')).toBe(null)
   })
   test('the editor sends a picture only when it changed, and drops rows with no name', () => {
     const rows = editorRows(bom)

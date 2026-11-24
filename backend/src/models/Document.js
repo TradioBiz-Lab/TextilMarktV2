@@ -18,6 +18,8 @@ const DOC_TYPES = [
   'cutting_qc', 'stitching_qc', 'final_qc', 'packing_qc', 'dispatch_docs',
   // Evidence captured from a factory message (photo, voice note, challan) by Zero Entry Capture
   'floor_evidence',
+  // A coordinator's photo of one item of the bill of materials, as seen at a factory (bomItemId; Order.bom.items[].evidence).
+  'bom_evidence',
 ]
 
 // Where a measurement sheet stands in the fit process. Every measurement upload carries one; the one a master admin locks
@@ -78,6 +80,8 @@ const documentSchema = new mongoose.Schema({
   // keeps it from the factory as well, for good.
   fieldUpdateId: { type: mongoose.Schema.Types.ObjectId, ref: 'FieldUpdate', default: null },
   internal:      { type: Boolean, default: false },
+  // The bill of materials item a 'bom_evidence' photo shows (Order.bom.items[].id).
+  bomItemId:     { type: String, default: null },
   tradioOnly:    { type: Boolean, default: false },
   // Set when the file's bytes are kept outside the database (lib/fileStore.js); dataUrl is then empty.
   storage: {

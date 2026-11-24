@@ -301,6 +301,13 @@ const orderSchema = new mongoose.Schema({
           by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, byName: { type: String, default: '' },
           at: { type: Date, default: Date.now },
         }, { _id: false })], default: [] },
+        // An optional photo of the item as seen at a factory: one per factory, a Document of type 'bom_evidence'.
+        evidence: { type: [new mongoose.Schema({
+          mfrId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+          docId: { type: mongoose.Schema.Types.ObjectId, ref: 'Document', required: true },
+          by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, byName: { type: String, default: '' },
+          at: { type: Date, default: Date.now },
+        }, { _id: false })], default: [] },
       }, { _id: false })], default: [] },
       updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
       updatedAt: { type: Date, default: null },

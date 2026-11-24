@@ -6,6 +6,7 @@ import { makeAdmin, makeBuyer, makeMfr, makeCoordinator, orderPayload } from './
 import { cleanBom, bomOut } from '../src/lib/bom.js'
 import { FactoryVisit } from '../src/models/FactoryVisit.js'
 import { BomImage } from '../src/models/BomImage.js'
+import { Document } from '../src/models/Document.js'
 
 before(async () => { await startTestDb(); await startServer(); await FactoryVisit.init() })
 after(async () => { await stopServer(); await stopTestDb() })
@@ -99,5 +100,36 @@ describe('the checklist on a style', () => {
     assert.deepEqual([edited.body.bom.items.length, edited.body.bom.items[0].checks.length], [1, 2])
     const back = await api.post(`/api/orders/S-1/bom/${items[1].id}/check`, { mfrId: String(a._id), checked: false })
     assert.deepEqual(back.body.bom.items[0].checks, [])
+  })
+
+  test('a photo of an item as seen at the factory: optional, one per factory, replaces the last, ticks the item, never the customer\'s', async () => {
+    const { admin, buyer, a, b, coord, items } = await arrange()
+    const api = as(coord); const url = `/api/orders/S-1/bom/${items[1].id}/evidence`
+    assert.deepEqual([(await api.post(url, { mfrId: String(a._id), photo: PNG })).body.code], ['CHECK_IN_FIRST'])
+    assert.equal((await api.post('/api/visits/check-in', { factoryId: String(a._id), ...AT })).status, 201)
+    assert.equal((await api.post(url, { mfrId: String(a._id), photo: 'data:image/png;base64,AAAA' })).status, 400, 'not a real image')
+    const first = await api.post(url, { mfrId: String(a._id), photo: PNG })
+    assert.equal(first.status, 200, JSON.stringify(first.body))
+    const it = first.body.bom.items[1]
+    assert.deepEqual([it.evidence.length, it.evidence[0].byName, it.checks.length], [1, 'Ravi', 1], 'the photo ticks the item')
+    assert.deepEqual(first.body.bom.items[0].evidence, [], 'an item with no photo is fine as it is')
+    const doc = await Document.findById(it.evidence[0].docId).lean()
+    assert.deepEqual([doc.type, doc.bomItemId, doc.internal, String(doc.mfrId)], ['bom_evidence', items[1].id, true, String(a._id)])
+    for (const who of [coord, admin, a]) assert.equal((await as(who).get(`/api/documents/${doc._id}/data`)).status, 200)
+    assert.equal((await as(buyer).get(`/api/documents/${doc._id}/data`)).status, 403)
+    assert.deepEqual((await as(buyer).get('/api/orders/S-1')).body.bom.items[1].evidence, [])
+    // A second photo replaces the first; the old file is gone.
+    const second = await api.post(url, { mfrId: String(a._id), photo: PNG })
+    assert.equal(second.body.bom.items[1].evidence.length, 1)
+    assert.notEqual(second.body.bom.items[1].evidence[0].docId, String(doc._id))
+    assert.equal(await Document.countDocuments({ type: 'bom_evidence' }), 1)
+    // Unticking leaves the photo; taking the photo away leaves the tick as it is.
+    const unticked = await api.post(`/api/orders/S-1/bom/${items[1].id}/check`, { mfrId: String(a._id), checked: false })
+    assert.deepEqual([unticked.body.bom.items[1].checks.length, unticked.body.bom.items[1].evidence.length], [0, 1])
+    const gone = await api.post(url, { mfrId: String(a._id), photo: null })
+    assert.deepEqual(gone.body.bom.items[1].evidence, [])
+    assert.equal(await Document.countDocuments({ type: 'bom_evidence' }), 0)
+    assert.equal((await api.post(url, { mfrId: String(b._id), photo: PNG })).status, 403, 'not a factory of his')
+    for (const who of [buyer, a]) assert.equal((await as(who).post(url, { mfrId: String(a._id), photo: PNG })).status, 403)
   })
 })

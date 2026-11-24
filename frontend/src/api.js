@@ -81,6 +81,8 @@ export const ordersApi = {
   setBom: (id, items) => api.post(`/orders/${id}/bom`, { items }),
   bomImages: id => api.get(`/orders/${id}/bom/images`),
   checkBomItem: (id, itemId, mfrId, checked) => api.post(`/orders/${id}/bom/${itemId}/check`, { mfrId, checked }),
+  // A photo of the item as seen at the factory (a data URL), or null to take it away.
+  setBomEvidence: (id, itemId, mfrId, photo) => api.post(`/orders/${id}/bom/${itemId}/evidence`, { mfrId, photo }),
   // `reason` is optional and is kept, with a full copy of the style, in the dropped record.
   delete: (id, reason) => api.post(`/orders/${id}/delete`, reason ? { reason } : {}),
   updateAssignment: (orderId, mfrId, status, note) =>

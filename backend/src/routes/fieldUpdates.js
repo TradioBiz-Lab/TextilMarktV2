@@ -41,7 +41,7 @@ const isJpeg = b => b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 
 const isPng = b => b.length >= 4 && b[0] === 0x89 && b.subarray(1, 4).toString('latin1') === 'PNG'
 
 /** One photo as sent (a data URL) -> { buffer, mimeType, ext } or { error }. The bytes must be what they claim to be. */
-function readPhoto(dataUrl) {
+export function readPhoto(dataUrl) {
   if (typeof dataUrl !== 'string') return { error: 'A photo did not arrive properly. Take it again.' }
   if (dataUrl.length > MAX_PHOTO_BYTES * 1.4 + 100) return { error: 'A photo is too large. Take it again.' }
   const f = fromDataUrl(dataUrl)
