@@ -244,12 +244,12 @@ export function Shell({ view, setView, children, onOpenOrder }) {
         {isCoord && visits?.open && (
           <div style={{ flexShrink: 0, background: '#15803d', color: '#fff', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 10, zIndex: 298 }}>
             <CheckCircle2 size={20} style={{ flexShrink: 0 }} />
-            <div style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, lineHeight: 1.3 }}>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 500, lineHeight: 1.3 }}>
               {t('bar_checked_in', lang, { name: visits.open.factoryName || '', time: timeIST(visits.open.checkIn.at) })}
               {barError && <div style={{ fontSize: 12, fontWeight: 600, color: '#fef08a', marginTop: 2 }}>{barError}</div>}
             </div>
             <button type="button" onClick={checkOutFromBar} disabled={barBusy}
-              style={{ flexShrink: 0, minHeight: 40, padding: '0 14px', borderRadius: 10, border: 'none', background: '#fff', color: '#15803d', fontSize: 14, fontWeight: 800, fontFamily: 'inherit', cursor: barBusy ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, opacity: barBusy ? 0.6 : 1 }}>
+              style={{ flexShrink: 0, minHeight: 40, padding: '0 14px', borderRadius: 10, border: 'none', background: '#fff', color: '#15803d', fontSize: 14, fontWeight: 600, fontFamily: 'inherit', cursor: barBusy ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, opacity: barBusy ? 0.6 : 1 }}>
               <LogOut size={16} /> {barBusy ? '…' : t('check_out', lang)}
             </button>
           </div>

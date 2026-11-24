@@ -16,7 +16,7 @@ const MAX_RECORD_MS = 2 * 60 * 1000
 function Tile({ icon, label, onClick, active, disabled }) {
   return (
     <button type="button" onClick={onClick} disabled={disabled}
-      style={{ flex: 1, minHeight: 96, borderRadius: 16, border: `2px solid ${active ? T.danger : T.borderHover}`, background: active ? T.dangerBg : '#fff', color: active ? T.dangerDeep : T.text, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 17, fontWeight: 800, fontFamily: 'inherit', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1 }}>
+      style={{ flex: 1, minHeight: 96, borderRadius: 16, border: `2px solid ${active ? T.danger : T.borderHover}`, background: active ? T.dangerBg : '#fff', color: active ? T.dangerDeep : T.text, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 17, fontWeight: 600, fontFamily: 'inherit', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1 }}>
       {icon}{label}
     </button>
   )
@@ -120,7 +120,7 @@ export function AddUpdateSheet({ order, factoryId, stageIndex, stage, onClose, o
       <div style={{ background: '#fff', width: '100%', maxWidth: 520, maxHeight: '94vh', overflowY: 'auto', borderRadius: '20px 20px 0 0', padding: '18px 16px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 21, fontWeight: 800, color: T.text, lineHeight: 1.2, overflowWrap: 'anywhere' }}>{stepName}</div>
+            <div style={{ fontSize: 21, fontWeight: 600, color: T.text, lineHeight: 1.2, overflowWrap: 'anywhere' }}>{stepName}</div>
             <div style={{ fontSize: 14, color: T.textMuted, marginTop: 2, overflowWrap: 'anywhere' }}>{order.product}{order.buyerCompany ? ` · ${order.buyerCompany}` : ''}</div>
           </div>
           <button type="button" onClick={onClose} aria-label={t('close', lang)} style={{ width: 44, height: 44, borderRadius: 12, border: `1.5px solid ${T.borderHover}`, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}><X size={20} color={T.text} /></button>
@@ -130,7 +130,7 @@ export function AddUpdateSheet({ order, factoryId, stageIndex, stage, onClose, o
           <>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '18px 0 6px' }}>
               <CheckCircle2 size={64} color="#15803d" weight="fill" />
-              <div style={{ fontSize: 24, fontWeight: 800, color: '#15803d' }}>{t('sent_title', lang)}</div>
+              <div style={{ fontSize: 24, fontWeight: 600, color: '#15803d' }}>{t('sent_title', lang)}</div>
             </div>
             <BigBtn onClick={again} icon={<Camera size={22} />}>{t('another_here', lang)}</BigBtn>
             {onNextProduct && <BigBtn tone="plain" onClick={onNextProduct}>{t('next_product', lang)}</BigBtn>}
@@ -143,8 +143,8 @@ export function AddUpdateSheet({ order, factoryId, stageIndex, stage, onClose, o
               <Tile icon={<Camera size={34} color={T.primaryDeep} />} label={busy === 'photo' ? '…' : t('photo', lang)} onClick={() => fileInput.current?.click()} disabled={!!busy || recording} />
               <Tile icon={recording ? <Square size={30} weight="fill" /> : <Mic size={34} color={T.primaryDeep} />} label={recording ? t('stop', lang) : audio ? t('speak_again', lang) : t('speak', lang)} onClick={toggleSpeak} active={recording} disabled={!!busy} />
             </div>
-            {recording && <div style={{ fontSize: 15, fontWeight: 700, color: T.dangerDeep, textAlign: 'center' }}>{t('listening', lang)}</div>}
-            {busy === 'transcribing' && <div style={{ fontSize: 15, fontWeight: 700, color: T.textMuted, textAlign: 'center' }}>{t('writing', lang)}</div>}
+            {recording && <div style={{ fontSize: 15, fontWeight: 500, color: T.dangerDeep, textAlign: 'center' }}>{t('listening', lang)}</div>}
+            {busy === 'transcribing' && <div style={{ fontSize: 15, fontWeight: 500, color: T.textMuted, textAlign: 'center' }}>{t('writing', lang)}</div>}
 
             {photos.length > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
@@ -169,7 +169,7 @@ export function AddUpdateSheet({ order, factoryId, stageIndex, stage, onClose, o
               style={{ width: '100%', boxSizing: 'border-box', border: `1.5px solid ${T.borderHover}`, borderRadius: 14, padding: '12px 14px', fontSize: 17, lineHeight: 1.45, color: T.text, fontFamily: 'inherit', resize: 'vertical' }} />
 
             {note && (
-              <div role={note.tone === 'error' ? 'alert' : 'status'} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', borderRadius: 12, padding: '10px 12px', fontSize: 15, fontWeight: 600, background: note.tone === 'error' ? T.dangerBg : T.infoBg, color: note.tone === 'error' ? T.dangerDeep : T.info, border: `1px solid ${note.tone === 'error' ? T.dangerBorder : T.infoBorder}` }}>
+              <div role={note.tone === 'error' ? 'alert' : 'status'} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', borderRadius: 12, padding: '10px 12px', fontSize: 15, fontWeight: 500, background: note.tone === 'error' ? T.dangerBg : T.infoBg, color: note.tone === 'error' ? T.dangerDeep : T.info, border: `1px solid ${note.tone === 'error' ? T.dangerBorder : T.infoBorder}` }}>
                 {note.tone === 'error' && <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 2 }} />}{note.text}
               </div>
             )}

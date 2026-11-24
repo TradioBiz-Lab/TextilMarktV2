@@ -26,16 +26,16 @@ function ProductCard({ card, lang, onOpen }) {
         {url ? <img src={url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ImageIcon size={36} color={T.textLight} />}
       </span>
       <span style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '10px 10px 12px', minWidth: 0 }}>
-        <span style={{ fontSize: 15, fontWeight: 800, color: T.text, lineHeight: 1.25, overflowWrap: 'anywhere' }}>{card.product}</span>
+        <span style={{ fontSize: 15, fontWeight: 600, color: T.text, lineHeight: 1.25, overflowWrap: 'anywhere' }}>{card.product}</span>
         {card.styleNumber && <span style={{ fontSize: 13, color: T.textMuted, overflowWrap: 'anywhere' }}>{card.styleNumber}</span>}
-        <span style={{ alignSelf: 'flex-start', fontSize: 12, fontWeight: 800, padding: '2px 9px', borderRadius: 10, background: tone.bg, color: tone.fg, marginTop: 2 }}>{t(`state_${card.state}`, lang)}</span>
+        <span style={{ alignSelf: 'flex-start', fontSize: 12, fontWeight: 600, padding: '2px 9px', borderRadius: 10, background: tone.bg, color: tone.fg, marginTop: 2 }}>{t(`state_${card.state}`, lang)}</span>
       </span>
     </button>
   )
 }
 
 const grid = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }
-const heading = { fontSize: 14, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 10px 2px' }
+const heading = { fontSize: 14, fontWeight: 600, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 10px 2px' }
 
 /**
  * One client's products at one factory, as small cards under the master order each belongs to (a label, not a tap).

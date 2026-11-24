@@ -19,10 +19,10 @@ function Paper({ label, icon, doc, lang, getDocData }) {
     <>
       <span style={{ width: 44, height: 44, borderRadius: 12, background: doc ? T.infoBg : '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{icon}</span>
       <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ display: 'block', fontSize: 17, fontWeight: 800, color: doc ? T.text : T.textMuted, lineHeight: 1.25 }}>{label}</span>
+        <span style={{ display: 'block', fontSize: 17, fontWeight: 600, color: doc ? T.text : T.textMuted, lineHeight: 1.25 }}>{label}</span>
         <span style={{ display: 'block', fontSize: 13, color: T.textMuted, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc ? doc.name : t('not_uploaded', lang)}</span>
       </span>
-      {doc && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 15, fontWeight: 800, color: '#fff', background: T.info, borderRadius: 10, padding: '9px 14px', flexShrink: 0 }}><Eye size={18} /> {t('open', lang)}</span>}
+      {doc && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 15, fontWeight: 600, color: '#fff', background: T.info, borderRadius: 10, padding: '9px 14px', flexShrink: 0 }}><Eye size={18} /> {t('open', lang)}</span>}
     </>
   )
   if (!doc) return <div style={{ ...tile, background: '#fff', border: `1.5px solid ${T.border}` }}>{inner}</div>
@@ -47,10 +47,10 @@ function StepButton({ step, lang, onClick }) {
       style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', minHeight: 60, textAlign: 'left', background: '#fff', border: `2px solid ${state === 'running' ? '#22c55e' : T.borderHover}`, borderRadius: 14, padding: '10px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>
       <Camera size={24} color={T.primaryDeep} style={{ flexShrink: 0 }} />
       <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ display: 'block', fontSize: 17, fontWeight: 800, color: T.text, lineHeight: 1.25, overflowWrap: 'anywhere' }}>{s.name}</span>
+        <span style={{ display: 'block', fontSize: 17, fontWeight: 600, color: T.text, lineHeight: 1.25, overflowWrap: 'anywhere' }}>{s.name}</span>
         <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, fontWeight: 800, padding: '1px 8px', borderRadius: 10, background: tone.bg, color: tone.fg }}>{t(`step_${state}`, lang)}</span>
-          {s.kind === 'quantity' && s.totalUnits > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: T.textMuted }}>{s.unitsDone || 0} / {s.totalUnits}</span>}
+          <span style={{ fontSize: 12, fontWeight: 600, padding: '1px 8px', borderRadius: 10, background: tone.bg, color: tone.fg }}>{t(`step_${state}`, lang)}</span>
+          {s.kind === 'quantity' && s.totalUnits > 0 && <span style={{ fontSize: 13, fontWeight: 500, color: T.textMuted }}>{s.unitsDone || 0} / {s.totalUnits}</span>}
         </span>
       </span>
       <ChevronRight size={20} color={T.textLight} />
@@ -68,9 +68,9 @@ function AddUpdate({ order, split, lang, visits, onNextProduct }) {
   if (!(split.stages || []).length) return null
   return (
     <div style={{ background: '#fff', border: `1.5px solid ${T.border}`, borderRadius: 14, padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ fontSize: 18, fontWeight: 800, color: T.text }}>{t('add_update', lang)}</div>
+      <div style={{ fontSize: 18, fontWeight: 600, color: T.text }}>{t('add_update', lang)}</div>
       {!here ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 600, color: T.warning, background: T.warningBg, border: `1px solid ${T.warningBorder}`, borderRadius: 12, padding: '10px 12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 500, color: T.warning, background: T.warningBg, border: `1px solid ${T.warningBorder}`, borderRadius: 12, padding: '10px 12px' }}>
           <MapPin size={18} style={{ flexShrink: 0 }} /> {t('check_in_to_update', lang, { name: split.mfrCompany || '' })}
         </div>
       ) : (
@@ -79,7 +79,7 @@ function AddUpdate({ order, split, lang, visits, onNextProduct }) {
           {suggested.map(s => <StepButton key={s.index} step={s} lang={lang} onClick={() => setOpen(s.index)} />)}
           {others.length > 0 && (
             <button type="button" onClick={() => setShowOthers(v => !v)} aria-expanded={showOthers}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 44, background: 'none', border: 'none', fontSize: 15, fontWeight: 700, color: T.info, cursor: 'pointer', fontFamily: 'inherit' }}>
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 44, background: 'none', border: 'none', fontSize: 15, fontWeight: 500, color: T.info, cursor: 'pointer', fontFamily: 'inherit' }}>
               {t('other_steps', lang)} ({others.length}) <ChevronDown size={16} style={{ transform: showOthers ? 'rotate(180deg)' : 'none' }} />
             </button>
           )}
@@ -112,18 +112,18 @@ export function CoordinatorOrderTop({ order, factoryId, onNextProduct }) {
           {url ? <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ImageIcon size={36} color={T.textLight} />}
         </span>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 20, fontWeight: 800, color: T.text, lineHeight: 1.2, overflowWrap: 'anywhere' }}>{order.product}</div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: T.textMuted, marginTop: 4 }}>{order.buyerCompany}</div>
+          <div style={{ fontSize: 20, fontWeight: 600, color: T.text, lineHeight: 1.2, overflowWrap: 'anywhere' }}>{order.product}</div>
+          <div style={{ fontSize: 15, fontWeight: 500, color: T.textMuted, marginTop: 4 }}>{order.buyerCompany}</div>
           {order.styleNumber && <div style={{ fontSize: 14, color: T.textMuted, marginTop: 2, overflowWrap: 'anywhere' }}>{order.styleNumber}</div>}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-            <span style={{ fontSize: 13, fontWeight: 800, padding: '3px 10px', borderRadius: 10, background: '#fff', color: T.info, border: `1px solid ${T.infoBorder}` }}>{t(`state_${state}`, lang)}</span>
-            {split?.qty != null && <span style={{ fontSize: 13, fontWeight: 800, padding: '3px 10px', borderRadius: 10, background: '#fff', color: T.text, border: `1px solid ${T.border}` }}>{t('pieces', lang, { n: split.qty })}</span>}
+            <span style={{ fontSize: 13, fontWeight: 600, padding: '3px 10px', borderRadius: 10, background: '#fff', color: T.info, border: `1px solid ${T.infoBorder}` }}>{t(`state_${state}`, lang)}</span>
+            {split?.qty != null && <span style={{ fontSize: 13, fontWeight: 600, padding: '3px 10px', borderRadius: 10, background: '#fff', color: T.text, border: `1px solid ${T.border}` }}>{t('pieces', lang, { n: split.qty })}</span>}
           </div>
         </div>
       </div>
       {(order.colourways || []).length > 0 && (
         <div style={{ fontSize: 14, color: T.text }}>
-          <span style={{ fontWeight: 800 }}>{t('colours', lang)}: </span>{order.colourways.map(c => c.name).filter(Boolean).join(', ')}
+          <span style={{ fontWeight: 600 }}>{t('colours', lang)}: </span>{order.colourways.map(c => c.name).filter(Boolean).join(', ')}
         </div>
       )}
       <Paper label={t('tech_pack', lang)} icon={<FileText size={24} color={T.info} />} doc={techPackOf(docs, order.id)} lang={lang} getDocData={getDocData} />
@@ -134,16 +134,16 @@ export function CoordinatorOrderTop({ order, factoryId, onNextProduct }) {
         : <Paper label={t('bom', lang)} icon={<ListChecks size={24} color={T.info} />} doc={bomOf(docs, order.id)} lang={lang} getDocData={getDocData} />}
       {/* How many of each colour in each size: what he counts and checks cartons against. Below the papers, as Ankit asked. */}
       <div style={{ background: '#fff', border: `1.5px solid ${order.sizeBreakup ? T.infoBorder : T.border}`, borderRadius: 14, padding: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 800, color: order.sizeBreakup ? T.info : T.textMuted, marginBottom: order.sizeBreakup ? 8 : 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 600, color: order.sizeBreakup ? T.info : T.textMuted, marginBottom: order.sizeBreakup ? 8 : 0 }}>
           <LayoutGrid size={20} /> {t('size_breakup', lang)}
           {order.sizeBreakup
-            ? <span style={{ marginLeft: 'auto', fontSize: 14, fontWeight: 800, color: T.text }}>{t('pieces', lang, { n: order.sizeBreakup.total })}</span>
-            : <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 600, color: T.textLight }}>{t('size_breakup_none', lang)}</span>}
+            ? <span style={{ marginLeft: 'auto', fontSize: 14, fontWeight: 600, color: T.text }}>{t('pieces', lang, { n: order.sizeBreakup.total })}</span>
+            : <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 500, color: T.textLight }}>{t('size_breakup_none', lang)}</span>}
         </div>
         {order.sizeBreakup && <SizeBreakupTable breakup={order.sizeBreakup} large labels={{ colour: t('colour', lang), total: t('total', lang), pieces: t('pieces_word', lang) }} />}
       </div>
       {split && <AddUpdate order={order} split={split} lang={lang} visits={visits} onNextProduct={onNextProduct} />}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: T.textMuted }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 13, fontWeight: 500, color: T.textMuted }}>
         {t('full_details', lang)} <ChevronDown size={14} />
       </div>
     </div>

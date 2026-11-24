@@ -16,7 +16,7 @@ export function CoordHeader({ title, subtitle, onBack, lang }) {
         <ArrowLeft size={22} color={T.text} />
       </button>
       <div style={{ minWidth: 0 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 800, color: T.text, margin: 0, letterSpacing: '-0.02em', lineHeight: 1.2, overflowWrap: 'anywhere' }}>{title}</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 600, color: T.text, margin: 0, letterSpacing: '-0.02em', lineHeight: 1.2, overflowWrap: 'anywhere' }}>{title}</h1>
         {subtitle && <div style={{ fontSize: 14, color: T.textMuted, marginTop: 2 }}>{subtitle}</div>}
       </div>
     </div>
@@ -45,7 +45,7 @@ export function FactoryOrdersPage({ factoryId, onOpenClient, onBack }) {
                   <Building2 size={28} color={T.primaryDeep} weight="duotone" />
                 </span>
                 <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: 'block', fontSize: 21, fontWeight: 800, color: T.text, lineHeight: 1.2, overflowWrap: 'anywhere' }}>{c.name}</span>
+                  <span style={{ display: 'block', fontSize: 21, fontWeight: 600, color: T.text, lineHeight: 1.2, overflowWrap: 'anywhere' }}>{c.name}</span>
                   <span style={{ display: 'block', fontSize: 15, color: T.textMuted, marginTop: 4 }}>
                     {countText(c.count, lang)}{c.live === 0 ? ` · ${t('state_delivered', lang)}` : ''}
                   </span>

@@ -18,7 +18,7 @@ export function BigBtn({ children, onClick, tone = 'primary', disabled, icon }) 
   }[tone]
   return (
     <button type="button" onClick={onClick} disabled={disabled}
-      style={{ width: '100%', minHeight: 56, borderRadius: 14, fontSize: 17, fontWeight: 800, fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, padding: '10px 16px', ...tones, background: tones.bg }}>
+      style={{ width: '100%', minHeight: 56, borderRadius: 14, fontSize: 17, fontWeight: 600, fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, padding: '10px 16px', ...tones, background: tones.bg }}>
       {icon}{children}
     </button>
   )
@@ -31,7 +31,7 @@ export function LocationHelp({ lang, weak, onRetry, onClose }) {
       <div style={{ background: '#fff', width: '100%', maxWidth: 480, borderRadius: '20px 20px 0 0', padding: '24px 20px 28px', display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ width: 52, height: 52, borderRadius: '50%', background: T.warningBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><MapPin size={28} color={T.warning} /></span>
-          <div style={{ fontSize: 20, fontWeight: 800, color: T.text }}>{t('location_title', lang)}</div>
+          <div style={{ fontSize: 20, fontWeight: 600, color: T.text }}>{t('location_title', lang)}</div>
         </div>
         <div style={{ fontSize: 16, lineHeight: 1.55, color: T.text }}>{t(weak ? 'location_weak' : 'location_body', lang)}</div>
         <BigBtn onClick={onRetry} icon={<MapPin size={22} />}>{t('try_again', lang)}</BigBtn>
@@ -56,31 +56,31 @@ function WorkToday({ work, lang, onOpenOrder }) {
   const empty = !steps.length && !actionItems.length && !yesterday.length
   const more = steps.length > 3 || actionItems.length > 0 || yesterday.length > 0
   const row = { display: 'flex', alignItems: 'flex-start', gap: 8, width: '100%', textAlign: 'left', background: '#fff', border: `1px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontFamily: 'inherit', cursor: onOpenOrder ? 'pointer' : 'default' }
-  const heading = { fontSize: 12, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 4 }
+  const heading = { fontSize: 12, fontWeight: 600, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 4 }
   return (
     <div style={{ background: '#f8fafc', border: `1px solid ${T.border}`, borderRadius: 14, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 16, fontWeight: 800, color: T.text }}><ClipboardList size={19} /> {t('work_today', lang)}</span>
-        {counts.late > 0 && <span style={{ fontSize: 12.5, fontWeight: 800, padding: '2px 9px', borderRadius: 10, background: KIND_TONE.late.bg, color: KIND_TONE.late.fg }}>{t('work_late', lang, { n: counts.late })}</span>}
-        {counts.dueToday > 0 && <span style={{ fontSize: 12.5, fontWeight: 800, padding: '2px 9px', borderRadius: 10, background: KIND_TONE.due_today.bg, color: KIND_TONE.due_today.fg }}>{t('work_due', lang, { n: counts.dueToday })}</span>}
-        {counts.running > 0 && <span style={{ fontSize: 12.5, fontWeight: 800, padding: '2px 9px', borderRadius: 10, background: KIND_TONE.running.bg, color: KIND_TONE.running.fg }}>{t('work_running', lang, { n: counts.running })}</span>}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 16, fontWeight: 600, color: T.text }}><ClipboardList size={19} /> {t('work_today', lang)}</span>
+        {counts.late > 0 && <span style={{ fontSize: 12.5, fontWeight: 600, padding: '2px 9px', borderRadius: 10, background: KIND_TONE.late.bg, color: KIND_TONE.late.fg }}>{t('work_late', lang, { n: counts.late })}</span>}
+        {counts.dueToday > 0 && <span style={{ fontSize: 12.5, fontWeight: 600, padding: '2px 9px', borderRadius: 10, background: KIND_TONE.due_today.bg, color: KIND_TONE.due_today.fg }}>{t('work_due', lang, { n: counts.dueToday })}</span>}
+        {counts.running > 0 && <span style={{ fontSize: 12.5, fontWeight: 600, padding: '2px 9px', borderRadius: 10, background: KIND_TONE.running.bg, color: KIND_TONE.running.fg }}>{t('work_running', lang, { n: counts.running })}</span>}
       </div>
       {empty && <div style={{ fontSize: 14, color: T.textMuted }}>{t('work_none', lang)}</div>}
       {(all ? steps : steps.slice(0, 3)).map((s, i) => (
         <button key={`${s.orderId}:${s.stageIndex}:${i}`} type="button" style={row} onClick={() => onOpenOrder?.(s.orderId)}>
           <span style={{ flex: 1, minWidth: 0 }}>
             {/* What to do, said plainly; under it, which style and which step of its plan it comes from. */}
-            <span style={{ display: 'block', fontSize: 15, fontWeight: 800, color: T.text, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{stepInstruction(s.stageName, lang)}</span>
+            <span style={{ display: 'block', fontSize: 15, fontWeight: 500, color: T.text, lineHeight: 1.4, overflowWrap: 'anywhere' }}>{stepInstruction(s.stageName, lang)}</span>
             <span style={{ display: 'block', fontSize: 13, color: T.textMuted, marginTop: 2, overflowWrap: 'anywhere' }}>{s.product}{s.client ? ` · ${s.client}` : ''} · {s.stageName}</span>
           </span>
-          <span style={{ fontSize: 12, fontWeight: 800, padding: '2px 8px', borderRadius: 10, background: KIND_TONE[s.kind].bg, color: KIND_TONE[s.kind].fg, whiteSpace: 'nowrap', flexShrink: 0 }}>{kindLabel(s, lang)}</span>
+          <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: KIND_TONE[s.kind].bg, color: KIND_TONE[s.kind].fg, whiteSpace: 'nowrap', flexShrink: 0 }}>{kindLabel(s, lang)}</span>
         </button>
       ))}
       {all && actionItems.length > 0 && <div style={heading}>{t('work_action_items', lang)}</div>}
       {all && actionItems.map(a => (
         <button key={a.id} type="button" style={row} onClick={() => onOpenOrder?.(a.orderId)}>
           <span style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ display: 'block', fontSize: 15, fontWeight: 700, color: T.text, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{t('work_follow_up', lang, { what: a.title })}</span>
+            <span style={{ display: 'block', fontSize: 15, fontWeight: 500, color: T.text, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{t('work_follow_up', lang, { what: a.title })}</span>
             <span style={{ display: 'block', fontSize: 13, color: T.textMuted, marginTop: 1 }}>{a.product}{a.stageName ? ` · ${a.stageName}` : ''}</span>
           </span>
         </button>
@@ -96,7 +96,7 @@ function WorkToday({ work, lang, onOpenOrder }) {
       ))}
       {more && (
         <button type="button" onClick={() => setAll(v => !v)} aria-expanded={all}
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 40, background: 'none', border: 'none', fontSize: 14, fontWeight: 700, color: T.info, cursor: 'pointer', fontFamily: 'inherit' }}>
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 40, background: 'none', border: 'none', fontSize: 14, fontWeight: 500, color: T.info, cursor: 'pointer', fontFamily: 'inherit' }}>
           {all ? t('work_show_less', lang) : `${t('work_show_all', lang)}${actionItems.length ? ` · ${t('work_action_items', lang)} (${actionItems.length})` : ''}${yesterday.length ? ` · ${t('work_yesterday', lang)} (${yesterday.length})` : ''}`}
           <ChevronDown size={15} style={{ transform: all ? 'rotate(180deg)' : 'none', flexShrink: 0 }} />
         </button>
@@ -117,7 +117,7 @@ function FactoryCard({ factory, visits, lang, busy, work, onCheckIn, onCheckOut,
           <Factory size={28} color={open ? '#15803d' : T.info} weight="duotone" />
         </span>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 19, fontWeight: 800, color: T.text, lineHeight: 1.25, overflowWrap: 'anywhere' }}>{factory.name}</div>
+          <div style={{ fontSize: 19, fontWeight: 600, color: T.text, lineHeight: 1.25, overflowWrap: 'anywhere' }}>{factory.name}</div>
           {factory.city && <div style={{ fontSize: 14, color: T.textMuted, marginTop: 2 }}>{factory.city}</div>}
         </div>
         {onOpen && <ChevronRight size={22} color={T.textLight} />}
@@ -126,12 +126,12 @@ function FactoryCard({ factory, visits, lang, busy, work, onCheckIn, onCheckOut,
       <WorkToday work={work} lang={lang} onOpenOrder={onOpenOrder} />
 
       {open && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 700, color: '#15803d' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 500, color: '#15803d' }}>
           <CheckCircle2 size={20} /> {t('checked_in_at', lang, { time: timeIST(visit.checkIn.at) })}
         </div>
       )}
       {state !== 'open' && last && (
-        <div style={{ fontSize: 15, color: T.textMuted, fontWeight: 600 }}>
+        <div style={{ fontSize: 15, color: T.textMuted, fontWeight: 500 }}>
           {last.checkOut
             ? t('visit_span', lang, { from: timeIST(last.checkIn.at), to: timeIST(last.checkOut.at), duration: durationText(last.minutes) })
             : `${timeIST(last.checkIn.at)} · ${t('did_not_check_out', lang)}`}
@@ -144,7 +144,7 @@ function FactoryCard({ factory, visits, lang, busy, work, onCheckIn, onCheckOut,
       {state === 'blocked' && <div style={{ fontSize: 14, color: T.textMuted, textAlign: 'center' }}>{t('check_out_first', lang, { name: visit.factoryName || '' })}</div>}
 
       {factory.directionsUrl
-        ? <a href={factory.directionsUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 44, fontSize: 15, fontWeight: 700, color: T.info, textDecoration: 'none' }}><Navigation size={18} /> {t('directions', lang)}</a>
+        ? <a href={factory.directionsUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 44, fontSize: 15, fontWeight: 500, color: T.info, textDecoration: 'none' }}><Navigation size={18} /> {t('directions', lang)}</a>
         : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 13, color: T.textLight }}><MapPin size={14} /> {t('no_factory_location', lang)}</div>}
     </div>
   )
@@ -167,7 +167,7 @@ function AddToHomeHint({ lang }) {
   const dismiss = () => { try { localStorage.setItem(HINT_KEY, '1') } catch { /* it will show again, which is harmless */ } setShow(false) }
   return (
     <div style={{ background: T.infoBg, border: `1px solid ${T.infoBorder}`, borderRadius: 16, padding: 14, marginTop: 18, display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ fontSize: 17, fontWeight: 800, color: T.info }}>{t('add_home_title', lang)}</div>
+      <div style={{ fontSize: 17, fontWeight: 600, color: T.info }}>{t('add_home_title', lang)}</div>
       <div style={{ fontSize: 15, lineHeight: 1.5, color: T.text }}>{t('add_home_body', lang)}</div>
       <BigBtn tone="plain" onClick={dismiss}>{t('got_it', lang)}</BigBtn>
     </div>
@@ -205,10 +205,10 @@ export function FactoriesPage({ onOpenFactory, onOpenOrder }) {
 
   return (
     <div style={{ maxWidth: 560, margin: '0 auto', padding: '4px 0 32px' }}>
-      <h1 style={{ fontSize: 24, fontWeight: 800, color: T.text, margin: '0 0 4px', letterSpacing: '-0.02em' }}>{t('factories_title', lang)}</h1>
+      <h1 style={{ fontSize: 24, fontWeight: 600, color: T.text, margin: '0 0 4px', letterSpacing: '-0.02em' }}>{t('factories_title', lang)}</h1>
       <p style={{ fontSize: 15, color: T.textMuted, margin: '0 0 18px' }}>{t('factories_hint', lang)}</p>
       {error && (
-        <div role="alert" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, color: T.dangerDeep, borderRadius: 12, padding: '12px 14px', fontSize: 15, fontWeight: 600, marginBottom: 14 }}>
+        <div role="alert" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, color: T.dangerDeep, borderRadius: 12, padding: '12px 14px', fontSize: 15, fontWeight: 500, marginBottom: 14 }}>
           <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 2 }} /> {error}
         </div>
       )}

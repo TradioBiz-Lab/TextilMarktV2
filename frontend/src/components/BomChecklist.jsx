@@ -76,27 +76,27 @@ export function BomChecklist({ order, factoryId, factoryName = '', lang, canTick
     setBusy(item.id)
     try { await setBomEvidence(order.id, item.id, factoryId, null) } catch (e) { toast(e?.message || t('failed', lang), 'error') } finally { setBusy('') }
   }
-  const link = { display: 'inline-flex', alignItems: 'center', gap: 5, minHeight: 36, fontSize: 13.5, fontWeight: 700, color: T.info, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit' }
+  const link = { display: 'inline-flex', alignItems: 'center', gap: 5, minHeight: 36, fontSize: 13.5, fontWeight: 500, color: T.info, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit' }
   return (
     <div style={{ background: '#fff', border: `1.5px solid ${all ? '#22c55e' : T.infoBorder}`, borderRadius: 14, padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
       <button type="button" onClick={() => setOpen(v => !v)} aria-expanded={open}
-        style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 17, fontWeight: 800, color: T.info, background: 'none', border: 'none', padding: 0, minHeight: 44, width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}>
+        style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 17, fontWeight: 600, color: T.info, background: 'none', border: 'none', padding: 0, minHeight: 44, width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}>
         <ListChecks size={22} style={{ flexShrink: 0 }} /> <span style={{ minWidth: 0 }}>{t('bom', lang)}</span>
-        <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: all ? '#166534' : T.text, background: all ? '#dcfce7' : '#f1f5f9', borderRadius: 10, padding: '3px 10px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+        <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 600, color: all ? '#166534' : T.text, background: all ? '#dcfce7' : '#f1f5f9', borderRadius: 10, padding: '3px 10px', whiteSpace: 'nowrap', flexShrink: 0 }}>
           {all ? t('bom_all_checked', lang, { total }) : t('bom_checked', lang, { done, total })}
         </span>
         <ChevronDown size={22} color={T.textMuted} style={{ flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
       </button>
       <div style={{ height: 8, borderRadius: 6, background: '#e2e8f0', overflow: 'hidden' }}><div style={{ width: `${total ? (done / total) * 100 : 0}%`, height: '100%', background: '#22c55e', transition: 'width .2s' }} /></div>
       {open && !canTick && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600, color: T.warning, background: T.warningBg, border: `1px solid ${T.warningBorder}`, borderRadius: 12, padding: '8px 12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 500, color: T.warning, background: T.warningBg, border: `1px solid ${T.warningBorder}`, borderRadius: 12, padding: '8px 12px' }}>
           <MapPin size={17} style={{ flexShrink: 0 }} /> {t('bom_check_in', lang, { name: factoryName })}
         </div>
       )}
       {open && canTick && <div style={{ fontSize: 13, color: T.textMuted, lineHeight: 1.4 }}>{t('bom_hint', lang)}</div>}
       {open && bomSections(order.bom).map((sec, si) => (
         <div key={si} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {sec.section && <div style={{ fontSize: 13, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: si ? 4 : 0 }}>{sec.section}</div>}
+          {sec.section && <div style={{ fontSize: 13, fontWeight: 600, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: si ? 4 : 0 }}>{sec.section}</div>}
           {sec.items.map(item => {
             const ticked = !!checkAt(item, factoryId)
             const proof = evidenceAt(item, factoryId)
@@ -104,13 +104,13 @@ export function BomChecklist({ order, factoryId, factoryName = '', lang, canTick
               <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 10, border: `1.5px solid ${ticked ? '#86efac' : T.border}`, background: ticked ? '#f0fdf4' : '#fff', borderRadius: 12, padding: 8 }}>
                 <Thumb src={images[item.id]} size={64} onOpen={() => setZoom(images[item.id])} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: T.text, lineHeight: 1.25, overflowWrap: 'anywhere' }}>{item.name}</div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: T.text, lineHeight: 1.25, overflowWrap: 'anywhere' }}>{item.name}</div>
                   {item.description && <div style={{ fontSize: 13, color: T.textMuted, marginTop: 1, overflowWrap: 'anywhere' }}>{item.description}</div>}
                   {/* His own photo of it at the factory, when he took one. Never required: the picture on the left is often enough. */}
                   {proof && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
                       <EvidenceThumb docId={proof.docId} size={44} onOpen={setZoom} />
-                      <span style={{ fontSize: 12, fontWeight: 700, color: '#166534' }}>{t('bom_your_photo', lang)}</span>
+                      <span style={{ fontSize: 12, fontWeight: 500, color: '#166534' }}>{t('bom_your_photo', lang)}</span>
                       {canTick && <label style={link}><Camera size={15} /> {t('bom_change_photo', lang)}<input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={e => { addPhoto(item, e.target.files?.[0]); e.target.value = '' }} /></label>}
                       {canTick && <button type="button" style={{ ...link, color: T.textMuted }} onClick={() => removePhoto(item)}>{t('bom_remove_photo', lang)}</button>}
                     </div>
@@ -120,7 +120,7 @@ export function BomChecklist({ order, factoryId, factoryName = '', lang, canTick
                   )}
                   {SHOW_CONSUMPTION && (item.perPiece || item.forOrder) && (
                     <div style={{ fontSize: 13, color: T.text, marginTop: 3 }}>
-                      {item.forOrder && <span style={{ fontWeight: 800 }}>{item.forOrder}</span>}
+                      {item.forOrder && <span style={{ fontWeight: 600 }}>{item.forOrder}</span>}
                       {item.perPiece && <span style={{ color: T.textMuted }}>{item.forOrder ? ' · ' : ''}{t('bom_per_piece', lang)}: {item.perPiece}</span>}
                     </div>
                   )}
@@ -168,14 +168,14 @@ function BomEditor({ order, images, onClose }) {
             <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', border: `1px solid ${T.border}`, borderRadius: 10, padding: 8, background: '#f8fafc' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
                 <Thumb src={src} size={56} onOpen={() => {}} />
-                <label style={{ fontSize: 10.5, fontWeight: 700, color: T.info, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                <label style={{ fontSize: 10.5, fontWeight: 500, color: T.info, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                   <Upload size={10} /> {src ? 'Change' : 'Picture'}
                   <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { pick(i, e.target.files?.[0]); e.target.value = '' }} />
                 </label>
                 {src && <button type="button" onClick={() => set(i, { image: null })} style={{ background: 'none', border: 'none', fontSize: 10.5, color: T.textMuted, cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>Remove</button>}
               </div>
               <div style={{ flex: 1, minWidth: 0, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 6 }}>
-                <input value={r.name} onChange={e => set(i, { name: e.target.value })} placeholder="Item, e.g. Front zip" maxLength={120} aria-label={`Item ${i + 1} name`} style={{ ...field, fontWeight: 700 }} />
+                <input value={r.name} onChange={e => set(i, { name: e.target.value })} placeholder="Item, e.g. Front zip" maxLength={120} aria-label={`Item ${i + 1} name`} style={{ ...field, fontWeight: 500 }} />
                 <input value={r.section} onChange={e => set(i, { section: e.target.value })} placeholder="Section, e.g. Trims" maxLength={60} aria-label={`Item ${i + 1} section`} list="bom-sections" style={field} />
                 <input value={r.description} onChange={e => set(i, { description: e.target.value })} placeholder="What it is" maxLength={200} aria-label={`Item ${i + 1} description`} style={{ ...field, gridColumn: '1 / -1' }} />
                 {SHOW_CONSUMPTION && <input value={r.perPiece} onChange={e => set(i, { perPiece: e.target.value })} placeholder="Per piece, e.g. 1.65 m" maxLength={40} aria-label={`Item ${i + 1} per piece`} style={field} />}
@@ -187,7 +187,7 @@ function BomEditor({ order, images, onClose }) {
         })}
         <datalist id="bom-sections">{['Fabric', 'Trims', 'Labels', 'Packing'].map(s => <option key={s} value={s} />)}</datalist>
         <div><Btn size="sm" variant="secondary" onClick={() => setRows(rs => [...rs, blankRow(rs[rs.length - 1]?.section || '')])} icon={<Plus size={12} />}>Add an item</Btn></div>
-        {err && <div role="alert" style={{ fontSize: 12, color: T.dangerDeep, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}><AlertTriangle size={13} /> {err}</div>}
+        {err && <div role="alert" style={{ fontSize: 12, color: T.dangerDeep, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}><AlertTriangle size={13} /> {err}</div>}
         <FlexRow justify="space-between" gap={8} style={{ flexWrap: 'wrap' }}>
           <div>{order.bom && <Btn variant="danger" disabled={busy} onClick={() => save([])} icon={<Trash2 size={13} />}>Remove the list</Btn>}</div>
           <FlexRow gap={8}>
@@ -218,7 +218,7 @@ export function BomSection({ order }) {
     <div style={{ marginTop: 16 }}>
       <FlexRow gap={8} style={{ marginBottom: 7 }}>
         <button type="button" onClick={() => bom && setOpen(v => !v)} aria-expanded={open} disabled={!bom}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', padding: 0, cursor: bom ? 'pointer' : 'default', fontFamily: "'JetBrains Mono',monospace", fontSize: 9, fontWeight: 700, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', padding: 0, cursor: bom ? 'pointer' : 'default', fontFamily: "'JetBrains Mono',monospace", fontSize: 9, fontWeight: 500, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
           Bill of materials{bom ? ` · ${bom.items.length} items${caps.isBuyer ? '' : ` · ${bom.items.filter(i => i.checks.length).length} checked`}` : ''}
           {bom && <ChevronDown size={12} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />}
         </button>
@@ -229,12 +229,12 @@ export function BomSection({ order }) {
         <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, background: '#fff', overflow: 'hidden' }}>
           {bomSections(bom).map((sec, si) => (
             <div key={si}>
-              {sec.section && <div style={{ fontSize: 11, fontWeight: 800, color: T.textMuted, background: '#f8fafc', padding: '6px 10px', borderTop: si ? `1px solid ${T.border}` : 'none' }}>{sec.section}</div>}
+              {sec.section && <div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, background: '#f8fafc', padding: '6px 10px', borderTop: si ? `1px solid ${T.border}` : 'none' }}>{sec.section}</div>}
               {sec.items.map(item => (
                 <div key={item.id} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '7px 10px', borderTop: `1px solid ${T.border}` }}>
                   <Thumb src={images[item.id]} size={40} onOpen={() => setZoom(images[item.id])} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{item.name}{item.description && <span style={{ fontWeight: 400, color: T.textMuted }}> · {item.description}</span>}</div>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: T.text }}>{item.name}{item.description && <span style={{ fontWeight: 400, color: T.textMuted }}> · {item.description}</span>}</div>
                     {SHOW_CONSUMPTION && <div style={{ fontSize: 11.5, color: T.textMuted, marginTop: 1 }}>{[item.perPiece && `${item.perPiece} per piece`, item.forOrder && `${item.forOrder} for the order`].filter(Boolean).join(' · ')}</div>}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-end', flexShrink: 0 }}>
@@ -245,7 +245,7 @@ export function BomSection({ order }) {
                       </span>
                     ))}
                     {item.checks.map(c => (
-                      <span key={c.mfrId} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: T.successDeep, background: T.successBg, border: `1px solid ${T.successBorder}`, borderRadius: 8, padding: '1px 7px' }}>
+                      <span key={c.mfrId} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 500, color: T.successDeep, background: T.successBg, border: `1px solid ${T.successBorder}`, borderRadius: 8, padding: '1px 7px' }}>
                         <Check size={11} strokeWidth={3} /> {factoryName(c.mfrId)}{c.byName ? `, ${c.byName}` : ''}, {fmtDate(c.at)}
                       </span>
                     ))}
