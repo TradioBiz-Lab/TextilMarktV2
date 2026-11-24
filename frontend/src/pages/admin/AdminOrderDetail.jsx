@@ -22,6 +22,7 @@ import { normalizeCsvDate } from '../../csvDates.js'
 import { ReplenRequestModal } from '../../components/ReplenRequestModal.jsx'
 import { capsFor, canWriteStage, canSetAssignmentStatus, canManageStepLists } from '../../caps.js'
 import { CoordinatorOrderTop } from '../../components/CoordinatorOrderTop.jsx'
+import { t as coordT, langOf as coordLang } from '../../coordinatorText.js'
 import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
@@ -122,6 +123,8 @@ export function AdminOrderDetail({ orderId, initialMid, initialStage = null, onI
   const [pendingRespChanges, setPendingRespChanges] = useState([]) // [{stageName, responsibleId}]
 
   // Per-stage updates thread + materials checklist (expand, in the stage grid)
+  // A coordinator sees only the simple top at first; the full page opens when he asks for it (it can overwhelm on the floor).
+  const [coordDetails, setCoordDetails] = useState(false)
   const [expandedStage, setExpandedStage] = useState(initialStage != null && initialMid ? `${initialMid}:${initialStage}` : null) // `${mfrId}:${stageIndex}` or null
   const [updateDrafts, setUpdateDrafts] = useState({})
   const [materialDrafts, setMaterialDrafts] = useState({}) // keyed by `${mfrId}:${stageIndex}` -> new-line form
@@ -819,7 +822,7 @@ export function AdminOrderDetail({ orderId, initialMid, initialStage = null, onI
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* A coordinator on the factory floor gets the essentials first; the full page follows, read only. */}
-        {caps.isCoord && <CoordinatorOrderTop order={order} factoryId={effectiveMid || initialMid} onNextProduct={onBack} />}
+        {caps.isCoord && <CoordinatorOrderTop order={order} factoryId={effectiveMid || initialMid} onNextProduct={onBack} detailsOpen onToggleDetails={() => setCoordDetails(false)} />}
         {/* ── Page header: identity + actions ── */}
         <FlexRow style={{ flexWrap: 'wrap' }} gap={10}>
           <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
@@ -1216,6 +1219,15 @@ export function AdminOrderDetail({ orderId, initialMid, initialStage = null, onI
         finally { setPromoting(false) }
       }} />
   )
+
+  if (caps.isCoord && !coordDetails) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div><Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>{coordT('back', coordLang(currentUser))}</Btn></div>
+        <CoordinatorOrderTop order={order} factoryId={effectiveMid || initialMid} onNextProduct={onBack} detailsOpen={false} onToggleDetails={() => setCoordDetails(true)} />
+      </div>
+    )
+  }
 
   if ((order.assignments?.length || 0) === 0) {
     return (

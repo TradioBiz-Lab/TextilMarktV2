@@ -98,7 +98,7 @@ function AddUpdate({ order, split, lang, visits, onNextProduct }) {
  * papers he checks against (tech pack, measurements, bill of materials), the size breakup, then the steps he can send an update on. The full page follows
  * underneath, read only. `onNextProduct` takes him back to the client's products after an update.
  */
-export function CoordinatorOrderTop({ order, factoryId, onNextProduct }) {
+export function CoordinatorOrderTop({ order, factoryId, onNextProduct, detailsOpen = true, onToggleDetails }) {
   const { currentUser, docs, getDocData, visits } = useApp()
   const lang = langOf(currentUser)
   const url = order.imageDataUrl || order.imageUrl
@@ -143,9 +143,17 @@ export function CoordinatorOrderTop({ order, factoryId, onNextProduct }) {
         {order.sizeBreakup && <SizeBreakupTable breakup={order.sizeBreakup} large labels={{ colour: t('colour', lang), total: t('total', lang), pieces: t('pieces_word', lang) }} />}
       </div>
       {split && <AddUpdate order={order} split={split} lang={lang} visits={visits} onNextProduct={onNextProduct} />}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 13, fontWeight: 500, color: T.textMuted }}>
-        {t('full_details', lang)} <ChevronDown size={14} />
-      </div>
+      {/* The full style page (plan, every paper, notes) stays folded away until he asks for it: on the floor he rarely needs it. */}
+      {onToggleDetails ? (
+        <button type="button" onClick={onToggleDetails} aria-expanded={detailsOpen}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 44, fontSize: 14, fontWeight: 500, color: T.info, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+          {t(detailsOpen ? 'full_details_hide' : 'full_details_show', lang)} <ChevronDown size={16} style={{ transform: detailsOpen ? 'rotate(180deg)' : 'none' }} />
+        </button>
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 13, fontWeight: 500, color: T.textMuted }}>
+          {t('full_details', lang)} <ChevronDown size={14} />
+        </div>
+      )}
     </div>
   )
 }
