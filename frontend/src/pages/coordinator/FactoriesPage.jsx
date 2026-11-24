@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { Factory, MapPin, LogIn, LogOut, Navigation, AlertTriangle, CheckCircle2, ChevronRight } from '../../icons.jsx'
+import { Factory, MapPin, LogIn, LogOut, Navigation, AlertTriangle, CheckCircle2, ChevronRight, ChevronDown, ClipboardList } from '../../icons.jsx'
 import { T } from '../../constants.js'
 import { useApp } from '../../context.jsx'
 import { t, langOf } from '../../coordinatorText.js'
 import { factoryCardState, timeIST, durationText } from '../../visits.js'
 import { LoadingScreen } from '../../components/ui.jsx'
+import { visitsApi } from '../../api.js'
 
 // A big, plain button: the coordinator's screens are used on a phone, by people who are not at home in apps.
 export function BigBtn({ children, onClick, tone = 'primary', disabled, icon }) {
@@ -39,8 +40,71 @@ export function LocationHelp({ lang, weak, onRetry, onClose }) {
   )
 }
 
+const KIND_TONE = { late: { bg: '#fee2e2', fg: '#991b1b' }, due_today: { bg: '#ffedd5', fg: '#9a3412' }, running: { bg: '#dcfce7', fg: '#166534' } }
+const kindLabel = (s, lang) => (s.kind === 'late' ? (s.daysLate === 1 ? t('work_one_day_late', lang) : t('work_days_late', lang, { n: s.daysLate })) : s.kind === 'due_today' ? t('work_due_today', lang) : t('work_in_progress', lang))
+
+/**
+ * Today's work at one factory, on its card: the steps that are late, due today or running (from the plan), what Tradio
+ * is following up on its styles, and what was reported from the floor yesterday. Three lines at first, the rest behind
+ * one tap. Tapping a line opens that style.
+ */
+function WorkToday({ work, lang, onOpenOrder }) {
+  const [all, setAll] = useState(false)
+  if (!work) return null
+  const { steps = [], counts = {}, actionItems = [], yesterday = [] } = work
+  const empty = !steps.length && !actionItems.length && !yesterday.length
+  const more = steps.length > 3 || actionItems.length > 0 || yesterday.length > 0
+  const row = { display: 'flex', alignItems: 'flex-start', gap: 8, width: '100%', textAlign: 'left', background: '#fff', border: `1px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontFamily: 'inherit', cursor: onOpenOrder ? 'pointer' : 'default' }
+  const heading = { fontSize: 12, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 4 }
+  return (
+    <div style={{ background: '#f8fafc', border: `1px solid ${T.border}`, borderRadius: 14, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 16, fontWeight: 800, color: T.text }}><ClipboardList size={19} /> {t('work_today', lang)}</span>
+        {counts.late > 0 && <span style={{ fontSize: 12.5, fontWeight: 800, padding: '2px 9px', borderRadius: 10, background: KIND_TONE.late.bg, color: KIND_TONE.late.fg }}>{t('work_late', lang, { n: counts.late })}</span>}
+        {counts.dueToday > 0 && <span style={{ fontSize: 12.5, fontWeight: 800, padding: '2px 9px', borderRadius: 10, background: KIND_TONE.due_today.bg, color: KIND_TONE.due_today.fg }}>{t('work_due', lang, { n: counts.dueToday })}</span>}
+        {counts.running > 0 && <span style={{ fontSize: 12.5, fontWeight: 800, padding: '2px 9px', borderRadius: 10, background: KIND_TONE.running.bg, color: KIND_TONE.running.fg }}>{t('work_running', lang, { n: counts.running })}</span>}
+      </div>
+      {empty && <div style={{ fontSize: 14, color: T.textMuted }}>{t('work_none', lang)}</div>}
+      {(all ? steps : steps.slice(0, 3)).map((s, i) => (
+        <button key={`${s.orderId}:${s.stageIndex}:${i}`} type="button" style={row} onClick={() => onOpenOrder?.(s.orderId)}>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontSize: 15, fontWeight: 800, color: T.text, lineHeight: 1.25, overflowWrap: 'anywhere' }}>{s.stageName}</span>
+            <span style={{ display: 'block', fontSize: 13, color: T.textMuted, marginTop: 1, overflowWrap: 'anywhere' }}>{s.product}{s.client ? ` · ${s.client}` : ''}</span>
+          </span>
+          <span style={{ fontSize: 12, fontWeight: 800, padding: '2px 8px', borderRadius: 10, background: KIND_TONE[s.kind].bg, color: KIND_TONE[s.kind].fg, whiteSpace: 'nowrap', flexShrink: 0 }}>{kindLabel(s, lang)}</span>
+        </button>
+      ))}
+      {all && actionItems.length > 0 && <div style={heading}>{t('work_action_items', lang)}</div>}
+      {all && actionItems.map(a => (
+        <button key={a.id} type="button" style={row} onClick={() => onOpenOrder?.(a.orderId)}>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontSize: 15, fontWeight: 700, color: T.text, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{a.title}</span>
+            <span style={{ display: 'block', fontSize: 13, color: T.textMuted, marginTop: 1 }}>{a.product}{a.stageName ? ` · ${a.stageName}` : ''}</span>
+          </span>
+        </button>
+      ))}
+      {all && yesterday.length > 0 && <div style={heading}>{t('work_yesterday', lang)}</div>}
+      {all && yesterday.map((u, i) => (
+        <button key={i} type="button" style={row} onClick={() => onOpenOrder?.(u.orderId)}>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontSize: 14.5, color: T.text, lineHeight: 1.35, overflowWrap: 'anywhere' }}>{u.text || u.stageName}</span>
+            <span style={{ display: 'block', fontSize: 13, color: T.textMuted, marginTop: 1 }}>{u.product} · {u.stageName}{u.byName ? ` · ${u.byName}` : ''}</span>
+          </span>
+        </button>
+      ))}
+      {more && (
+        <button type="button" onClick={() => setAll(v => !v)} aria-expanded={all}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 40, background: 'none', border: 'none', fontSize: 14, fontWeight: 700, color: T.info, cursor: 'pointer', fontFamily: 'inherit' }}>
+          {all ? t('work_show_less', lang) : `${t('work_show_all', lang)}${actionItems.length ? ` · ${t('work_action_items', lang)} (${actionItems.length})` : ''}${yesterday.length ? ` · ${t('work_yesterday', lang)} (${yesterday.length})` : ''}`}
+          <ChevronDown size={15} style={{ transform: all ? 'rotate(180deg)' : 'none', flexShrink: 0 }} />
+        </button>
+      )}
+    </div>
+  )
+}
+
 // One factory. Tapping the card opens that factory's work (onOpen, from Phase 2 on); Check in and Check out are their own buttons.
-function FactoryCard({ factory, visits, lang, busy, onCheckIn, onCheckOut, onOpen }) {
+function FactoryCard({ factory, visits, lang, busy, work, onCheckIn, onCheckOut, onOpen, onOpenOrder }) {
   const { state, visit, last } = factoryCardState(visits, factory.id)
   const open = state === 'open'
   return (
@@ -56,6 +120,8 @@ function FactoryCard({ factory, visits, lang, busy, onCheckIn, onCheckOut, onOpe
         </div>
         {onOpen && <ChevronRight size={22} color={T.textLight} />}
       </div>
+
+      <WorkToday work={work} lang={lang} onOpenOrder={onOpenOrder} />
 
       {open && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 700, color: '#15803d' }}>
@@ -110,12 +176,15 @@ function AddToHomeHint({ lang }) {
  * The coordinator's home: his allocated factories. `onOpenFactory(factoryId)` opens a factory's work; it is also
  * called after a successful check-in, so he lands on what is being made there.
  */
-export function FactoriesPage({ onOpenFactory }) {
+export function FactoriesPage({ onOpenFactory, onOpenOrder }) {
   const { currentUser, visits, checkIn, checkOut, loading } = useApp()
   const lang = langOf(currentUser)
   const [busyId, setBusyId] = useState(null)
   const [help, setHelp] = useState(null)   // { weak, retry } when the phone gave no position
   const [error, setError] = useState('')
+  // Today's work per factory: asked once when the page opens. The cards work without it (it is extra, never a blocker).
+  const [work, setWork] = useState(null)
+  useEffect(() => { let dead = false; visitsApi.work().then(r => { if (!dead) setWork(r?.factories || {}) }).catch(() => {}); return () => { dead = true } }, [])
 
   if (loading && !visits) return <LoadingScreen />
   const factories = visits?.factories || []
@@ -146,7 +215,8 @@ export function FactoriesPage({ onOpenFactory }) {
         : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {factories.map(f => (
-              <FactoryCard key={f.id} factory={f} visits={visits} lang={lang} busy={busyId === f.id}
+              <FactoryCard key={f.id} factory={f} visits={visits} lang={lang} busy={busyId === f.id} work={work?.[f.id]}
+                onOpenOrder={onOpenOrder ? id => onOpenOrder(id, f.id) : undefined}
                 onOpen={onOpenFactory ? () => onOpenFactory(f.id) : undefined}
                 onCheckIn={() => run(f.id, async () => { await checkIn(f.id); onOpenFactory?.(f.id) })}
                 onCheckOut={() => run(f.id, () => checkOut(visits.open.id))} />

@@ -13,7 +13,7 @@ export const COORDINATOR_ALLOWED = [
   ['POST', new RegExp(`^/api/notifications/(${ID}/read|mark-all-read)$`)],
   ['GET', /^\/api\/ribbons$/],
   // Phase 1: factory visits
-  ['GET', /^\/api\/visits\/mine$/],
+  ['GET', /^\/api\/visits\/(mine|work)$/],
   ['POST', /^\/api\/visits\/check-in$/],
   ['POST', new RegExp(`^/api/visits/${ID}/check-out$`)],
   // Phase 2: the styles at his factories, read only. Each of these routes scopes what it returns to req.user.factoryIds.

@@ -214,7 +214,7 @@ function Inner() {
       const openMoForCoord = (moId, preferFactory) => { const to = masterOrderTarget(orders, moId, preferFactory); if (to) go({ view: 'factory_products', selFactory: to.factoryId, selClient: to.clientId, selMo: moId }) }
       if (view === 'master_order' && selMo) { const to = masterOrderTarget(orders, selMo); if (to) return <FactoryProductsPage factoryId={to.factoryId} clientId={to.clientId} focusMo={selMo} onBack={() => goBack(home)} onOpen={id => openOrder(id, to.factoryId)} /> }
       if (view === 'order_detail' && selOid) return <AdminOrderDetail orderId={selOid} initialMid={selMid} onOpenMo={moId => openMoForCoord(moId, selMid)} onOpenOrder={openOrder} onBack={() => goBack(home)} />
-      return <FactoriesPage onOpenFactory={openFactory} />
+      return <FactoriesPage onOpenFactory={openFactory} onOpenOrder={openOrder} />
     }
 
     // Action Items and the daily update are one page now — the same job, split

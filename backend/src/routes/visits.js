@@ -1,7 +1,8 @@
 import { Router } from 'express'
 import mongoose from 'mongoose'
 import rateLimit from 'express-rate-limit'
-import { FactoryVisit, User, Manufacturer, AuditLog } from '../db/index.js'
+import { FactoryVisit, User, Manufacturer, AuditLog, Order, ActionItem, FieldUpdate } from '../db/index.js'
+import { factoryStepsToday } from '../lib/workToday.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { COORDINATOR_ROLE } from '../lib/coordinator.js'
 import { cleanPoint, distanceM, isAway, dayIST, startOfDayIST, mapsUrlFor } from '../lib/geo.js'
@@ -82,6 +83,36 @@ router.get('/mine', coordinatorOnly, async (req, res) => {
       open: open ? visitOut({ ...open, factoryId: { _id: open.factoryId, company: factories.find(f => String(f._id) === String(open.factoryId))?.company ?? null } }) : null,
       today: today.map(visitOut),
     })
+  } catch (err) { serverError(res, err) }
+})
+
+// GET /api/visits/work - today's work at each of the coordinator's factories, for the factory cards: the steps that are
+// late, due today or running (from the plan), the open action items on the styles made there, and what was reported
+// from the floor yesterday. Days are days in India.
+router.get('/work', coordinatorOnly, async (req, res) => {
+  try {
+    const ids = req.user.factoryIds
+    const today = dayIST()
+    const yesterdayStart = startOfDayIST(dayIST(new Date(Date.now() - 24 * 60 * 60 * 1000)))
+    const orders = ids.length ? await Order.find({ 'assignments.mfrId': { $in: ids } }, 'product buyerId assignments.mfrId assignments.status assignments.stages').populate('buyerId', 'company').lean() : []
+    const productOf = new Map(orders.map(o => [String(o._id), o.product]))
+    const [items, updates] = await Promise.all([
+      ActionItem.find({ status: 'open', orderId: { $in: orders.map(o => o._id) } }, 'title orderId stageName priority eta').sort({ eta: 1, createdAt: 1 }).lean(),
+      FieldUpdate.find({ factoryId: { $in: ids }, at: { $gte: yesterdayStart, $lt: startOfDayIST(today) } }, 'factoryId orderId stageName text ai.summary coordinatorId at').sort({ at: -1 }).populate('coordinatorId', 'name').lean(),
+    ])
+    const out = {}
+    for (const id of ids) {
+      const here = orders.map(o => ({ o, split: (o.assignments || []).find(a => String(a.mfrId) === id) })).filter(x => x.split)
+      // A split already delivered needs no look; its action items and yesterday's notes still show.
+      const styles = here.filter(x => x.split.status !== 'Delivered').map(x => ({ orderId: String(x.o._id), product: x.o.product, client: x.o.buyerId?.company || '', stages: x.split.stages || [] }))
+      const made = new Set(here.map(x => String(x.o._id)))
+      out[id] = {
+        ...factoryStepsToday(styles, today),
+        actionItems: items.filter(i => made.has(String(i.orderId))).slice(0, 10).map(i => ({ id: String(i._id), title: i.title, orderId: String(i.orderId), product: productOf.get(String(i.orderId)) || '', stageName: i.stageName || null, priority: i.priority, eta: i.eta })),
+        yesterday: updates.filter(u => String(u.factoryId) === id).slice(0, 10).map(u => ({ orderId: String(u.orderId), product: productOf.get(String(u.orderId)) || '', stageName: u.stageName, text: (u.ai?.summary || u.text || '').slice(0, 300), byName: u.coordinatorId?.name || '', at: u.at })),
+      }
+    }
+    res.json({ day: today, factories: out })
   } catch (err) { serverError(res, err) }
 })
 

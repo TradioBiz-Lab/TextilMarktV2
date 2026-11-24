@@ -2,7 +2,10 @@ import test, { before, after, beforeEach, describe } from 'node:test'
 import assert from 'node:assert/strict'
 import { startTestDb, stopTestDb, clearDb } from './helpers/db.js'
 import { startServer, stopServer, as, req } from './helpers/client.js'
-import { makeAdmin, makeBuyer, makeMfr, makeCoordinator } from './helpers/factories.js'
+import { makeAdmin, makeBuyer, makeMfr, makeCoordinator, orderPayload } from './helpers/factories.js'
+import { stepToday, factoryStepsToday } from '../src/lib/workToday.js'
+import { ActionItem } from '../src/models/ActionItem.js'
+import { FieldUpdate } from '../src/models/FieldUpdate.js'
 import { FactoryVisit } from '../src/models/FactoryVisit.js'
 import { Manufacturer } from '../src/models/Manufacturer.js'
 import { AuditLog } from '../src/models/AuditLog.js'
@@ -215,5 +218,52 @@ describe('a factory\'s location on its Partner Directory record', () => {
     const made = await api.post('/api/manufacturers', { name: 'New Mill', type: 'garment_manufacturer', mapsLocation: '26.9, 75.7' })
     assert.equal(made.status, 201, JSON.stringify(made.body))
     assert.deepEqual([made.body.geo.lat, made.body.geo.lng], [26.9, 75.7])
+  })
+})
+
+describe('today\'s work at his factories', () => {
+  const day = n => new Date(Date.now() + 19800000 + n * 86400000).toISOString().slice(0, 10)   // a day in India, n days from today
+
+  test('steps read off the plan: late first, then due today, then running; done and future steps are left out', () => {
+    const today = '2026-11-24'
+    assert.equal(stepToday({ status: 'done', eta: '2026-11-01' }, today), null)
+    assert.deepEqual(stepToday({ eta: '2026-11-21', startDate: '2026-11-10' }, today), { kind: 'late', daysLate: 3 })
+    assert.deepEqual(stepToday({ eta: '2026-11-24' }, today), { kind: 'due_today', daysLate: 0 })
+    assert.deepEqual(stepToday({ status: 'in_progress', eta: '2026-12-01' }, today), { kind: 'running', daysLate: 0 })
+    assert.deepEqual(stepToday({ startDate: '2026-11-20', eta: '2026-12-01' }, today), { kind: 'running', daysLate: 0 })
+    assert.equal(stepToday({ startDate: '2026-11-25', eta: '2026-12-01' }, today), null)
+    assert.equal(stepToday({ startDate: 'NA', eta: 'NA' }, today), null)
+    assert.deepEqual(stepToday({ eta: null, baselineEta: '2026-11-22' }, today), { kind: 'late', daysLate: 2 }, 'the planned end counts when it was never revised')
+    const r = factoryStepsToday([{ orderId: 'A', product: 'Polo', client: 'Cocoblu', stages: [{ name: 'Stitching', eta: '2026-11-14' }, { name: 'Cutting', eta: '2026-11-24' }, { name: 'Packing', startDate: '2026-12-10', eta: '2026-12-20' }] }], today)
+    assert.deepEqual(r.steps.map(s => [s.stageName, s.kind, s.daysLate]), [['Stitching', 'late', 10], ['Cutting', 'due_today', 0]])
+    assert.deepEqual(r.counts, { late: 1, dueToday: 1, running: 0 })
+    // A style that is behind: only the step it is on is late, not every step after it; a later one someone started still shows.
+    const behind = factoryStepsToday([{ orderId: 'B', product: 'Cap', client: '', stages: [{ name: 'Fabric', status: 'done' }, { name: 'Cutting', eta: '2026-11-10' }, { name: 'Stitching', eta: '2026-11-15' }, { name: 'Packing', eta: '2026-11-18', status: 'in_progress' }] }], today)
+    assert.deepEqual(behind.steps.map(s => s.stageName), ['Cutting', 'Packing'])
+  })
+
+  test('each factory card gets its steps, the open action items on its styles and yesterday\'s updates; only his factories', async () => {
+    const admin = await makeAdmin(); const buyer = await makeBuyer({ company: 'Cocoblu' })
+    const a = await makeMfr({ company: 'Factory A' }); const b = await makeMfr({ company: 'Factory B' })
+    const p = orderPayload({ id: 'S-1', buyerId: buyer._id, mfrId: a._id, product: 'Polo', stageNames: ['Cutting', 'Stitching', 'Packing'], stageStartDates: [day(-20), day(-5), day(10)], stageEtas: [day(-3), day(0), day(20)] })
+    assert.equal((await as(admin).post('/api/orders', p)).status, 201)
+    const elsewhere = orderPayload({ id: 'S-2', buyerId: buyer._id, mfrId: b._id, product: 'Cap' })
+    assert.equal((await as(admin).post('/api/orders', elsewhere)).status, 201)
+    await ActionItem.create({ title: 'Chase the zip supplier', assigneeId: admin._id, createdBy: admin._id, orderId: 'S-1', priority: 'high' })
+    await ActionItem.create({ title: 'Closed one', assigneeId: admin._id, createdBy: admin._id, orderId: 'S-1', status: 'done' })
+    await ActionItem.create({ title: 'Other factory', assigneeId: admin._id, createdBy: admin._id, orderId: 'S-2' })
+    const coord = await makeCoordinator({ name: 'Ravi', assignedFactories: [a] })
+    const at = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    const visit = await FactoryVisit.create({ coordinatorId: coord._id, factoryId: a._id, closedBy: 'coordinator', checkIn: { at, lat: 1, lng: 1 }, checkOut: { at, lat: 1, lng: 1 } })
+    await FieldUpdate.create({ coordinatorId: coord._id, visitId: visit._id, factoryId: a._id, orderId: 'S-1', buyerId: buyer._id, stageIndex: 1, stageName: 'Stitching', text: 'neela shade alag hai', at, ai: { state: 'done', summary: 'Blue shade is off' } })
+    const res = await as(coord).get('/api/visits/work')
+    assert.equal(res.status, 200, JSON.stringify(res.body))
+    assert.deepEqual(Object.keys(res.body.factories), [String(a._id)])
+    const w = res.body.factories[String(a._id)]
+    assert.deepEqual(w.steps.map(s => [s.product, s.client, s.stageName, s.kind, s.daysLate]), [['Polo', 'Cocoblu', 'Cutting', 'late', 3], ['Polo', 'Cocoblu', 'Stitching', 'due_today', 0]])
+    assert.deepEqual(w.counts, { late: 1, dueToday: 1, running: 0 })
+    assert.deepEqual(w.actionItems.map(i => [i.title, i.product, i.priority]), [['Chase the zip supplier', 'Polo', 'high']])
+    assert.deepEqual(w.yesterday.map(u => [u.product, u.stageName, u.text, u.byName]), [['Polo', 'Stitching', 'Blue shade is off', 'Ravi']])
+    for (const who of [admin, buyer, a]) assert.equal((await as(who).get('/api/visits/work')).status, 403)
   })
 })

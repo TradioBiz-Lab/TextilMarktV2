@@ -280,6 +280,8 @@ export const reviewApi = {
 // Factory visits: a coordinator's check-in and check-out, and the admins' list of them.
 export const visitsApi = {
   mine: () => api.get('/visits/mine'),
+  // Today's work at each of his factories: steps from the plan, open action items, yesterday's updates.
+  work: () => api.get('/visits/work'),
   checkIn: (factoryId, point) => api.post('/visits/check-in', { factoryId, ...point }),
   checkOut: (id, point) => api.post(`/visits/${id}/check-out`, point),
   list: (params = {}) => api.get('/visits', { params }),
