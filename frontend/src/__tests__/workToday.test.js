@@ -1,0 +1,38 @@
+import { describe, test, expect } from 'vitest'
+import { stepInstruction } from '../workToday.js'
+
+describe('what to do about a step today', () => {
+  test('the real step names each get a plain instruction', () => {
+    const says = (name, re) => expect(stepInstruction(name), name).toMatch(re)
+    says('Fabric (Inhouse)', /^Check if the fabric is in-house/)
+    says('Final Fabric Inhouse', /fabric is in-house/)
+    says('Greige Fabric (Inhouse)', /greige fabric is in-house/)
+    says('Fabric Order', /fabric is ordered/)
+    says('Trims (Inhouse)', /^Audit the trims against the BOM/)
+    says('Trims Order', /trims are ordered/)
+    says('Lab Dip/Cutting Shared', /lab dip/)
+    says('Lab Dip Approval', /lab dip is approved/)
+    says('Dyeing Start', /dyeing/)
+    says('PP Approval', /approval has come/)
+    says('Measurement Approval', /approval has come/)
+    says('Proto/Fit Sample', /sample/)
+    says('PP/Fit Sample Sent', /sample/)
+    says('FPT Sent', /gone to the lab/)
+    says('GPT Approval', /test report has passed/)
+    says('Cutting', /count the pieces cut/)
+    says('Embroidery', /embroidery or print/)
+    says('Stitching', /stitching on the line/)
+    says('Finishing & Packing', /packed pieces/)
+    says('Production Start', /has started/)
+    says('Production End', /is finished/)
+    says('Production (cut, embroider, stitch, pack)', /^Check cutting|^Check production/)
+    says('Inspection', /Do the inspection/)
+    says('Delivery', /ready to dispatch/)
+  })
+  test('an unknown step still says something useful; Hindi for a Hindi reader', () => {
+    expect(stepInstruction('Washing')).toBe('Check Washing and send an update')
+    expect(stepInstruction('Washing', 'hi')).toBe('Washing चेक करें और अपडेट भेजें')
+    expect(stepInstruction('Trims (Inhouse)', 'hi')).toMatch(/ट्रिम्स की जाँच/)
+    expect(stepInstruction('', 'en')).toBe('Check this step and send an update')
+  })
+})

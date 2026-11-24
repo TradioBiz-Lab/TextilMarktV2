@@ -6,6 +6,7 @@ import { t, langOf } from '../../coordinatorText.js'
 import { factoryCardState, timeIST, durationText } from '../../visits.js'
 import { LoadingScreen } from '../../components/ui.jsx'
 import { visitsApi } from '../../api.js'
+import { stepInstruction } from '../../workToday.js'
 
 // A big, plain button: the coordinator's screens are used on a phone, by people who are not at home in apps.
 export function BigBtn({ children, onClick, tone = 'primary', disabled, icon }) {
@@ -68,8 +69,9 @@ function WorkToday({ work, lang, onOpenOrder }) {
       {(all ? steps : steps.slice(0, 3)).map((s, i) => (
         <button key={`${s.orderId}:${s.stageIndex}:${i}`} type="button" style={row} onClick={() => onOpenOrder?.(s.orderId)}>
           <span style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ display: 'block', fontSize: 15, fontWeight: 800, color: T.text, lineHeight: 1.25, overflowWrap: 'anywhere' }}>{s.stageName}</span>
-            <span style={{ display: 'block', fontSize: 13, color: T.textMuted, marginTop: 1, overflowWrap: 'anywhere' }}>{s.product}{s.client ? ` · ${s.client}` : ''}</span>
+            {/* What to do, said plainly; under it, which style and which step of its plan it comes from. */}
+            <span style={{ display: 'block', fontSize: 15, fontWeight: 800, color: T.text, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{stepInstruction(s.stageName, lang)}</span>
+            <span style={{ display: 'block', fontSize: 13, color: T.textMuted, marginTop: 2, overflowWrap: 'anywhere' }}>{s.product}{s.client ? ` · ${s.client}` : ''} · {s.stageName}</span>
           </span>
           <span style={{ fontSize: 12, fontWeight: 800, padding: '2px 8px', borderRadius: 10, background: KIND_TONE[s.kind].bg, color: KIND_TONE[s.kind].fg, whiteSpace: 'nowrap', flexShrink: 0 }}>{kindLabel(s, lang)}</span>
         </button>
@@ -78,7 +80,7 @@ function WorkToday({ work, lang, onOpenOrder }) {
       {all && actionItems.map(a => (
         <button key={a.id} type="button" style={row} onClick={() => onOpenOrder?.(a.orderId)}>
           <span style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ display: 'block', fontSize: 15, fontWeight: 700, color: T.text, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{a.title}</span>
+            <span style={{ display: 'block', fontSize: 15, fontWeight: 700, color: T.text, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{t('work_follow_up', lang, { what: a.title })}</span>
             <span style={{ display: 'block', fontSize: 13, color: T.textMuted, marginTop: 1 }}>{a.product}{a.stageName ? ` · ${a.stageName}` : ''}</span>
           </span>
         </button>
@@ -87,7 +89,7 @@ function WorkToday({ work, lang, onOpenOrder }) {
       {all && yesterday.map((u, i) => (
         <button key={i} type="button" style={row} onClick={() => onOpenOrder?.(u.orderId)}>
           <span style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ display: 'block', fontSize: 14.5, color: T.text, lineHeight: 1.35, overflowWrap: 'anywhere' }}>{u.text || u.stageName}</span>
+            <span style={{ display: 'block', fontSize: 14.5, color: T.text, lineHeight: 1.35, overflowWrap: 'anywhere' }}>{t('work_recheck', lang, { what: u.text || u.stageName })}</span>
             <span style={{ display: 'block', fontSize: 13, color: T.textMuted, marginTop: 1 }}>{u.product} · {u.stageName}{u.byName ? ` · ${u.byName}` : ''}</span>
           </span>
         </button>
