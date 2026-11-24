@@ -84,6 +84,8 @@ function FactoryCard({ factory, visits, lang, busy, onCheckIn, onCheckOut, onOpe
 
 // Shown once on a coordinator's phone until he says OK: how to keep the app on the home screen. Not shown when it is
 // already opened from there.
+const distanceText = m => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m || 0} m`)
+
 const HINT_KEY = 'tradio_add_home_seen'
 function AddToHomeHint({ lang }) {
   const [show, setShow] = useState(false)
@@ -124,6 +126,8 @@ export function FactoriesPage({ onOpenFactory }) {
     catch (e) {
       if (e?.code === 'denied' || e?.code === 'unsupported') setHelp({ weak: false, retry: () => run(factoryId, action) })
       else if (e?.code === 'unavailable') setHelp({ weak: true, retry: () => run(factoryId, action) })
+      // Not at the factory: the server refused the check-in. Say so in his language, with how far away the phone is.
+      else if (e?.code === 'NOT_AT_FACTORY') setError(t('not_at_factory', lang, { name: e.data?.factoryName || '', distance: distanceText(e.data?.distanceM) }))
       else setError(e?.message || t('failed', lang))
     } finally { setBusyId(null) }
   }

@@ -51,7 +51,10 @@ api.interceptors.response.use(
     // An Error (not a bare string) so every `catch (err) { ... err?.message ... }`
     // call site actually gets the backend's real reason instead of silently
     // falling back to a generic message — a bare string has no .message.
-    return Promise.reject(new Error(err.response?.data?.error || 'Request failed'))
+    // The server's own code and extra fields ride along (code, distanceM, ...), for the screens that word a refusal themselves.
+    const failure = new Error(err.response?.data?.error || 'Request failed')
+    if (err.response?.data && typeof err.response.data === 'object') { failure.code = err.response.data.code; failure.data = err.response.data }
+    return Promise.reject(failure)
   }
 )
 

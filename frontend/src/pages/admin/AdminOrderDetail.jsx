@@ -702,7 +702,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
 
   // Only a manufacturer marked live in Partners can be given a style (the server enforces it too).
   const mfrUsers = users.filter(u => u.role === 'manufacturer' && u.isActive && u.live)
-  const refDocLabels = { measurements: 'Measurements', tech_pack: 'Tech Pack', pattern: 'Patterns', lab_dip: 'Lab Dip Receipts', test_report: 'Test Reports (FPT/GPT)' }
+  const refDocLabels = { measurements: 'Measurements', bom: 'BOM (Bill of Materials)', tech_pack: 'Tech Pack', pattern: 'Patterns', lab_dip: 'Lab Dip Receipts', test_report: 'Test Reports (FPT/GPT)' }
 
   const uploadRefDoc = async (type) => {
     const file = refDocFiles[type]

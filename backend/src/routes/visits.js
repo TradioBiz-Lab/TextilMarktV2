@@ -8,6 +8,7 @@ import { cleanPoint, distanceM, isAway, dayIST, startOfDayIST, mapsUrlFor } from
 
 // Factory visits: an Ops & QC coordinator checks in when he reaches one of his factories and checks out when he leaves.
 // Each tap carries the phone's position and time; the server's own clock is the time that counts. Admins read the visits.
+// A check-in is refused when the phone is not at the factory's pin; a check-out is taken from anywhere and marked away.
 const router = Router()
 router.use(requireAuth)
 
@@ -56,6 +57,7 @@ const pinsFor = async factoryIds => {
   const rows = await Manufacturer.find({ linkedUserId: { $in: factoryIds } }, 'linkedUserId city geo').lean()
   return new Map(rows.map(p => [String(p.linkedUserId), p]))
 }
+const distanceText = m => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`)
 const pinOf = p => (p?.geo && p.geo.lat != null && p.geo.lng != null ? { lat: p.geo.lat, lng: p.geo.lng } : null)
 
 // GET /api/visits/mine - the coordinator's factories, his open visit, and today's visits.
@@ -100,11 +102,24 @@ router.post('/check-in', coordinatorOnly, tapLimiter, async (req, res) => {
       return res.status(409).json({ error: `Check out of ${at?.company || 'the other factory'} first`, code: 'VISIT_OPEN', visitId: String(open._id) })
     }
     const pin = pinOf((await pinsFor([factoryId])).get(factoryId))
+    // He must be at the factory to check in there: further than the allowance plus the phone's own uncertainty is refused,
+    // and the attempt is written down. A factory with no pin yet cannot be measured against, so it is let through.
+    const metres = distanceM(pin, cleaned.point)
+    if (isAway({ distanceM: metres, accuracy: cleaned.point.accuracy })) {
+      await AuditLog.create({
+        byUser: req.user.id, action: 'Factory Check In Refused',
+        detail: `${req.user.name} tried to check in at ${factory.company} from ${metres} m away (${cleaned.point.lat}, ${cleaned.point.lng}${cleaned.point.accuracy != null ? ` ±${cleaned.point.accuracy} m` : ''})`,
+      })
+      return res.status(403).json({
+        error: `You are not at ${factory.company}. Your phone is ${distanceText(metres)} away. Check in when you reach the factory.`,
+        code: 'NOT_AT_FACTORY', distanceM: metres, factoryName: factory.company,
+      })
+    }
     let visit
     try {
       visit = await FactoryVisit.create({
         coordinatorId: req.user.id, factoryId,
-        checkIn: { ...cleaned.point, at: new Date(), distanceM: distanceM(pin, cleaned.point) },
+        checkIn: { ...cleaned.point, at: new Date(), distanceM: metres },
       })
     } catch (e) {
       // Two taps at once: the database's own "one open visit" rule caught the second.

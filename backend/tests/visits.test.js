@@ -64,19 +64,45 @@ describe('checking in', () => {
     assert.equal(await FactoryVisit.countDocuments(), 1)
   })
 
-  test('the distance from the factory is kept; far away is marked, never refused; no pin means no distance', async () => {
-    const near = await makeMfr(); await pin(near, 26.85, 75.8)
+  test('away from the factory the check-in is refused and written down; no pin means no distance and no refusal', async () => {
+    const near = await makeMfr({ company: 'Neobrands' }); await pin(near, 26.85, 75.8)
     const none = await makeMfr()
-    const coord = await makeCoordinator({ assignedFactories: [near, none] })
+    const coord = await makeCoordinator({ name: 'Ravi', assignedFactories: [near, none] })
     const api = as(coord)
     const far = await api.post('/api/visits/check-in', { factoryId: String(near._id), lat: 26.87, lng: 75.8, accuracy: 20 })
-    assert.equal(far.status, 201)
-    assert.ok(far.body.checkIn.distanceM > 2000, String(far.body.checkIn.distanceM))
-    assert.equal(far.body.checkIn.away, true)
-    await api.post(`/api/visits/${far.body.id}/check-out`, AT)
+    assert.equal(far.status, 403, JSON.stringify(far.body))
+    assert.equal(far.body.code, 'NOT_AT_FACTORY')
+    assert.ok(far.body.distanceM > 2000, String(far.body.distanceM))
+    assert.match(far.body.error, /You are not at Neobrands\. Your phone is 2\.2 km away/)
+    assert.equal(await FactoryVisit.countDocuments(), 0)
+    const log = await AuditLog.findOne({ action: 'Factory Check In Refused' }).lean()
+    assert.match(log.detail, /Ravi tried to check in at Neobrands from \d+ m away/)
     const unknown = await api.post('/api/visits/check-in', { factoryId: String(none._id), ...AT })
+    assert.equal(unknown.status, 201)
     assert.equal(unknown.body.checkIn.distanceM, null)
     assert.equal(unknown.body.checkIn.away, false)
+  })
+
+  test('the phone\'s own uncertainty is allowed for: 300 m plus the accuracy', async () => {
+    const f = await makeMfr(); await pin(f, 26.85, 75.8)
+    const coord = await makeCoordinator({ assignedFactories: [f] })
+    const api = as(coord)
+    // About 445 m north of the pin.
+    const at = { factoryId: String(f._id), lat: 26.854, lng: 75.8 }
+    assert.equal((await api.post('/api/visits/check-in', { ...at, accuracy: 20 })).status, 403)
+    const loose = await api.post('/api/visits/check-in', { ...at, accuracy: 200 })
+    assert.equal(loose.status, 201, JSON.stringify(loose.body))
+    assert.equal(loose.body.checkIn.away, false)
+  })
+
+  test('a check-out is taken from anywhere and marked away', async () => {
+    const f = await makeMfr(); await pin(f, 26.85, 75.8)
+    const coord = await makeCoordinator({ assignedFactories: [f] })
+    const api = as(coord)
+    const inn = await api.post('/api/visits/check-in', { factoryId: String(f._id), ...AT })
+    const out = await api.post(`/api/visits/${inn.body.id}/check-out`, { lat: 26.87, lng: 75.8, accuracy: 20 })
+    assert.equal(out.status, 200)
+    assert.equal(out.body.checkOut.away, true)
   })
 })
 

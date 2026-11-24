@@ -512,6 +512,8 @@ set the sheet cannot be replaced, relabelled or deleted by anyone. A replaced fi
   factory never lists, opens or uploads them
 - Certifications: `compliance_cert`, `factory_audit`, `chemical_cert`,
   `environmental_cert`, `insurance`
+- Style reference: `measurements`, `bom` (bill of materials: fabric, trims, labels, packing; no prices, so a factory
+  and a coordinator read it), `pattern`, `lab_dip`, `test_report`
 - Manufacturer profile: `mfr_profile`
 - Stage evidence: `material_po`, `knitting_grn`, `knitting_qc`, `dyeing_grn`, `dyeing_qc`,
   `processing_grn`, `processing_qc`, `cutting_qc`, `stitching_qc`, `final_qc`, `packing_qc`,
@@ -961,7 +963,9 @@ One document per visit. Written only by `routes/visits.js`. Never deleted.
 - `at` is the server's clock (the trusted time); `deviceAt` is what the phone said. `lat` / `lng` are required: a tap
   with no location is refused (`LOCATION_REQUIRED`). `accuracy` is the phone's own estimate in metres.
 - `distanceM` is the distance from the factory's pin (`manufacturers.geo`), null when the factory has none. A point
-  further than 300 m plus its accuracy is shown to admins as "away from factory"; it is never refused.
+  further than 300 m plus its accuracy is "away from factory". A check-in from away is refused (403 `NOT_AT_FACTORY`,
+  audit `Factory Check In Refused`) and no visit is made; a check-out is taken from anywhere and shown to admins as away.
+  A factory with no pin cannot be measured against, so its check-in is let through.
 - One open visit per coordinator (a partial unique index on `coordinatorId` where `closedBy` is null).
 - A visit still open after midnight in India is closed with `closedBy: "auto"` and no `checkOut`: no time is invented.
 

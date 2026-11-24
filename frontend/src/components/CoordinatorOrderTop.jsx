@@ -1,15 +1,15 @@
 import { useState } from 'react'
-import { Ruler, Image as ImageIcon, ChevronDown, ChevronRight, Camera, MapPin, LayoutGrid, Eye, FileText } from '../icons.jsx'
+import { Ruler, Image as ImageIcon, ChevronDown, ChevronRight, Camera, MapPin, LayoutGrid, Eye, FileText, ListChecks } from '../icons.jsx'
 import { T } from '../constants.js'
 import { useApp } from '../context.jsx'
 import { t, langOf } from '../coordinatorText.js'
-import { techPackOf, measurementOf, productState } from '../coordinatorStyles.js'
+import { techPackOf, measurementOf, bomOf, productState } from '../coordinatorStyles.js'
 import { DocViewer } from './ui.jsx'
 import { SizeBreakupTable } from './SizeBreakup.jsx'
 import { nextSteps, stepState } from '../nextSteps.js'
 import { AddUpdateSheet } from '../pages/coordinator/AddUpdateSheet.jsx'
 
-// One of the two papers he needs on the floor: its name, and one large button that opens it on the screen. He reads it
+// One of the papers he needs on the floor: its name, and one large button that opens it on the screen. He reads it
 // there; nothing is downloaded to the phone. (A paper kept as a link opens in the browser instead.)
 function Paper({ label, icon, doc, lang, getDocData }) {
   const [open, setOpen] = useState(false)
@@ -94,7 +94,7 @@ function AddUpdate({ order, split, lang, visits, onNextProduct }) {
 
 /**
  * The top of the order page as an Ops & QC coordinator sees it on his phone: the picture, what it is, how many, and the
- * two papers he checks against (tech pack, measurements), the size breakup, then the steps he can send an update on. The full page follows
+ * papers he checks against (tech pack, measurements, bill of materials), the size breakup, then the steps he can send an update on. The full page follows
  * underneath, read only. `onNextProduct` takes him back to the client's products after an update.
  */
 export function CoordinatorOrderTop({ order, factoryId, onNextProduct }) {
@@ -127,7 +127,9 @@ export function CoordinatorOrderTop({ order, factoryId, onNextProduct }) {
       )}
       <Paper label={t('tech_pack', lang)} icon={<FileText size={24} color={T.info} />} doc={techPackOf(docs, order.id)} lang={lang} getDocData={getDocData} />
       <Paper label={measurement?.locked ? t('locked_measurement', lang) : t('measurements', lang)} icon={<Ruler size={24} color={T.info} />} doc={measurement} lang={lang} getDocData={getDocData} />
-      {/* How many of each colour in each size: what he counts and checks cartons against. Below the two papers, as Ankit asked. */}
+      {/* The bill of materials: every fabric, trim, label and packing item the style needs. Straight below the measurements. */}
+      <Paper label={t('bom', lang)} icon={<ListChecks size={24} color={T.info} />} doc={bomOf(docs, order.id)} lang={lang} getDocData={getDocData} />
+      {/* How many of each colour in each size: what he counts and checks cartons against. Below the papers, as Ankit asked. */}
       <div style={{ background: '#fff', border: `1.5px solid ${order.sizeBreakup ? T.infoBorder : T.border}`, borderRadius: 14, padding: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 800, color: order.sizeBreakup ? T.info : T.textMuted, marginBottom: order.sizeBreakup ? 8 : 0 }}>
           <LayoutGrid size={20} /> {t('size_breakup', lang)}

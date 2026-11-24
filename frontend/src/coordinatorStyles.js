@@ -59,6 +59,9 @@ const newest = docs => [...docs].sort((a, b) => new Date(b.createdAt || 0) - new
 /** The tech pack to open for a style: its newest one, or null. */
 export const techPackOf = (docs, orderId) => newest((docs || []).filter(d => d.type === 'tech_pack' && String(d.orderId) === String(orderId) && d.isActive !== false))
 
+/** The bill of materials to open for a style (fabric, trims, labels, packing): its newest one, or null. */
+export const bomOf = (docs, orderId) => newest((docs || []).filter(d => d.type === 'bom' && String(d.orderId) === String(orderId) && d.isActive !== false))
+
 /** The measurement sheet to open for a style: the Locked Measurement when there is one, else the newest sheet. */
 export function measurementOf(docs, orderId) {
   const sheets = (docs || []).filter(d => d.type === 'measurements' && String(d.orderId) === String(orderId) && d.isActive !== false)

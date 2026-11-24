@@ -1,7 +1,7 @@
 import {
   ClipboardList, ShoppingCart, Ruler, Wallet, Mail, FileText, ShieldCheck, Search,
   FlaskConical, Leaf, ShieldPlus, Package, Layers, CheckCircle2, Palette, Settings2,
-  Scissors, Shirt, Trophy, Truck, Factory, Camera, Receipt } from './icons.jsx'
+  Scissors, Shirt, Trophy, Truck, Factory, Camera, Receipt, ListChecks } from './icons.jsx'
 
 // Legacy status flow (kept for admin/mfr pages not yet migrated)
 export const STATUS_FLOW = [
@@ -48,6 +48,7 @@ export const DOC_TYPES = [
   { v: 'PO', l: 'Purchase Order' },
   { v: 'invoice', l: 'Invoice' },
   { v: 'tech_pack', l: 'Tech Pack' },
+  { v: 'bom', l: 'BOM (Bill of Materials)' },
   { v: 'cost_sheet', l: 'Cost Sheet' },
   { v: 'RFQ', l: 'RFQ' },
   { v: 'terms', l: 'Terms & Conditions' },
@@ -147,7 +148,7 @@ export const evidenceTypesFor = (stageIndex, stages) => {
 
 // Values are Lucide icon COMPONENTS, not emoji — render as <DOC_ICONS[type] size={..}/>.
 export const DOC_ICONS = {
-  PO: ClipboardList, invoice: Receipt, buyer_order: ShoppingCart, tech_pack: Ruler, cost_sheet: Wallet, RFQ: Mail, terms: FileText,
+  PO: ClipboardList, invoice: Receipt, buyer_order: ShoppingCart, tech_pack: Ruler, bom: ListChecks, cost_sheet: Wallet, RFQ: Mail, terms: FileText,
   compliance_cert: ShieldCheck, factory_audit: Search, chemical_cert: FlaskConical,
   environmental_cert: Leaf, insurance: ShieldPlus,
   // Stage evidence docs

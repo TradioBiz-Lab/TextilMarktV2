@@ -8,7 +8,8 @@ const DOC_TYPES = [
   'compliance_cert', 'factory_audit', 'chemical_cert',
   'environmental_cert', 'insurance',
   // Style-level reference documents (creation wizard's Documents step)
-  'measurements', 'pattern', 'lab_dip', 'test_report',
+  // 'bom' is the bill of materials (fabric, trims, labels, packing): what goes into the style, with no prices on it.
+  'measurements', 'bom', 'pattern', 'lab_dip', 'test_report',
   // Manufacturer profile PDF
   'mfr_profile',
   // Production stage evidence documents

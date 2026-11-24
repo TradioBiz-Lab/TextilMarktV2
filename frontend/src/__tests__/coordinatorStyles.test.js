@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { stylesAtFactory, clientsAtFactory, productsOfClient, productState, techPackOf, measurementOf, masterOrderTarget } from '../coordinatorStyles.js'
+import { stylesAtFactory, clientsAtFactory, productsOfClient, productState, techPackOf, measurementOf, bomOf, masterOrderTarget } from '../coordinatorStyles.js'
 
 const split = (mid, status = 'Processing', qty = 100) => ({ mid, status, qty })
 const orders = [
@@ -61,6 +61,8 @@ describe('the two papers on the order top', () => {
     { id: 'm2', type: 'measurements', orderId: 'S1', createdAt: '2026-11-01' },
     { id: 'm3', type: 'measurements', orderId: 'S2', createdAt: '2026-09-01' },
     { id: 'm4', type: 'measurements', orderId: 'S2', createdAt: '2026-09-15' },
+    { id: 'b1', type: 'bom', orderId: 'S1', createdAt: '2026-10-01' },
+    { id: 'b2', type: 'bom', orderId: 'S1', createdAt: '2026-11-05' },
   ]
   test('the newest tech pack; the Locked Measurement before a newer sheet', () => {
     expect(techPackOf(docs, 'S1').id).toBe('d2')
@@ -68,6 +70,10 @@ describe('the two papers on the order top', () => {
     expect(measurementOf(docs, 'S1').id).toBe('m1')
     expect(measurementOf(docs, 'S2').id).toBe('m4')
     expect(measurementOf(docs, 'S9')).toBe(null)
+  })
+  test('the newest bill of materials, or none', () => {
+    expect(bomOf(docs, 'S1').id).toBe('b2')
+    expect(bomOf(docs, 'S2')).toBe(null)
   })
 })
 
