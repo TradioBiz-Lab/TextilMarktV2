@@ -1,25 +1,36 @@
 import { useState } from 'react'
-import { Ruler, Image as ImageIcon, ChevronDown, ChevronRight, Camera, MapPin, LayoutGrid } from '../icons.jsx'
+import { Ruler, Image as ImageIcon, ChevronDown, ChevronRight, Camera, MapPin, LayoutGrid, Eye, FileText } from '../icons.jsx'
 import { T } from '../constants.js'
 import { useApp } from '../context.jsx'
 import { t, langOf } from '../coordinatorText.js'
 import { techPackOf, measurementOf, productState } from '../coordinatorStyles.js'
-import { DocCard } from './ui.jsx'
+import { DocViewer } from './ui.jsx'
 import { SizeBreakupTable } from './SizeBreakup.jsx'
 import { nextSteps, stepState } from '../nextSteps.js'
 import { AddUpdateSheet } from '../pages/coordinator/AddUpdateSheet.jsx'
 
-// One of the two papers he needs on the floor, under a label he can read at a glance. The file opens with the same
-// viewer as everywhere else (the card's View button).
-function Paper({ label, doc, lang, users, getDocData }) {
+// One of the two papers he needs on the floor: its name, and one large button that opens it on the screen. He reads it
+// there; nothing is downloaded to the phone. (A paper kept as a link opens in the browser instead.)
+function Paper({ label, icon, doc, lang, getDocData }) {
+  const [open, setOpen] = useState(false)
+  const tile = { display: 'flex', alignItems: 'center', gap: 12, width: '100%', minHeight: 64, textAlign: 'left', borderRadius: 14, padding: '10px 12px', fontFamily: 'inherit', textDecoration: 'none', boxSizing: 'border-box' }
+  const inner = (
+    <>
+      <span style={{ width: 44, height: 44, borderRadius: 12, background: doc ? T.infoBg : '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{icon}</span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: 17, fontWeight: 800, color: doc ? T.text : T.textMuted, lineHeight: 1.25 }}>{label}</span>
+        <span style={{ display: 'block', fontSize: 13, color: T.textMuted, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc ? doc.name : t('not_uploaded', lang)}</span>
+      </span>
+      {doc && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 15, fontWeight: 800, color: '#fff', background: T.info, borderRadius: 10, padding: '9px 14px', flexShrink: 0 }}><Eye size={18} /> {t('open', lang)}</span>}
+    </>
+  )
+  if (!doc) return <div style={{ ...tile, background: '#fff', border: `1.5px solid ${T.border}` }}>{inner}</div>
+  if (doc.externalUrl) return <a href={doc.externalUrl} target="_blank" rel="noopener noreferrer" style={{ ...tile, background: '#fff', border: `2px solid ${T.infoBorder}` }}>{inner}</a>
   return (
-    <div style={{ background: '#fff', border: `1.5px solid ${doc ? T.infoBorder : T.border}`, borderRadius: 14, padding: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 800, color: doc ? T.info : T.textMuted, marginBottom: doc ? 8 : 0 }}>
-        <Ruler size={20} /> {label}
-        {!doc && <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 600, color: T.textLight }}>{t('not_uploaded', lang)}</span>}
-      </div>
-      {doc && <DocCard doc={doc} users={users} onGetData={getDocData} compact />}
-    </div>
+    <>
+      <button type="button" onClick={() => setOpen(true)} style={{ ...tile, background: '#fff', border: `2px solid ${T.infoBorder}`, cursor: 'pointer' }}>{inner}</button>
+      {open && <DocViewer doc={doc} onGetData={getDocData} onClose={() => setOpen(false)} download={false} />}
+    </>
   )
 }
 
@@ -87,7 +98,7 @@ function AddUpdate({ order, split, lang, visits, onNextProduct }) {
  * underneath, read only. `onNextProduct` takes him back to the client's products after an update.
  */
 export function CoordinatorOrderTop({ order, factoryId, onNextProduct }) {
-  const { currentUser, docs, users, getDocData, visits } = useApp()
+  const { currentUser, docs, getDocData, visits } = useApp()
   const lang = langOf(currentUser)
   const url = order.imageDataUrl || order.imageUrl
   const split = (order.assignments || []).find(a => String(a.mid) === String(factoryId)) || order.assignments?.[0]
@@ -114,8 +125,8 @@ export function CoordinatorOrderTop({ order, factoryId, onNextProduct }) {
           <span style={{ fontWeight: 800 }}>{t('colours', lang)}: </span>{order.colourways.map(c => c.name).filter(Boolean).join(', ')}
         </div>
       )}
-      <Paper label={t('tech_pack', lang)} doc={techPackOf(docs, order.id)} lang={lang} users={users} getDocData={getDocData} />
-      <Paper label={measurement?.locked ? t('locked_measurement', lang) : t('measurements', lang)} doc={measurement} lang={lang} users={users} getDocData={getDocData} />
+      <Paper label={t('tech_pack', lang)} icon={<FileText size={24} color={T.info} />} doc={techPackOf(docs, order.id)} lang={lang} getDocData={getDocData} />
+      <Paper label={measurement?.locked ? t('locked_measurement', lang) : t('measurements', lang)} icon={<Ruler size={24} color={T.info} />} doc={measurement} lang={lang} getDocData={getDocData} />
       {/* How many of each colour in each size: what he counts and checks cartons against. Below the two papers, as Ankit asked. */}
       <div style={{ background: '#fff', border: `1.5px solid ${order.sizeBreakup ? T.infoBorder : T.border}`, borderRadius: 14, padding: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 800, color: order.sizeBreakup ? T.info : T.textMuted, marginBottom: order.sizeBreakup ? 8 : 0 }}>
