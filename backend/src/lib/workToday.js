@@ -17,6 +17,15 @@ export function stepToday(stage, today) {
   return null
 }
 
+/**
+ * Does a replen order still need its fabric looked at? Yes until every fabric step of its plan is done. A plan with no
+ * fabric step (or no plan yet: the order has just come in) counts as "not known yet", so the answer is yes.
+ */
+export function replenNeedsFabricCheck(stages) {
+  const fabric = (stages || []).filter(s => /fabric/i.test(s?.name || ''))
+  return fabric.length === 0 || fabric.some(s => deriveStageStatus(s) !== 'done')
+}
+
 const RANK = { late: 0, due_today: 1, running: 2 }
 
 /**

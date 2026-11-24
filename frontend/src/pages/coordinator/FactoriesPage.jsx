@@ -52,8 +52,8 @@ const kindLabel = (s, lang) => (s.kind === 'late' ? (s.daysLate === 1 ? t('work_
 function WorkToday({ work, lang, onOpenOrder }) {
   const [all, setAll] = useState(false)
   if (!work) return null
-  const { steps = [], counts = {}, actionItems = [], yesterday = [] } = work
-  const empty = !steps.length && !actionItems.length && !yesterday.length
+  const { steps = [], counts = {}, actionItems = [], yesterday = [], replens = [] } = work
+  const empty = !steps.length && !actionItems.length && !yesterday.length && !replens.length
   const more = steps.length > 3 || actionItems.length > 0 || yesterday.length > 0
   const row = { display: 'flex', alignItems: 'flex-start', gap: 8, width: '100%', textAlign: 'left', background: '#fff', border: `1px solid ${T.border}`, borderRadius: 10, padding: '8px 10px', fontFamily: 'inherit', cursor: onOpenOrder ? 'pointer' : 'default' }
   const heading = { fontSize: 12, fontWeight: 600, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 4 }
@@ -61,11 +61,22 @@ function WorkToday({ work, lang, onOpenOrder }) {
     <div style={{ background: '#f8fafc', border: `1px solid ${T.border}`, borderRadius: 14, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 16, fontWeight: 600, color: T.text }}><ClipboardList size={19} /> {t('work_today', lang)}</span>
+        {replens.length > 0 && <span style={{ fontSize: 12.5, fontWeight: 600, padding: '2px 9px', borderRadius: 10, background: '#ccfbf1', color: '#0f766e' }}>{t('work_replen_count', lang, { n: replens.length })}</span>}
         {counts.late > 0 && <span style={{ fontSize: 12.5, fontWeight: 600, padding: '2px 9px', borderRadius: 10, background: KIND_TONE.late.bg, color: KIND_TONE.late.fg }}>{t('work_late', lang, { n: counts.late })}</span>}
         {counts.dueToday > 0 && <span style={{ fontSize: 12.5, fontWeight: 600, padding: '2px 9px', borderRadius: 10, background: KIND_TONE.due_today.bg, color: KIND_TONE.due_today.fg }}>{t('work_due', lang, { n: counts.dueToday })}</span>}
         {counts.running > 0 && <span style={{ fontSize: 12.5, fontWeight: 600, padding: '2px 9px', borderRadius: 10, background: KIND_TONE.running.bg, color: KIND_TONE.running.fg }}>{t('work_running', lang, { n: counts.running })}</span>}
       </div>
       {empty && <div style={{ fontSize: 14, color: T.textMuted }}>{t('work_none', lang)}</div>}
+      {/* Replen orders that have come in: the fabric is the first thing to ask about. Always in view, never behind "Show all". */}
+      {replens.map(r => (
+        <button key={r.orderId} type="button" style={row} onClick={() => onOpenOrder?.(r.openId)}>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontSize: 15, fontWeight: 500, color: T.text, lineHeight: 1.4, overflowWrap: 'anywhere' }}>{t('work_replen_fabric', lang)}</span>
+            <span style={{ display: 'block', fontSize: 13, color: T.textMuted, marginTop: 2, overflowWrap: 'anywhere' }}>{r.product}{r.styleNumber ? ` · ${r.styleNumber}` : ''}{r.qty ? ` · ${t('pieces', lang, { n: r.qty })}` : ''}{r.delivery ? ` · ${t('work_replen_due', lang, { date: new Date(r.delivery).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' }) })}` : ''}</span>
+          </span>
+          <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: '#ccfbf1', color: '#0f766e', whiteSpace: 'nowrap', flexShrink: 0 }}>{t('work_replen_tag', lang)}</span>
+        </button>
+      ))}
       {(all ? steps : steps.slice(0, 3)).map((s, i) => (
         <button key={`${s.orderId}:${s.stageIndex}:${i}`} type="button" style={row} onClick={() => onOpenOrder?.(s.orderId)}>
           <span style={{ flex: 1, minWidth: 0 }}>

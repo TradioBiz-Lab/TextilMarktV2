@@ -2,7 +2,7 @@ import { Router } from 'express'
 import mongoose from 'mongoose'
 import rateLimit from 'express-rate-limit'
 import { FactoryVisit, User, Manufacturer, AuditLog, Order, ActionItem, FieldUpdate } from '../db/index.js'
-import { factoryStepsToday } from '../lib/workToday.js'
+import { factoryStepsToday, replenNeedsFabricCheck } from '../lib/workToday.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { COORDINATOR_ROLE } from '../lib/coordinator.js'
 import { cleanPoint, distanceM, isAway, dayIST, startOfDayIST, mapsUrlFor } from '../lib/geo.js'
@@ -96,6 +96,10 @@ router.get('/work', coordinatorOnly, async (req, res) => {
     const yesterdayStart = startOfDayIST(dayIST(new Date(Date.now() - 24 * 60 * 60 * 1000)))
     const orders = ids.length ? await Order.find({ 'assignments.mfrId': { $in: ids } }, 'product buyerId assignments.mfrId assignments.status assignments.stages').populate('buyerId', 'company').lean() : []
     const productOf = new Map(orders.map(o => [String(o._id), o.product]))
+    // Replen orders: a reorder of a style. One that has just come in has no factory yet; it belongs on the card of the
+    // factory that made the original, so the fabric can be asked about before anything else is planned.
+    const replens = orders.length ? await Order.find({ phase: 'replen', $or: [{ 'assignments.mfrId': { $in: ids } }, { replenOf: { $in: orders.map(o => o._id) }, 'assignments.0': { $exists: false } }] },
+      'product styleNumber totalQty delivery replenOf assignments.mfrId assignments.status assignments.qty assignments.stages.name assignments.stages.status assignments.stages.unitsDone assignments.stages.totalUnits').sort({ delivery: 1, createdAt: 1 }).lean() : []
     const [items, updates] = await Promise.all([
       ActionItem.find({ status: 'open', orderId: { $in: orders.map(o => o._id) } }, 'title orderId stageName priority eta').sort({ eta: 1, createdAt: 1 }).lean(),
       FieldUpdate.find({ factoryId: { $in: ids }, at: { $gte: yesterdayStart, $lt: startOfDayIST(today) } }, 'factoryId orderId stageName text ai.summary coordinatorId at').sort({ at: -1 }).populate('coordinatorId', 'name').lean(),
@@ -106,7 +110,17 @@ router.get('/work', coordinatorOnly, async (req, res) => {
       // A split already delivered needs no look; its action items and yesterday's notes still show.
       const styles = here.filter(x => x.split.status !== 'Delivered').map(x => ({ orderId: String(x.o._id), product: x.o.product, client: x.o.buyerId?.company || '', stages: x.split.stages || [] }))
       const made = new Set(here.map(x => String(x.o._id)))
+      const replenHere = []
+      for (const r of replens) {
+        const split = (r.assignments || []).find(a => String(a.mfrId) === id)
+        const waiting = !(r.assignments || []).length && made.has(String(r.replenOf))
+        if (!split && !waiting) continue
+        if (split && (split.status === 'Delivered' || !replenNeedsFabricCheck(split.stages))) continue
+        // He can open a replen made here; one not yet given to a factory opens the style it reorders.
+        replenHere.push({ orderId: String(r._id), openId: split ? String(r._id) : String(r.replenOf), product: r.product, styleNumber: r.styleNumber || '', qty: split ? split.qty : r.totalQty, delivery: r.delivery || null, assigned: !!split })
+      }
       out[id] = {
+        replens: replenHere.slice(0, 10),
         ...factoryStepsToday(styles, today),
         actionItems: items.filter(i => made.has(String(i.orderId))).slice(0, 10).map(i => ({ id: String(i._id), title: i.title, orderId: String(i.orderId), product: productOf.get(String(i.orderId)) || '', stageName: i.stageName || null, priority: i.priority, eta: i.eta })),
         yesterday: updates.filter(u => String(u.factoryId) === id).slice(0, 10).map(u => ({ orderId: String(u.orderId), product: productOf.get(String(u.orderId)) || '', stageName: u.stageName, text: (u.ai?.summary || u.text || '').slice(0, 300), byName: u.coordinatorId?.name || '', at: u.at })),

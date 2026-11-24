@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 import { startTestDb, stopTestDb, clearDb } from './helpers/db.js'
 import { startServer, stopServer, as, req } from './helpers/client.js'
 import { makeAdmin, makeBuyer, makeMfr, makeCoordinator, orderPayload } from './helpers/factories.js'
-import { stepToday, factoryStepsToday } from '../src/lib/workToday.js'
+import { stepToday, factoryStepsToday, replenNeedsFabricCheck } from '../src/lib/workToday.js'
+import { Order } from '../src/models/Order.js'
 import { ActionItem } from '../src/models/ActionItem.js'
 import { FieldUpdate } from '../src/models/FieldUpdate.js'
 import { FactoryVisit } from '../src/models/FactoryVisit.js'
@@ -265,5 +266,29 @@ describe('today\'s work at his factories', () => {
     assert.deepEqual(w.actionItems.map(i => [i.title, i.product, i.priority]), [['Chase the zip supplier', 'Polo', 'high']])
     assert.deepEqual(w.yesterday.map(u => [u.product, u.stageName, u.text, u.byName]), [['Polo', 'Stitching', 'Blue shade is off', 'Ravi']])
     for (const who of [admin, buyer, a]) assert.equal((await as(who).get('/api/visits/work')).status, 403)
+  })
+
+  test('a replen order asks for its fabric to be checked: on the card of the factory that made the original until it is given out, then at its own factory until the fabric steps are done', async () => {
+    assert.equal(replenNeedsFabricCheck([]), true, 'no plan yet')
+    assert.equal(replenNeedsFabricCheck([{ name: 'Fabric Order', status: 'done' }, { name: 'Fabric (Inhouse)' }]), true)
+    assert.equal(replenNeedsFabricCheck([{ name: 'Fabric Order', status: 'done' }, { name: 'Fabric (Inhouse)', status: 'done' }, { name: 'Cutting' }]), false)
+    const admin = await makeAdmin(); const buyer = await makeBuyer({ company: 'Cocoblu' })
+    const a = await makeMfr({ company: 'Factory A' }); const b = await makeMfr({ company: 'Factory B' })
+    assert.equal((await as(admin).post('/api/orders', orderPayload({ id: 'S-1', buyerId: buyer._id, mfrId: a._id, product: 'Polo' }))).status, 201)
+    assert.equal((await as(admin).post('/api/orders', orderPayload({ id: 'S-2', buyerId: buyer._id, mfrId: b._id, product: 'Cap' }))).status, 201)
+    // Two reorders have just come in, neither given to a factory yet.
+    const blank = { buyerId: buyer._id, category: 'TSHRT', season: 'SS26', phase: 'replen', assignments: [] }
+    await Order.collection.insertOne({ _id: 'R-1', ...blank, product: 'Polo', styleNumber: '4706', totalQty: 151, replenOf: 'S-1', delivery: new Date('2026-12-24') })
+    await Order.collection.insertOne({ _id: 'R-2', ...blank, product: 'Cap', totalQty: 90, replenOf: 'S-2' })
+    const coord = await makeCoordinator({ assignedFactories: [a] })
+    const first = (await as(coord).get('/api/visits/work')).body.factories[String(a._id)]
+    assert.deepEqual(first.replens.map(r => [r.orderId, r.openId, r.product, r.styleNumber, r.qty, r.assigned]), [['R-1', 'S-1', 'Polo', '4706', 151, false]], 'only the reorder of a style made at his factory')
+    // Given to factory A with a plan: it stays until the fabric steps are done.
+    const plan = done => [{ name: 'Fabric Order', totalUnits: 1, status: done ? 'done' : 'not_started' }, { name: 'Cutting', totalUnits: 151 }]
+    await Order.collection.updateOne({ _id: 'R-1' }, { $set: { assignments: [{ mfrId: a._id, qty: 151, status: 'Processing', stages: plan(false) }] } })
+    const given = (await as(coord).get('/api/visits/work')).body.factories[String(a._id)]
+    assert.deepEqual(given.replens.map(r => [r.orderId, r.openId, r.assigned]), [['R-1', 'R-1', true]])
+    await Order.collection.updateOne({ _id: 'R-1' }, { $set: { 'assignments.0.stages': plan(true) } })
+    assert.deepEqual((await as(coord).get('/api/visits/work')).body.factories[String(a._id)].replens, [])
   })
 })
