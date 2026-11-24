@@ -316,6 +316,27 @@ back `undefined`. `enrichOrder()` is the single serialization point and resolves
 Consequence: **a new stage field that isn't added to `enrichOrder` is invisible to the
 frontend.**
 
+### Embedded: `bom` (the bill of materials checklist)
+
+```
+bom: null | {
+  items: [{
+    id: String            short random id, kept across edits
+    section, name, description, perPiece, forOrder: String   (no prices)
+    hasImage: Boolean     its picture is in `bomimages` (orderId + itemId)
+    checks: [{ mfrId: ObjectId → users, by: ObjectId → users, byName: String, at: Date }]   one per factory
+  }],
+  updatedBy: ObjectId → users, updatedAt: Date
+}
+```
+
+- Tradio writes the list (`POST /api/orders/:id/bom`); an item that keeps its `id` keeps its ticks and picture.
+- A tick means "seen at this factory" (`POST /api/orders/:id/bom/:itemId/check { mfrId, checked }`): a coordinator at one
+  of his factories while checked in there (409 `CHECK_IN_FIRST` otherwise), or an admin. One tick per item per factory.
+- Everyone on the style reads the items. A factory or coordinator is sent only its own factories' ticks; a customer none.
+- Collection `bomimages`: `{ orderId: String, itemId: String, dataUrl: String }`, unique on the pair, read together by
+  `GET /api/orders/:id/bom/images`. Kept out of the order so the list of styles stays light.
+
 ### Embedded: `stages[].updates`
 
 ```

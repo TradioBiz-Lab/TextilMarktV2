@@ -288,6 +288,25 @@ const orderSchema = new mongoose.Schema({
     }, { _id: false }),
     default: null,
   },
+  // The bill of materials as a checklist (lib/bom.js): the items the style needs, and a tick per factory when someone
+  // has seen an item there. Pictures are kept in `bomimages`. null when the style has none.
+  bom: {
+    type: new mongoose.Schema({
+      items: { type: [new mongoose.Schema({
+        id: { type: String, required: true },
+        section: { type: String, default: '' }, name: { type: String, required: true }, description: { type: String, default: '' },
+        perPiece: { type: String, default: '' }, forOrder: { type: String, default: '' }, hasImage: { type: Boolean, default: false },
+        checks: { type: [new mongoose.Schema({
+          mfrId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+          by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, byName: { type: String, default: '' },
+          at: { type: Date, default: Date.now },
+        }, { _id: false })], default: [] },
+      }, { _id: false })], default: [] },
+      updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      updatedAt: { type: Date, default: null },
+    }, { _id: false }),
+    default: null,
+  },
   photos: [stylePhotoSchema],
   fabricDetails: [fabricSchema],
   ecommerceLink: { type: String, default: '', trim: true, maxlength: 2000 },

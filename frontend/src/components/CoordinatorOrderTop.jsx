@@ -6,6 +6,7 @@ import { t, langOf } from '../coordinatorText.js'
 import { techPackOf, measurementOf, bomOf, productState } from '../coordinatorStyles.js'
 import { DocViewer } from './ui.jsx'
 import { SizeBreakupTable } from './SizeBreakup.jsx'
+import { BomChecklist } from './BomChecklist.jsx'
 import { nextSteps, stepState } from '../nextSteps.js'
 import { AddUpdateSheet } from '../pages/coordinator/AddUpdateSheet.jsx'
 
@@ -127,8 +128,10 @@ export function CoordinatorOrderTop({ order, factoryId, onNextProduct }) {
       )}
       <Paper label={t('tech_pack', lang)} icon={<FileText size={24} color={T.info} />} doc={techPackOf(docs, order.id)} lang={lang} getDocData={getDocData} />
       <Paper label={measurement?.locked ? t('locked_measurement', lang) : t('measurements', lang)} icon={<Ruler size={24} color={T.info} />} doc={measurement} lang={lang} getDocData={getDocData} />
-      {/* The bill of materials: every fabric, trim, label and packing item the style needs. Straight below the measurements. */}
-      <Paper label={t('bom', lang)} icon={<ListChecks size={24} color={T.info} />} doc={bomOf(docs, order.id)} lang={lang} getDocData={getDocData} />
+      {/* The bill of materials, straight below the measurements: a checklist he ticks item by item when the style has one, else the paper. */}
+      {order.bom && split
+        ? <BomChecklist order={order} factoryId={split.mid} factoryName={split.mfrCompany || ''} lang={lang} canTick={!!visits?.open && String(visits.open.factoryId) === String(split.mid)} />
+        : <Paper label={t('bom', lang)} icon={<ListChecks size={24} color={T.info} />} doc={bomOf(docs, order.id)} lang={lang} getDocData={getDocData} />}
       {/* How many of each colour in each size: what he counts and checks cartons against. Below the papers, as Ankit asked. */}
       <div style={{ background: '#fff', border: `1.5px solid ${order.sizeBreakup ? T.infoBorder : T.border}`, borderRadius: 14, padding: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 800, color: order.sizeBreakup ? T.info : T.textMuted, marginBottom: order.sizeBreakup ? 8 : 0 }}>

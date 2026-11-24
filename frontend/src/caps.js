@@ -40,6 +40,8 @@ export function capsFor(user) {
     orderReplen: isAdmin || isBuyer, importStyles: isAdmin || isBuyer,
     // The size breakup (pieces per colour and size): Tradio on any style, a customer on its own. A factory reads it.
     editSizeBreakup: isAdmin || isBuyer,
+    // The bill of materials checklist: Tradio writes the list; Tradio and a coordinator (checked in at the factory) tick it.
+    editBom: isAdmin, checkBom: isAdmin || isCoord,
     escalate: isBuyer,   // a customer raises a style with Tradio's master admins (in-app and email)
     manageCertificates: isMfr,
     // Admin-only surfaces

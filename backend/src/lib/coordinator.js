@@ -27,6 +27,9 @@ export const COORDINATOR_ALLOWED = [
   ['POST', /^\/api\/field-updates$/],
   ['GET', /^\/api\/field-updates\/mine$/],
   ['POST', /^\/api\/voice\/transcribe$/],
+  // The bill of materials checklist: its pictures, and a tick on an item while he is checked in at that factory.
+  ['GET', new RegExp(`^/api/orders/${ID}/bom/images$`)],
+  ['POST', new RegExp(`^/api/orders/${ID}/bom/${ID}/check$`)],
 ]
 
 /**

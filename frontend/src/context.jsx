@@ -493,6 +493,19 @@ export function AppProvider({ children }) {
   }, [])
 
   // The size breakup of a style: pieces per colour and size (Tradio, or the customer on its own style).
+  // The bill of materials checklist of a style: Tradio sets the items; a coordinator (or Tradio) ticks one at a factory.
+  const setBom = useCallback(async (id, items) => {
+    const updated = await ordersApi.setBom(id, items)
+    setOrders(p => p.map(o => o.id === id ? updated : o))
+    return updated
+  }, [])
+  const checkBomItem = useCallback(async (id, itemId, mfrId, checked) => {
+    const updated = await ordersApi.checkBomItem(id, itemId, mfrId, checked)
+    setOrders(p => p.map(o => o.id === id ? updated : o))
+    return updated
+  }, [])
+  const getBomImages = useCallback(id => ordersApi.bomImages(id), [])
+
   const setSizeBreakup = useCallback(async (id, breakup) => {
     const updated = await ordersApi.setSizeBreakup(id, breakup)
     setOrders(p => p.map(o => o.id === id ? updated : o))
@@ -801,7 +814,7 @@ export function AppProvider({ children }) {
       updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
       bulkUpdateStages, addStageItem, updateStageItem, removeStageItem,
       updateAssignment, addAssignment, reassignAssignment, setDeliveredQty, insertStage, moveStage, startPlan, uploadDoc, updateDoc, lockDoc, deleteDoc, getDocVersions, fileDocInto, setStylePhotos, setProductLink, setSizeBreakup, createOrder, createMasterOrder, updateMasterOrder, deleteMasterOrder,
-      editOrder, deleteOrder, escalateOrder,
+      editOrder, deleteOrder, escalateOrder, setBom, checkBomItem, getBomImages,
       createUser, updateUser, toggleUser, resetUserPw,
       markAllRead, markOneRead, getDocData, refreshAudit, loadMoreAudit,
       refreshOrders, refreshDocs, listAllRibbons, createRibbon, updateRibbon, removeRibbon,

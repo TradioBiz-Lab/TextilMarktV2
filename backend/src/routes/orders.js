@@ -2,7 +2,7 @@ import mongoose from 'mongoose'
 import { liveGateMessage } from '../lib/liveManufacturers.js'
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
-import { Order } from '../db/index.js'
+import { Order, BomImage } from '../db/index.js'
 import { User }         from '../models/User.js'
 import { Notification } from '../models/Notification.js'
 import { AuditLog }     from '../models/AuditLog.js'
@@ -27,6 +27,8 @@ import { materialDetails, newMaterialDetails } from '../lib/materialFields.js'
 import { normalizeLink, isHttpUrl, cleanLink } from '../lib/links.js'
 import { isoDay } from '../lib/masterOrderDetails.js'
 import { cleanSizeBreakup, sizeBreakupOut } from '../lib/sizeBreakup.js'
+import { cleanBom, bomOut } from '../lib/bom.js'
+import { openVisitOf } from './visits.js'
 
 // Categories are now free-text — no validation needed
 const MAX_PRODUCT_PHOTO_SIZE = 1024 * 1024 // 1MB raw - reference thumbnail, not full-res
@@ -218,6 +220,8 @@ const enrichOrder = (o, viewerMfrId = null, { forBuyer = false } = {}) => {
   colourways: (o.colourways || []).map(c => ({ name: c.name, code: c.code || '', hex: c.hex || '' })),
   // Pieces per colour and size. Production information: every viewer of the style is sent it.
   sizeBreakup: sizeBreakupOut(o.sizeBreakup),
+  // The bill of materials checklist: the items go to every viewer, a factory's ticks only to those who see that factory.
+  bom: bomOut(o.bom, viewers, { forBuyer }),
   photos: (o.photos || []).map(p => ({ image: p.image, colourway: p.colourway || '' })),
   fabricDetails: (o.fabricDetails || []).map(f => ({ name: f.name, composition: f.composition || '', gsm: f.gsm || '', supplier: f.supplier || '' })),
   ecommerceLink: o.ecommerceLink || '',
@@ -3214,6 +3218,68 @@ router.post('/:id/escalate', requireAuth, escalationLimiter, async (req, res) =>
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
   }
+})
+
+// ── The bill of materials as a checklist (lib/bom.js) ──
+const POPULATED = q => q.populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role')
+const splitIds = o => (o.assignments || []).map(a => String(a.mfrId?._id ?? a.mfrId))
+// May this user read this style at all? The same rule as GET /:id.
+const maySeeStyle = (user, o) => (user.role === 'admin' ? true
+  : user.role === 'buyer' ? String(o.buyerId?._id ?? o.buyerId) === String(user.id)
+  : user.role === 'manufacturer' ? splitIds(o).includes(String(user.id))
+  : user.role === COORDINATOR_ROLE ? splitIds(o).some(id => user.factoryIds.includes(id)) : false)
+
+// POST /api/orders/:id/bom { items: [{ id?, section, name, description, perPiece, forOrder, image? }] } - Tradio sets the
+// list. An item that keeps its id keeps its ticks and its picture; an empty list removes the bill of materials.
+router.post('/:id/bom', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
+  try {
+    const existing = await Order.findById(req.params.id, 'bom product').lean()
+    if (!existing) return res.status(404).json({ error: 'Order not found' })
+    const cleaned = cleanBom(req.body, existing.bom)
+    if (cleaned.error) return res.status(400).json({ error: cleaned.error })
+    const value = cleaned.items.length ? { items: cleaned.items, updatedBy: req.user.id, updatedAt: new Date() } : null
+    if (cleaned.dropImages.length) await BomImage.deleteMany({ orderId: existing._id, itemId: { $in: cleaned.dropImages } })
+    for (const im of cleaned.setImages) await BomImage.updateOne({ orderId: existing._id, itemId: im.itemId }, { $set: { dataUrl: im.dataUrl } }, { upsert: true })
+    const order = await POPULATED(Order.findByIdAndUpdate(existing._id, { $set: { bom: value } }, { new: true })).lean()
+    await AuditLog.create({ byUser: req.user.id, action: 'BOM Updated', detail: `${existing._id}: ${value ? `${value.items.length} item${value.items.length === 1 ? '' : 's'}` : 'removed'}, by ${req.user.name}` })
+    res.json(enrichFor(order, req))
+  } catch (err) { console.error('[orders]', err); res.status(500).json({ error: 'Server error' }) }
+})
+
+// GET /api/orders/:id/bom/images - the pictures of the items, by item id. Anyone who may read the style.
+router.get('/:id/bom/images', requireAuth, async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id, 'buyerId assignments.mfrId').lean()
+    if (!order) return res.status(404).json({ error: 'Order not found' })
+    if (!maySeeStyle(req.user, order)) return res.status(403).json({ error: 'Forbidden' })
+    const rows = await BomImage.find({ orderId: order._id }, 'itemId dataUrl').lean()
+    res.json(Object.fromEntries(rows.map(r => [r.itemId, r.dataUrl])))
+  } catch (err) { console.error('[orders]', err); res.status(500).json({ error: 'Server error' }) }
+})
+
+// POST /api/orders/:id/bom/:itemId/check { mfrId, checked } - tick an item as seen at a factory, or take the tick back.
+// A coordinator at one of his factories, while he is checked in there; Tradio at any factory making the style.
+router.post('/:id/bom/:itemId/check', requireAuth, updateLimiter, async (req, res) => {
+  try {
+    const { role } = req.user
+    if (role !== 'admin' && role !== COORDINATOR_ROLE) return res.status(403).json({ error: 'Only Tradio ticks the bill of materials' })
+    const { mfrId, checked } = req.body || {}
+    if (typeof mfrId !== 'string' || !mongoose.Types.ObjectId.isValid(mfrId) || typeof checked !== 'boolean') return res.status(400).json({ error: 'Send the factory and whether the item is there' })
+    const existing = await Order.findById(req.params.id, 'bom assignments.mfrId').lean()
+    if (!existing) return res.status(404).json({ error: 'Order not found' })
+    if (!splitIds(existing).includes(mfrId) || (role === COORDINATOR_ROLE && !req.user.factoryIds.includes(mfrId))) return res.status(403).json({ error: 'That factory is not yours for this style' })
+    if (!(existing.bom?.items || []).some(i => i.id === req.params.itemId)) return res.status(404).json({ error: 'That item is not on the bill of materials' })
+    if (role === COORDINATOR_ROLE) {
+      const visit = await openVisitOf(req.user.id)
+      if (!visit || String(visit.factoryId) !== mfrId) return res.status(409).json({ error: 'Check in at the factory first', code: 'CHECK_IN_FIRST' })
+    }
+    const mfrObjectId = new mongoose.Types.ObjectId(mfrId)
+    const item = { arrayFilters: [{ 'item.id': req.params.itemId }] }
+    // The old tick for this factory goes either way; a new one is then written with who and when.
+    await Order.updateOne({ _id: existing._id }, { $pull: { 'bom.items.$[item].checks': { mfrId: mfrObjectId } } }, item)
+    if (checked) await Order.updateOne({ _id: existing._id }, { $push: { 'bom.items.$[item].checks': { mfrId: mfrObjectId, by: req.user.id, byName: req.user.name, at: new Date() } } }, item)
+    res.json(enrichFor(await POPULATED(Order.findById(existing._id)).lean(), req))
+  } catch (err) { console.error('[orders]', err); res.status(500).json({ error: 'Server error' }) }
 })
 
 export default router
