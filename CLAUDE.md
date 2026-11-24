@@ -123,6 +123,8 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   `frontend/src/pages/coordinator/` and `components/CoordinatorOrderTop.jsx`, in Hindi and English
   (`frontend/src/coordinatorText.js`: add a key in both, a test checks it). His sign-in lasts 30 days
   (`sessionFor` in routes/auth.js). A factory's location is `geo` on its Partner Directory record (`lib/geo.js`).
+  Speech to text (Kriyaa's microphone and his spoken update) is `lib/speechToText.js`: ElevenLabs Scribe when
+  `ELEVENLABS_API_KEY` is set, else Sarvam (`VOICE_STT` chooses when both are); reading replies aloud is Sarvam only.
   A coordinator's files go through `lib/fileStore.js` (`FILE_STORE`, default the database). `FILE_STORE=stratus` with
   `STRATUS_BUCKET` keeps them in Zoho Stratus (`lib/stratusDriver.js`, the `zcatalyst-sdk-node` package, loaded on first
   use). That SDK works only on AppSail, from headers Catalyst adds to each request, so it cannot run locally or in tests

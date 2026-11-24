@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
 import { requireAuth } from '../middleware/auth.js'
-import { transcribeAudio } from '../lib/sarvam.js'
+import { transcribeAudio, sttProvider } from '../lib/speechToText.js'
 
 const router = Router()
 
@@ -77,7 +77,8 @@ function decodeAudioPayload(audioDataUrl) {
 }
 
 router.post('/transcribe', requireAuth, voiceLimiter, async (req, res) => {
-  if (!process.env.SARVAM_API_KEY)
+  // ElevenLabs or Sarvam, whichever this server has a key for (lib/speechToText.js).
+  if (!sttProvider())
     return res.status(503).json({ error: 'Voice is not configured on this server.' })
 
   const { audioDataUrl } = req.body
