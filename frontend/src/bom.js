@@ -1,5 +1,9 @@
 // The bill of materials checklist of a style, as the screens need it. Pure: no React, no network.
 
+// How much of each item a piece and the order need (perPiece, forOrder). Hidden for now, at Ankit's request (24 Nov 2026):
+// the figures stay saved, the screens just do not show or ask for them. Set to true to bring them back.
+export const SHOW_CONSUMPTION = false
+
 /** The items in the order they were written, grouped under their section headings (an item with none goes under ''). */
 export function bomSections(bom) {
   const out = []

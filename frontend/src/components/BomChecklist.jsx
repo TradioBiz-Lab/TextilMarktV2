@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Pencil, Plus, Trash2, Check, AlertTriangle, ListChecks, Image as ImageIcon, MapPin, Upload } from '../icons.jsx'
+import { Pencil, Plus, Trash2, Check, AlertTriangle, ListChecks, Image as ImageIcon, MapPin, Upload, ChevronDown } from '../icons.jsx'
 import { T, fmtDate } from '../constants.js'
 import { Modal, Btn, FlexRow, useToast } from './ui.jsx'
 import { useApp } from '../context.jsx'
 import { capsFor } from '../caps.js'
 import { t } from '../coordinatorText.js'
 import { shrinkImage } from '../capture.js'
-import { bomSections, checkAt, bomProgress, editorRows, blankRow, editorPayload } from '../bom.js'
+import { bomSections, checkAt, bomProgress, editorRows, blankRow, editorPayload, SHOW_CONSUMPTION } from '../bom.js'
 
 // The pictures of a style's items, by item id. Read once per saved version of the list; a list with no picture asks nothing.
 function useBomImages(order) {
@@ -47,6 +47,7 @@ export function BomChecklist({ order, factoryId, factoryName = '', lang, canTick
   const images = useBomImages(order)
   const [busy, setBusy] = useState('')
   const [zoom, setZoom] = useState(null)
+  const [open, setOpen] = useState(false)   // folded shut until he taps the heading: the count still shows
   const { done, total } = bomProgress(order.bom, factoryId)
   const all = total > 0 && done === total
   const toggle = async item => {
@@ -57,19 +58,21 @@ export function BomChecklist({ order, factoryId, factoryName = '', lang, canTick
   }
   return (
     <div style={{ background: '#fff', border: `1.5px solid ${all ? '#22c55e' : T.infoBorder}`, borderRadius: 14, padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 17, fontWeight: 800, color: T.info }}>
-        <ListChecks size={22} /> {t('bom', lang)}
+      <button type="button" onClick={() => setOpen(v => !v)} aria-expanded={open}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 17, fontWeight: 800, color: T.info, background: 'none', border: 'none', padding: 0, minHeight: 44, width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}>
+        <ListChecks size={22} style={{ flexShrink: 0 }} /> <span style={{ minWidth: 0 }}>{t('bom', lang)}</span>
         <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: all ? '#166534' : T.text, background: all ? '#dcfce7' : '#f1f5f9', borderRadius: 10, padding: '3px 10px', whiteSpace: 'nowrap', flexShrink: 0 }}>
           {all ? t('bom_all_checked', lang, { total }) : t('bom_checked', lang, { done, total })}
         </span>
-      </div>
+        <ChevronDown size={22} color={T.textMuted} style={{ flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+      </button>
       <div style={{ height: 8, borderRadius: 6, background: '#e2e8f0', overflow: 'hidden' }}><div style={{ width: `${total ? (done / total) * 100 : 0}%`, height: '100%', background: '#22c55e', transition: 'width .2s' }} /></div>
-      {!canTick && (
+      {open && !canTick && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600, color: T.warning, background: T.warningBg, border: `1px solid ${T.warningBorder}`, borderRadius: 12, padding: '8px 12px' }}>
           <MapPin size={17} style={{ flexShrink: 0 }} /> {t('bom_check_in', lang, { name: factoryName })}
         </div>
       )}
-      {bomSections(order.bom).map((sec, si) => (
+      {open && bomSections(order.bom).map((sec, si) => (
         <div key={si} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {sec.section && <div style={{ fontSize: 13, fontWeight: 800, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: si ? 4 : 0 }}>{sec.section}</div>}
           {sec.items.map(item => {
@@ -80,7 +83,7 @@ export function BomChecklist({ order, factoryId, factoryName = '', lang, canTick
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 16, fontWeight: 800, color: T.text, lineHeight: 1.25, overflowWrap: 'anywhere' }}>{item.name}</div>
                   {item.description && <div style={{ fontSize: 13, color: T.textMuted, marginTop: 1, overflowWrap: 'anywhere' }}>{item.description}</div>}
-                  {(item.perPiece || item.forOrder) && (
+                  {SHOW_CONSUMPTION && (item.perPiece || item.forOrder) && (
                     <div style={{ fontSize: 13, color: T.text, marginTop: 3 }}>
                       {item.forOrder && <span style={{ fontWeight: 800 }}>{item.forOrder}</span>}
                       {item.perPiece && <span style={{ color: T.textMuted }}>{item.forOrder ? ' · ' : ''}{t('bom_per_piece', lang)}: {item.perPiece}</span>}
@@ -140,8 +143,8 @@ function BomEditor({ order, images, onClose }) {
                 <input value={r.name} onChange={e => set(i, { name: e.target.value })} placeholder="Item, e.g. Front zip" maxLength={120} aria-label={`Item ${i + 1} name`} style={{ ...field, fontWeight: 700 }} />
                 <input value={r.section} onChange={e => set(i, { section: e.target.value })} placeholder="Section, e.g. Trims" maxLength={60} aria-label={`Item ${i + 1} section`} list="bom-sections" style={field} />
                 <input value={r.description} onChange={e => set(i, { description: e.target.value })} placeholder="What it is" maxLength={200} aria-label={`Item ${i + 1} description`} style={{ ...field, gridColumn: '1 / -1' }} />
-                <input value={r.perPiece} onChange={e => set(i, { perPiece: e.target.value })} placeholder="Per piece, e.g. 1.65 m" maxLength={40} aria-label={`Item ${i + 1} per piece`} style={field} />
-                <input value={r.forOrder} onChange={e => set(i, { forOrder: e.target.value })} placeholder="For the order, e.g. 1,360 m" maxLength={40} aria-label={`Item ${i + 1} for the order`} style={field} />
+                {SHOW_CONSUMPTION && <input value={r.perPiece} onChange={e => set(i, { perPiece: e.target.value })} placeholder="Per piece, e.g. 1.65 m" maxLength={40} aria-label={`Item ${i + 1} per piece`} style={field} />}
+                {SHOW_CONSUMPTION && <input value={r.forOrder} onChange={e => set(i, { forOrder: e.target.value })} placeholder="For the order, e.g. 1,360 m" maxLength={40} aria-label={`Item ${i + 1} for the order`} style={field} />}
               </div>
               <button type="button" onClick={() => setRows(rs => rs.filter((_, ri) => ri !== i))} aria-label={`Remove ${r.name || 'this item'}`} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted, padding: 4 }}><Trash2 size={15} /></button>
             </div>
@@ -172,17 +175,22 @@ export function BomSection({ order }) {
   const images = useBomImages(order)
   const [editing, setEditing] = useState(false)
   const [zoom, setZoom] = useState(null)
+  const [open, setOpen] = useState(false)   // folded shut until asked for: the heading says how many items are ticked
   const bom = order.bom
   if (caps.isCoord || (!bom && !caps.editBom)) return null
   const factoryName = id => (order.assignments || []).find(a => String(a.mid) === String(id))?.mfrCompany || 'the factory'
   return (
     <div style={{ marginTop: 16 }}>
       <FlexRow gap={8} style={{ marginBottom: 7 }}>
-        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, fontWeight: 700, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Bill of materials{bom ? ` · ${bom.items.length} items` : ''}</div>
+        <button type="button" onClick={() => bom && setOpen(v => !v)} aria-expanded={open} disabled={!bom}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', padding: 0, cursor: bom ? 'pointer' : 'default', fontFamily: "'JetBrains Mono',monospace", fontSize: 9, fontWeight: 700, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          Bill of materials{bom ? ` · ${bom.items.length} items${caps.isBuyer ? '' : ` · ${bom.items.filter(i => i.checks.length).length} checked`}` : ''}
+          {bom && <ChevronDown size={12} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />}
+        </button>
         {caps.editBom && <Btn size="sm" variant="ghost" onClick={() => setEditing(true)} icon={bom ? <Pencil size={11} /> : <Plus size={11} />}>{bom ? 'Edit' : 'Add'}</Btn>}
       </FlexRow>
       {!bom && <div style={{ fontSize: 12, color: T.textMuted }}>Not added yet. Add the fabric, trims, labels and packing the style needs; the coordinator ticks each one off at the factory.</div>}
-      {bom && (
+      {bom && open && (
         <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, background: '#fff', overflow: 'hidden' }}>
           {bomSections(bom).map((sec, si) => (
             <div key={si}>
@@ -192,7 +200,7 @@ export function BomSection({ order }) {
                   <Thumb src={images[item.id]} size={40} onOpen={() => setZoom(images[item.id])} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{item.name}{item.description && <span style={{ fontWeight: 400, color: T.textMuted }}> · {item.description}</span>}</div>
-                    <div style={{ fontSize: 11.5, color: T.textMuted, marginTop: 1 }}>{[item.perPiece && `${item.perPiece} per piece`, item.forOrder && `${item.forOrder} for the order`].filter(Boolean).join(' · ')}</div>
+                    {SHOW_CONSUMPTION && <div style={{ fontSize: 11.5, color: T.textMuted, marginTop: 1 }}>{[item.perPiece && `${item.perPiece} per piece`, item.forOrder && `${item.forOrder} for the order`].filter(Boolean).join(' · ')}</div>}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-end', flexShrink: 0 }}>
                     {item.checks.length === 0 && !caps.isBuyer && <span style={{ fontSize: 11, color: T.textLight }}>not checked yet</span>}
