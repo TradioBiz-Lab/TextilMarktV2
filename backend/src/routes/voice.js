@@ -86,7 +86,8 @@ router.post('/transcribe', requireAuth, voiceLimiter, async (req, res) => {
   if (decoded.error) return res.status(400).json({ error: decoded.error })
 
   try {
-    const data = await transcribeAudio(decoded.buffer, decoded.mimeType)
+    // `terms`: names the speaker is likely to say (a client, a product, its colours, its steps), so they are heard right.
+    const data = await transcribeAudio(decoded.buffer, decoded.mimeType, { terms: req.body.terms })
     res.json({
       transcript: data.transcript,
       languageCode: data.languageCode,

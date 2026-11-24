@@ -33,6 +33,23 @@ export function shrinkImage(file, { max = 1280, quality = 0.75 } = {}) {
 
 export const MAX_PHOTOS = 6
 
+/**
+ * The names a coordinator is likely to say in an update on this style: the client, the product, the factory, the
+ * colours and the plan's steps. They go with his recording so they are written correctly (a client's name is the
+ * word most often mis-heard). Short ones only, no doubles. Pure.
+ */
+export function spokenTerms(order, split) {
+  const all = [order?.buyerCompany, order?.product, order?.brand, split?.mfrCompany, ...(order?.colourways || []).map(c => c.name),
+    ...(order?.sizeBreakup?.rows || []).map(r => r.colour), ...(split?.stages || []).map(s => s.name)]
+  const out = []
+  for (const t of all) {
+    const s = String(t || '').replace(/[<>{}[\]\\()&/,]/g, ' ').replace(/\s+/g, ' ').trim()
+    if (!s || s.length > 50 || s.split(' ').length > 5) continue
+    if (!out.some(x => x.toLowerCase() === s.toLowerCase())) out.push(s)
+  }
+  return out.slice(0, 50)
+}
+
 // ── The unsent update ──
 // Kept on the phone so a failed send, a reload or a closed tab loses nothing. One per product and step. Photos are
 // kept only while the whole draft is small; the voice recording is not kept (he can speak again).

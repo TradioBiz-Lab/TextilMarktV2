@@ -3,7 +3,7 @@ import { Camera, Mic, X, CheckCircle2, AlertTriangle, Square, Send } from '../..
 import { T } from '../../constants.js'
 import { useApp } from '../../context.jsx'
 import { t, langOf } from '../../coordinatorText.js'
-import { shrinkImage, MAX_PHOTOS, draftKey, readDraft, writeDraft, clearDraft } from '../../capture.js'
+import { shrinkImage, MAX_PHOTOS, draftKey, readDraft, writeDraft, clearDraft, spokenTerms } from '../../capture.js'
 import { getPosition } from '../../geolocate.js'
 import { useVoiceRecorder } from '../../useVoiceRecorder.js'
 import { voiceApi } from '../../api.js'
@@ -78,7 +78,9 @@ export function AddUpdateSheet({ order, factoryId, stageIndex, stage, onClose, o
       const dataUrl = await blobToDataUrl(rec.blob)
       setAudio(dataUrl)
       try {
-        const r = await voiceApi.transcribe(dataUrl)
+        // The style's own names go with the recording, so a client or a colour is written as it is spelt.
+        const split = (order.assignments || []).find(a => String(a.mid) === String(factoryId))
+        const r = await voiceApi.transcribe(dataUrl, spokenTerms(order, split))
         const said = (r?.transcript || '').trim()
         if (said) { setText(prev => (prev.trim() ? `${prev.trim()} ${said}` : said)); setViaVoice(true); setNote({ tone: 'info', text: t('voice_kept', lang) }) }
         else setNote({ tone: 'info', text: t('voice_no_text', lang) })

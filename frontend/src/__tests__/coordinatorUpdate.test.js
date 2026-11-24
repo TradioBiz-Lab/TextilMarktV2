@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest'
 import { nextSteps, stepState } from '../nextSteps.js'
-import { fitWithin, draftOf, draftKey, DRAFT_LIMIT_BYTES } from '../capture.js'
+import { fitWithin, draftOf, draftKey, DRAFT_LIMIT_BYTES, spokenTerms } from '../capture.js'
 import { capsFor } from '../caps.js'
 
 const plan = statuses => statuses.map((status, i) => ({ name: `Step ${i + 1}`, status }))
@@ -69,5 +69,14 @@ describe('who sends and who reads updates from the floor', () => {
     expect(capsFor({ role: 'coordinator' })).toMatchObject({ sendFieldUpdates: true, seeFieldUpdates: false })
     expect(capsFor({ role: 'admin', adminType: 'user' })).toMatchObject({ sendFieldUpdates: false, seeFieldUpdates: true })
     for (const role of ['buyer', 'manufacturer']) expect(capsFor({ role })).toMatchObject({ sendFieldUpdates: false, seeFieldUpdates: false })
+  })
+})
+
+describe('the names sent with a spoken update', () => {
+  test('client, product, factory, colours and steps, once each, without brackets or over-long names', () => {
+    const order = { buyerCompany: 'Vibemist', product: 'Polar Fleece Jacket', brand: '', colourways: [{ name: 'Olivine' }, { name: 'Peacot' }], sizeBreakup: { rows: [{ colour: 'olivine' }, { colour: 'Hawaiian Sunset' }] } }
+    const split = { mfrCompany: 'Neobrands', stages: [{ name: 'Fabric (Inhouse)' }, { name: 'Production (cut, embroider, stitch, pack)' }, { name: 'PP Approval' }, { name: 'x'.repeat(60) }] }
+    expect(spokenTerms(order, split)).toEqual(['Vibemist', 'Polar Fleece Jacket', 'Neobrands', 'Olivine', 'Peacot', 'Hawaiian Sunset', 'Fabric Inhouse', 'Production cut embroider stitch pack', 'PP Approval'])
+    expect(spokenTerms(null, null)).toEqual([])
   })
 })

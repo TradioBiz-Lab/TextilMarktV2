@@ -206,7 +206,8 @@ export const assistantApi = {
 }
 
 export const voiceApi = {
-  transcribe: (audioDataUrl) => api.post('/voice/transcribe', { audioDataUrl }, { timeout: 30000 }),
+  // `terms`: names the speaker is likely to say (a client, a product, its colours, its steps), so they are heard right.
+  transcribe: (audioDataUrl, terms) => api.post('/voice/transcribe', { audioDataUrl, ...(terms?.length ? { terms } : {}) }, { timeout: 30000 }),
   speak: (text, languageCode) => api.post('/voice/speak', { text, languageCode }, { timeout: 30000 }),
 }
 

@@ -1,6 +1,6 @@
 import test, { describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { sttProvider, languageCodeOf, elevenLabsTranscribe } from '../src/lib/speechToText.js'
+import { sttProvider, languageCodeOf, elevenLabsTranscribe, cleanTerms } from '../src/lib/speechToText.js'
 
 describe('which service turns speech into text', () => {
   test('whichever has its key; ElevenLabs when both; none when neither', () => {
@@ -28,22 +28,32 @@ describe('asking ElevenLabs', () => {
   test('sends the clip with the key and the model, and returns the text and language', async () => {
     let seen = null
     const fetchImpl = async (url, opts) => {
-      seen = { url, key: opts.headers['xi-api-key'], model: opts.body.get('model_id'), file: opts.body.get('file'), events: opts.body.get('tag_audio_events') }
+      seen = { url, key: opts.headers['xi-api-key'], model: opts.body.get('model_id'), file: opts.body.get('file'), events: opts.body.get('tag_audio_events'), noVerbatim: opts.body.get('no_verbatim'), terms: opts.body.getAll('keyterms') }
       return { ok: true, json: async () => ({ text: ' 240 piece stitch ho gaye ', language_code: 'hin', language_probability: 0.97, words: [] }) }
     }
-    const out = await elevenLabsTranscribe(Buffer.from('abc'), 'audio/webm', { fetchImpl, env: { ELEVENLABS_API_KEY: 'k-123' } })
+    const out = await elevenLabsTranscribe(Buffer.from('abc'), 'audio/webm', { fetchImpl, env: { ELEVENLABS_API_KEY: 'k-123' }, terms: ['Vibemist', 'Olivine', 'olivine', 'PP Approval', 'a [bad] <term>', 'x'.repeat(51), 'one two three four five six', 7] })
     assert.deepEqual(out, { transcript: '240 piece stitch ho gaye', languageCode: 'hi-IN', languageProbability: 0.97 })
     assert.equal(seen.url, 'https://api.elevenlabs.io/v1/speech-to-text')
-    assert.deepEqual([seen.key, seen.model, seen.events], ['k-123', 'scribe_v2', 'false'])
+    assert.deepEqual([seen.key, seen.model, seen.events, seen.noVerbatim], ['k-123', 'scribe_v3', 'false', 'true'])
+    assert.deepEqual(seen.terms, ['Vibemist', 'Olivine', 'PP Approval', 'a bad term'], 'cleaned: no doubles, no brackets, nothing too long')
     assert.equal(seen.file.type, 'audio/webm')
     assert.equal(seen.file.size, 3)
   })
   test('another model can be named; a refusal is an error that carries what the service said', async () => {
     let model = null
-    await elevenLabsTranscribe(Buffer.from('a'), 'audio/wav', { env: { ELEVENLABS_API_KEY: 'k', ELEVENLABS_STT_MODEL: 'scribe_v1' }, fetchImpl: async (_u, o) => { model = o.body.get('model_id'); return { ok: true, json: async () => ({ text: '' }) } } })
-    assert.equal(model, 'scribe_v1')
+    await elevenLabsTranscribe(Buffer.from('a'), 'audio/wav', { env: { ELEVENLABS_API_KEY: 'k', ELEVENLABS_STT_MODEL: 'scribe_v2' }, fetchImpl: async (_u, o) => { model = o.body.get('model_id'); return { ok: true, json: async () => ({ text: '' }) } } })
+    assert.equal(model, 'scribe_v2')
     await assert.rejects(
       elevenLabsTranscribe(Buffer.from('a'), 'audio/wav', { env: { ELEVENLABS_API_KEY: 'bad' }, fetchImpl: async () => ({ ok: false, status: 401, text: async () => '{"detail":"invalid_api_key"}' }) }),
       e => /failed \(401\)/.test(e.message) && /invalid_api_key/.test(e.detail))
+  })
+})
+
+describe('the words he is likely to say', () => {
+  test('anything that is not a list of text gives none; the list is capped', () => {
+    assert.deepEqual(cleanTerms(undefined), [])
+    assert.deepEqual(cleanTerms('Vibemist'), [])
+    assert.deepEqual(cleanTerms([{ $ne: 1 }, null, '  ']), [])
+    assert.equal(cleanTerms(Array.from({ length: 200 }, (_, i) => `term ${i}`)).length, 60)
   })
 })
