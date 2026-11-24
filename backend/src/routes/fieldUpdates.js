@@ -131,6 +131,21 @@ export async function readFieldUpdate(id, fileCtx) {
       confidence: out.confidence,
     }
     await FieldUpdate.updateOne({ _id: id }, { $set: { ai } })
+    // The note on the step becomes what the AI read (plain English, whatever language he spoke); his own words are kept
+    // beside it. With no reading the note stays as he sent it.
+    if (ai.summary) {
+      const now = await FieldUpdate.findById(id, 'stageIndex factoryId orderId').lean()
+      const mfrObjectId = new mongoose.Types.ObjectId(String(now.factoryId))
+      await Order.updateOne(
+        { _id: now.orderId, 'assignments.mfrId': mfrObjectId },
+        { $set: {
+          [`assignments.$[asgn].stages.${now.stageIndex}.updates.$[note].text`]: ai.summary.slice(0, 1000),
+          [`assignments.$[asgn].stages.${now.stageIndex}.updates.$[note].original`]: u.text ? u.text.slice(0, 1000) : null,
+          [`assignments.$[asgn].stages.${now.stageIndex}.updates.$[note].aiRead`]: true,
+        } },
+        { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }, { 'note.fieldUpdateId': now._id }] },
+      )
+    }
     return ai
   } catch (err) {
     console.error('[field-updates] reading failed', err.message)

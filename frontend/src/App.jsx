@@ -104,6 +104,9 @@ function Inner() {
   // you came from. Before leaving a list for an order, that list's snapshot is stamped with the
   // order's master order, so coming back re-opens (and scrolls to) the group you were in.
   const hist = useRef({ stack: [], idx: -1 })
+  // A step to open straight away on the style's page (from a Field Updates card). Used once, then forgotten, so Back
+  // and Forward do not reopen it.
+  const stageOnce = useRef(null)
   const [navKey, setNavKey] = useState(0) // changes with every history step, so each screen opens fresh from its own entry
   // Where a session starts: a coordinator at his factories, everyone else at the dashboard.
   const isCoord = user?.role === 'coordinator'
@@ -190,7 +193,8 @@ function Inner() {
     selClient: params?.clientId ?? null,
   })
   const openMo = id => navTo('master_order', { mo: id })
-  const openOrder = (id, mid) => {
+  const openOrder = (id, mid, stageIndex) => {
+    stageOnce.current = Number.isInteger(stageIndex) && mid ? { id, stageIndex } : null
     // Remember which master order we are leaving from, so Back re-opens that group.
     const h = hist.current
     const here = h.stack[h.idx]
@@ -224,7 +228,7 @@ function Inner() {
     if (view === 'kriyaa') return <KriyaaPage />
     if (view === 'orders') return <AdminOrders key={`o:${ordersMo || 'all'}:${ordersPhase || ''}`} onOpen={openOrder} onOpenMo={openMo} initialStatus={ordersStatus} initialMo={ordersMo} initialPhase={ordersPhase} openWizardFor={ordersNewStyle ? ordersMo : null} />
     if (view === 'master_order' && selMo) return <MasterOrderPage moId={selMo} onOpen={openOrder} onNavigate={navTo} onBack={() => goBack({ view: 'orders', ordersMo: selMo })} />
-    if (view === 'order_detail' && selOid) return <AdminOrderDetail orderId={selOid} initialMid={selMid} onOpenMo={openMo} onOpenOrder={openOrder} onBack={() => goBack({ view: 'orders', ordersMo: orders?.find(o => o.id === selOid)?.masterOrderId || '__none__' })} />
+    if (view === 'order_detail' && selOid) return <AdminOrderDetail orderId={selOid} initialMid={selMid} initialStage={stageOnce.current?.id === selOid ? stageOnce.current.stageIndex : null} onInitialStageUsed={() => { stageOnce.current = null }} onOpenMo={openMo} onOpenOrder={openOrder} onBack={() => goBack({ view: 'orders', ordersMo: orders?.find(o => o.id === selOid)?.masterOrderId || '__none__' })} />
     if (view === 'documents') return <AdminDocuments />
     if (view === 'reports') return <ReportingPage key={`r:${reportsMo || 'all'}`} onOpen={openOrder} initialMo={reportsMo} />
     if (user.role === 'buyer' && view === 'submit_req') return <BuyerSubmitReq />

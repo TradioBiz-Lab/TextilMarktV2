@@ -24,6 +24,9 @@ const stageUpdateSchema = new mongoose.Schema({
   // until an admin releases the update.
   fieldUpdateId: { type: mongoose.Schema.Types.ObjectId, ref: 'FieldUpdate', default: null },
   internal:      { type: Boolean, default: false },
+  // Once the AI has read his update, `text` is its plain English reading and `original` keeps his own words.
+  aiRead:        { type: Boolean, default: false },
+  original:      { type: String, maxlength: 1000, default: null },
 }, { _id: false })
 
 // One raw-material/trim line to procure for a stage — tracked to PO/received level.

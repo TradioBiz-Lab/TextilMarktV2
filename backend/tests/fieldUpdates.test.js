@@ -191,7 +191,7 @@ describe('who sees an update before and after it is released', () => {
 
 describe('what the AI makes of an update', () => {
   test('its reading is kept as suggestions; a wrong step or an unknown colour is dropped', async () => {
-    const { api, body } = await arrange()
+    const { api, body, a } = await arrange()
     let seen = null
     setFieldUpdateExtractor(async (text, photos, ctx) => {
       seen = { text, photos: photos.length, ctx }
@@ -208,6 +208,9 @@ describe('what the AI makes of an update', () => {
     assert.deepEqual(seen.ctx.steps.map(s => s.name), [...STEPS, 'Delivery'], 'the whole plan, with its Delivery step')
     assert.deepEqual([ai.state, ai.units, ai.statusHint, ai.suggestedStageIndex, ai.confidence], ['done', 240, 'started', 1, 0.82])
     assert.deepEqual(ai.colours, [{ name: 'Olivine', note: 'ok' }])
+    // The note on the step is now what the AI read; his own words are kept beside it.
+    const note = (await threadOf(a))[0]
+    assert.deepEqual([note.text, note.original, note.aiRead], ['240 stitched; blue shade off', '240 pieces stitched, blue shade is off', true])
 
     setFieldUpdateExtractor(async () => ({ summary: 's', suggested_stage_index: 99, units: null, status_hint: null, result: 'fail', issues: [], colours: [], confidence: 0.4 }))
     const second = await api.post('/api/field-updates', body())

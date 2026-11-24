@@ -275,6 +275,8 @@ const enrichOrder = (o, viewerMfrId = null, { forBuyer = false } = {}) => {
           // A coordinator's note from the floor is Tradio's own until an admin releases it: a customer is not sent it.
           updates: (s.updates || []).filter(u => !(forBuyer && u.internal)).map(u => ({
             ...(u.fieldUpdateId ? { fromFloor: true, ...(forBuyer ? {} : { internal: !!u.internal }) } : {}),
+            // Read by AI: the note is its plain reading. His own words go with it to Tradio and the factory, not the customer.
+            ...(u.aiRead ? { aiRead: true, ...(forBuyer ? {} : { original: u.original || '' }) } : {}),
             text: u.text,
             byUser: u.byUser?._id?.toString() ?? u.byUser?.toString(),
             byUserName: forBuyer && u.byUser?.role === 'manufacturer' ? TRADIO_PRODUCTION : u.byUser?.name ?? null,

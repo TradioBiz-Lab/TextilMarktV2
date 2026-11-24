@@ -39,6 +39,8 @@ function ReleaseModal({ update, getDocData, onClose, onDone }) {
   const photos = update.files.filter(f => f.kind === 'photo')
   const [picked, setPicked] = useState(() => photos.map(f => f.id))
   const [busy, setBusy] = useState(false)
+  // What the customer will read: the AI's reading once there is one (that is what sits on the step), else his own words.
+  const shared = (update.ai?.state === 'done' && update.ai.summary) || update.text
   const [err, setErr] = useState('')
   const go = async () => {
     setBusy(true); setErr('')
@@ -47,8 +49,8 @@ function ReleaseModal({ update, getDocData, onClose, onDone }) {
   return (
     <Modal title="Show this update to the customer?" subtitle={`${update.buyerCompany || 'The customer'} · ${update.product || update.orderId} · ${update.stageName}`} onClose={() => !busy && onClose()}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ fontSize: 13, color: T.text, lineHeight: 1.5 }}>The customer will see his words on the step{photos.length ? ' and the photos you leave ticked' : ''}, and is told about it. The voice recording is never shared. This cannot be taken back from here.</div>
-        {update.text && <div style={{ fontSize: 13, color: T.text, background: '#f8fafc', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 10px', whiteSpace: 'pre-wrap' }}>{update.text}</div>}
+        <div style={{ fontSize: 13, color: T.text, lineHeight: 1.5 }}>The customer will see this note on the step{photos.length ? ' and the photos you leave ticked' : ''}, and is told about it. The voice recording is never shared. This cannot be taken back from here.</div>
+        {shared && <div style={{ fontSize: 13, color: T.text, background: '#f8fafc', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 10px', whiteSpace: 'pre-wrap' }}>{shared}</div>}
         {photos.length > 0 && (
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             {photos.map(f => (
@@ -130,7 +132,7 @@ function UpdateCard({ u, onChange, onOpenStyle, onZoom }) {
         {u.ai.state === 'done' && (
           <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: T.master, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: 5 }}><Sparkles size={12} /> Read by AI{u.ai.confidence != null && u.ai.confidence < 0.6 ? ' · unsure, please check' : ''}</div>
-            {u.ai.summary && <div style={{ fontSize: 13, color: T.text }}>{u.ai.summary}</div>}
+            {u.ai.summary && <div style={{ fontSize: 13, color: T.text }}>{u.ai.summary}<span style={{ display: 'block', fontSize: 11, color: T.textLight, marginTop: 2 }}>This is the note posted on the step.</span></div>}
             {suggestions.length === 0 && <div style={{ fontSize: 12, color: T.textMuted }}>Nothing to change on the plan from this.</div>}
             {suggestions.map(s => (
               <div key={s.key} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -151,7 +153,7 @@ function UpdateCard({ u, onChange, onOpenStyle, onZoom }) {
         {u.state === 'dismissed' && <div style={{ fontSize: 12, color: T.textMuted }}>Dismissed{u.actionedByName ? ` by ${u.actionedByName}` : ''}</div>}
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', borderTop: `1px solid ${T.border}`, paddingTop: 10 }}>
-          <Btn size="sm" variant="secondary" onClick={() => onOpenStyle(u.orderId, u.factoryId)} icon={<ArrowUpRight size={12} />}>Open the style</Btn>
+          <Btn size="sm" variant="secondary" onClick={() => onOpenStyle(u.orderId, u.factoryId, u.stageIndex)} icon={<ArrowUpRight size={12} />}>Open this step</Btn>
           {stages.length > 1 && !done && (
             <select value="" disabled={!!busy} onChange={e => e.target.value !== '' && run('move', () => fieldUpdatesApi.move(u.id, Number(e.target.value)), 'Moved')} aria-label="Move to another step"
               style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit', color: T.text, background: '#f8fafc', maxWidth: 190 }}>

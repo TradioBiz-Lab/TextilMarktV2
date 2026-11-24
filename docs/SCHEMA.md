@@ -329,6 +329,8 @@ frontend.**
 A coordinator's update from the factory floor (section 16) adds an entry with two more fields: `fieldUpdateId`
 (ObjectId, ref `fieldupdates`) and `internal` (Boolean). While `internal` is true the entry is not sent to a customer
 (`enrichOrder` drops it for a buyer); an admin's release clears it. The API marks such entries `fromFloor: true`.
+Once the AI has read the update, `text` becomes its plain English reading, `aiRead` is true and `original` keeps his
+own words (sent to Tradio and the factory, never to a customer). With no reading the entry stays as he sent it.
 
 ### Embedded: `stages[].materials`
 

@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, Fragment } from 'react'
+import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
 import { useNavState } from '../../navState.js'
 import Papa from 'papaparse'
 import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight, ChevronUp, ChevronDown, Trash2, ArrowRight, ArrowUpRight, Folder, LayoutGrid, RefreshCw } from '../../icons.jsx'
@@ -34,7 +34,7 @@ import { SizeBreakupSection } from '../../components/SizeBreakup.jsx'
 // Bulk Edit row: step, start, end, responsible, target qty, description, evidence, NA / Undo.
 const BULK_EDIT_COLS = '170px 168px 168px 150px 78px minmax(120px, 1fr) 30px 64px'
 
-export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, onBack }) {
+export function AdminOrderDetail({ orderId, initialMid, initialStage = null, onInitialStageUsed, onOpenMo, onOpenOrder, onBack }) {
   const { currentUser, orders, masterOrders, docs, users, loading, updateAssignment, updateStage, uploadDoc, getDocData, refreshOrders, editOrder, deleteOrder,
     addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
     addStageItem, updateStageItem, removeStageItem, addAssignment, reassignAssignment, insertStage, moveStage, bulkUpdateStages, escalateOrder } = useApp()
@@ -100,7 +100,9 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
   // Update Stage modal — opened by clicking a stage row. The same
   // QuickStageModal component the Order Management page's matrix cells
   // open, so the two entry points can never drift out of sync.
-  const [quickStage, setQuickStage] = useState(null) // { mfrId, stageIndex } or null
+  // Opened from a Field Updates card: that step's own module is open on arrival, and its row is unfolded underneath.
+  const [quickStage, setQuickStage] = useState(() => (initialStage != null && initialMid ? { mfrId: initialMid, stageIndex: initialStage } : null)) // { mfrId, stageIndex } or null
+  useEffect(() => { if (initialStage != null) onInitialStageUsed?.() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Stage dates (start/end) adjustment modal
   const [showEta, setShowEta] = useState(false)
@@ -119,7 +121,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
   const [pendingRespChanges, setPendingRespChanges] = useState([]) // [{stageName, responsibleId}]
 
   // Per-stage updates thread + materials checklist (expand, in the stage grid)
-  const [expandedStage, setExpandedStage] = useState(null) // `${mfrId}:${stageIndex}` or null
+  const [expandedStage, setExpandedStage] = useState(initialStage != null && initialMid ? `${initialMid}:${initialStage}` : null) // `${mfrId}:${stageIndex}` or null
   const [updateDrafts, setUpdateDrafts] = useState({})
   const [materialDrafts, setMaterialDrafts] = useState({}) // keyed by `${mfrId}:${stageIndex}` -> new-line form
 
@@ -1933,7 +1935,8 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
                                     {(s.updates || []).map((u, ui) => (
                                       <div key={ui} style={{ background: '#fff', borderRadius: 6, padding: '6px 10px', border: `1px solid ${T.border}` }}>
                                         <div style={{ fontSize: 11, color: T.text }}>{u.text}</div>
-                                        <div style={{ fontSize: 9, color: T.textLight, marginTop: 2 }}>{u.byUserName || 'Someone'} · {fmtDate(u.at)}{u.fromFloor ? ' · from the factory floor' : ''}{u.internal ? ' · not shown to the customer yet' : ''}</div>
+                                        <div style={{ fontSize: 9, color: T.textLight, marginTop: 2 }}>{u.byUserName || 'Someone'} · {fmtDate(u.at)}{u.fromFloor ? ' · from the factory floor' : ''}{u.aiRead ? ' · read by AI' : ''}{u.internal ? ' · not shown to the customer yet' : ''}</div>
+{u.aiRead && u.original && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 3, fontStyle: 'italic' }}>His words: {u.original}</div>}
                                       </div>
                                     ))}
                                   </div>
