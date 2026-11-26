@@ -143,6 +143,8 @@ const mapDoc = (d, includeData = false) => {
     orderId: d.orderId ? d.orderId.toString() : null,
     masterOrderId: d.masterOrderId || null,
     stageIndex: d.stageIndex != null ? d.stageIndex : null,
+    // Filed on a step of the plan the style had before production (see Order assignment.priorStages).
+    ...(d.priorStageIndex != null ? { priorStageIndex: d.priorStageIndex, priorStageName: d.priorStageName || '' } : {}),
     materialLineIndex: d.materialLineIndex != null ? d.materialLineIndex : null,
     issueDate: d.issueDate, expiryDate: d.expiryDate,
     uploadedBy: uploaderObj ? uploaderObj._id.toString() : (d.uploadedBy ? d.uploadedBy.toString() : null),

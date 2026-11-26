@@ -220,6 +220,11 @@ const assignmentSchema = new mongoose.Schema({
   // shipments), so it is recorded separately and never used to rewrite the order quantity. null = not recorded.
   deliveredQty: { type: Number, default: null, min: 0 },
   stages: [stageSchema],                       // dynamic count per order
+  // The plan this split had before the style moved to production, kept as it stood (read only). Set when Move to
+  // production replaced it with the customer's standard plan; absent on every other split.
+  priorStages:       { type: [stageSchema], default: undefined },
+  priorStagesAt:     { type: Date, default: null },
+  priorStagesByName: { type: String, default: '' },
   updatedAt: { type: Date, default: Date.now },
 }, { _id: true })
 

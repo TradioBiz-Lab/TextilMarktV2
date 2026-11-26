@@ -56,6 +56,10 @@ const documentSchema = new mongoose.Schema({
 
   // Production stage link (index into assignment.stages array, null for non-stage docs)
   stageIndex: { type: Number, default: null, min: 0 },
+  // A document that sat on a step of the plan the style had before production (Order assignment.priorStages): its
+  // place in that list and the step's name. Its stageIndex is cleared at the move, since that step is no longer in the plan.
+  priorStageIndex: { type: Number, default: null, min: 0 },
+  priorStageName:  { type: String, default: null },
 
   // A file that belongs to a whole master order rather than one style (e.g. the customer's PO
   // attached when the master order is created). Without it that PO had no link to anything.

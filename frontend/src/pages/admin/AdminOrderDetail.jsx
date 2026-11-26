@@ -9,6 +9,7 @@ import {
   PATTERN_FILE_PROPS, MEASUREMENTS_FILE_PROPS, resolveNamedColor, stageNameForDoc, PO_INVOICE_DOC_TYPES, COMMERCIAL_DOC_TYPES, deliveryDocsOf, defaultStepOwner, stepOwnerOptions,
   fmtDate, styleStatus, dueDates, dueText, pastDateNote, siblingStepNames, stepNameWarning, isPreProduction, PHASE_LABEL, replenEligible } from '../../constants.js'
 import { PlanStarter } from '../../components/PlanStarter.jsx'
+import { PriorPlan } from '../../components/PriorPlan.jsx'
 import { planTemplatesApi } from '../../api.js'
 import { PromoteModal } from '../../components/PromoteModal.jsx'
 import { StyleGallery } from '../../components/StyleGallery.jsx'
@@ -64,6 +65,16 @@ export function AdminOrderDetail({ orderId, initialMid, initialStage = null, onI
   const [movingStage, setMovingStage] = useState(false)
   const [galleryIdx, setGalleryIdx] = useNavState('detail.gallery', 0) // which colourway photo the style gallery shows
   const [promoting, setPromoting] = useState(false)
+  // The customer's standard plan, looked up when the Move to production window opens: the move swaps the plan for it.
+  const [stdPlan, setStdPlan] = useState(null)
+  const promoteBuyerId = (orders || []).find(o => o.id === orderId)?.buyerId || null
+  useEffect(() => {
+    if (!promoteOpen || !promoteBuyerId) return
+    let live = true
+    setStdPlan(null)
+    planTemplatesApi.get(promoteBuyerId).then(t => { if (live) setStdPlan(t) }).catch(() => { if (live) setStdPlan({ exists: false }) })
+    return () => { live = false }
+  }, [promoteOpen, promoteBuyerId])
   const [showDelete, setShowDelete] = useState(false)
 
   const [tab, setTab] = useNavState('detail.tab', 'production')
@@ -1217,11 +1228,21 @@ export function AdminOrderDetail({ orderId, initialMid, initialStage = null, onI
     </Modal>
   )
 
+  const hasSplits = (order.assignments || []).length > 0
+  const customerName = order.buyerCompany || 'the customer'
   const promoteModal = promoteOpen && (
-    <PromoteModal count={1} needsDate={!order.delivery && (order.assignments || []).length > 0} needsQty={!order.totalQty} busy={promoting} onClose={() => setPromoteOpen(false)}
-      onConfirm={async (date, qty) => {
+    <PromoteModal count={1} needsDate={!order.delivery && (order.assignments || []).length > 0} needsQty={!order.totalQty} busy={promoting || (hasSplits && !stdPlan)} onClose={() => setPromoteOpen(false)}
+      askStart={hasSplits && !!stdPlan?.exists}
+      planNote={!hasSplits || !stdPlan ? '' : stdPlan.exists
+        ? `The plan is replaced with ${customerName}'s standard plan (${stdPlan.stepCount} steps), dated from the production start. The steps it has now are kept on the style under "Before production".`
+        : `${customerName} has no standard plan saved, so the style keeps the steps it has now. To set one, open a production style with the right plan and save it as the customer's template.`}
+      onConfirm={async (date, qty, start) => {
         setPromoting(true)
-        try { await editOrder(order.id, { phase: 'production', ...(order.delivery || !date ? {} : { delivery: date }), ...(qty ? { totalQty: qty } : {}) }); toast('Moved to production', 'success'); setPromoteOpen(false) }
+        try {
+          const moved = await editOrder(order.id, { phase: 'production', ...(order.delivery || !date ? {} : { delivery: date }), ...(qty ? { totalQty: qty } : {}), ...(start ? { productionStart: start } : {}) })
+          toast(moved?.promotedPlan === 'standard' ? `Moved to production on ${customerName}'s standard plan` : moved?.promotedPlan === 'kept' ? `Moved to production. ${customerName} has no standard plan, so the steps were kept` : 'Moved to production', 'success')
+          setPromoteOpen(false)
+        }
         catch (e) { toast(typeof e === 'string' ? e : (e?.message || 'Could not move the style'), 'error') }
         finally { setPromoting(false) }
       }} />
@@ -1792,6 +1813,8 @@ export function AdminOrderDetail({ orderId, initialMid, initialStage = null, onI
                             No production steps yet. Your Tradio coordinator sets up the plan.
                           </div>
                         )}
+
+                      <PriorPlan asgn={a} docs={orderDocs} users={users} onGetData={getDocData} />
 
                       {/* TNA table — one row per step, the same shape as the plan
                           the team keeps in Excel: step, owner, planned vs revised

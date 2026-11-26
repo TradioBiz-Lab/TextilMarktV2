@@ -304,12 +304,12 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
           return next
         })
         const chosen = ready.filter(o => picked.has(o.id))
-        const move = async date => {
+        const move = async (date, _qty, start) => {
           setMoving(true)
           let ok = 0
           try {
             // Only a style with a manufacturer takes the date now; one without gets it when the manufacturer is added.
-            for (const o of chosen) { await editOrder(o.id, { phase: 'production', ...(o.delivery || !(o.assignments || []).length || !date ? {} : { delivery: date }) }); ok++ }
+            for (const o of chosen) { await editOrder(o.id, { phase: 'production', ...(o.delivery || !(o.assignments || []).length || !date ? {} : { delivery: date }), ...(start && (o.assignments || []).length ? { productionStart: start } : {}) }); ok++ }
             toast(`${ok} ${ok === 1 ? 'style' : 'styles'} moved to production`, 'success')
             setPicked(new Set()); setPromoteOpen(false); setAskDate(false)
           } catch (e) {
@@ -320,7 +320,9 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
         }
         return (
           <div style={{ marginBottom: 14 }}>
-            {askDate && <PromoteModal count={chosen.length} needsDate={chosen.some(o => !o.delivery && (o.assignments || []).length > 0)} busy={moving} onClose={() => setAskDate(false)} onConfirm={move} />}
+            {askDate && <PromoteModal count={chosen.length} needsDate={chosen.some(o => !o.delivery && (o.assignments || []).length > 0)} busy={moving} onClose={() => setAskDate(false)} onConfirm={move}
+              askStart={chosen.some(o => (o.assignments || []).length > 0)}
+              planNote={chosen.some(o => (o.assignments || []).length > 0) ? 'A style whose customer has a standard plan saved gets that plan, dated from the production start; the steps it has now are kept on the style under "Before production". A style whose customer has none keeps its steps.' : ''} />}
             <Btn variant="secondary" size="sm" onClick={() => setPromoteOpen(v => !v)} icon={<ArrowRight size={13} />}>
               {promoteOpen ? 'Close' : 'Move styles to production'}
             </Btn>

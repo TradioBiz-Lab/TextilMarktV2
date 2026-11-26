@@ -8,6 +8,7 @@ import { Notification } from '../models/Notification.js'
 import { AuditLog }     from '../models/AuditLog.js'
 import { MasterOrder }  from '../models/MasterOrder.js'
 import { Document }     from '../models/Document.js'
+import { FieldUpdate }  from '../models/FieldUpdate.js'
 import { DroppedRecord } from '../models/DroppedRecord.js'
 import { parseDropReason, styleLabel } from '../lib/dropRecord.js'
 import {
@@ -296,6 +297,16 @@ const enrichOrder = (o, viewerMfrId = null, { forBuyer = false } = {}) => {
           })),
         }
       }),
+      // The plan the split had before production, as it stood. Tradio's own record: sent to admins only (a viewer
+      // scoped to factories, or a customer, is not sent it).
+      ...(!viewers && !forBuyer && (a.priorStages || []).length ? {
+        priorStagesAt: a.priorStagesAt || null, priorStagesByName: a.priorStagesByName || '',
+        priorStages: a.priorStages.map(s => ({
+          name: s.name, kind: stageKindOf(s), status: deriveStageStatus(s), unitsDone: s.unitsDone, totalUnits: s.totalUnits,
+          startDate: s.startDate || null, eta: effectiveEta(s) || null, actualEnd: s.actualEnd || null, note: s.note || '',
+          updates: (s.updates || []).map(u => ({ text: u.text, byUserName: u.byUser?.name ?? null, at: u.at })),
+        })),
+      } : {}),
     }
   }),
 }
@@ -2970,10 +2981,27 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
     const promoting = isPreProduction(existing.phase) && updates.phase === 'production'
     if (promoting && !(updates.totalQty ?? existing.totalQty))
       return res.status(400).json({ error: 'Give the style its quantity before moving it to production' })
+    // Moving to production also swaps each split's plan for the customer's standard plan, when the customer has one
+    // saved: the steps it had are kept as they stood (priorStages) and the standard steps are dated from the
+    // production start day given with the move. A customer with no standard plan moves on the steps it has.
+    let standardSteps = null
+    let productionStartISO = null
     if (promoting) {
       const when = updates.delivery || existing.delivery
       // Its manufacturers' plans gain a Delivery step on that date, or an undated one when there is no date yet.
       promoteDeliveryISO = when ? new Date(when).toISOString().slice(0, 10) : 'NA'
+      if ((existing.assignments || []).length) {
+        const tpl = await PlanTemplate.findOne({ buyerId: existing.buyerId }).lean()
+        if (tpl?.steps?.length) {
+          const given = req.body.productionStart
+          if (given !== undefined && given !== null && given !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(String(given)))
+            return res.status(400).json({ error: 'Production start must be a date (YYYY-MM-DD)' })
+          productionStartISO = given ? String(given) : new Date().toISOString().slice(0, 10)
+          const waiting = await FieldUpdate.countDocuments({ orderId, state: 'new' })
+          if (waiting) return res.status(400).json({ error: `${waiting} update${waiting === 1 ? '' : 's'} from the floor ${waiting === 1 ? 'is' : 'are'} waiting on this style. Confirm or dismiss ${waiting === 1 ? 'it' : 'them'} in Field Updates first: the steps they point at are about to be replaced.` })
+          standardSteps = tpl.steps
+        }
+      }
     }
     // Moving a style back to New Product Development: its plans lose the Delivery step and the style its delivery date
     // (unless this same edit sets one), as for any style being developed. A style with a delivered split stays in
@@ -3086,12 +3114,50 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
       }))
       if (Object.keys(set).length) { await Order.updateOne({ _id: orderId }, { $set: set }); reshaped = true }
     }
-    if (promoting) {
+    let planNote = null
+    if (promoting && standardSteps) {
+      // Read plain (ids, not populated people) so the steps kept as history are written back exactly as they stood.
+      const plain = await Order.findById(orderId, 'buyerId assignments').lean()
+      const set = {}
+      const docMoves = []
+      for (const [ai, a] of (plain.assignments || []).entries()) {
+        const old = a.stages || []
+        const fresh = await stagesFromTemplate(standardSteps, { order: { ...plain, _id: orderId }, asgn: a, startISO: productionStartISO })
+        const delivery = old.find(st => st.isDelivery) || makeDeliveryStage(promoteDeliveryISO)
+        const kept = planSteps(old)
+        set[`assignments.${ai}.stages`] = [...fresh, delivery]
+        if (kept.length) {
+          set[`assignments.${ai}.priorStages`] = kept
+          set[`assignments.${ai}.priorStagesAt`] = new Date()
+          set[`assignments.${ai}.priorStagesByName`] = req.user.name || ''
+        }
+        set[`assignments.${ai}.updatedAt`] = new Date()
+        docMoves.push({ mfrId: a.mfrId, old, freshCount: fresh.length })
+      }
+      if (Object.keys(set).length) {
+        await Order.updateOne({ _id: orderId }, { $set: set })
+        // What was filed on an old step follows it into the history; what was on Delivery stays on Delivery.
+        for (const m of docMoves) {
+          const rows = await Document.find({ orderId, mfrId: m.mfrId, stageIndex: { $ne: null } }, { _id: 1, stageIndex: 1 }).lean()
+          const ops = rows.map(d => {
+            const st = m.old[d.stageIndex]
+            const update = !st ? { $set: { stageIndex: null } }
+              : st.isDelivery ? { $set: { stageIndex: m.freshCount } }
+              : { $set: { stageIndex: null, priorStageIndex: planSteps(m.old).indexOf(st), priorStageName: st.name } }
+            return { updateOne: { filter: { _id: d._id, stageIndex: d.stageIndex }, update } }
+          })
+          if (ops.length) await withRetry('documents to the plan before production', () => Document.bulkWrite(ops, { ordered: false }))
+        }
+        reshaped = true
+        planNote = `plan replaced with the customer's standard plan (${standardSteps.length} steps from ${productionStartISO}); the earlier steps are kept as history`
+      }
+    } else if (promoting) {
       const push = {}
       ;(order.assignments || []).forEach((a, ai) => {
         if (!(a.stages || []).some(st => st.isDelivery)) push[`assignments.${ai}.stages`] = makeDeliveryStage(promoteDeliveryISO)
       })
       if (Object.keys(push).length) { await Order.updateOne({ _id: orderId }, { $push: push }); reshaped = true }
+      if ((order.assignments || []).length) planNote = 'the customer has no standard plan saved, so the style keeps the steps it had'
     }
     if (demote && (order.assignments || []).some(a => (a.stages || []).some(st => st.isDelivery))) {
       await Order.updateOne({ _id: orderId }, { $pull: { 'assignments.$[].stages': { isDelivery: true } } })
@@ -3106,10 +3172,11 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
     await AuditLog.create({
       byUser: req.user.id,
       action: 'Order Edited',
-      detail: `${orderId}: updated ${changedFields} by ${req.user.name}`,
+      detail: `${orderId}: updated ${changedFields} by ${req.user.name}${planNote ? `; ${planNote}` : ''}`,
     })
 
-    res.json(enrichFor(order, req))
+    // `plan` tells the page what the move did to the plan, so it can say so: 'standard' or 'kept' (no standard plan saved).
+    res.json(promoting && planNote ? { ...enrichFor(order, req), promotedPlan: standardSteps ? 'standard' : 'kept' } : enrichFor(order, req))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
