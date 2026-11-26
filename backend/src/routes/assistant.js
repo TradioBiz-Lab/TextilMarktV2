@@ -13,6 +13,7 @@ const router = Router()
 
 const skipInTest = () => process.env.NODE_ENV === 'test'
 
+import { noteAssistantProblem } from '../lib/voiceStatus.js'
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5'
 const MAX_TOOL_LOOP_ITERATIONS = 8
 const MAX_MESSAGES = 100
@@ -874,6 +875,7 @@ router.post('/chat', requireAuth, assistantLimiter, async (req, res) => {
     }
   } catch (err) {
     console.error('[assistant]', err)
+    noteAssistantProblem(err)   // shown on GET /api/health, so the cause can be read from outside
     return res.status(502).json({ error: 'AI assistant request failed. Please try again.' })
   }
 
