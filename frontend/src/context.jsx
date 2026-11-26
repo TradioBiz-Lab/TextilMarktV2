@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { authApi, ordersApi, documentsApi, usersApi, notificationsApi, auditApi, ribbonsApi, masterOrdersApi, actionItemsApi, partnerDirectoryApi, setStoredToken, setAuthToken } from './api.js'
+import { authApi, ordersApi, documentsApi, usersApi, notificationsApi, auditApi, ribbonsApi, masterOrdersApi, actionItemsApi, partnerDirectoryApi, visitsApi, fieldUpdatesApi, setStoredToken, setAuthToken } from './api.js'
+import { getPosition } from './geolocate.js'
 import { emptyQuery } from './partners.js'
 import { isExpiringSoon, isExpired, dayNumber, getToday } from './constants.js'
 
@@ -27,6 +28,10 @@ export function AppProvider({ children }) {
   const [serverRibbons, setServerRibbons] = useState([])
   const [masterOrders, setMasterOrders] = useState([])
   const [actionItems, setActionItems] = useState([])
+  // A coordinator's factories, his open visit and today's visits (GET /visits/mine). Null for every other role.
+  const [visits, setVisits]           = useState(null)
+  // How many updates from the floor wait for an account manager (admins only), for the menu.
+  const [fieldWaiting, setFieldWaiting] = useState(0)
   const [loading, setLoading]         = useState(false)
   const [loadError, setLoadError]     = useState(false)
   // The Partner Directory (admins only): loaded when its page opens, not with the rest at sign-in. The list page's
@@ -65,6 +70,15 @@ export function AppProvider({ children }) {
     setLoading(true)
     setLoadError(false)
     try {
+      // A coordinator has his own short list: the server refuses him everything else (lib/coordinator.js).
+      if (user.role === 'coordinator') {
+        // The styles, papers and master orders are those at his factories: the server sends no others.
+        const [n, r, v, o, d, mo] = await Promise.all([notificationsApi.list(), ribbonsApi.list(), visitsApi.mine(), ordersApi.list(), documentsApi.list(), masterOrdersApi.list()])
+        if (gen !== sessionGenRef.current) return
+        setNotifs(n); setServerRibbons(r); setVisits(v); setOrders(o); setDocs(d); setMasterOrders(mo)
+        setUsers([{ id: user.id, name: user.name, company: user.company, email: user.email, role: user.role }])
+        return
+      }
       // Single batch: fetch everything in parallel
       const isAdmin = user.role === 'admin'
       const promises = [
@@ -90,6 +104,7 @@ export function AppProvider({ children }) {
         setAudit(auditItems)
         setAuditTotal(auditResult?.total ?? auditItems.length)
         setActionItems(results[7])
+        fieldUpdatesApi.count().then(c => { if (gen === sessionGenRef.current) setFieldWaiting(c?.new || 0) }).catch(() => {})
         // Cert expiry check — fire and forget, don't re-fetch notifications
         documentsApi.checkCertExpiry().catch(() => {})
       } else {
@@ -131,6 +146,8 @@ export function AppProvider({ children }) {
     setServerRibbons([])
     setMasterOrders([])
     setActionItems([])
+    setVisits(null)
+    setFieldWaiting(0)
     docDataCache.current = {}
     clearPartnerState()
   }, [clearPartnerState])
@@ -476,6 +493,24 @@ export function AppProvider({ children }) {
   }, [])
 
   // The size breakup of a style: pieces per colour and size (Tradio, or the customer on its own style).
+  // The bill of materials checklist of a style: Tradio sets the items; a coordinator (or Tradio) ticks one at a factory.
+  const setBom = useCallback(async (id, items) => {
+    const updated = await ordersApi.setBom(id, items)
+    setOrders(p => p.map(o => o.id === id ? updated : o))
+    return updated
+  }, [])
+  const checkBomItem = useCallback(async (id, itemId, mfrId, checked) => {
+    const updated = await ordersApi.checkBomItem(id, itemId, mfrId, checked)
+    setOrders(p => p.map(o => o.id === id ? updated : o))
+    return updated
+  }, [])
+  const setBomEvidence = useCallback(async (id, itemId, mfrId, photo) => {
+    const updated = await ordersApi.setBomEvidence(id, itemId, mfrId, photo)
+    setOrders(p => p.map(o => o.id === id ? updated : o))
+    return updated
+  }, [])
+  const getBomImages = useCallback(id => ordersApi.bomImages(id), [])
+
   const setSizeBreakup = useCallback(async (id, breakup) => {
     const updated = await ordersApi.setSizeBreakup(id, breakup)
     setOrders(p => p.map(o => o.id === id ? updated : o))
@@ -492,6 +527,43 @@ export function AppProvider({ children }) {
   const deleteOrder = useCallback(async (id, reason) => {
     await ordersApi.delete(id, reason)
     setOrders(p => p.filter(o => o.id !== id))
+  }, [])
+
+  // ── Factory visits (coordinator) ──
+  const refreshVisits = useCallback(async () => {
+    const v = await visitsApi.mine()
+    setVisits(v)
+    return v
+  }, [])
+  // Both taps read the phone's position first; with none there is no check-in (the server refuses it too).
+  const checkIn = useCallback(async factoryId => {
+    const point = await getPosition()
+    const visit = await visitsApi.checkIn(factoryId, point)
+    await refreshVisits()
+    return visit
+  }, [refreshVisits])
+  const checkOut = useCallback(async visitId => {
+    const point = await getPosition()
+    const visit = await visitsApi.checkOut(visitId, point)
+    await refreshVisits()
+    return visit
+  }, [refreshVisits])
+  // The language of a coordinator's screens, kept on his account.
+  const setLanguage = useCallback(async language => {
+    setCurrentUser(u => (u ? { ...u, language } : u))
+    try { await authApi.setLanguage(language) } catch { /* the screen has already switched; it is asked again next time */ }
+  }, [])
+
+  // ── Updates from the floor ──
+  // The coordinator's send: afterwards the style and its papers are read again, so his note and photos show on the page.
+  const sendFieldUpdate = useCallback(async data => {
+    const sent = await fieldUpdatesApi.send(data)
+    ordersApi.list().then(setOrders).catch(() => {})
+    documentsApi.list().then(setDocs).catch(() => {})
+    return sent
+  }, [])
+  const refreshFieldWaiting = useCallback(async () => {
+    try { setFieldWaiting((await fieldUpdatesApi.count())?.new || 0) } catch { /* the menu keeps its last number */ }
   }, [])
 
   const createUser = useCallback(async (data) => {
@@ -742,12 +814,12 @@ export function AppProvider({ children }) {
   return (
     <AppContext.Provider value={{
       currentUser, users, orders, ordersAt, docs, notifs, audit, auditTotal, loading, loadError, unread, ribbons, masterOrders,
-      actionItems,
+      actionItems, visits, refreshVisits, checkIn, checkOut, setLanguage, sendFieldUpdate, fieldWaiting, setFieldWaiting, refreshFieldWaiting,
       login, logout,
       updateStage, addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
       bulkUpdateStages, addStageItem, updateStageItem, removeStageItem,
       updateAssignment, addAssignment, reassignAssignment, setDeliveredQty, insertStage, moveStage, startPlan, uploadDoc, updateDoc, lockDoc, deleteDoc, getDocVersions, fileDocInto, setStylePhotos, setProductLink, setSizeBreakup, createOrder, createMasterOrder, updateMasterOrder, deleteMasterOrder,
-      editOrder, deleteOrder, escalateOrder,
+      editOrder, deleteOrder, escalateOrder, setBom, checkBomItem, setBomEvidence, getBomImages,
       createUser, updateUser, toggleUser, resetUserPw,
       markAllRead, markOneRead, getDocData, refreshAudit, loadMoreAudit,
       refreshOrders, refreshDocs, listAllRibbons, createRibbon, updateRibbon, removeRibbon,

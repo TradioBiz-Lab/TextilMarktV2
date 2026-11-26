@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { requireAuth } from '../middleware/auth.js'
+import { COORDINATOR_ROLE } from '../lib/coordinator.js'
 import { InboundMessage, Order, ActionItem } from '../db/index.js'
 
 const router = Router()
@@ -16,12 +17,13 @@ const router = Router()
 // the admin task list, which the other roles don't have.
 router.get('/feed', requireAuth, async (req, res) => {
   const orderFilter = req.user.role === 'buyer' ? { buyerId: req.user.id }
-    : req.user.role === 'manufacturer' ? { 'assignments.mfrId': req.user.id } : {}
+    : req.user.role === 'manufacturer' ? { 'assignments.mfrId': req.user.id }
+    : req.user.role === COORDINATOR_ROLE ? { 'assignments.mfrId': { $in: req.user.factoryIds } } : {}
   const orders = await Order.find(orderFilter, '_id updatedAt').lean()
   const orderIds = orders.map(o => o._id)
   const newestOrder = orders.reduce((m, o) => Math.max(m, o.updatedAt ? new Date(o.updatedAt).getTime() : 0), 0)
   // A factory sees only its own messages, never another factory's on a style they share.
-  const msgs = await InboundMessage.find({ orderId: { $in: orderIds }, state: { $in: ['auto_applied', 'applied', 'needs_review'] }, ...(req.user.role === 'manufacturer' ? { factoryId: req.user.id } : {}) })
+  const msgs = await InboundMessage.find({ orderId: { $in: orderIds }, state: { $in: ['auto_applied', 'applied', 'needs_review'] }, ...(req.user.role === 'manufacturer' ? { factoryId: req.user.id } : req.user.role === COORDINATOR_ROLE ? { factoryId: { $in: req.user.factoryIds } } : {}) })
     .select('-dataUrl').sort({ updatedAt: -1 }).limit(60).lean()
   const items = msgs.map(m => ({
     id: String(m._id), type: m.type, orderId: m.orderId, stage: m.stageApplied,

@@ -3,9 +3,10 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What this is
-A B2B textile/apparel order-tracking portal ("Tradio"). Three roles — **admin** (master/user),
-**buyer**, **manufacturer** — collaborate on purchase orders that are split across manufacturers
-and tracked stage-by-stage through production.
+A B2B textile/apparel order-tracking portal ("Tradio"). Four roles: **admin** (master/user),
+**buyer**, **manufacturer** and **coordinator** (Tradio's Ops & QC person on the factory floor). The first three
+collaborate on purchase orders that are split across manufacturers and tracked stage-by-stage through production;
+the coordinator visits factories, reads the styles made there and reports what he sees.
 
 ## Commands
 
@@ -62,7 +63,7 @@ backend/src/
   middleware/asyncErrors.js # forwards rejected async handlers to the error handler
   models/             # User, Order, Document, Notification, AuditLog, Ribbon, MasterOrder,
                        # ActionItem, DroppedRecord, InboundMessage, Manufacturer (Partner Directory), StyleImportUpload, StyleRequest
-  routes/             # auth, viewAs, orders, documents, users, notifications, audit, ribbons,
+  routes/             # visits (coordinator check-in), fieldUpdates (updates from the floor), auth, viewAs, orders, documents, users, notifications, audit, ribbons,
                        # masterOrders, signup, actionItems, assistant (Kriyaa), voice, inbound,
                        # review, floor, dropped, manufacturers (Partner Directory, admin only), styleImports (Excel/CSV style import), styleRequests (review queue for customer requests, master admin)
   lib/                # email, stageMath, notify, redact, dropRecord, sarvam, ai/, inbound/,
@@ -106,6 +107,33 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   real gate). When adding a button to a shared screen, gate it with `capsFor(user)` /
   `canWriteStage(...)` instead of assuming the viewer is an admin. Kriyaa is open to every
   role with a role-scoped toolset (`toolsFor` in `routes/assistant.js`).
+
+- **The Ops & QC coordinator is fail-closed, and changes nothing on the plan.** `requireAuth` refuses a coordinator
+  every request that is not on the list in `backend/src/lib/coordinator.js` (`COORDINATOR_ALLOWED`, reads included),
+  because most routes deny buyers, scope manufacturers and let any other role through as if it were an admin. **To give
+  a coordinator anything new, add a line to that list first**, then scope the route to `req.user.factoryIds` (his
+  allocated factories, read fresh from the database on every request). What he has: check-in and check-out at a factory
+  (`routes/visits.js`, `FactoryVisit`; location required, the server's clock is the time); the styles at his factories,
+  read only, with only those factories' splits and no commercial papers (`viewerSplits` in `lib/coordinator.js`, and
+  the coordinator branches in routes/orders.js, documents.js, masterOrders.js, floor.js); and updates from the floor on
+  a step (`routes/fieldUpdates.js`, `FieldUpdate`: words, photos, a voice note), sent only while checked in there. An
+  update never moves a step: an admin reads it on the Field Updates page with the AI's suggestions
+  (`extractFieldUpdate` in `lib/ai/extract.js`; off without a key) and confirms through the ordinary stage routes. It is
+  internal until an admin releases it to the customer; the voice recording is Tradio's alone. His phone screens are in
+  `frontend/src/pages/coordinator/` and `components/CoordinatorOrderTop.jsx`, in Hindi and English
+  (`frontend/src/coordinatorText.js`: add a key in both, a test checks it). His sign-in lasts 30 days
+  (`sessionFor` in routes/auth.js). A factory's location is `geo` on its Partner Directory record (`lib/geo.js`).
+  Speech to text (Kriyaa's microphone and his spoken update) is `lib/speechToText.js`: ElevenLabs Scribe v3 when
+  `ELEVENLABS_API_KEY` is set, else Sarvam (`VOICE_STT` chooses when both are); reading replies aloud is Sarvam only.
+  ElevenLabs is called directly, not through its SDK (122 MB, uploaded with every deploy). A spoken update sends the
+  style's own names as key terms (`spokenTerms` in `frontend/src/capture.js`), so a client or colour is spelt right.
+  The key was made by ElevenLabs' onboarding tool into `backend/.env.local` (git-ignored; `loadEnv.js` reads it after `.env`).
+  A coordinator's files go through `lib/fileStore.js` (`FILE_STORE`, default the database). `FILE_STORE=stratus` with
+  `STRATUS_BUCKET` keeps them in Zoho Stratus (`lib/stratusDriver.js`, the `zcatalyst-sdk-node` package, loaded on first
+  use). That SDK works only on AppSail, from headers Catalyst adds to each request, so it cannot run locally or in tests
+  (they use `setCatalystSdk`); it is proven on a server with `POST /api/field-updates/storage/check` (master admin)
+  before it is switched on: docs/RUNBOOK.md section 9. The newer `@zcatalyst/*` packages need Node 22; AppSail is Node 20. The app is installable (`frontend/public/manifest.webmanifest`); there
+  is no service worker.
 
 - **The Partner Directory is admin-only sourcing data.** `routes/manufacturers.js` guards its whole router with
   `requireAuth` + `requireAdmin`; `caps.seePartners` only hides the nav item. Kriyaa's `listManufacturers` tool is in

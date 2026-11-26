@@ -7,6 +7,9 @@ import { ensurePartnerForUser } from '../lib/partnerSync.js'
 import { requireAuth, requireAdmin, requireMaster } from '../middleware/auth.js'
 import { sendEmail, emailUserCreated, emailPasswordReset, emailConfigured, emailSent } from '../lib/email.js'
 import { parseSeasonList } from '../lib/seasons.js'
+import { COORDINATOR_ROLE } from '../lib/coordinator.js'
+import { parseMapsLocation } from '../lib/geo.js'
+import mongoose from 'mongoose'
 
 // User creation is admin-only and low-volume; still cap to prevent bulk-create abuse
 const createUserLimiter = rateLimit({
@@ -28,7 +31,23 @@ const mapUser = u => ({
   company: u.company, name: u.name, phone: u.phone, code: u.code,
   isActive: u.isActive, createdAt: u.createdAt, mustChangePw: u.mustChangePw,
   ...(u.role === 'buyer' ? { seasons: u.seasons || [] } : {}),
+  ...(u.role === COORDINATOR_ROLE ? { assignedFactories: (u.assignedFactories || []).map(String) } : {}),
 })
+
+// Tradio's own people (admins and coordinators) share the code TRD and have no company code of their own.
+const isStaffRole = role => role === 'admin' || role === COORDINATOR_ROLE
+
+/** A coordinator's factories as sent: a list of active manufacturer accounts. Returns { ids } or { error }. */
+async function cleanAssignedFactories(value) {
+  if (value === undefined || value === null) return { ids: [] }
+  if (!Array.isArray(value)) return { error: 'Allocated factories must be a list' }
+  if (value.length > 100) return { error: 'Too many factories (max 100)' }
+  const ids = [...new Set(value)]
+  if (ids.some(v => typeof v !== 'string' || !mongoose.Types.ObjectId.isValid(v))) return { error: 'Invalid factory in the list' }
+  const found = await User.countDocuments({ _id: { $in: ids }, role: 'manufacturer', isActive: true })
+  if (found !== ids.length) return { error: 'Each allocated factory must be an active manufacturer account' }
+  return { ids }
+}
 
 // GET /api/users
 router.get('/', requireAuth, requireAdmin, async (req, res) => {
@@ -46,7 +65,7 @@ router.get('/', requireAuth, requireAdmin, async (req, res) => {
 // POST /api/users
 router.post('/', requireAuth, requireMaster, createUserLimiter, async (req, res) => {
   try {
-    const { email, password, role, adminType, company, name, phone, code, seasons } = req.body
+    const { email, password, role, adminType, company, name, phone, code, seasons, assignedFactories, mapsLocation } = req.body
     if (!email || !password || !role || !company || !name) {
       return res.status(400).json({ error: 'Missing required fields' })
     }
@@ -62,7 +81,7 @@ router.post('/', requireAuth, requireMaster, createUserLimiter, async (req, res)
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       return res.status(400).json({ error: 'Invalid email address' })
     }
-    if (!['admin', 'buyer', 'manufacturer'].includes(role)) {
+    if (!['admin', 'buyer', 'manufacturer', COORDINATOR_ROLE].includes(role)) {
       return res.status(400).json({ error: 'Invalid role' })
     }
 
@@ -70,11 +89,11 @@ router.post('/', requireAuth, requireMaster, createUserLimiter, async (req, res)
     if (exists) return res.status(409).json({ error: 'Email already in use' })
 
     // Company code must be unique across all users (AC from US-USR-01)
-    if (role !== 'admin' && !code?.trim()) {
+    if (!isStaffRole(role) && !code?.trim()) {
       return res.status(400).json({ error: 'Company code is required for buyers and manufacturers' })
     }
-    const normalizedCode = role === 'admin' ? 'TRD' : code.trim().toUpperCase().slice(0, 5)
-    if (role !== 'admin') {
+    const normalizedCode = isStaffRole(role) ? 'TRD' : code.trim().toUpperCase().slice(0, 5)
+    if (!isStaffRole(role)) {
       if (normalizedCode.length < 3 || normalizedCode.length > 5) {
         return res.status(400).json({ error: 'Company code must be 3–5 characters' })
       }
@@ -90,12 +109,28 @@ router.post('/', requireAuth, requireMaster, createUserLimiter, async (req, res)
       seasonList = parsed.list
     }
 
+    // A new factory's location (a Google Maps link or "lat, lng"), kept on its Partner Directory record.
+    let geo = null
+    if (role === 'manufacturer' && mapsLocation !== undefined && mapsLocation !== null && mapsLocation !== '') {
+      geo = parseMapsLocation(mapsLocation)
+      if (geo?.error) return res.status(400).json({ error: geo.error })
+    }
+
+    // A coordinator's factories: the only ones he can check in at.
+    let factoryIds
+    if (role === COORDINATOR_ROLE) {
+      const cleaned = await cleanAssignedFactories(assignedFactories)
+      if (cleaned.error) return res.status(400).json({ error: cleaned.error })
+      factoryIds = cleaned.ids
+    }
+
     const user = await User.create({
       ...(seasonList?.length ? { seasons: seasonList } : {}),
+      ...(role === COORDINATOR_ROLE ? { assignedFactories: factoryIds } : {}),
       email,
       passwordHash: await bcrypt.hash(password, 10),
       role,
-      adminType: adminType || null,
+      adminType: role === 'admin' ? (adminType || null) : null,
       company,
       name,
       phone: phone || null,
@@ -107,7 +142,10 @@ router.post('/', requireAuth, requireMaster, createUserLimiter, async (req, res)
     // A new manufacturer gets its Partner Directory record at once (not live: Tradio marks it live before it can be given a
     // style). The account is made either way, so a failure here is logged, never shown as a failed signup.
     if (role === 'manufacturer') {
-      try { await ensurePartnerForUser(user.toObject()) } catch (e) { console.error('[users] directory record', e.message) }
+      try {
+        await ensurePartnerForUser(user.toObject())
+        if (geo) await Manufacturer.updateOne({ linkedUserId: user._id }, { $set: { geo: { ...geo, setBy: req.user.id, setAt: new Date() } } })
+      } catch (e) { console.error('[users] directory record', e.message) }
     }
 
     // BRD US-USR-01: "Login credentials sent to user via email on creation"
@@ -130,7 +168,7 @@ router.post('/', requireAuth, requireMaster, createUserLimiter, async (req, res)
 // PATCH /api/users/:id (edit user details — master admin only)
 router.post('/:id', requireAuth, requireMaster, async (req, res) => {
   try {
-    const { name, email, phone, seasons } = req.body
+    const { name, email, phone, seasons, assignedFactories } = req.body
     const user = await User.findById(req.params.id)
     if (!user) return res.status(404).json({ error: 'User not found' })
 
@@ -159,6 +197,12 @@ router.post('/:id', requireAuth, requireMaster, async (req, res) => {
       const parsed = parseSeasonList(seasons ?? [])
       if (parsed.error) return res.status(400).json({ error: parsed.error })
       user.seasons = parsed.list.length ? parsed.list : undefined
+    }
+    if (assignedFactories !== undefined) {
+      if (user.role !== COORDINATOR_ROLE) return res.status(400).json({ error: 'Only a coordinator is allocated factories' })
+      const cleaned = await cleanAssignedFactories(assignedFactories)
+      if (cleaned.error) return res.status(400).json({ error: cleaned.error })
+      user.assignedFactories = cleaned.ids
     }
 
     await user.save()

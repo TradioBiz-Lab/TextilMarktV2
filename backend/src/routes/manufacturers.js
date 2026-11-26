@@ -34,7 +34,7 @@ const serverError = (res, err) => {
 const eq = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 const show = v => (v === undefined || v === null || v === '' ? 'empty' : String(v))
 // What the audit entry says about a field: its values for the small pipeline fields, just its name for the rest.
-const VALUE_FIELDS = new Set(['status', 'priority', 'type', 'cluster', 'isActive'])
+const VALUE_FIELDS = new Set(['status', 'priority', 'type', 'cluster', 'isActive', 'location'])
 
 const tally = (rows, key) => {
   const m = new Map()
@@ -128,7 +128,8 @@ router.post('/', writeLimiter, async (req, res) => {
     if (cleaned.errors) return res.status(400).json({ error: cleaned.errors.join('. ') })
     // A new partner has no platform account, so it cannot start Live.
     if (cleaned.data.status === 'live') return res.status(400).json({ error: 'Only a partner with a manufacturer account on the platform can be Live. Create its account in User Setup first.' })
-    const doc = await Manufacturer.create({ ...cleaned.data, createdBy: req.user.id, updatedBy: req.user.id })
+    const geo = cleaned.data.geo ? { ...cleaned.data.geo, setBy: req.user.id, setAt: new Date() } : undefined
+    const doc = await Manufacturer.create({ ...cleaned.data, geo, createdBy: req.user.id, updatedBy: req.user.id })
     await AuditLog.create({ byUser: req.user.id, action: 'Partner Created', detail: `${doc.name} (${doc.type}${doc.city ? `, ${doc.city}` : ''}) added by ${req.user.name}` })
     res.status(201).json(toPartner(doc.toObject()))
   } catch (err) {
@@ -227,7 +228,14 @@ router.post('/:id', writeLimiter, async (req, res) => {
     const changes = []       // [field, from, to] outside verification
     const vChanges = []      // [flag, from, to]
     for (const [k, v] of Object.entries(cleaned.data)) {
-      if (k === 'machines' || k === 'verification') {
+      if (k === 'geo') {
+        // The unit's location: only the coordinates count as a change; who set it and when are stamped here.
+        const was = before.geo && before.geo.lat != null ? `${before.geo.lat}, ${before.geo.lng}` : null
+        const now = v ? `${v.lat}, ${v.lng}` : null
+        if (was === now) continue
+        doc.set('geo', v ? { ...v, setBy: req.user.id, setAt: new Date() } : { lat: null, lng: null, mapsUrl: '', setBy: req.user.id, setAt: new Date() })
+        changes.push(['location', was, now])
+      } else if (k === 'machines' || k === 'verification') {
         for (const [sk, sv] of Object.entries(v)) {
           if (eq(before[k]?.[sk], sv)) continue
           doc.set(`${k}.${sk}`, sv)

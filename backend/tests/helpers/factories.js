@@ -26,7 +26,7 @@ async function passwordHash() {
 // A manufacturer can only be given a style once its Partner Directory record is marked live (lib/liveManufacturers.js),
 // so a test manufacturer gets one by default. `live: false` makes it a pilot (not live), `listed: false` gives it no
 // record at all (the Partner Directory's own tests count records).
-export async function makeUser({ role = 'admin', adminType = null, company, name, email, code, isActive = true, live = true, listed = true } = {}) {
+export async function makeUser({ role = 'admin', adminType = null, company, name, email, code, isActive = true, live = true, listed = true, assignedFactories } = {}) {
   const seq = ++codeSeq
   const user = await User.create({
     email: email || `${role}${seq}@test.local`,
@@ -37,6 +37,7 @@ export async function makeUser({ role = 'admin', adminType = null, company, name
     name: name || `${role} ${seq}`,
     code: code || nextCode(role.slice(0, 2).toUpperCase()),
     isActive,
+    ...(role === 'coordinator' ? { assignedFactories: (assignedFactories || []).map(f => f._id || f) } : {}),
   })
   if (role === 'manufacturer' && listed) {
     await Manufacturer.create({ name: `${user.company} [${seq}]`, type: 'garment_manufacturer', linkedUserId: user._id, status: live ? 'live' : 'pilot' })
@@ -48,6 +49,8 @@ export const makeAdmin  = (o = {}) => makeUser({ ...o, role: 'admin', adminType:
 export const makeMaster = (o = {}) => makeUser({ ...o, role: 'admin', adminType: 'master' })
 export const makeBuyer  = (o = {}) => makeUser({ ...o, role: 'buyer' })
 export const makeMfr    = (o = {}) => makeUser({ ...o, role: 'manufacturer' })
+/** An Ops & QC coordinator; `assignedFactories` is a list of manufacturer users (or their ids). */
+export const makeCoordinator = (o = {}) => makeUser({ code: 'TRD', ...o, role: 'coordinator' })
 
 /** Give each style one split, delivered by a new factory, so it can be reordered (only a delivered style can be). */
 export async function markDelivered(...ids) {

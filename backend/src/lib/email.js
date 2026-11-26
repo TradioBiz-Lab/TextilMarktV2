@@ -119,7 +119,7 @@ export async function sendEmail({ to, subject, html }) {
 // ── Email templates ─────────────────────────────────────────────────────────
 
 export function emailUserCreated({ name, email, password, role, company }) {
-  const roleLabel = role === 'buyer' ? 'Buyer' : role === 'manufacturer' ? 'Manufacturer' : 'Admin'
+  const roleLabel = role === 'buyer' ? 'Buyer' : role === 'manufacturer' ? 'Manufacturer' : role === 'coordinator' ? 'Ops & QC Coordinator' : 'Admin'
   const html = wrap(
     header('Welcome to TextilMarkt') +
     `<p style="font-size:14px;color:#334155;line-height:1.6;margin:0 0 16px">Hi <strong>${esc(name)}</strong>, your ${esc(roleLabel)} account has been created.</p>` +

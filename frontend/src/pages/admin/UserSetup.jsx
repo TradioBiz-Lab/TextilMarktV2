@@ -6,6 +6,33 @@ import { Modal, Input, Select, Btn, Card, Alert, EmptyState, FlexRow, PageHeader
 import { useApp } from '../../context.jsx'
 
 
+// Tradio's own people (admins and coordinators) share the code TRD and have no company code.
+const isStaff = role => role === 'admin' || role === 'coordinator'
+
+// The factories a coordinator may check in at: a tick list of the active manufacturer accounts.
+function FactoryPicker({ factories, value, onChange }) {
+  const toggle = id => onChange(value.includes(id) ? value.filter(x => x !== id) : [...value, id])
+  return (
+    <div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Allocated factories <span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 600 }}>({value.length} chosen)</span></div>
+      {factories.length === 0
+        ? <div style={{ fontSize: 12, color: T.textMuted }}>There are no active manufacturer accounts yet. Create the factory first.</div>
+        : (
+          <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, maxHeight: 220, overflowY: 'auto' }}>
+            {factories.map((m, i) => (
+              <label key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderTop: i ? `1px solid ${T.border}` : 'none', cursor: 'pointer', fontSize: 13, color: T.text }}>
+                <input type="checkbox" checked={value.includes(m.id)} onChange={() => toggle(m.id)} style={{ width: 16, height: 16 }} />
+                <span style={{ fontWeight: 600 }}>{m.company}</span>
+                <span style={{ color: T.textLight, fontSize: 11 }}>{m.code}</span>
+              </label>
+            ))}
+          </div>
+        )}
+      <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>The coordinator sees only these factories, and can check in only at them. You can change this later.</div>
+    </div>
+  )
+}
+
 // `initialTab` opens a tab directly (the dashboard's Customers and Manufacturers tiles).
 export function UserSetup({ initialTab } = {}) {
   const { users, loading, createUser, updateUser, toggleUser, resetUserPw, uploadDoc, currentUser, docs } = useApp()
@@ -16,14 +43,14 @@ export function UserSetup({ initialTab } = {}) {
   const [confirmBusy, setConfirmBusy] = useState(false)
   const [q, setQ] = useNavState('users.q', '')
   const [showC, setShowC] = useState(false)
-  const [f, setF] = useState({ name: '', email: '', password: '', company: '', phone: '', role: 'buyer', adminType: 'user', code: '', seasons: '' })
+  const [f, setF] = useState({ name: '', email: '', password: '', company: '', phone: '', role: 'buyer', adminType: 'user', code: '', seasons: '', assignedFactories: [], mapsLocation: '' })
   const [errors, setErrors] = useState({})
   const [profileFile, setProfileFile] = useState(null)
   const [profileFileErr, setProfileFileErr] = useState('')
   const [saving, setSaving] = useState(false)
   const [tempPwInfo, setTempPwInfo] = useState(null)
   const [editUser, setEditUser] = useState(null)
-  const [ef, setEf] = useState({ name: '', email: '', phone: '', seasons: '' })
+  const [ef, setEf] = useState({ name: '', email: '', phone: '', seasons: '', assignedFactories: [] })
   const [editErrors, setEditErrors] = useState({})
   const [editSaving, setEditSaving] = useState(false)
 
@@ -51,7 +78,9 @@ export function UserSetup({ initialTab } = {}) {
     buyer: users.filter(u => u.role === 'buyer').length,
     manufacturer: users.filter(u => u.role === 'manufacturer').length,
     admins: users.filter(u => u.role === 'admin').length,
+    coordinator: users.filter(u => u.role === 'coordinator').length,
   }
+  const activeFactories = users.filter(u => u.role === 'manufacturer' && u.isActive)
 
   const create = async () => {
     const errs = {}
@@ -61,14 +90,18 @@ export function UserSetup({ initialTab } = {}) {
     if (!f.email.trim() || !/\S+@\S+\.\S+/.test(f.email)) errs.email = 'Valid email required'
     if (users.find(u => u.email === f.email)) errs.email = 'Email already in use'
     if (!f.company.trim()) errs.company = 'Required'
-    if (f.role !== 'admin' && !f.code.trim()) errs.code = 'Required'
-    if (f.role !== 'admin' && f.code.trim().length > 0 && (f.code.trim().length < 3 || f.code.trim().length > 5)) errs.code = 'Must be 3–5 characters'
-    if (f.role !== 'admin' && f.code.trim() && users.find(u => u.code === f.code.toUpperCase().trim())) errs.code = 'Code already in use'
+    if (!isStaff(f.role) && !f.code.trim()) errs.code = 'Required'
+    if (!isStaff(f.role) && f.code.trim().length > 0 && (f.code.trim().length < 3 || f.code.trim().length > 5)) errs.code = 'Must be 3–5 characters'
+    if (!isStaff(f.role) && f.code.trim() && users.find(u => u.code === f.code.toUpperCase().trim())) errs.code = 'Code already in use'
     if (Object.keys(errs).length) { setErrors(errs); return }
     setSaving(true)
     let newUser
     try {
-      newUser = await createUser({ ...f, seasons: f.role === 'buyer' ? f.seasons : undefined, code: f.role === 'admin' ? 'TRD' : f.code.toUpperCase().slice(0, 5) })
+      newUser = await createUser({
+        ...f, seasons: f.role === 'buyer' ? f.seasons : undefined, code: isStaff(f.role) ? 'TRD' : f.code.toUpperCase().slice(0, 5),
+        assignedFactories: f.role === 'coordinator' ? f.assignedFactories : undefined,
+        mapsLocation: f.role === 'manufacturer' && f.mapsLocation.trim() ? f.mapsLocation.trim() : undefined,
+      })
     } catch (e) {
       toast(e?.message || 'Failed to create user', 'error')
       setSaving(false)
@@ -90,7 +123,7 @@ export function UserSetup({ initialTab } = {}) {
     if (profileError) toast(`User ${f.name} was created, but the profile document did not upload (${profileError}). Add it from the Documents page.`, 'warning')
     else toast(`User ${f.name} created`, 'success')
     setShowC(false)
-    setF({ name: '', email: '', password: '', company: '', phone: '', role: 'buyer', adminType: 'user', code: '', seasons: '' })
+    setF({ name: '', email: '', password: '', company: '', phone: '', role: 'buyer', adminType: 'user', code: '', seasons: '', assignedFactories: [], mapsLocation: '' })
     setProfileFile(null)
     setProfileFileErr('')
     setErrors({})
@@ -119,7 +152,7 @@ export function UserSetup({ initialTab } = {}) {
 
   const openEdit = (u) => {
     setEditUser(u)
-    setEf({ name: u.name, email: u.email, phone: u.phone || '', seasons: (u.seasons || []).join(', ') })
+    setEf({ name: u.name, email: u.email, phone: u.phone || '', seasons: (u.seasons || []).join(', '), assignedFactories: u.assignedFactories || [] })
     setEditErrors({})
   }
 
@@ -131,7 +164,7 @@ export function UserSetup({ initialTab } = {}) {
     if (Object.keys(errs).length) { setEditErrors(errs); return }
     setEditSaving(true)
     try {
-      await updateUser(editUser.id, { name: ef.name.trim(), email: ef.email.trim(), phone: ef.phone.trim() || null, ...(editUser.role === 'buyer' ? { seasons: ef.seasons } : {}) })
+      await updateUser(editUser.id, { name: ef.name.trim(), email: ef.email.trim(), phone: ef.phone.trim() || null, ...(editUser.role === 'buyer' ? { seasons: ef.seasons } : {}), ...(editUser.role === 'coordinator' ? { assignedFactories: ef.assignedFactories } : {}) })
       toast('User details updated', 'success')
       setEditUser(null)
     } catch (e) {
@@ -144,6 +177,7 @@ export function UserSetup({ initialTab } = {}) {
     { id: 'buyer', l: `Buyers (${counts.buyer})` },
     { id: 'manufacturer', l: `Manufacturers (${counts.manufacturer})` },
     { id: 'admins', l: `Admins (${counts.admins})` },
+    { id: 'coordinator', l: `Coordinators (${counts.coordinator})` },
   ]
 
   return (
@@ -180,21 +214,30 @@ export function UserSetup({ initialTab } = {}) {
             </div>
             <div className="form-grid-3">
               <Input label="Phone" value={f.phone} onChange={e => setF({ ...f, phone: e.target.value })} placeholder="+91-9876540000" />
-              <Select label="Role *" value={f.role} onChange={e => { setF({ ...f, role: e.target.value, adminType: e.target.value === 'admin' ? 'user' : '', code: e.target.value === 'admin' ? 'TRD' : '' }); setProfileFile(null); setProfileFileErr('') }}>
+              <Select label="Role *" value={f.role} onChange={e => { const role = e.target.value; setF({ ...f, role, adminType: role === 'admin' ? 'user' : '', code: isStaff(role) ? 'TRD' : '', company: role === 'coordinator' && !f.company.trim() ? 'Tradio' : f.company, assignedFactories: [], mapsLocation: '' }); setProfileFile(null); setProfileFileErr('') }}>
                 <option value="buyer">Buyer</option>
                 <option value="manufacturer">Manufacturer</option>
                 <option value="admin">Tradio Admin</option>
+                <option value="coordinator">Ops &amp; QC Coordinator</option>
               </Select>
               {f.role === 'admin' ? (
                 <Select label="Admin Type *" value={f.adminType} onChange={e => setF({ ...f, adminType: e.target.value })}>
                   <option value="user">Admin User</option>
                   <option value="master">Master Admin</option>
                 </Select>
-              ) : (
+              ) : f.role === 'coordinator' ? <div /> : (
                 <Input label="Company Code (3–5 chars) *" value={f.code} onChange={e => { setF({ ...f, code: e.target.value.toUpperCase().slice(0, 5) }); setErrors({ ...errors, code: '' }) }} error={errors.code} placeholder="ZAR" maxLength={5} hint="Used in Order IDs - must be unique, permanent" />
               )}
             </div>
             {f.role === 'buyer' && <Input label="Seasons" value={f.seasons} onChange={e => setF({ ...f, seasons: e.target.value.toUpperCase() })} placeholder="H1, H2" hint="Short codes, comma separated, e.g. H1, H2. Leave blank for the standard SS/FW seasons." />}
+            {f.role === 'coordinator' && (<>
+              <Alert type="info">A coordinator works from a phone on the factory floor. They check in and out at their allocated factories, see the styles being made there and send updates. They cannot change orders or plans. Their sign-in lasts 30 days on their own phone.</Alert>
+              <FactoryPicker factories={activeFactories} value={f.assignedFactories} onChange={v => setF({ ...f, assignedFactories: v })} />
+            </>)}
+            {f.role === 'manufacturer' && (
+              <Input label="Location on the map" value={f.mapsLocation} onChange={e => setF({ ...f, mapsLocation: e.target.value })} maxLength={2000} placeholder="Paste the full Google Maps link, or 26.8512, 75.8056"
+                hint="Optional. Where the factory is: a coordinator's check-in is measured against it. Copy the full link from the address bar in Google Maps, or type latitude, longitude. It can be added later on the partner's page." />
+            )}
             {f.role === 'manufacturer' && (
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
@@ -244,6 +287,7 @@ export function UserSetup({ initialTab } = {}) {
             <Input label="Email Address *" type="email" value={ef.email} onChange={e => { setEf({ ...ef, email: e.target.value }); setEditErrors({ ...editErrors, email: '' }) }} error={editErrors.email} placeholder="jane@company.com" />
             <Input label="Phone Number" value={ef.phone} onChange={e => setEf({ ...ef, phone: e.target.value })} placeholder="+91-9876540000" />
             {editUser.role === 'buyer' && <Input label="Seasons" value={ef.seasons} onChange={e => setEf({ ...ef, seasons: e.target.value.toUpperCase() })} placeholder="H1, H2" hint="Short codes, comma separated, e.g. H1, H2. Leave blank for the standard SS/FW seasons." />}
+            {editUser.role === 'coordinator' && <FactoryPicker factories={users.filter(u => u.role === 'manufacturer' && (u.isActive || ef.assignedFactories.includes(u.id)))} value={ef.assignedFactories} onChange={v => setEf({ ...ef, assignedFactories: v })} />}
             {editErrors._ && <div style={{ fontSize: 12, color: T.danger, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={12} /> {editErrors._}</div>}
             <FlexRow justify="flex-end" gap={8} style={{ marginTop: 4 }}>
               <Btn variant="secondary" onClick={() => setEditUser(null)}>Cancel</Btn>
@@ -305,6 +349,7 @@ export function UserSetup({ initialTab } = {}) {
                       {u.role === 'manufacturer' && !(docs || []).some(d => d.type === 'mfr_profile' && String(d.mfrId) === String(u.id) && d.isActive !== false) && (
                         <span title="No manufacturer profile uploaded yet (Documents page)" style={{ padding: '2px 8px', borderRadius: 10, fontSize: 10, fontWeight: 700, background: '#f1f5f9', color: '#475569', border: `1px solid ${T.border}` }}>No profile</span>
                       )}
+                      {u.role === 'coordinator' && <span title="Factories allocated to this coordinator" style={{ padding: '2px 8px', borderRadius: 10, fontSize: 10, fontWeight: 700, background: (u.assignedFactories || []).length ? '#dcfce7' : T.warningBg, color: (u.assignedFactories || []).length ? '#166534' : T.warning }}>{(u.assignedFactories || []).length} {(u.assignedFactories || []).length === 1 ? 'factory' : 'factories'}</span>}
                       {u.mustChangePw && <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 10, fontWeight: 700, background: T.warningBg, color: T.warning, display: 'inline-flex', alignItems: 'center', gap: 3 }}><KeyRound size={9} /> Pending</span>}
                     </div>
                   </td>

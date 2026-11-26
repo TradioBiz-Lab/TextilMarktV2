@@ -248,6 +248,63 @@ variables in practice, so this must be proven on Test before Live:
 
 ---
 
+## 9. Keeping the coordinators' photos and voice notes in Stratus
+
+A coordinator's photos and voice notes are kept in the database unless the backend is told to use Zoho Catalyst's file
+storage (Stratus). Live's database is small, so Stratus should be on before coordinators use the app in earnest. Every
+other document (tech packs, measurement sheets and so on) stays in the database either way.
+
+Buckets (private, permission template Authenticated, versioning off):
+
+| Project | Bucket | URL |
+|---|---|---|
+| `TradioApp` (Live) | `tradio-textilmarkt-live-floor` | `https://tradio-textilmarkt-live-floor-development.zohostratus.in` |
+| `Textimarkt-Sandbox` (Test) | `tradio-textilmarkt-sandbox-floor` | `https://tradio-textilmarkt-sandbox-floor-development.zohostratus.in` |
+
+**Proven on Test, 23 Nov 2026.** The coordinator build was put on the Test server for an hour. The storage check passed
+(write, read, remove). With `FILE_STORE=stratus`, a photo and a voice note sent as a coordinator were kept in the bucket
+with nothing in the database, opened again through the app byte for byte, and the bucket refused a direct request (403).
+The Test server was then put back on its standalone build, so Stratus is not in use anywhere yet. Two small test files
+remain in the Test bucket under `field-updates/2026/11/`; they can be deleted in the console.
+
+The Catalyst SDK works only on AppSail, never on a laptop, so on Live it is proven on the server itself, in this order:
+
+1. **Deploy the backend with the bucket named but Stratus still off.** Add one line to `backend/.env` on the deploying
+   Mac, then deploy as in section 3. Nothing changes for anyone: files still go to the database.
+
+   ```
+   STRATUS_BUCKET=tradio-textilmarkt-live-floor
+   ```
+
+2. **Run the check, signed in as a master admin.** In the browser, on the Live site, open the developer console
+   (View, Developer, JavaScript Console) and paste this. It writes a few bytes to the bucket, reads them back and removes
+   them, and records the result in the Audit Log as "Storage Checked".
+
+   ```js
+   fetch('https://textilmarkt-50042744536.development.catalystappsail.in/api/field-updates/storage/check', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: '{}' }).then(r => r.json()).then(console.log)
+   ```
+
+   It should print `ok: true` with three steps, `write`, `read` and `remove`, each `ok: true`. If any step fails, **stop
+   here**, leave Stratus off and send me what it printed: the message says which step failed and why.
+
+3. **Only after a clean check, switch it on.** Add a second line to `backend/.env` and deploy the backend again:
+
+   ```
+   FILE_STORE=stratus
+   ```
+
+4. **Confirm.** As a coordinator, send an update with a photo. As an admin, open Field Updates and check the photo shows.
+   In the Catalyst console, the bucket should now list a file under `field-updates/`.
+
+To go back: remove the `FILE_STORE` line and deploy. New files go to the database again, and files already in the bucket
+still open, because each document remembers where its file is kept. Do not delete the bucket or empty it while any
+document points at it.
+
+If `FILE_STORE=stratus` is set and the bucket name is missing or wrong, sending a photo fails with "Photos cannot be
+saved right now" and nothing is half-saved; an update with words alone still goes through.
+
+---
+
 ## 8. Phase 1 proposals (for decision)
 
 ### 8.1 Separate Test (and later Standalone) from Live's cluster

@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
-import { PHOTO_PROMPT, DOCUMENT_PROMPT, textPrompt } from './prompts.js'
+import { PHOTO_PROMPT, DOCUMENT_PROMPT, textPrompt, fieldUpdatePrompt, measurementsPrompt, measurementPhotoPrompt } from './prompts.js'
 
 const MODEL = () => process.env.ANTHROPIC_MODEL || 'claude-sonnet-5'
 
@@ -57,11 +57,12 @@ export function parseJsonReply(text) {
  * parse/validation failure; returns null after that so the caller routes the
  * message to human review instead of writing a guess.
  */
-async function callJson({ content, schema, sdk = getClient() }) {
+// `maxTokens` leaves room for a model that thinks before it answers (the current ones do, and the thinking counts).
+async function callJson({ content, schema, sdk = getClient(), maxTokens = 4096, model = MODEL() }) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await sdk.messages.create({
-        model: MODEL(), max_tokens: 4096   /* room for a model that thinks before it answers: the thinking counts */,
+        model, max_tokens: maxTokens,
         messages: [{ role: 'user', content }],
       })
       const text = (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('')
@@ -85,3 +86,64 @@ export const extractDocument = (buffer, mimeType, opts) =>
 
 export const extractText = (text, activeOrders, opts) =>
   callJson({ content: [{ type: 'text', text: `${textPrompt(activeOrders)}\n\nMessage:\n${text}` }], schema: textSchema, ...opts })
+
+// What a coordinator's update from the factory floor means for the plan, as suggestions for the account manager.
+const nullableInt = z.number().int().min(0).nullish().transform(v => v ?? null)
+export const fieldUpdateSchema = z.object({
+  summary: z.string().nullish().transform(v => (v ?? '').slice(0, 400)),
+  suggested_stage_index: nullableInt,
+  units: nullableInt,
+  status_hint: z.enum(['started', 'finished']).nullish().transform(v => v ?? null),
+  result: z.enum(['pass', 'fail']).nullish().transform(v => v ?? null),
+  issues: z.array(z.string()).nullish().transform(v => (v ?? []).map(x => x.slice(0, 300)).slice(0, 8)),
+  colours: z.array(z.object({ name: z.string(), note: z.string().nullish().transform(v => (v ?? '').slice(0, 300)) })).nullish().transform(v => (v ?? []).slice(0, 12)),
+  confidence: conf,
+})
+
+/**
+ * `photos` are { buffer, mimeType } (at most three are sent). Returns the parsed suggestions, or null when the model
+ * could not be read twice running: the update is then shown to the account manager without suggestions.
+ */
+export const extractFieldUpdate = (text, photos, ctx, opts) =>
+  callJson({
+    content: [
+      ...(photos || []).slice(0, 3).map(p => mediaBlock(p.buffer, p.mimeType)),
+      { type: 'text', text: `${fieldUpdatePrompt(ctx)}\n\nHis update:\n${text || '(no words, only the photos above)'}` },
+    ],
+    schema: fieldUpdateSchema, ...opts,
+  })
+
+// ── Measurements spoken by a quality person, placed against the points of the style's measurement sheet ──
+// A number as the model gives it. It may be negative (a difference) or absent ("ok"): the route turns "ok" and a
+// difference into a measurement with the sheet's own required value, so the model never does that sum.
+const spokenNumber = z.union([z.number(), z.string(), z.null()]).nullish().transform(v => (v == null || v === '' ? null : typeof v === 'number' ? v : Number(String(v).trim()))).refine(n => n === null || (Number.isFinite(n) && Math.abs(n) <= 1000))
+const measurementsSchema = z.object({
+  values: z.array(z.object({
+    index: z.number().int().min(0), value: spokenNumber,
+    kind: z.string().nullish().transform(v => (['ok', 'diff'].includes(String(v || '').toLowerCase()) ? String(v).toLowerCase() : 'value')),
+    heard: z.string().nullish().transform(v => (v ?? '').slice(0, 120)),
+  })).max(200).default([]),
+  unmatched: z.array(z.object({ heard: z.string().nullish().transform(v => (v ?? '').slice(0, 120)), value: spokenNumber })).max(50).nullish().transform(v => v ?? []),
+})
+
+/**
+ * What he said, as numbers against the sheet's points. `points` is [{ name, spec }] in sheet order (spec is the required
+ * value in the size he is measuring, there to tell 16 from 60, never to be copied). Returns { values: [{ index, value,
+ * heard }], unmatched: [{ heard, value }] } or null when the reply could not be trusted.
+ */
+export const extractMeasurements = (transcript, points, { unit = null, ...opts } = {}) =>
+  callJson({ content: [{ type: 'text', text: measurementsPrompt({ transcript, points, unit }) }], schema: measurementsSchema, maxTokens: 8000, ...opts })
+
+/**
+ * The same from photos of a handwritten sheet. `photos` is [{ buffer, mimeType }] (one to three); the answer has the
+ * shape of extractMeasurements, with `heard` holding what was written on the paper.
+ */
+// Handwriting is read by a stronger model than the everyday one (ANTHROPIC_VISION_MODEL to change it): a misread digit
+// here is a wrong measurement. If that model is not available to the key, the everyday model is tried.
+const VISION_MODEL = () => process.env.ANTHROPIC_VISION_MODEL || 'claude-sonnet-5-5'
+export async function extractMeasurementPhoto(photos, points, { unit = null, ...opts } = {}) {
+  const content = [...photos.map(p => mediaBlock(p.buffer, p.mimeType)), { type: 'text', text: measurementPhotoPrompt({ points, unit }) }]
+  return (await callJson({ content, schema: measurementsSchema, maxTokens: 8000, model: VISION_MODEL(), ...opts }))
+    ?? (VISION_MODEL() === MODEL() ? null : callJson({ content, schema: measurementsSchema, maxTokens: 8000, ...opts }))
+}
+

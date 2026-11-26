@@ -1,7 +1,7 @@
 import {
   ClipboardList, ShoppingCart, Ruler, Wallet, Mail, FileText, ShieldCheck, Search,
   FlaskConical, Leaf, ShieldPlus, Package, Layers, CheckCircle2, Palette, Settings2,
-  Scissors, Shirt, Trophy, Truck, Factory, Camera, Receipt } from './icons.jsx'
+  Scissors, Shirt, Trophy, Truck, Factory, Camera, Receipt, ListChecks } from './icons.jsx'
 
 // Legacy status flow (kept for admin/mfr pages not yet migrated)
 export const STATUS_FLOW = [
@@ -48,6 +48,8 @@ export const DOC_TYPES = [
   { v: 'PO', l: 'Purchase Order' },
   { v: 'invoice', l: 'Invoice' },
   { v: 'tech_pack', l: 'Tech Pack' },
+  { v: 'bom', l: 'BOM (Bill of Materials)' },
+  { v: 'bom_evidence', l: 'BOM photo from the factory' },
   { v: 'cost_sheet', l: 'Cost Sheet' },
   { v: 'RFQ', l: 'RFQ' },
   { v: 'terms', l: 'Terms & Conditions' },
@@ -147,13 +149,13 @@ export const evidenceTypesFor = (stageIndex, stages) => {
 
 // Values are Lucide icon COMPONENTS, not emoji — render as <DOC_ICONS[type] size={..}/>.
 export const DOC_ICONS = {
-  PO: ClipboardList, invoice: Receipt, buyer_order: ShoppingCart, tech_pack: Ruler, cost_sheet: Wallet, RFQ: Mail, terms: FileText,
+  PO: ClipboardList, invoice: Receipt, buyer_order: ShoppingCart, tech_pack: Ruler, bom: ListChecks, cost_sheet: Wallet, RFQ: Mail, terms: FileText,
   compliance_cert: ShieldCheck, factory_audit: Search, chemical_cert: FlaskConical,
   environmental_cert: Leaf, insurance: ShieldPlus,
   // Stage evidence docs
   material_po: Package, knitting_grn: Layers, knitting_qc: CheckCircle2,
   dyeing_grn: Palette, dyeing_qc: CheckCircle2, processing_grn: Settings2, processing_qc: CheckCircle2,
-  floor_evidence: Camera, cutting_qc: Scissors, stitching_qc: Shirt, final_qc: Trophy,
+  floor_evidence: Camera, bom_evidence: Camera, cutting_qc: Scissors, stitching_qc: Shirt, final_qc: Trophy,
   packing_qc: Package, dispatch_docs: Truck,
   mfr_profile: Factory,
 }
@@ -470,7 +472,8 @@ export const deliveryStatus = (order, asgn) => {
  * from before the field are production. Development and Replen behave the same: no delivery date or Delivery step yet.
  */
 // What a measurement sheet is, in the fit process. Every measurement upload carries one; a master admin locks one per style.
-export const MEASUREMENT_LABELS = [['customer_submission', 'Customer Submission'], ['fit_approval', 'Fit Approval'], ['pp_approval', 'PP Approval']]
+// 'inline_qc' and 'final_qc' are production garments measured on the line and at final inspection with the quality module.
+export const MEASUREMENT_LABELS = [['customer_submission', 'Customer Submission'], ['fit_approval', 'Fit Approval'], ['pp_approval', 'PP Approval'], ['inline_qc', 'Inline QC'], ['final_qc', 'Final QC']]
 export const MEASUREMENT_LABEL_NAME = Object.fromEntries(MEASUREMENT_LABELS)
 
 export const PHASES = [['production', 'Production'], ['development', 'New Product Development'], ['replen', 'Replen']]

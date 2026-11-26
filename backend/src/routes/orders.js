@@ -2,7 +2,7 @@ import mongoose from 'mongoose'
 import { liveGateMessage } from '../lib/liveManufacturers.js'
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
-import { Order } from '../db/index.js'
+import { Order, BomImage } from '../db/index.js'
 import { User }         from '../models/User.js'
 import { Notification } from '../models/Notification.js'
 import { AuditLog }     from '../models/AuditLog.js'
@@ -27,6 +27,11 @@ import { materialDetails, newMaterialDetails } from '../lib/materialFields.js'
 import { normalizeLink, isHttpUrl, cleanLink } from '../lib/links.js'
 import { isoDay } from '../lib/masterOrderDetails.js'
 import { cleanSizeBreakup, sizeBreakupOut } from '../lib/sizeBreakup.js'
+import { cleanBom, bomOut } from '../lib/bom.js'
+import { openVisitOf } from './visits.js'
+import { readPhoto } from './fieldUpdates.js'
+import { saveFile, removeFile, fileStoreProblem } from '../lib/fileStore.js'
+import { dayIST } from '../lib/geo.js'
 
 // Categories are now free-text — no validation needed
 const MAX_PRODUCT_PHOTO_SIZE = 1024 * 1024 // 1MB raw - reference thumbnail, not full-res
@@ -73,6 +78,7 @@ const mainPhotoFields = photos => {
   return { imageDataUrl: main && main.startsWith('data:') ? main : null, imageUrl: main && !main.startsWith('data:') ? main : null }
 }
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
+import { COORDINATOR_ROLE, viewerSplits } from '../lib/coordinator.js'
 import { ORDER_PHASES, isPreProduction } from '../lib/phases.js'
 // Email triggers for orders are intentionally suppressed — order activity is portal-notifications only
 
@@ -200,8 +206,10 @@ const enrichOrder = (o, viewerMfrId = null, { forBuyer = false } = {}) => {
   const buyer = o.buyerId && typeof o.buyerId === 'object' && o.buyerId.company ? o.buyerId : null
   // Manufacturers only see their own assignment — not competitors' qty/status/notes
   const allAssignments = o.assignments || []
-  const visibleAssignments = viewerMfrId
-    ? allAssignments.filter(a => (a.mfrId?._id?.toString() ?? a.mfrId?.toString()) === viewerMfrId)
+  // viewerMfrId is one factory (a manufacturer), a list (a coordinator's factories; an empty list shows no split), or null for all.
+  const viewers = viewerMfrId == null ? null : [].concat(viewerMfrId).map(String)
+  const visibleAssignments = viewers
+    ? allAssignments.filter(a => viewers.includes(a.mfrId?._id?.toString() ?? a.mfrId?.toString()))
     : allAssignments
   return {
   id: o._id, masterOrderId: o.masterOrderId || null,
@@ -215,6 +223,8 @@ const enrichOrder = (o, viewerMfrId = null, { forBuyer = false } = {}) => {
   colourways: (o.colourways || []).map(c => ({ name: c.name, code: c.code || '', hex: c.hex || '' })),
   // Pieces per colour and size. Production information: every viewer of the style is sent it.
   sizeBreakup: sizeBreakupOut(o.sizeBreakup),
+  // The bill of materials checklist: the items go to every viewer, a factory's ticks only to those who see that factory.
+  bom: bomOut(o.bom, viewers, { forBuyer }),
   photos: (o.photos || []).map(p => ({ image: p.image, colourway: p.colourway || '' })),
   fabricDetails: (o.fabricDetails || []).map(f => ({ name: f.name, composition: f.composition || '', gsm: f.gsm || '', supplier: f.supplier || '' })),
   ecommerceLink: o.ecommerceLink || '',
@@ -269,7 +279,11 @@ const enrichOrder = (o, viewerMfrId = null, { forBuyer = false } = {}) => {
           })),
           itemsDone: (s.items || []).filter(it => it.status === 'done').length,
           itemsTotal: (s.items || []).length,
-          updates: (s.updates || []).map(u => ({
+          // A coordinator's note from the floor is Tradio's own until an admin releases it: a customer is not sent it.
+          updates: (s.updates || []).filter(u => !(forBuyer && u.internal)).map(u => ({
+            ...(u.fieldUpdateId ? { fromFloor: true, ...(forBuyer ? {} : { internal: !!u.internal }) } : {}),
+            // Read by AI: the note is its plain reading. His own words go with it to Tradio and the factory, not the customer.
+            ...(u.aiRead ? { aiRead: true, ...(forBuyer ? {} : { original: u.original || '' }) } : {}),
             text: u.text,
             byUser: u.byUser?._id?.toString() ?? u.byUser?.toString(),
             byUserName: forBuyer && u.byUser?.role === 'manufacturer' ? TRADIO_PRODUCTION : u.byUser?.name ?? null,
@@ -290,7 +304,7 @@ const enrichOrder = (o, viewerMfrId = null, { forBuyer = false } = {}) => {
 // Every response that carries an order must be scoped to the caller: a manufacturer
 // only ever sees its own assignment (same boundary as the read routes above).
 const enrichFor = (order, req) =>
-  enrichOrder(order, req.user.role === 'manufacturer' ? String(req.user.id) : null, { forBuyer: req.user.role === 'buyer' })
+  enrichOrder(order, viewerSplits(req.user), { forBuyer: req.user.role === 'buyer' })
 
 // A follow-up write that must happen once the main one has (re-pointing document links after
 // a stage moves) is retried briefly, and failure is logged loudly rather than swallowed.
@@ -330,11 +344,12 @@ router.get('/', requireAuth, async (req, res) => {
     let query
     if (req.user.role === 'admin')        query = Order.find()
     else if (req.user.role === 'buyer')   query = Order.find({ buyerId: req.user.id })
+    // A coordinator: the styles at the factories allocated to him, and only those factories' splits of them.
+    else if (req.user.role === COORDINATOR_ROLE) query = Order.find({ 'assignments.mfrId': { $in: req.user.factoryIds } })
     else                                  query = Order.find({ 'assignments.mfrId': req.user.id })
 
     const orders = await query.populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role').sort({ createdAt: -1 }).lean()
-    const viewerMfrId = req.user.role === 'manufacturer' ? req.user.id : null
-    res.json(orders.map(o => enrichOrder(o, viewerMfrId, { forBuyer: req.user.role === 'buyer' })))
+    res.json(orders.map(o => enrichFor(o, req)))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -359,8 +374,12 @@ router.get('/:id', requireAuth, async (req, res) => {
       if (!assigned) return res.status(403).json({ error: 'Forbidden' })
     }
 
-    const viewerMfrId = req.user.role === 'manufacturer' ? req.user.id : null
-    res.json(enrichOrder(order, viewerMfrId, { forBuyer: req.user.role === 'buyer' }))
+    if (req.user.role === COORDINATOR_ROLE) {
+      const atHisFactory = (order.assignments || []).some(a => req.user.factoryIds.includes(a.mfrId?._id?.toString() ?? a.mfrId?.toString()))
+      if (!atHisFactory) return res.status(403).json({ error: 'Forbidden' })
+    }
+
+    res.json(enrichFor(order, req))
   } catch (err) {
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
@@ -3202,6 +3221,131 @@ router.post('/:id/escalate', requireAuth, escalationLimiter, async (req, res) =>
     console.error('[orders]', err)
     res.status(500).json({ error: 'Server error' })
   }
+})
+
+// ── The bill of materials as a checklist (lib/bom.js) ──
+const POPULATED = q => q.populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS).populate('assignments.stages.responsibleId', 'name company code role').populate('assignments.stages.updates.byUser', 'name role')
+const splitIds = o => (o.assignments || []).map(a => String(a.mfrId?._id ?? a.mfrId))
+// May this user read this style at all? The same rule as GET /:id.
+const maySeeStyle = (user, o) => (user.role === 'admin' ? true
+  : user.role === 'buyer' ? String(o.buyerId?._id ?? o.buyerId) === String(user.id)
+  : user.role === 'manufacturer' ? splitIds(o).includes(String(user.id))
+  : user.role === COORDINATOR_ROLE ? splitIds(o).some(id => user.factoryIds.includes(id)) : false)
+
+// POST /api/orders/:id/bom { items: [{ id?, section, name, description, perPiece, forOrder, image? }] } - Tradio sets the
+// list. An item that keeps its id keeps its ticks and its picture; an empty list removes the bill of materials.
+router.post('/:id/bom', requireAuth, requireAdmin, updateLimiter, async (req, res) => {
+  try {
+    const existing = await Order.findById(req.params.id, 'bom product').lean()
+    if (!existing) return res.status(404).json({ error: 'Order not found' })
+    const cleaned = cleanBom(req.body, existing.bom)
+    if (cleaned.error) return res.status(400).json({ error: cleaned.error })
+    const value = cleaned.items.length ? { items: cleaned.items, updatedBy: req.user.id, updatedAt: new Date() } : null
+    if (cleaned.dropImages.length) await BomImage.deleteMany({ orderId: existing._id, itemId: { $in: cleaned.dropImages } })
+    for (const im of cleaned.setImages) await BomImage.updateOne({ orderId: existing._id, itemId: im.itemId }, { $set: { dataUrl: im.dataUrl } }, { upsert: true })
+    const order = await POPULATED(Order.findByIdAndUpdate(existing._id, { $set: { bom: value } }, { new: true })).lean()
+    await AuditLog.create({ byUser: req.user.id, action: 'BOM Updated', detail: `${existing._id}: ${value ? `${value.items.length} item${value.items.length === 1 ? '' : 's'}` : 'removed'}, by ${req.user.name}` })
+    res.json(enrichFor(order, req))
+  } catch (err) { console.error('[orders]', err); res.status(500).json({ error: 'Server error' }) }
+})
+
+// GET /api/orders/:id/bom/images - the pictures of the items, by item id. Anyone who may read the style.
+router.get('/:id/bom/images', requireAuth, async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id, 'buyerId assignments.mfrId').lean()
+    if (!order) return res.status(404).json({ error: 'Order not found' })
+    if (!maySeeStyle(req.user, order)) return res.status(403).json({ error: 'Forbidden' })
+    const rows = await BomImage.find({ orderId: order._id }, 'itemId dataUrl').lean()
+    res.json(Object.fromEntries(rows.map(r => [r.itemId, r.dataUrl])))
+  } catch (err) { console.error('[orders]', err); res.status(500).json({ error: 'Server error' }) }
+})
+
+// POST /api/orders/:id/bom/:itemId/check { mfrId, checked } - tick an item as seen at a factory, or take the tick back.
+// A coordinator at one of his factories, while he is checked in there; Tradio at any factory making the style.
+router.post('/:id/bom/:itemId/check', requireAuth, updateLimiter, async (req, res) => {
+  try {
+    const { role } = req.user
+    if (role !== 'admin' && role !== COORDINATOR_ROLE) return res.status(403).json({ error: 'Only Tradio ticks the bill of materials' })
+    const { mfrId, checked } = req.body || {}
+    if (typeof mfrId !== 'string' || !mongoose.Types.ObjectId.isValid(mfrId) || typeof checked !== 'boolean') return res.status(400).json({ error: 'Send the factory and whether the item is there' })
+    const existing = await Order.findById(req.params.id, 'bom assignments.mfrId').lean()
+    if (!existing) return res.status(404).json({ error: 'Order not found' })
+    if (!splitIds(existing).includes(mfrId) || (role === COORDINATOR_ROLE && !req.user.factoryIds.includes(mfrId))) return res.status(403).json({ error: 'That factory is not yours for this style' })
+    if (!(existing.bom?.items || []).some(i => i.id === req.params.itemId)) return res.status(404).json({ error: 'That item is not on the bill of materials' })
+    if (role === COORDINATOR_ROLE) {
+      const visit = await openVisitOf(req.user.id)
+      if (!visit || String(visit.factoryId) !== mfrId) return res.status(409).json({ error: 'Check in at the factory first', code: 'CHECK_IN_FIRST' })
+    }
+    const mfrObjectId = new mongoose.Types.ObjectId(mfrId)
+    const item = { arrayFilters: [{ 'item.id': req.params.itemId }] }
+    // The old tick for this factory goes either way; a new one is then written with who and when.
+    await Order.updateOne({ _id: existing._id }, { $pull: { 'bom.items.$[item].checks': { mfrId: mfrObjectId } } }, item)
+    if (checked) await Order.updateOne({ _id: existing._id }, { $push: { 'bom.items.$[item].checks': { mfrId: mfrObjectId, by: req.user.id, byName: req.user.name, at: new Date() } } }, item)
+    res.json(enrichFor(await POPULATED(Order.findById(existing._id)).lean(), req))
+  } catch (err) { console.error('[orders]', err); res.status(500).json({ error: 'Server error' }) }
+})
+
+// Who may tick or photograph an item at a factory: a coordinator at one of his factories while checked in there, or Tradio.
+// Returns the style (bom and splits) or sends the refusal itself and returns null.
+async function bomFloorAccess(req, res) {
+  const { role } = req.user
+  if (role !== 'admin' && role !== COORDINATOR_ROLE) { res.status(403).json({ error: 'Only Tradio ticks the bill of materials' }); return null }
+  const mfrId = req.body?.mfrId
+  if (typeof mfrId !== 'string' || !mongoose.Types.ObjectId.isValid(mfrId)) { res.status(400).json({ error: 'Send the factory' }); return null }
+  const existing = await Order.findById(req.params.id, 'bom assignments.mfrId').lean()
+  if (!existing) { res.status(404).json({ error: 'Order not found' }); return null }
+  if (!splitIds(existing).includes(mfrId) || (role === COORDINATOR_ROLE && !req.user.factoryIds.includes(mfrId))) { res.status(403).json({ error: 'That factory is not yours for this style' }); return null }
+  const item = (existing.bom?.items || []).find(i => i.id === req.params.itemId)
+  if (!item) { res.status(404).json({ error: 'That item is not on the bill of materials' }); return null }
+  if (role === COORDINATOR_ROLE) {
+    const visit = await openVisitOf(req.user.id)
+    if (!visit || String(visit.factoryId) !== mfrId) { res.status(409).json({ error: 'Check in at the factory first', code: 'CHECK_IN_FIRST' }); return null }
+  }
+  return { existing, item, mfrId, mfrObjectId: new mongoose.Types.ObjectId(mfrId) }
+}
+
+// POST /api/orders/:id/bom/:itemId/evidence { mfrId, photo } - a photo of the item as seen at the factory (a data URL), or
+// photo: null to take it away. Optional: an item whose own picture says enough needs none. One photo per item per
+// factory; a new one replaces the old. Adding a photo also ticks the item. Kept like his other floor photos (the file
+// store), and not shown to the customer.
+router.post('/:id/bom/:itemId/evidence', requireAuth, updateLimiter, async (req, res) => {
+  try {
+    const ok = await bomFloorAccess(req, res); if (!ok) return
+    const { existing, item, mfrId, mfrObjectId } = ok
+    const photo = req.body.photo
+    let file = null
+    if (photo !== null) {
+      file = readPhoto(photo); if (file.error) return res.status(400).json({ error: file.error })
+      const problem = fileStoreProblem()
+      if (problem) { console.error('[orders]', problem); return res.status(503).json({ error: 'Photos cannot be saved right now. Tell Tradio.' }) }
+    }
+    const sel = { arrayFilters: [{ 'item.id': item.id }] }
+    const old = (item.evidence || []).filter(e => String(e.mfrId) === mfrId)
+    const now = new Date()
+    if (file) {
+      const _id = new mongoose.Types.ObjectId()
+      const name = `${item.name} - BOM photo`
+      const kept = await saveFile(`bom-evidence/${dayIST(now).slice(0, 4)}/${dayIST(now).slice(5, 7)}/${existing._id}/${_id}.${file.ext}`, file.buffer, file.mimeType, { req })
+      await Document.create({
+        _id, type: 'bom_evidence', name, mfrId, orderId: existing._id, bomItemId: item.id, uploadedBy: req.user.id, issuer: 'Bill of materials check at the factory',
+        issueDate: now, internal: true, isActive: true, ...kept, fileName: `${name}.${file.ext}`, fileSize: file.buffer.length, mimeType: file.mimeType,
+      })
+      await Order.updateOne({ _id: existing._id }, { $pull: { 'bom.items.$[item].evidence': { mfrId: mfrObjectId } } }, sel)
+      await Order.updateOne({ _id: existing._id }, { $push: { 'bom.items.$[item].evidence': { mfrId: mfrObjectId, docId: _id, by: req.user.id, byName: req.user.name, at: now } } }, sel)
+      // A photo of it is as good as a tick: the item is marked seen if it was not already.
+      if (!(item.checks || []).some(c => String(c.mfrId) === mfrId)) {
+        await Order.updateOne({ _id: existing._id }, { $push: { 'bom.items.$[item].checks': { mfrId: mfrObjectId, by: req.user.id, byName: req.user.name, at: now } } }, sel)
+      }
+    } else {
+      await Order.updateOne({ _id: existing._id }, { $pull: { 'bom.items.$[item].evidence': { mfrId: mfrObjectId } } }, sel)
+    }
+    // The photo it replaces (or the one taken away) goes, file and all.
+    for (const e of old) {
+      const doc = await Document.findById(e.docId)
+      if (doc) { await removeFile(doc, { req }); await Document.deleteOne({ _id: doc._id }) }
+    }
+    res.json(enrichFor(await POPULATED(Order.findById(existing._id)).lean(), req))
+  } catch (err) { console.error('[orders]', err); res.status(500).json({ error: 'Server error' }) }
 })
 
 export default router

@@ -3,6 +3,8 @@ import mongoose from 'mongoose'
 import rateLimit from 'express-rate-limit'
 import { Document, Order, User, Notification, AuditLog, MasterOrder } from '../db/index.js'
 import { requireAuth, requireAdmin, requireMaster } from '../middleware/auth.js'
+import { COORDINATOR_ROLE } from '../lib/coordinator.js'
+import { loadFile } from '../lib/fileStore.js'
 import { MEASUREMENT_LABELS, MEASUREMENT_LABEL_NAMES } from '../models/Document.js'
 import { sendEmail, emailBuyerDocumentReceived } from '../lib/email.js'
 import { notify, adminIds } from '../lib/notify.js'
@@ -158,6 +160,10 @@ const mapDoc = (d, includeData = false) => {
     measurementLabel: d.measurementLabel || null,
     locked: !!d.locked, lockedAt: d.lockedAt || null,
     styleRequestId: d.styleRequestId ? d.styleRequestId.toString() : null,
+    // A coordinator's update from the floor: its files, and whether the customer has been shown them yet.
+    ...(d.fieldUpdateId ? { fieldUpdateId: d.fieldUpdateId.toString(), internal: !!d.internal } : {}),
+    // A workbook the quality module made from a measured garment: its session, and whether the customer has been shown it.
+    ...(d.measurementSessionId ? { measurementSessionId: d.measurementSessionId.toString(), internal: !!d.internal } : {}),
     ...(includeData ? { dataUrl: d.dataUrl } : {}),
   }
 }
@@ -186,12 +192,27 @@ router.get('/', requireAuth, async (req, res) => {
       // not docs that belong to a different buyer's order
       docs = await populateUploader(Document.find({
         isActive: true,
+        // A coordinator's files stay with Tradio until an admin releases the update.
+        internal: { $ne: true },
         $or: [
           { orderId: { $in: orderIds } },
           { masterOrderId: { $in: masterIds } },
           { mfrId: { $in: mfrIds }, orderId: null },
           { uploadedBy: req.user.id },
         ],
+      }).sort({ createdAt: -1 })).lean()
+
+    } else if (req.user.role === COORDINATOR_ROLE) {
+      // A coordinator: the papers of the styles at his factories (tech packs, measurements and the like, which carry no
+      // factory) and those factories' own files. Never another factory's, never a commercial paper.
+      const ids = req.user.factoryIds
+      const orderIds = (await Order.find({ 'assignments.mfrId': { $in: ids } }, { _id: 1 }).lean()).map(o => o._id)
+      docs = await populateUploader(Document.find({
+        isActive: true,
+        type: { $nin: HIDDEN_FROM_FACTORIES },
+        // Another coordinator's voice note is not his to hear; his own is.
+        $nor: [{ tradioOnly: true, uploadedBy: { $ne: req.user.id } }],
+        $or: [{ mfrId: { $in: ids } }, { orderId: { $in: orderIds }, mfrId: null }],
       }).sort({ createdAt: -1 })).lean()
 
     } else {
@@ -204,6 +225,8 @@ router.get('/', requireAuth, async (req, res) => {
         // manufacturer's docs on a shared order: GET /:id/data denies those too.
         // Never a purchase order or an invoice (HIDDEN_FROM_FACTORIES).
         type: { $nin: HIDDEN_FROM_FACTORIES },
+        // A coordinator's voice note about the factory is Tradio's alone.
+        tradioOnly: { $ne: true },
         $or: [{ mfrId: req.user.id }, { orderId: { $in: orderIds }, mfrId: null }],
       }).sort({ createdAt: -1 })).lean()
     }
@@ -312,6 +335,9 @@ router.get('/cert-summary', requireAuth, requireAdmin, async (req, res) => {
 // Whether `user` may open `doc` (a current document, or an earlier version of one, which carries the same links).
 // Returns { status, error } when not, or null.
 async function readError(user, doc) {
+  // A coordinator's update: the customer sees it once released; the voice recording is Tradio's alone.
+  if (doc.internal && user.role === 'buyer') return { status: 403, error: 'Access denied' }
+  if (doc.tradioOnly && user.role !== 'admin' && String(doc.uploadedBy) !== String(user.id)) return { status: 403, error: 'Access denied' }
 
   if (user.role === 'buyer') {
     // Allow access to docs they uploaded themselves (e.g. via Submit Requirement)
@@ -327,6 +353,15 @@ async function readError(user, doc) {
                        (!doc.orderId && doc.mfrId && mfrIds.includes(doc.mfrId.toString()))
       if (!allowed) return { status: 403, error: 'Access denied' }
     }
+  }
+
+  if (user.role === COORDINATOR_ROLE) {
+    if (HIDDEN_FROM_FACTORIES.includes(doc.type)) return { status: 403, error: 'Access denied' }
+    const ids = user.factoryIds || []
+    // One of his factories' own files, or a general paper (no factory) of a style at one of his factories.
+    if (doc.mfrId) return ids.includes(doc.mfrId.toString()) ? null : { status: 403, error: 'Access denied' }
+    const inScope = doc.orderId && await Order.exists({ _id: doc.orderId, 'assignments.mfrId': { $in: ids } })
+    return inScope ? null : { status: 403, error: 'Access denied' }
   }
 
   if (user.role === 'manufacturer') {
@@ -360,6 +395,8 @@ router.get('/:id/data', requireAuth, async (req, res) => {
     if (!live) return res.status(404).json({ error: 'Document not found' })
     const denied = await readError(req.user, doc)
     if (denied) return res.status(denied.status).json({ error: denied.error })
+    // A file kept outside the database (lib/fileStore.js) is fetched here, after the checks above.
+    if (doc.storage?.driver) doc.dataUrl = await loadFile(doc, { req })
     res.json(forViewer(mapDoc(doc, true), req))
   } catch (err) {
     console.error('[documents]', err)

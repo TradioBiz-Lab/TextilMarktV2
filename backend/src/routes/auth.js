@@ -7,6 +7,7 @@ import { sendEmail, emailConfigured, emailPasswordResetLink } from '../lib/email
 import { User, AuditLog } from '../db/index.js'
 import { requireAuth } from '../middleware/auth.js'
 import { viewAsFlags } from './viewAs.js'  // sandbox-only, see viewAs.js
+import { COORDINATOR_ROLE } from '../lib/coordinator.js'
 
 const router = Router()
 
@@ -46,6 +47,14 @@ const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 10)
 
 // Sessions refresh themselves through /me, so cap the total life of one login.
 const MAX_SESSION_SECONDS = 12 * 60 * 60
+
+// A coordinator works from his own phone on the factory floor and cannot be asked for an email and a strong password
+// several times a day: his sign-in lasts 30 days and renews each time the app opens (no 12-hour cap). It still ends at
+// once when his account is switched off or his password is reset (requireAuth checks both on every request).
+const COORDINATOR_SESSION_SECONDS = 30 * 24 * 60 * 60
+const sessionFor = role => (role === COORDINATOR_ROLE
+  ? { expiresIn: COORDINATOR_SESSION_SECONDS, maxAge: COORDINATOR_SESSION_SECONDS * 1000, capped: false }
+  : { expiresIn: process.env.JWT_EXPIRES_IN || '60m', maxAge: 60 * 60 * 1000, capped: true })
 
 const changePasswordLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -91,7 +100,8 @@ router.post('/login', loginLimiter, loginEmailCeiling, async (req, res) => {
       code: user.code, mustChangePw: user.mustChangePw,
     }
     // oiat: when this login began. /me keeps it across refreshes so a session cannot slide forever.
-    const token = jwt.sign({ ...payload, oiat: Math.floor(Date.now() / 1000) }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '60m' })
+    const session = sessionFor(user.role)
+    const token = jwt.sign({ ...payload, oiat: Math.floor(Date.now() / 1000) }, process.env.JWT_SECRET, { expiresIn: session.expiresIn })
 
     // Set httpOnly cookie (secure + sameSite=none for cross-origin Vercel→Render in production)
     const isProd = process.env.NODE_ENV === 'production'
@@ -99,7 +109,7 @@ router.post('/login', loginLimiter, loginEmailCeiling, async (req, res) => {
       httpOnly: true,
       secure: isProd,
       sameSite: isProd ? 'none' : 'lax',
-      maxAge: 60 * 60 * 1000,
+      maxAge: session.maxAge,
       path: '/',
     })
 
@@ -109,7 +119,19 @@ router.post('/login', loginLimiter, loginEmailCeiling, async (req, res) => {
     // SameSite=None cookies, so the frontend also stores this token and sends it as
     // an Authorization header — requireAuth already accepts either. Always included
     // (not just in non-prod) since prod is exactly where the cookie can fail.
-    res.json({ user: { ...payload, ...(await viewAsFlags(payload)) }, token })
+    res.json({ user: { ...payload, language: user.language || 'hi', ...(await viewAsFlags(payload)) }, token })
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/auth/language { language } - the language of a coordinator's screens (Hindi or English), kept on the account.
+router.post('/language', requireAuth, async (req, res) => {
+  try {
+    const { language } = req.body || {}
+    if (!['hi', 'en'].includes(language)) return res.status(400).json({ error: 'Language must be hi or en' })
+    await User.updateOne({ _id: req.user.id }, { $set: { language } })
+    res.json({ ok: true, language })
   } catch (err) {
     res.status(500).json({ error: 'Server error' })
   }
@@ -149,7 +171,8 @@ router.post('/change-password', requireAuth, changePasswordLimiter, async (req, 
 // GET /api/auth/me — restore session and refresh the httpOnly cookie
 router.get('/me', requireAuth, async (req, res) => {
   const startedAt = req.user.oiat ?? req.user.iat
-  if (startedAt && Math.floor(Date.now() / 1000) - startedAt > MAX_SESSION_SECONDS) {
+  const session = sessionFor(req.user.role)
+  if (session.capped && startedAt && Math.floor(Date.now() / 1000) - startedAt > MAX_SESSION_SECONDS) {
     res.clearCookie('tradio_token', { httpOnly: true, sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', secure: process.env.NODE_ENV === 'production' })
     return res.status(401).json({ error: 'Session expired - please log in again' })
   }
@@ -161,13 +184,13 @@ router.get('/me', requireAuth, async (req, res) => {
     ...(req.user.viewAsBy ? { viewAsBy: req.user.viewAsBy, viewAsByName: req.user.viewAsByName } : {}),
     ...(startedAt ? { oiat: startedAt } : {}),
   }
-  const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '60m' })
+  const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: session.expiresIn })
   const isProd = process.env.NODE_ENV === 'production'
   res.cookie('tradio_token', token, {
     httpOnly: true,
     secure: isProd,
     sameSite: isProd ? 'none' : 'lax',
-    maxAge: 60 * 60 * 1000,
+    maxAge: session.maxAge,
     path: '/',
   })
   // Same Authorization-header fallback as /login — see comment there.

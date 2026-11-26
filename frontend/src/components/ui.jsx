@@ -265,6 +265,7 @@ export function RoleBadge({ role, adminType }) {
   const map = {
     buyer: { label: 'Buyer', bg: '#dbeafe', c: '#1d4ed8' },
     manufacturer: { label: 'Manufacturer', bg: '#fef9c3', c: '#92400e' },
+    coordinator: { label: 'Ops & QC Coordinator', bg: '#dcfce7', c: '#166534' },
     admin: { label: adminType === 'master' ? 'Master Admin' : 'Admin User', bg: adminType === 'master' ? '#ede9fe' : '#f1f5f9', c: adminType === 'master' ? '#7c3aed' : '#475569' },
   }
   const s = map[role] || { label: role, bg: '#f1f5f9', c: '#475569' }
@@ -727,6 +728,72 @@ function DocEditModal({ doc, onClose, onSaved }) {
 const READABLE_DOC_TYPE = { test_report: 'Test report', lab_dip: 'Lab dip', measurements: 'Measurements', pattern: 'Pattern', floor_evidence: 'Evidence', dispatch_docs: 'Delivery document' }
 
 // compact: for a list already grouped under its step heading, so the card drops the stage / order / manufacturer bar it would only repeat.
+/**
+ * A document opened on the screen by itself, without its card: the same viewer the cards use (PDF pages, pictures,
+ * spreadsheets, sound), for places that open a known document with one tap. `download` false leaves the Download
+ * button out, for a reader who only needs to look at it (the coordinator on the factory floor).
+ */
+export function DocViewer({ doc, onGetData, onClose, download = true }) {
+  const [blob, setBlob] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    let dead = false; let made = null
+    setBlob(null); setLoading(true); setError('')
+    ;(async () => {
+      try {
+        const d = await onGetData(doc.id)
+        const b = d?.dataUrl ? dataUrlToBlobUrl(d.dataUrl) : null
+        if (dead) { b?.revoke(); return }
+        if (!b) { setError('This file could not be opened.'); setLoading(false); return }
+        made = b; setBlob(b)
+      } catch (e) {
+        if (!dead) { setError(e?.message || 'This file could not be opened.'); setLoading(false) }
+      }
+    })()
+    return () => { dead = true; made?.revoke() }
+  }, [doc.id, onGetData])
+  useEffect(() => {
+    const h = e => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', h)
+    return () => document.removeEventListener('keydown', h)
+  }, [onClose])
+  const save = () => {
+    if (!blob) return
+    const a = document.createElement('a')
+    a.href = blob.url; a.download = doc.fileName || doc.name
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+  }
+  return (
+    <div role="dialog" aria-modal="true" aria-label={doc.name} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.75)', zIndex: 2000, display: 'flex', flexDirection: 'column' }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ minHeight: 52, background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 12px 0 16px', flexShrink: 0, gap: 12 }}>
+        <span style={{ fontSize: 14, fontWeight: 600, color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.name}</span>
+        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          {download && blob && (
+            <button onClick={save} style={{ background: '#1e293b', border: '1px solid #334155', color: '#e2e8f0', borderRadius: 7, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Download size={14} /> Download
+            </button>
+          )}
+          <button onClick={onClose} aria-label="Close" style={{ background: '#ef4444', border: 'none', color: '#fff', borderRadius: 9, width: 40, height: 40, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={20} /></button>
+        </div>
+      </div>
+      {loading && (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, background: '#0f172a' }}>
+          <div style={{ width: 40, height: 40, border: '3px solid #334155', borderTopColor: '#f97316', borderRadius: '50%', animation: 'tradio-spin 0.7s linear infinite' }} />
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#94a3b8' }}>Loading…</div>
+        </div>
+      )}
+      {error && <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: '#fecaca', fontSize: 15, fontWeight: 600, padding: 24, textAlign: 'center' }}>{error}</div>}
+      {blob && (
+        <div style={{ flex: 1, minHeight: 0, display: loading ? 'none' : 'flex', flexDirection: 'column' }}>
+          <DocBody blob={blob} doc={doc} onReady={() => setLoading(false)} />
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function DocCard({ doc, users, onGetData, stageName: stageNameProp, compact = false }) {
   const { currentUser, deleteDoc, lockDoc, orders, getDocVersions } = useApp()
   const toast = useToast()

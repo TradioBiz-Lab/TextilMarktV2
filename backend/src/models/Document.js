@@ -8,7 +8,8 @@ const DOC_TYPES = [
   'compliance_cert', 'factory_audit', 'chemical_cert',
   'environmental_cert', 'insurance',
   // Style-level reference documents (creation wizard's Documents step)
-  'measurements', 'pattern', 'lab_dip', 'test_report',
+  // 'bom' is the bill of materials (fabric, trims, labels, packing): what goes into the style, with no prices on it.
+  'measurements', 'bom', 'pattern', 'lab_dip', 'test_report',
   // Manufacturer profile PDF
   'mfr_profile',
   // Production stage evidence documents
@@ -17,12 +18,15 @@ const DOC_TYPES = [
   'cutting_qc', 'stitching_qc', 'final_qc', 'packing_qc', 'dispatch_docs',
   // Evidence captured from a factory message (photo, voice note, challan) by Zero Entry Capture
   'floor_evidence',
+  // A coordinator's photo of one item of the bill of materials, as seen at a factory (bomItemId; Order.bom.items[].evidence).
+  'bom_evidence',
 ]
 
 // Where a measurement sheet stands in the fit process. Every measurement upload carries one; the one a master admin locks
 // is the style's Locked Measurement.
-export const MEASUREMENT_LABELS = ['customer_submission', 'fit_approval', 'pp_approval']
-export const MEASUREMENT_LABEL_NAMES = { customer_submission: 'Customer Submission', fit_approval: 'Fit Approval', pp_approval: 'PP Approval' }
+// 'inline_qc' and 'final_qc' are production garments measured on the line and at final inspection (routes/measurements.js).
+export const MEASUREMENT_LABELS = ['customer_submission', 'fit_approval', 'pp_approval', 'inline_qc', 'final_qc']
+export const MEASUREMENT_LABEL_NAMES = { customer_submission: 'Customer Submission', fit_approval: 'Fit Approval', pp_approval: 'PP Approval', inline_qc: 'Inline QC', final_qc: 'Final QC' }
 
 const documentSchema = new mongoose.Schema({
   type:       { type: String, required: true, enum: DOC_TYPES },
@@ -72,6 +76,23 @@ const documentSchema = new mongoose.Schema({
   // A file a customer sent with a style request (routes/styleRequests.js): no style yet; approval moves it onto the style.
   styleRequestId: { type: mongoose.Schema.Types.ObjectId, ref: 'StyleRequest', default: null },
 
+  // A coordinator's update from the factory floor (models/FieldUpdate.js): its photos and voice note point back to it.
+  // `internal` keeps the file from the customer until an admin releases the update; `tradioOnly` (the voice recording)
+  // keeps it from the factory as well, for good.
+  fieldUpdateId: { type: mongoose.Schema.Types.ObjectId, ref: 'FieldUpdate', default: null },
+  internal:      { type: Boolean, default: false },
+  // Set on a measurement workbook the quality module made (models/MeasurementSession.js): the session it records.
+  measurementSessionId: { type: mongoose.Schema.Types.ObjectId, ref: 'MeasurementSession', default: null },
+  // The bill of materials item a 'bom_evidence' photo shows (Order.bom.items[].id).
+  bomItemId:     { type: String, default: null },
+  tradioOnly:    { type: Boolean, default: false },
+  // Set when the file's bytes are kept outside the database (lib/fileStore.js); dataUrl is then empty.
+  storage: {
+    driver: { type: String, default: null },
+    bucket: { type: String, default: null },
+    key:    { type: String, default: null },
+  },
+
   // Free-text notes — used for stage evidence entries that capture context (SOP-driven),
   // including text-only stage evidence (no file/link).
   notes:      { type: String, default: null },
@@ -90,6 +111,7 @@ const documentSchema = new mongoose.Schema({
 }, { timestamps: true })
 
 documentSchema.index({ masterOrderId: 1 })
+documentSchema.index({ fieldUpdateId: 1 }, { partialFilterExpression: { fieldUpdateId: { $type: 'objectId' } } })
 documentSchema.index({ versionOf: 1 }, { partialFilterExpression: { versionOf: { $type: 'objectId' } } })
 documentSchema.index({ mfrId: 1, isActive: 1 })
 documentSchema.index({ orderId: 1, isActive: 1 })

@@ -20,6 +20,13 @@ const stageUpdateSchema = new mongoose.Schema({
   text:   { type: String, required: true, maxlength: 1000 },
   byUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   at:     { type: Date, default: Date.now },
+  // A coordinator's update from the factory floor (models/FieldUpdate.js). `internal` keeps the note from the customer
+  // until an admin releases the update.
+  fieldUpdateId: { type: mongoose.Schema.Types.ObjectId, ref: 'FieldUpdate', default: null },
+  internal:      { type: Boolean, default: false },
+  // Once the AI has read his update, `text` is its plain English reading and `original` keeps his own words.
+  aiRead:        { type: Boolean, default: false },
+  original:      { type: String, maxlength: 1000, default: null },
 }, { _id: false })
 
 // One raw-material/trim line to procure for a stage — tracked to PO/received level.
@@ -276,6 +283,32 @@ const orderSchema = new mongoose.Schema({
     type: new mongoose.Schema({
       sizes: { type: [String], default: [] },
       rows: { type: [new mongoose.Schema({ colour: { type: String, default: '' }, qty: { type: [Number], default: [] } }, { _id: false })], default: [] },
+      updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      updatedAt: { type: Date, default: null },
+    }, { _id: false }),
+    default: null,
+  },
+  // The bill of materials as a checklist (lib/bom.js): the items the style needs, and a tick per factory when someone
+  // has seen an item there. Pictures are kept in `bomimages`. null when the style has none.
+  bom: {
+    type: new mongoose.Schema({
+      items: { type: [new mongoose.Schema({
+        id: { type: String, required: true },
+        section: { type: String, default: '' }, name: { type: String, required: true }, description: { type: String, default: '' },
+        perPiece: { type: String, default: '' }, forOrder: { type: String, default: '' }, hasImage: { type: Boolean, default: false },
+        checks: { type: [new mongoose.Schema({
+          mfrId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+          by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, byName: { type: String, default: '' },
+          at: { type: Date, default: Date.now },
+        }, { _id: false })], default: [] },
+        // An optional photo of the item as seen at a factory: one per factory, a Document of type 'bom_evidence'.
+        evidence: { type: [new mongoose.Schema({
+          mfrId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+          docId: { type: mongoose.Schema.Types.ObjectId, ref: 'Document', required: true },
+          by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, byName: { type: String, default: '' },
+          at: { type: Date, default: Date.now },
+        }, { _id: false })], default: [] },
+      }, { _id: false })], default: [] },
       updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
       updatedAt: { type: Date, default: null },
     }, { _id: false }),

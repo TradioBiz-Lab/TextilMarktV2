@@ -3,7 +3,7 @@ import { User } from '../../models/User.js'
 import { InboundMessage } from '../../models/InboundMessage.js'
 import { AuditLog } from '../../models/AuditLog.js'
 import { extractPhoto, extractDocument, extractText } from '../ai/extract.js'
-import { transcribeAudio } from '../sarvam.js'
+import { transcribeAudio, sttProvider } from '../speechToText.js'
 import { matchOrder, mapStageIndex, gateChange } from './matching.js'
 import { applyStageChange } from './applyStage.js'
 import { outbound } from './adapters.js'
@@ -94,7 +94,7 @@ export async function ingestMessage(input, deps = {}) {
     } else {
       let text = input.text || ''
       if (type === 'audio') {
-        if (!process.env.SARVAM_API_KEY && !deps.transcribeAudio) return toReview('Voice is not configured on this server')
+        if (!sttProvider() && !deps.transcribeAudio) return toReview('Voice is not configured on this server')
         const t = await d.transcribeAudio(buffer, mimeType)
         text = t.transcript
         msg.rawText = text

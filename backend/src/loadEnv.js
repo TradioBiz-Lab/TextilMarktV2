@@ -6,4 +6,9 @@
 // supply everything they need themselves, exactly as they do in CI, where there is no .env at all.
 import dotenv from 'dotenv'
 
-if (process.env.NODE_ENV !== 'test') dotenv.config()
+if (process.env.NODE_ENV !== 'test') {
+  dotenv.config()
+  // Keys a setup tool stores for this project (ElevenLabs' onboarding writes ELEVENLABS_API_KEY here). It never
+  // overrides a value .env or the server already set, and it is git-ignored like .env.
+  dotenv.config({ path: '.env.local' })
+}

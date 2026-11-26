@@ -8,14 +8,19 @@
 //                evidence; cannot create/edit/delete orders or move planned dates
 //   buyer        read-only, except a stage assigned to them (usually an approval):
 //                they may post notes on it and set its status
+//   coordinator  Tradio's Ops & QC coordinator: checks in and out at his allocated factories and reads the styles
+//                made there (read only: no control on these screens is his), and sends updates on a step from
+//                the floor, which an admin acts on
+//                (the server refuses every request not on its list, backend/src/lib/coordinator.js)
 export function capsFor(user) {
   const role = user?.role
   const isAdmin = role === 'admin'
   const isMaster = isAdmin && user?.adminType === 'master'
   const isMfr = role === 'manufacturer'
   const isBuyer = role === 'buyer'
+  const isCoord = role === 'coordinator'
   return {
-    role, isAdmin, isMaster, isMfr, isBuyer,
+    role, isAdmin, isMaster, isMfr, isBuyer, isCoord,
     // Order lifecycle
     createOrders: isAdmin, editOrders: isAdmin, deleteOrders: isAdmin, assignManufacturers: isAdmin,
     // Planning (dates, stages, TNA import) is the coordinator's
@@ -26,7 +31,7 @@ export function capsFor(user) {
     uploadProductPhoto: isAdmin || isBuyer,   // a customer on its own styles (POST /orders/:id/photos)
     uploadReferenceDocs: isAdmin || isBuyer,   // tech pack, measurements, pattern, lab dip
     // The customer's PO and Tradio's invoice: Tradio and the customer only, never a factory (the server enforces it).
-    seePoInvoice: !isMfr,
+    seePoInvoice: !isMfr && !isCoord,   // a coordinator sees what a factory sees: no commercial papers
     uploadPoInvoice: isAdmin || isBuyer,        // the customer uploads its PO; only Tradio issues invoices (uploadInvoices)
     uploadInvoices: isAdmin,
     uploadDeliveryDocs: isAdmin || isMfr,       // packing lists, carton stickers: Tradio and the factory that ships
@@ -35,11 +40,19 @@ export function capsFor(user) {
     orderReplen: isAdmin || isBuyer, importStyles: isAdmin || isBuyer,
     // The size breakup (pieces per colour and size): Tradio on any style, a customer on its own. A factory reads it.
     editSizeBreakup: isAdmin || isBuyer,
+    // The quality module: measuring a garment against the style's sheet (Tradio, the factory, a coordinator); Tradio shares a record with the customer.
+    recordMeasurements: isAdmin || isMfr || isCoord, shareMeasurements: isAdmin,
+    // The bill of materials checklist: Tradio writes the list; Tradio and a coordinator (checked in at the factory) tick it.
+    editBom: isAdmin, checkBom: isAdmin || isCoord,
     escalate: isBuyer,   // a customer raises a style with Tradio's master admins (in-app and email)
     manageCertificates: isMfr,
     // Admin-only surfaces
     seeStyleRequests: isMaster /* the review queue for what customers ask to add: master admins decide it (the server enforces it) */,
     seeUsers: isAdmin, seeAudit: isAdmin, seePartners: isAdmin /* the Partner Directory: Tradio's sourcing CRM, admins only (the server enforces it) */, seeReviewQueue: false /* retired until the WhatsApp integration; set to isAdmin to bring it back */, seeRibbonsAdmin: isAdmin, seeBuyerRequests: isAdmin,
+    // Factory visits: a coordinator checks in and out; admins read who was where and when.
+    checkInAtFactories: isCoord, seeVisits: isAdmin,
+    // Updates from the floor: a coordinator sends them (photos, voice, words on a step); admins read and act on them.
+    sendFieldUpdates: isCoord, seeFieldUpdates: isAdmin,
   }
 }
 

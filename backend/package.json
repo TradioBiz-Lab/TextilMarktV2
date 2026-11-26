@@ -28,10 +28,11 @@
     "mongoose": "^8.24.10",
     "papaparse": "^5.7.0",
     "resend": "^6.9.4",
-    "zod": "^4.6.5"
+    "zcatalyst-sdk-node": "3.4.0",
+    "zod": "^4.6.5",
+    "exceljs": "^4.4.0"
   },
   "devDependencies": {
-    "exceljs": "^4.4.0",
     "mongodb-memory-server": "^11.2.0"
   },
   "overrides": {

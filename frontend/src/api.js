@@ -51,7 +51,10 @@ api.interceptors.response.use(
     // An Error (not a bare string) so every `catch (err) { ... err?.message ... }`
     // call site actually gets the backend's real reason instead of silently
     // falling back to a generic message — a bare string has no .message.
-    return Promise.reject(new Error(err.response?.data?.error || 'Request failed'))
+    // The server's own code and extra fields ride along (code, distanceM, ...), for the screens that word a refusal themselves.
+    const failure = new Error(err.response?.data?.error || 'Request failed')
+    if (err.response?.data && typeof err.response.data === 'object') { failure.code = err.response.data.code; failure.data = err.response.data }
+    return Promise.reject(failure)
   }
 )
 
@@ -62,6 +65,7 @@ export const authApi = {
   changePassword: (currentPassword, newPassword) => api.post('/auth/change-password', { currentPassword, newPassword }),
   forgotPassword: email => api.post('/auth/forgot-password', { email }),
   resetPassword: (token, password) => api.post('/auth/reset-password', { token, password }),
+  setLanguage: language => api.post('/auth/language', { language }),
 }
 
 export const ordersApi = {
@@ -73,6 +77,12 @@ export const ordersApi = {
   setPhotos: (id, photos) => api.post(`/orders/${id}/photos`, { photos }),
   setProductLink: (id, ecommerceLink) => api.post(`/orders/${id}/product-link`, { ecommerceLink }),
   setSizeBreakup: (id, breakup) => api.post(`/orders/${id}/size-breakup`, breakup),
+  // The bill of materials checklist: its items (Tradio), its pictures, and a tick on an item at a factory.
+  setBom: (id, items) => api.post(`/orders/${id}/bom`, { items }),
+  bomImages: id => api.get(`/orders/${id}/bom/images`),
+  checkBomItem: (id, itemId, mfrId, checked) => api.post(`/orders/${id}/bom/${itemId}/check`, { mfrId, checked }),
+  // A photo of the item as seen at the factory (a data URL), or null to take it away.
+  setBomEvidence: (id, itemId, mfrId, photo) => api.post(`/orders/${id}/bom/${itemId}/evidence`, { mfrId, photo }),
   // `reason` is optional and is kept, with a full copy of the style, in the dropped record.
   delete: (id, reason) => api.post(`/orders/${id}/delete`, reason ? { reason } : {}),
   updateAssignment: (orderId, mfrId, status, note) =>
@@ -204,8 +214,22 @@ export const assistantApi = {
   chat: (messages) => api.post('/assistant/chat', { messages }, { timeout: 120000 }),
 }
 
+// The quality module: a garment measured against the style's measurement sheet.
+export const measurementsApi = {
+  spec: orderId => api.get('/measurements/spec', { params: { orderId } }),
+  read: (orderId, tab, size, transcript) => api.post('/measurements/read', { orderId, tab, size, transcript }, { timeout: 60000 }),
+  // A photo (up to three) of the paper he wrote the measurements on, read against the sheet's points.
+  readPhoto: (orderId, tab, size, photos) => api.post('/measurements/read-photo', { orderId, tab, size, photos }, { timeout: 90000 }),
+  save: body => api.post('/measurements', body, { timeout: 60000 }),
+  // Saved as he goes: one unfinished session per style, factory, stage and size. No points discards it.
+  saveDraft: body => api.post('/measurements/draft', body),
+  list: orderId => api.get('/measurements', { params: { orderId } }),
+  release: id => api.post(`/measurements/${id}/release`),
+}
+
 export const voiceApi = {
-  transcribe: (audioDataUrl) => api.post('/voice/transcribe', { audioDataUrl }, { timeout: 30000 }),
+  // `terms`: names the speaker is likely to say (a client, a product, its colours, its steps), so they are heard right.
+  transcribe: (audioDataUrl, terms) => api.post('/voice/transcribe', { audioDataUrl, ...(terms?.length ? { terms } : {}) }, { timeout: 30000 }),
   speak: (text, languageCode) => api.post('/voice/speak', { text, languageCode }, { timeout: 30000 }),
 }
 
@@ -264,6 +288,29 @@ export const reviewApi = {
   reject: id => api.post(`/review/${id}/reject`, {}),
   // Authenticated image fetch as a Blob (an <img src> can't carry our auth).
   media: id => api.get(`/review/${id}/media`, { responseType: 'blob' }),
+}
+
+// Factory visits: a coordinator's check-in and check-out, and the admins' list of them.
+export const visitsApi = {
+  mine: () => api.get('/visits/mine'),
+  // Today's work at each of his factories: steps from the plan, open action items, yesterday's updates.
+  work: () => api.get('/visits/work'),
+  checkIn: (factoryId, point) => api.post('/visits/check-in', { factoryId, ...point }),
+  checkOut: (id, point) => api.post(`/visits/${id}/check-out`, point),
+  list: (params = {}) => api.get('/visits', { params }),
+}
+
+// Updates from the factory floor: a coordinator sends them, an account manager (any admin) acts on them.
+export const fieldUpdatesApi = {
+  send: data => api.post('/field-updates', data, { timeout: 90000 }),   // photos on mobile data take a while
+  mine: () => api.get('/field-updates/mine'),
+  list: (params = {}) => api.get('/field-updates', { params }),
+  count: () => api.get('/field-updates/count'),
+  move: (id, stageIndex) => api.post(`/field-updates/${id}/move`, { stageIndex }),
+  action: (id, applied) => api.post(`/field-updates/${id}/action`, applied ? { applied } : {}),
+  dismiss: id => api.post(`/field-updates/${id}/dismiss`),
+  reopen: id => api.post(`/field-updates/${id}/reopen`),
+  release: (id, photoIds) => api.post(`/field-updates/${id}/release`, { photoIds }),
 }
 
 export const floorApi = {

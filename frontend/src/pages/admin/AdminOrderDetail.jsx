@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, Fragment } from 'react'
+import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
 import { useNavState } from '../../navState.js'
 import Papa from 'papaparse'
 import { Paperclip, Image as ImageIcon, AlertTriangle, Pencil, ShieldAlert, ClipboardEdit, Package, MessageCircle, Check, Plus, FileText, FileSpreadsheet, ArrowLeftRight, ArrowLeft, X, Download, ChevronRight, ChevronUp, ChevronDown, Trash2, ArrowRight, ArrowUpRight, Folder, LayoutGrid, RefreshCw } from '../../icons.jsx'
@@ -21,6 +21,8 @@ import { useApp } from '../../context.jsx'
 import { normalizeCsvDate } from '../../csvDates.js'
 import { ReplenRequestModal } from '../../components/ReplenRequestModal.jsx'
 import { capsFor, canWriteStage, canSetAssignmentStatus, canManageStepLists } from '../../caps.js'
+import { CoordinatorOrderTop } from '../../components/CoordinatorOrderTop.jsx'
+import { t as coordT, langOf as coordLang } from '../../coordinatorText.js'
 import { ordersApi } from '../../api.js'
 import { EditOrderModal } from './EditOrderModal.jsx'
 import { DeleteOrderModal } from './DeleteOrderModal.jsx'
@@ -28,12 +30,14 @@ import { QuickStageModal } from './QuickStageModal.jsx'
 import { ownerForSplit, ownerCopyLabel } from '../../ownerCopy.js'
 import { ProductLinkEditor } from '../../components/ProductLinkEditor.jsx'
 import { SizeBreakupSection } from '../../components/SizeBreakup.jsx'
+import { BomSection } from '../../components/BomChecklist.jsx'
+import { MeasuredSection } from '../quality/MeasureSheet.jsx'
 
 
 // Bulk Edit row: step, start, end, responsible, target qty, description, evidence, NA / Undo.
 const BULK_EDIT_COLS = '170px 168px 168px 150px 78px minmax(120px, 1fr) 30px 64px'
 
-export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, onBack }) {
+export function AdminOrderDetail({ orderId, initialMid, initialStage = null, onInitialStageUsed, onOpenMo, onOpenOrder, onBack }) {
   const { currentUser, orders, masterOrders, docs, users, loading, updateAssignment, updateStage, uploadDoc, getDocData, refreshOrders, editOrder, deleteOrder,
     addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
     addStageItem, updateStageItem, removeStageItem, addAssignment, reassignAssignment, insertStage, moveStage, bulkUpdateStages, escalateOrder } = useApp()
@@ -99,7 +103,9 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
   // Update Stage modal — opened by clicking a stage row. The same
   // QuickStageModal component the Order Management page's matrix cells
   // open, so the two entry points can never drift out of sync.
-  const [quickStage, setQuickStage] = useState(null) // { mfrId, stageIndex } or null
+  // Opened from a Field Updates card: that step's own module is open on arrival, and its row is unfolded underneath.
+  const [quickStage, setQuickStage] = useState(() => (initialStage != null && initialMid ? { mfrId: initialMid, stageIndex: initialStage } : null)) // { mfrId, stageIndex } or null
+  useEffect(() => { if (initialStage != null) onInitialStageUsed?.() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Stage dates (start/end) adjustment modal
   const [showEta, setShowEta] = useState(false)
@@ -118,7 +124,9 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
   const [pendingRespChanges, setPendingRespChanges] = useState([]) // [{stageName, responsibleId}]
 
   // Per-stage updates thread + materials checklist (expand, in the stage grid)
-  const [expandedStage, setExpandedStage] = useState(null) // `${mfrId}:${stageIndex}` or null
+  // A coordinator sees only the simple top at first; the full page opens when he asks for it (it can overwhelm on the floor).
+  const [coordDetails, setCoordDetails] = useState(false)
+  const [expandedStage, setExpandedStage] = useState(initialStage != null && initialMid ? `${initialMid}:${initialStage}` : null) // `${mfrId}:${stageIndex}` or null
   const [updateDrafts, setUpdateDrafts] = useState({})
   const [materialDrafts, setMaterialDrafts] = useState({}) // keyed by `${mfrId}:${stageIndex}` -> new-line form
 
@@ -701,7 +709,7 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
 
   // Only a manufacturer marked live in Partners can be given a style (the server enforces it too).
   const mfrUsers = users.filter(u => u.role === 'manufacturer' && u.isActive && u.live)
-  const refDocLabels = { measurements: 'Measurements', tech_pack: 'Tech Pack', pattern: 'Patterns', lab_dip: 'Lab Dip Receipts', test_report: 'Test Reports (FPT/GPT)' }
+  const refDocLabels = { measurements: 'Measurements', bom: 'BOM (Bill of Materials)', tech_pack: 'Tech Pack', pattern: 'Patterns', lab_dip: 'Lab Dip Receipts', test_report: 'Test Reports (FPT/GPT)' }
 
   const uploadRefDoc = async (type) => {
     const file = refDocFiles[type]
@@ -746,7 +754,8 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
         preview: heroImgUrl ? <img src={heroImgUrl} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover' }} /> : null,
       },
       ...Object.keys(refDocLabels).filter(refDocNeeded).map(type => {
-        const typeDocs = orderDocs.filter(d => d.type === type)
+        // The style's own sheets first; a workbook recorded with the quality module (a measured garment) after them.
+        const typeDocs = orderDocs.filter(d => d.type === type).sort((a, b) => Number(!!a.measurementSessionId) - Number(!!b.measurementSessionId))
         const doc = typeDocs[0]
         const uploadProps = type === 'pattern' ? PATTERN_FILE_PROPS : type === 'measurements' ? MEASUREMENTS_FILE_PROPS : {}
         return {
@@ -814,6 +823,8 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* A coordinator on the factory floor gets the essentials first; the full page follows, read only. */}
+        {caps.isCoord && <CoordinatorOrderTop order={order} factoryId={effectiveMid || initialMid} onNextProduct={onBack} detailsOpen onToggleDetails={() => setCoordDetails(false)} />}
         {/* ── Page header: identity + actions ── */}
         <FlexRow style={{ flexWrap: 'wrap' }} gap={10}>
           <Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>Back</Btn>
@@ -965,6 +976,8 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
 
               {/* Pieces of each colour in each size, as the customer's order gives it. */}
               <SizeBreakupSection order={order} />
+              <BomSection order={order} />
+              <MeasuredSection order={order} factoryId={effectiveMid} />
 
               {(order.fabricDetails || []).length > 0 && (
                 <div style={{ marginTop: 16 }}>
@@ -1209,6 +1222,15 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
         finally { setPromoting(false) }
       }} />
   )
+
+  if (caps.isCoord && !coordDetails) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div><Btn variant="secondary" size="sm" onClick={onBack} icon={<ArrowLeft size={13} />}>{coordT('back', coordLang(currentUser))}</Btn></div>
+        <CoordinatorOrderTop order={order} factoryId={effectiveMid || initialMid} onNextProduct={onBack} detailsOpen={false} onToggleDetails={() => setCoordDetails(true)} />
+      </div>
+    )
+  }
 
   if ((order.assignments?.length || 0) === 0) {
     return (
@@ -1930,7 +1952,8 @@ export function AdminOrderDetail({ orderId, initialMid, onOpenMo, onOpenOrder, o
                                     {(s.updates || []).map((u, ui) => (
                                       <div key={ui} style={{ background: '#fff', borderRadius: 6, padding: '6px 10px', border: `1px solid ${T.border}` }}>
                                         <div style={{ fontSize: 11, color: T.text }}>{u.text}</div>
-                                        <div style={{ fontSize: 9, color: T.textLight, marginTop: 2 }}>{u.byUserName || 'Someone'} · {fmtDate(u.at)}</div>
+                                        <div style={{ fontSize: 9, color: T.textLight, marginTop: 2 }}>{u.byUserName || 'Someone'} · {fmtDate(u.at)}{u.fromFloor ? ' · from the factory floor' : ''}{u.aiRead ? ' · read by AI' : ''}{u.internal ? ' · not shown to the customer yet' : ''}</div>
+{u.aiRead && u.original && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 3, fontStyle: 'italic' }}>His words: {u.original}</div>}
                                       </div>
                                     ))}
                                   </div>

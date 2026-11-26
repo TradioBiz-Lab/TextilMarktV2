@@ -9,7 +9,7 @@
 
 | Collection     | Purpose                                                | ID Type          |
 |-----------------|--------------------------------------------------------|------------------|
-| `users`         | All portal users (admin / buyer / manufacturer)        | ObjectId         |
+| `users`         | All portal users (admin / buyer / manufacturer / coordinator) | ObjectId   |
 | `orders`        | Purchase orders with embedded assignment + stage data  | String (custom)  |
 | `masterorders`  | Groups of related orders for the same buyer/season     | String (custom)  |
 | `documents`     | Files / certs / stage-evidence linked to orders or MFRs| ObjectId         |
@@ -21,6 +21,8 @@
 | `manufacturers` | Partner Directory: Tradio's internal sourcing CRM of manufacturers and suppliers (admin only) | ObjectId |
 | `stylerequests` | A customer's request to add styles (a sheet, or a replen) waiting for a master admin to approve or decline | ObjectId |
 | `styleimportuploads` | A sheet of styles (Excel or CSV) waiting to be previewed and created; removed after an hour | String (`imp_` + 16 hex) |
+| `factoryvisits` | An Ops & QC coordinator's check-in and check-out at a factory, with where the phone was | ObjectId |
+| `fieldupdates`  | A coordinator's update on a step from the factory floor (words, photos, a voice note), for an admin to act on | ObjectId |
 
 ---
 
@@ -33,7 +35,9 @@ Stores every portal account across all three roles.
   _id          ObjectId          auto
   email        String            unique, lowercase, required
   passwordHash String            bcrypt hash, required
-  role         String            enum: ["admin", "buyer", "manufacturer"]
+  role         String            enum: ["admin", "buyer", "manufacturer", "coordinator"]
+  assignedFactories [ObjectId]   coordinator only: the manufacturer accounts (users) he may check in at and whose styles he sees.
+                                 Absent on every other role. Set by a master admin in User Setup
   adminType    String | null     enum: ["master", "user"] — only for role=admin
   company      String            required
   name         String            required
@@ -61,8 +65,14 @@ Stores every portal account across all three roles.
 **Rules:**
 - `adminType` must be `null` for `buyer` and `manufacturer` roles
 - Master admin (`adminType: "master"`) cannot be deactivated
-- `code` is always `"TRD"` for admin users; for buyers/manufacturers it must be unique
-  (used to build order IDs)
+- `code` is always `"TRD"` for admin and coordinator users (Tradio's own people); for buyers/manufacturers it must
+  be unique (used to build order IDs)
+- **A coordinator (Ops & QC) is fail-closed.** `requireAuth` refuses every request that is not on the list in
+  `backend/src/lib/coordinator.js` (reads included), because most routes let an unknown role through as if it were
+  an admin. He checks in and out at his allocated factories, reads the styles made there (never commercial papers,
+  never another factory's split) and sends updates from the floor. His sign-in lasts 30 days and renews when the app
+  opens; it ends at once when the account is switched off or its password reset. `language` (`hi` / `en`) is the
+  language of his screens
 
 ---
 
@@ -306,6 +316,66 @@ back `undefined`. `enrichOrder()` is the single serialization point and resolves
 Consequence: **a new stage field that isn't added to `enrichOrder` is invisible to the
 frontend.**
 
+### Collection: `measurementsessions` (the quality module)
+
+One garment measured against the style's measurement sheet (`routes/measurements.js`, `lib/measurementSheet.js`).
+
+```
+{
+  orderId: String → orders, mfrId: ObjectId → users (the factory), by: ObjectId → users, byName, byRole
+  status: "draft" | "final"
+  stage: "fit" | "pp" | "inline" | "final", size: String
+  sourceDocumentId: ObjectId → documents (the style's sheet: its Locked Measurement, else the newest), sourceTab: String
+  method: "voice" | "photo" | "typed", transcript: String
+  points: [{ name, spec (number or text), tol, measured, diff, ok (null = not judged) }]
+  measuredCount, outOfTolerance: Number
+  resultDocumentId: ObjectId → documents, releasedAt, releasedBy, at
+}
+```
+
+- A `draft` is a garment still being measured: the page saves it as he goes (`POST /api/measurements/draft`), there is
+  one per style, factory, stage and size (a partial unique index), anyone who may record there resumes it on any
+  device, it has no workbook, and sending no values deletes it. Finishing (`POST /api/measurements`) turns the same
+  record `final`. A final session is never deleted. The customer never sees a draft.
+- Values get in three ways: spoken (`POST /api/measurements/read`, a transcript read by AI), a photo of his
+  handwritten paper (`POST /api/measurements/read-photo`, up to three photos read by AI; the photo is not kept), or
+  typed. Both readers only fill the page for him to check; nothing is saved until the page saves.
+- The sheet is read from the workbook each time (tabs, sizes, points, tolerance); nothing about it is stored.
+- Saving makes the workbook for that step only: ONE tab, the tab measured against, in the sheet's own format (headings,
+  every size, comments, pictures), named for the step (`FIT`, `PP`, `INLINE QC`, `FINAL QC`) with its "SAMPLE STAGE"
+  heading saying the step. The sheet's own review column gets "ok" or the difference, a "<SIZE> MEASURED" column holds
+  the value (a free column of the table; a column cannot be inserted because the size cells are linked formulas), cells
+  outside tolerance are red, and review notes from an earlier review are cleared. Another size measured at the same
+  step, factory and tab is added to that step's last workbook; a different step always starts from the sheet.
+- The copy is a `measurements` Document with `measurementSessionId`, label `fit_approval` / `pp_approval` / `inline_qc` / `final_qc`,
+  `internal: true` until an admin releases the session (`POST /api/measurements/:id/release`). It is never the spec.
+- Who records: an admin, a factory on its own split, a coordinator at an allocated factory (no check-in needed).
+
+### Embedded: `bom` (the bill of materials checklist)
+
+```
+bom: null | {
+  items: [{
+    id: String            short random id, kept across edits
+    section, name, description, perPiece, forOrder: String   (no prices)
+    hasImage: Boolean     its picture is in `bomimages` (orderId + itemId)
+    checks: [{ mfrId: ObjectId → users, by: ObjectId → users, byName: String, at: Date }]   one per factory
+    evidence: [{ mfrId, docId: ObjectId → documents, by, byName, at }]   an optional photo, one per factory
+  }],
+  updatedBy: ObjectId → users, updatedAt: Date
+}
+```
+
+- Tradio writes the list (`POST /api/orders/:id/bom`); an item that keeps its `id` keeps its ticks and picture.
+- A tick means "seen at this factory" (`POST /api/orders/:id/bom/:itemId/check { mfrId, checked }`): a coordinator at one
+  of his factories while checked in there (409 `CHECK_IN_FIRST` otherwise), or an admin. One tick per item per factory.
+- An optional photo of the item at the factory (`POST /api/orders/:id/bom/:itemId/evidence { mfrId, photo }`, same people
+  and rule as a tick; `photo: null` removes it): a Document of type `bom_evidence` with `bomItemId`, `internal: true`, kept
+  in the file store like the other floor photos. A new photo replaces the last; adding one also ticks the item.
+- Everyone on the style reads the items. A factory or coordinator is sent only its own factories' ticks; a customer none.
+- Collection `bomimages`: `{ orderId: String, itemId: String, dataUrl: String }`, unique on the pair, read together by
+  `GET /api/orders/:id/bom/images`. Kept out of the order so the list of styles stays light.
+
 ### Embedded: `stages[].updates`
 
 ```
@@ -315,6 +385,12 @@ frontend.**
   at:     Date      default: now
 }
 ```
+
+A coordinator's update from the factory floor (section 16) adds an entry with two more fields: `fieldUpdateId`
+(ObjectId, ref `fieldupdates`) and `internal` (Boolean). While `internal` is true the entry is not sent to a customer
+(`enrichOrder` drops it for a buyer); an admin's release clears it. The API marks such entries `fromFloor: true`.
+Once the AI has read the update, `text` becomes its plain English reading, `aiRead` is true and `original` keeps his
+own words (sent to Tradio and the factory, never to a customer). With no reading the entry stays as he sent it.
 
 ### Embedded: `stages[].materials`
 
@@ -498,6 +574,8 @@ set the sheet cannot be replaced, relabelled or deleted by anyone. A replaced fi
   factory never lists, opens or uploads them
 - Certifications: `compliance_cert`, `factory_audit`, `chemical_cert`,
   `environmental_cert`, `insurance`
+- Style reference: `measurements`, `bom` (bill of materials: fabric, trims, labels, packing; no prices, so a factory
+  and a coordinator read it), `pattern`, `lab_dip`, `test_report`
 - Manufacturer profile: `mfr_profile`
 - Stage evidence: `material_po`, `knitting_grn`, `knitting_qc`, `dyeing_grn`, `dyeing_qc`,
   `processing_grn`, `processing_qc`, `cutting_qc`, `stitching_qc`, `final_qc`, `packing_qc`,
@@ -521,6 +599,16 @@ The frontend offers evidence types per stage from `STAGE_DOC_TYPES` in `frontend
 | Admin        | All active documents                                                    |
 | Buyer        | Docs for their orders and master orders + certs of manufacturers assigned to those orders|
 | Manufacturer | Their own certs + docs for orders they are assigned to                 |
+
+**A coordinator's files (section 16).** Four more fields, absent or false on every other document:
+`fieldUpdateId` (ObjectId, ref `fieldupdates`), `internal` (Boolean: kept from the customer until an admin releases the
+update), `tradioOnly` (Boolean: the voice recording, kept from the factory and the customer for good) and
+`storage: { driver, bucket, key }` (set when the file's bytes are kept outside the database by `lib/fileStore.js`;
+`dataUrl` is then null and `GET /api/documents/:id/data` fetches the bytes after its usual access checks). Only
+`routes/fieldUpdates.js` writes through the file store; `FILE_STORE` names the driver and defaults to `mongo` (the
+database, as before); `stratus` with `STRATUS_BUCKET` keeps them in Zoho Catalyst's file storage (docs/RUNBOOK.md
+section 9). A coordinator reads the documents of the styles at his factories like a factory does: nothing in
+`HIDDEN_FROM_FACTORIES`, nothing of another factory.
 
 ---
 
@@ -854,6 +942,12 @@ existing ones by filling blanks and adding contacts, keywords and brands without
 entries off the active list with an audit entry, and appends new partners to `reports/partners_needing_images.md`), `uploadPartnerTiles.mjs` (attaches a folder of generated tiles, named as that report asks, shrinking each to 640px with macOS `sips`), `syncPlatformManufacturers.mjs` (a record for every active manufacturer-role
 user, idempotent on `linkedUserId`), `setPartnerBrands.mjs` (fills brands from the Cocoblu vendor file and the platform manufacturers' customers), `partnersImageReport.mjs` (`--all` lists every active partner, to redo the tiles), `uploadPartnerTiles.mjs --replace` swaps tiles already attached.
 
+**Location.** `geo: { lat, lng, mapsUrl, setBy, setAt }`: where the unit is, read from a pasted full Google Maps link
+or "lat, lng" (`lib/geo.js` `parseMapsLocation`; a short `maps.app.goo.gl` link is refused, and the server never
+fetches a pasted link). `mapsUrl` is always built from the coordinates. The API takes it as `mapsLocation` on create
+and update (an empty value clears it) and returns `geo` or null. A coordinator's check-in is measured against it
+(section 15). A new manufacturer account can be given one in User Setup.
+
 ---
 
 ## 13. `styleimportuploads` (sheets of styles to import)
@@ -909,6 +1003,81 @@ decidedBy, decidedAt, decisionNote (max 300, shown to the customer), createdOrde
 The sheet is read again at approval (a style that has appeared since is skipped; if nothing is left, the request stays in
 the queue), and the sheet bytes are dropped once the request is decided. A customer can cancel its own waiting request.
 Customers and master admins are notified at each step.
+
+---
+
+## 15. `factoryvisits` (a coordinator's visits to factories)
+
+One document per visit. Written only by `routes/visits.js`. Never deleted.
+
+```
+{
+  _id            ObjectId
+  coordinatorId  ObjectId  ref users (role coordinator)
+  factoryId      ObjectId  ref users (role manufacturer); must be one of his assignedFactories at check-in
+  checkIn        { at, deviceAt, lat, lng, accuracy, distanceM }   required
+  checkOut       same shape | null
+  closedBy       "coordinator" | "auto" | null     null = still open
+  createdAt, updatedAt
+}
+```
+
+- `at` is the server's clock (the trusted time); `deviceAt` is what the phone said. `lat` / `lng` are required: a tap
+  with no location is refused (`LOCATION_REQUIRED`). `accuracy` is the phone's own estimate in metres.
+- `distanceM` is the distance from the factory's pin (`manufacturers.geo`), null when the factory has none. A point
+  further than 300 m plus its accuracy is "away from factory". A check-in from away is refused (403 `NOT_AT_FACTORY`,
+  audit `Factory Check In Refused`) and no visit is made; a check-out is taken from anywhere and shown to admins as away.
+  A factory with no pin cannot be measured against, so its check-in is let through.
+- One open visit per coordinator (a partial unique index on `coordinatorId` where `closedBy` is null).
+- A visit still open after midnight in India is closed with `closedBy: "auto"` and no `checkOut`: no time is invented.
+
+**Indexes:** `{ coordinatorId: 1, 'checkIn.at': -1 }`, `{ factoryId: 1, 'checkIn.at': -1 }`, `one_open_visit`.
+
+---
+
+## 16. `fieldupdates` (updates from the factory floor)
+
+What a coordinator reports on one step of one style while checked in at its factory. Written by
+`routes/fieldUpdates.js`. It never changes the plan: an admin reads it on the Field Updates page and changes the step
+through the ordinary stage routes. Never deleted.
+
+```
+{
+  _id            ObjectId
+  coordinatorId  ObjectId  ref users
+  visitId        ObjectId  ref factoryvisits (the visit he was on)
+  factoryId      ObjectId  ref users (the split's manufacturer)
+  orderId        String    ref orders
+  buyerId        ObjectId  ref users (the style's customer, for filters and the release notice)
+  stageIndex     Number    the step, by position in that split's plan
+  stageName      String    its name when sent (or after a move)
+  movedFromStageIndex Number | null   the step he first picked, when an admin moved the update
+  text           String    max 2000; typed, or written from what he said
+  viaVoice       Boolean   the text began as speech
+  language       String | null
+  at, deviceAt   Date      server time, phone time
+  lat, lng, accuracy  Number | null   where the phone was, when it would say (not required)
+  ai             { state: "off" | "pending" | "done" | "failed", summary, suggestedStageIndex, units,
+                   statusHint: "started" | "finished" | null, result: "pass" | "fail" | null,
+                   issues: [String], colours: [{ name, note }], confidence, at }
+  state          "new" | "actioned" | "dismissed"
+  actionedBy, actionedAt, applied: [String]     what the admin confirmed, in words
+  releasedAt, releasedBy                        set when an admin shows it to the customer
+  createdAt, updatedAt
+}
+```
+
+- Its photos and voice note are `documents` (type `floor_evidence`, the step's `stageIndex`, `mfrId` the split) with
+  `fieldUpdateId` set and `internal: true`. His words are also pushed onto the step's `updates[]` with `fieldUpdateId`
+  and `internal: true`.
+- **Who sees it.** Tradio, and the factory it is about (its own split, as for any step evidence). The customer sees
+  nothing until an admin releases it (`POST /api/field-updates/:id/release`), which clears `internal` on the note and
+  on the photos the admin picked, and only then notifies the customer. The voice recording is `tradioOnly`: never the
+  factory's, never the customer's.
+- `ai` holds suggestions only. With no `ANTHROPIC_API_KEY` the state is `off` and the update is whole without them.
+- He must have an open visit at that factory to send one (`CHECK_IN_FIRST`).
+
+**Indexes:** `{ state: 1, createdAt: -1 }`, `{ orderId: 1, createdAt: -1 }`, `{ coordinatorId: 1, createdAt: -1 }`.
 
 ---
 

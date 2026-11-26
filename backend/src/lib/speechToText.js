@@ -1,4 +1,4 @@
-// Turning speech into text, for Kriyaa's microphone. Two services can do it:
+// Turning speech into text, for Kriyaa's microphone and a coordinator's spoken update. Two services can do it:
 // ElevenLabs (Scribe) and Sarvam. Whichever has its key on this server is used; with both, ElevenLabs is, unless
 // VOICE_STT names the other. With neither, voice is off and the route says so.
 //
