@@ -1,5 +1,10 @@
 // The quality module on the page: choosing the tab and size to measure, the words given to the transcriber, and what a
 // measured value means against the sheet. Pure: no React, no network. The server works every difference out again.
+// Reading a photo of a handwritten sheet is built but switched OFF (Ankit, 26 Nov 2026): the paper is what this module
+// exists to remove, so offering a way to keep writing on it works against that. Set to true to show the button again;
+// the server route (POST /api/measurements/read-photo) is still there.
+export const PHOTO_OF_SHEET = false
+
 // The four steps a garment is measured at: fit sample, PP sample, inline QC and final QC.
 export const STAGES = ['fit', 'pp', 'inline', 'final']
 

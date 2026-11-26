@@ -8,7 +8,7 @@ import { measurementsApi, voiceApi } from '../../api.js'
 import { useVoiceRecorder } from '../../useVoiceRecorder.js'
 import { blobToDataUrl, Btn, FlexRow, useToast } from '../../components/ui.jsx'
 import { shrinkImage } from '../../capture.js'
-import { STAGES, tabForStage, defaultSize, keyTerms, parseTyped, judge, mergeRead, summary, pointsPayload, show, valuesOf, draftFor, lastDoneFor, latestDraft, localKey, readLocal, writeLocal, clearLocal, resumeFrom } from '../../measure.js'
+import { PHOTO_OF_SHEET, STAGES, tabForStage, defaultSize, keyTerms, parseTyped, judge, mergeRead, summary, pointsPayload, show, valuesOf, draftFor, lastDoneFor, latestDraft, localKey, readLocal, writeLocal, clearLocal, resumeFrom } from '../../measure.js'
 
 const MAX_RECORD_MS = 3 * 60 * 1000
 const chipBtn = on => ({ minHeight: 44, padding: '8px 14px', borderRadius: 12, border: `2px solid ${on ? T.info : T.border}`, background: on ? T.infoBg : '#fff', color: on ? T.info : T.text, fontSize: 15, fontWeight: on ? 600 : 500, cursor: 'pointer', fontFamily: 'inherit' })
@@ -250,7 +250,7 @@ export function MeasureSheet({ order, factoryId = null, start = null, onClose, o
             {recording ? <Square size={20} /> : <Mic size={22} />} {busy === 'reading' ? t('measure_reading', lang) : recording ? t('measure_stop', lang) : t(sum.filled ? 'measure_record_more' : 'measure_record', lang)}
           </button>
           <div style={{ fontSize: 13.5, color: recording ? T.dangerDeep : T.textMuted, lineHeight: 1.45 }}>{recording ? t('measure_listening', lang) : t('measure_hint', lang)}</div>
-          {!recording && (
+          {PHOTO_OF_SHEET && !recording && (
             <>
               <label aria-disabled={!!busy} style={{ minHeight: 52, borderRadius: 14, border: `2px solid ${T.info}`, background: '#fff', color: T.info, fontSize: 16, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}>
                 <Camera size={20} /> {busy === 'photo' ? t('measure_photo_reading', lang) : t('measure_photo', lang)}
