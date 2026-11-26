@@ -136,7 +136,10 @@ export function MeasureSheet({ order, factoryId = null, onClose, onSaved }) {
 
   return shell(
     <>
-      <div style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* The scrolling area holds one plain block: as a flex column itself it squeezed the points list (which clips its
+          corners) down to the space left over, hiding most of the points, instead of letting the page scroll. */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div>
           <div style={label}>{t('measure_stage', lang)}</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{STAGES.map(s => <button key={s} type="button" onClick={() => pickStage(s)} style={chipBtn(stage === s)}>{t(`measure_stage_${s}`, lang)}</button>)}</div>
@@ -192,7 +195,8 @@ export function MeasureSheet({ order, factoryId = null, onClose, onSaved }) {
           })}
         </div>
       </div>
-      <div style={{ padding: 12, background: '#fff', borderTop: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      </div>
+      <div style={{ padding: 12, background: '#fff', borderTop: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 14, fontWeight: 500, color: T.text }}>
           <span>{t('measure_filled', lang, { filled: sum.filled, total: sum.total })}</span>
           {sum.filled > 0 && <span style={{ color: sum.out ? T.dangerDeep : '#166534', fontWeight: 600 }}>{sum.out ? t('measure_out', lang, { n: sum.out }) : t('measure_all_ok', lang)}</span>}
