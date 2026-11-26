@@ -126,8 +126,7 @@ describe('saving a measured garment', () => {
     const inline = await as(a).post('/api/measurements', body({ stage: 'inline', size: 'L', points: [{ index: 1, measured: 45 }] }))
     assert.deepEqual([inline.status, inline.body.wroteTab, inline.body.session.stageName], [201, 'INLINE QC L', 'Inline QC'])
     assert.equal((await Document.findById(inline.body.documentId).lean()).measurementLabel, 'inline_qc')
-    const prod = await as(a).post('/api/measurements', body({ stage: 'production', points: [{ index: 0, measured: 18 }] }))
-    assert.deepEqual([prod.status, prod.body.wroteTab, prod.body.session.stageName, (await Document.findById(prod.body.documentId).lean()).measurementLabel], [201, 'PRODUCTION M', 'Production', 'production'])
+    assert.equal((await as(a).post('/api/measurements', body({ stage: 'production', points: [{ index: 0, measured: 18 }] }))).status, 400, 'production is not a step: fit, PP, inline and final QC only')
     assert.equal((await as(a).get('/api/measurements/spec?orderId=S-1')).body.document.id, String(src._id), 'a recorded copy never becomes the spec')
   })
 

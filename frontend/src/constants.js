@@ -472,8 +472,8 @@ export const deliveryStatus = (order, asgn) => {
  * from before the field are production. Development and Replen behave the same: no delivery date or Delivery step yet.
  */
 // What a measurement sheet is, in the fit process. Every measurement upload carries one; a master admin locks one per style.
-// 'production', 'inline_qc' and 'final_qc' are garments measured from bulk, on the line and at final inspection with the quality module.
-export const MEASUREMENT_LABELS = [['customer_submission', 'Customer Submission'], ['fit_approval', 'Fit Approval'], ['pp_approval', 'PP Approval'], ['production', 'Production'], ['inline_qc', 'Inline QC'], ['final_qc', 'Final QC']]
+// 'inline_qc' and 'final_qc' are production garments measured on the line and at final inspection with the quality module.
+export const MEASUREMENT_LABELS = [['customer_submission', 'Customer Submission'], ['fit_approval', 'Fit Approval'], ['pp_approval', 'PP Approval'], ['inline_qc', 'Inline QC'], ['final_qc', 'Final QC']]
 export const MEASUREMENT_LABEL_NAME = Object.fromEntries(MEASUREMENT_LABELS)
 
 export const PHASES = [['production', 'Production'], ['development', 'New Product Development'], ['replen', 'Replen']]

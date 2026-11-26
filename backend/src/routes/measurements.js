@@ -18,7 +18,7 @@ const router = Router()
 router.use(requireAuth)
 
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-const LABEL_OF = { fit: 'fit_approval', pp: 'pp_approval', production: 'production', inline: 'inline_qc', final: 'final_qc' }
+const LABEL_OF = { fit: 'fit_approval', pp: 'pp_approval', inline: 'inline_qc', final: 'final_qc' }
 const serverError = (res, err) => { console.error('[measurements]', err); res.status(500).json({ error: 'Server error' }) }
 const isId = v => typeof v === 'string' && mongoose.Types.ObjectId.isValid(v)
 const limiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 120, keyGenerator: req => req.user?.id || req.ip, message: { error: 'Too many requests. Please wait a little.' }, standardHeaders: true, legacyHeaders: false, validate: false, skip: () => process.env.NODE_ENV === 'test' })
@@ -113,7 +113,7 @@ router.post('/read', limiter, async (req, res) => {
 async function measuredFrom(req) {
   const { orderId, mfrId, stage, tab } = req.body || {}
   const S = String(req.body?.size || '').toUpperCase()
-  if (!MEASURE_STAGES.includes(stage)) return { status: 400, error: 'Choose the stage: fit sample, PP sample, production, inline QC or final QC' }
+  if (!MEASURE_STAGES.includes(stage)) return { status: 400, error: 'Choose the stage: fit sample, PP sample, inline QC or final QC' }
   if (!isId(mfrId)) return { status: 400, error: 'Choose the factory' }
   if (!Array.isArray(req.body?.points)) return { status: 400, error: 'Send the measurements' }
   const order = await Order.findById(String(orderId || ''), 'buyerId product styleNumber assignments.mfrId').lean()

@@ -22,7 +22,7 @@ const measurementSessionSchema = new mongoose.Schema({
   byName: { type: String, default: '' },
   byRole: { type: String, default: '' },
   status: { type: String, enum: ['draft', 'final'], default: 'final' },
-  stage: { type: String, enum: ['fit', 'pp', 'production', 'inline', 'final'], required: true },
+  stage: { type: String, enum: ['fit', 'pp', 'inline', 'final'], required: true },
   size: { type: String, required: true },
   sourceDocumentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Document', required: true },
   sourceTab: { type: String, required: true },
