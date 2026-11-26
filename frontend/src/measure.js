@@ -1,6 +1,6 @@
 // The quality module on the page: choosing the tab and size to measure, the words given to the transcriber, and what a
 // measured value means against the sheet. Pure: no React, no network. The server works every difference out again.
-export const STAGES = ['fit', 'pp', 'final']
+export const STAGES = ['fit', 'pp', 'production', 'inline', 'final']
 
 /** The tab to measure against for a stage: the sheet's own tab for it, else the first (Final QC has none of its own). */
 export const tabForStage = (tabs, stage) => (tabs || []).find(t => t.stage === stage) || (tabs || [])[0] || null

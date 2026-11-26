@@ -24,9 +24,10 @@ const DOC_TYPES = [
 
 // Where a measurement sheet stands in the fit process. Every measurement upload carries one; the one a master admin locks
 // is the style's Locked Measurement.
-// 'final_qc' is a garment measured at final inspection (routes/measurements.js).
-export const MEASUREMENT_LABELS = ['customer_submission', 'fit_approval', 'pp_approval', 'final_qc']
-export const MEASUREMENT_LABEL_NAMES = { customer_submission: 'Customer Submission', fit_approval: 'Fit Approval', pp_approval: 'PP Approval', final_qc: 'Final QC' }
+// 'production', 'inline_qc' and 'final_qc' are garments measured from bulk, on the line and at final inspection
+// (routes/measurements.js).
+export const MEASUREMENT_LABELS = ['customer_submission', 'fit_approval', 'pp_approval', 'production', 'inline_qc', 'final_qc']
+export const MEASUREMENT_LABEL_NAMES = { customer_submission: 'Customer Submission', fit_approval: 'Fit Approval', pp_approval: 'PP Approval', production: 'Production', inline_qc: 'Inline QC', final_qc: 'Final QC' }
 
 const documentSchema = new mongoose.Schema({
   type:       { type: String, required: true, enum: DOC_TYPES },

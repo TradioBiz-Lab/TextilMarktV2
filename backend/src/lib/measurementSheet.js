@@ -9,8 +9,10 @@ import ExcelJS from 'exceljs'
 // difference, 20 to 30 point rows, then comments. Size cells are linked formulas, so a column cannot be inserted in the
 // middle (exceljs refuses); measured values go in the first free column of the table instead. The simpler demo layout
 // (Code | Measurement point | Tol (cm) | sizes) reads the same way.
-export const MEASURE_STAGES = ['fit', 'pp', 'final']
-export const STAGE_NAMES = { fit: 'Fit sample', pp: 'PP sample', final: 'Final QC' }
+// 'production' is a garment from bulk production and 'inline' one taken off the line while it runs; like Final QC the
+// real sheets have no tab for either.
+export const MEASURE_STAGES = ['fit', 'pp', 'production', 'inline', 'final']
+export const STAGE_NAMES = { fit: 'Fit sample', pp: 'PP sample', production: 'Production', inline: 'Inline QC', final: 'Final QC' }
 export const UNREADABLE = 'This measurement sheet could not be read. It needs a table with a "Measurement points" column, a tolerance column and one column per size.'
 
 const SIZE_RE = /^(xxs|xs|s|m|l|xl|xxl|xxxl|[2-6]xl|[2-6]x|\d{2})$/i
