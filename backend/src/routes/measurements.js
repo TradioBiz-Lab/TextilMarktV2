@@ -8,7 +8,7 @@ import { saveFile, loadFile, fromDataUrl, fileStoreProblem } from '../lib/fileSt
 import { notify, adminIds } from '../lib/notify.js'
 import { dayIST } from '../lib/geo.js'
 import { extractMeasurements } from '../lib/ai/extract.js'
-import { readMeasurementWorkbook, writeMeasuredWorkbook, judge, MEASURE_STAGES, STAGE_NAMES } from '../lib/measurementSheet.js'
+import { readMeasurementWorkbook, writeMeasuredWorkbook, judge, MEASURE_STAGES, STAGE_NAMES, STAGE_TAB } from '../lib/measurementSheet.js'
 
 // The quality module: a garment measured against the style's own measurement sheet. The person picks the stage and the
 // size, reads the measurements aloud or types them, and gets a copy of the sheet with the values filled in. Tradio, the
@@ -172,13 +172,14 @@ router.post('/', limiter, async (req, res) => {
     if (problem) { console.error('[measurements]', problem); return res.status(503).json({ error: 'The sheet cannot be saved right now. Tell Tradio.' }) }
 
     const now = new Date()
-    // The copy builds on the last one made for this style, so one workbook gathers every size and stage measured so far.
-    const last = await MeasurementSession.findOne({ orderId: order._id, sourceDocumentId: spec.doc._id, resultDocumentId: { $ne: null } }).sort({ at: -1 }).lean()
-    const base = (last && await bytesOf(last.resultDocumentId, req)) || spec.buffer
-    const made = await writeMeasuredWorkbook(base, {
-      tab: t.name, size: S, stage, points, intoTab: t.stage === stage, who: req.user.name, styleName: order.product,
-      when: now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }),
-    })
+    // The workbook holds this step only, in the sheet's own format. Another size measured at the same step is added to
+    // that step's last workbook (same sheet, same tab, same factory); a different step always starts from the sheet.
+    const last = await MeasurementSession.findOne({ orderId: order._id, mfrId, stage, sourceDocumentId: spec.doc._id, sourceTab: t.name, status: { $ne: 'draft' }, resultDocumentId: { $ne: null } }).sort({ at: -1 }).lean()
+    const earlier = last ? await bytesOf(last.resultDocumentId, req) : null
+    const meta = { size: S, stage, points, who: req.user.name, styleName: order.product, when: now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }) }
+    let made = earlier ? await writeMeasuredWorkbook(earlier, { ...meta, tab: STAGE_TAB[stage], fresh: false }) : null
+    // An earlier record that cannot take another size (it fell back to a plain table) is not built on.
+    if (!made || made.plain) made = await writeMeasuredWorkbook(spec.buffer, { ...meta, tab: t.name, fresh: true })
     // An unfinished session for this garment becomes the finished one: same record, so its start time is kept.
     const draft = await MeasurementSession.findOne({ ...m.key, status: 'draft' }, '_id').lean()
     const sessionId = draft?._id || new mongoose.Types.ObjectId(); const docId = new mongoose.Types.ObjectId()

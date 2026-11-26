@@ -3,8 +3,13 @@
 // The four steps a garment is measured at: fit sample, PP sample, inline QC and final QC.
 export const STAGES = ['fit', 'pp', 'inline', 'final']
 
-/** The tab to measure against for a stage: the sheet's own tab for it, else the first (Final QC has none of its own). */
-export const tabForStage = (tabs, stage) => (tabs || []).find(t => t.stage === stage) || (tabs || [])[0] || null
+/**
+ * The tab to measure against for a stage: the sheet's own tab for it. Inline QC and Final QC have none of their own:
+ * production is made to the PP sheet, so they use the PP tab, else the last tab (the latest spec).
+ */
+export const tabForStage = (tabs, stage) => (tabs || []).find(t => t.stage === stage)
+  || ((stage === 'inline' || stage === 'final') && (tabs || []).find(t => t.stage === 'pp'))
+  || (stage === 'inline' || stage === 'final' ? (tabs || [])[(tabs || []).length - 1] : (tabs || [])[0]) || null
 
 /** The size to start on: the one the sheet was reviewed in, else the middle of the range. */
 export const defaultSize = tab => (tab ? tab.sampleSize || tab.sizes[Math.floor((tab.sizes.length - 1) / 2)] || '' : '')

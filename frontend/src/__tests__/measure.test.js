@@ -12,7 +12,8 @@ describe('measuring a garment against the sheet', () => {
   test('the tab for a stage is the sheet\'s own, else the first; the size starts on the sample size', () => {
     const fit = { name: 'FIT', stage: 'fit', sizes: ['XS', 'S', 'M', 'L', 'XL'], sampleSize: null, points: [] }
     expect(tabForStage([fit, tab], 'pp').name).toBe('PP')
-    expect(tabForStage([fit, tab], 'final').name).toBe('FIT')
+    expect([tabForStage([fit, tab], 'final').name, tabForStage([fit, tab], 'inline').name]).toEqual(['PP', 'PP'])
+    expect([tabForStage([fit], 'final').name, tabForStage([tab], 'fit').name]).toEqual(['FIT', 'PP'])
     expect(tabForStage([], 'pp')).toBe(null)
     expect([defaultSize(tab), defaultSize(fit), defaultSize(null)]).toEqual(['M', 'M', ''])
   })

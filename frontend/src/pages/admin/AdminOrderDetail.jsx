@@ -754,7 +754,8 @@ export function AdminOrderDetail({ orderId, initialMid, initialStage = null, onI
         preview: heroImgUrl ? <img src={heroImgUrl} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover' }} /> : null,
       },
       ...Object.keys(refDocLabels).filter(refDocNeeded).map(type => {
-        const typeDocs = orderDocs.filter(d => d.type === type)
+        // The style's own sheets first; a workbook recorded with the quality module (a measured garment) after them.
+        const typeDocs = orderDocs.filter(d => d.type === type).sort((a, b) => Number(!!a.measurementSessionId) - Number(!!b.measurementSessionId))
         const doc = typeDocs[0]
         const uploadProps = type === 'pattern' ? PATTERN_FILE_PROPS : type === 'measurements' ? MEASUREMENTS_FILE_PROPS : {}
         return {

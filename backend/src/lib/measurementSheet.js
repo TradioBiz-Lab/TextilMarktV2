@@ -174,12 +174,13 @@ function writeColumn(ws, layout, col, header, valueOf, like) {
   }
 }
 
-// A tab of its own, plain: used for a stage the workbook has no tab for (Final QC), or when the tab has no free column.
-function writeNewTab(wb, { stage, size, points, who, when, styleName }) {
-  const taken = new Set(wb.worksheets.map(w => w.name.toUpperCase()))
-  const base = `${(STAGE_NAMES[stage] || 'Measured').toUpperCase()} ${size}`.replace(/[\\/?*[\]:]/g, ' ').slice(0, 27)
-  let name = base; for (let n = 2; taken.has(name.toUpperCase()); n++) name = `${base} ${n}`
-  const ws = wb.addWorksheet(name)
+// The name of the one tab a recorded workbook holds, and what its "SAMPLE STAGE" heading says, for each step.
+export const STAGE_TAB = { fit: 'FIT', pp: 'PP', inline: 'INLINE QC', final: 'FINAL QC' }
+const STAGE_HEADING = { fit: 'FIT SAMPLE', pp: 'PP SAMPLE', inline: 'INLINE QC', final: 'FINAL QC' }
+
+// A plain table of its own: only for a sheet whose table has no free column for the measured values.
+function writePlainTab(wb, { stage, size, points, who, when, styleName }) {
+  const ws = wb.addWorksheet(STAGE_TAB[stage] || 'MEASURED')
   ws.columns = [{ width: 44 }, { width: 13 }, { width: 13 }, { width: 13 }, { width: 13 }]
   ws.addRow([styleName || 'Measurement record']).font = { bold: true, size: 14 }
   ws.addRow([`${STAGE_NAMES[stage] || stage} · size ${size}${who ? ` · measured by ${who}` : ''}${when ? ` · ${when}` : ''}`])
@@ -190,41 +191,70 @@ function writeNewTab(wb, { stage, size, points, who, when, styleName }) {
     const row = ws.addRow([p.name, p.tol ?? null, p.spec ?? null, p.measured ?? null, reviewMark(p.diff)])
     row.eachCell({ includeEmpty: true }, (c, i) => { c.border = BOX; if (i > 1) c.alignment = { horizontal: 'center' }; if (p.ok === false && i >= 4) c.fill = OUT_FILL })
   }
-  return name
+  return ws.name
+}
+
+// The sheet says which sample it is in a "SAMPLE STAGE" heading with the answer in the cell(s) to its right.
+function setStageHeading(ws, layout, heading) {
+  for (let r = 1; r <= layout.headerRow; r++) {
+    const row = ws.getRow(r); let labelCol = 0
+    row.eachCell({ includeEmpty: false }, (cell, col) => { if (!labelCol && /sample\s*stage/i.test(text(cell))) labelCol = col })
+    if (!labelCol) continue
+    // The heading is often merged across a few columns, each of which reads the same; the answer starts after them.
+    let c = labelCol + 1
+    while (c <= labelCol + 8 && /sample\s*stage/i.test(text(row.getCell(c)))) c++
+    // The answer is the next cell that says something (there may be empty cells between); with none, it goes right beside.
+    let at = c
+    while (at <= labelCol + 8 && !text(row.getCell(at))) at++
+    row.getCell(at <= labelCol + 8 ? at : c).value = heading
+    return
+  }
 }
 
 /**
- * A copy of the workbook with one measured garment written in. `points` is [{ row, name, spec, tol, measured, diff, ok }]
- * for the tab `tab` and the size `size`. When the tab is the stage's own, the difference goes in the review column
- * (the one beside that size, as the team fills it by hand; else a "<SIZE> REVIEW" column) and the measured value in a
- * "<SIZE> MEASURED" column, in free columns of the table; cells outside tolerance are coloured. Otherwise, or when the
- * table has no free column, the record is written on a new tab. Returns `{ buffer, wroteTab, newTab }`.
+ * The workbook for one measured step: ONE tab, in the sheet's own format. The tab that was measured against is kept
+ * with everything on it (the style heading, the grade and tolerance columns, every size, the comments, the pictures),
+ * named for the step and with its "SAMPLE STAGE" heading saying the step; every other tab is dropped. The difference
+ * goes in the review column (the one beside that size, as the team fills it by hand; else a "<SIZE> REVIEW" column)
+ * and the measured value in a "<SIZE> MEASURED" column, in free columns of the table; cells outside tolerance are
+ * coloured. `points` is [{ row, name, spec, tol, measured, diff, ok }] for the tab `tab` and the size `size`.
+ * `fresh` is true when `buffer` is the style's sheet itself: review notes already on it belong to an earlier review,
+ * not to this garment, and are cleared. It is false when `buffer` is this step's own earlier record (another size is
+ * being added to it). A table with no free column gets the values on a plain tab instead. Returns { buffer, wroteTab, plain }.
  */
-export async function writeMeasuredWorkbook(buffer, { tab, size, stage, points, intoTab = true, who = '', when = '', styleName = '' }) {
+export async function writeMeasuredWorkbook(buffer, { tab, size, stage, points, fresh = true, who = '', when = '', styleName = '' }) {
   const wb = await load(buffer)
   const ws = wb.getWorksheet(tab)
   const layout = ws ? layoutOf(ws) : null
-  const sizeCol = layout?.sizes.find(s => s.label === String(size).toUpperCase())?.col
+  const S = String(size).toUpperCase()
+  const sizeCol = layout?.sizes.find(s => s.label === S)?.col
   const byRow = new Map(points.map(p => [p.row, p]))
-  let wroteTab = null; let newTab = false
-  if (intoTab && layout && sizeCol) {
-    const S = String(size).toUpperCase()
+  const only = keep => { for (const other of [...wb.worksheets]) if (other !== keep) wb.removeWorksheet(other.id) }
+  if (layout && sizeCol) {
     const taken = new Set()
-    const reviewCol = layout.reviewCol && layout.reviewCol === sizeCol + 1 ? layout.reviewCol : (layout.added[`${S} REVIEW`] || 0)
+    const ownReview = layout.reviewCol && layout.reviewCol === sizeCol + 1
     const measuredCol = layout.added[`${S} MEASURED`] || freeColumn(ws, layout, taken)
     if (measuredCol) taken.add(measuredCol)
-    const ownReview = reviewCol || freeColumn(ws, layout, taken)
-    if (measuredCol && ownReview) {
+    const reviewCol = ownReview ? layout.reviewCol : (layout.added[`${S} REVIEW`] || freeColumn(ws, layout, taken))
+    if (measuredCol && reviewCol) {
+      if (fresh && layout.reviewCol) {
+        for (const p of layout.points) { const cell = ws.getRow(p.row).getCell(layout.reviewCol); cell.value = null; cell.fill = { type: 'pattern', pattern: 'none' } }
+        ws.getRow(layout.sizeRow).getCell(layout.reviewCol).value = `${STAGE_TAB[stage] || 'QC'} REVIEW`
+      }
       writeColumn(ws, layout, measuredCol, `${S} MEASURED`, row => { const p = byRow.get(row); return { value: p?.measured ?? null, out: p?.ok === false } }, sizeCol)
-      if (reviewCol && reviewCol === layout.reviewCol) {
-        // The sheet's own review column keeps its heading and look; only its values and the red marks change.
+      if (ownReview) {
+        // The sheet's own review column keeps its place and look; only its values and the red marks change.
         for (const p of layout.points) { const got = byRow.get(p.row); const cell = ws.getRow(p.row).getCell(reviewCol); cell.value = reviewMark(got?.diff ?? null); cell.fill = got?.ok === false ? OUT_FILL : { type: 'pattern', pattern: 'none' } }
       } else {
-        writeColumn(ws, layout, ownReview, `${S} REVIEW`, row => { const p = byRow.get(row); return { value: reviewMark(p?.diff ?? null), out: p?.ok === false } }, sizeCol)
+        writeColumn(ws, layout, reviewCol, `${S} REVIEW`, row => { const p = byRow.get(row); return { value: reviewMark(p?.diff ?? null), out: p?.ok === false } }, sizeCol)
       }
-      wroteTab = ws.name
+      setStageHeading(ws, layout, STAGE_HEADING[stage] || String(stage).toUpperCase())
+      only(ws)
+      ws.name = STAGE_TAB[stage] || ws.name
+      return { buffer: Buffer.from(await wb.xlsx.writeBuffer()), wroteTab: ws.name, plain: false }
     }
   }
-  if (!wroteTab) { wroteTab = writeNewTab(wb, { stage, size: String(size).toUpperCase(), points, who, when, styleName }); newTab = true }
-  return { buffer: Buffer.from(await wb.xlsx.writeBuffer()), wroteTab, newTab }
+  for (const other of [...wb.worksheets]) wb.removeWorksheet(other.id)
+  const wroteTab = writePlainTab(wb, { stage, size: S, points, who, when, styleName })
+  return { buffer: Buffer.from(await wb.xlsx.writeBuffer()), wroteTab, plain: true }
 }

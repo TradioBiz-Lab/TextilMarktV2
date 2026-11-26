@@ -69,49 +69,73 @@ describe('judging a measured value', () => {
   })
 })
 
-describe('writing the measured values into a copy of the workbook', () => {
+describe('the workbook for one measured step', () => {
   const pointsFor = (tab, size, deltas) => tab.points.map((p, i) => { const spec = p.values[size]; const measured = typeof spec === 'number' && deltas[i] != null ? spec + deltas[i] : null; return { row: p.row, name: p.name, spec, tol: p.tol, measured, ...judge(spec, p.tol, measured) } })
+  // The style's sheet as it comes: a FIT tab and a PP tab, the PP tab carrying an earlier review.
+  async function twoTabs() {
+    const wb = await open(await realShape()); const fit = await open(await realShape({ stage: 'FIT SAMPLE', tab: 'FIT' }))
+    const ws = wb.addWorksheet('FIT'); fit.getWorksheet('FIT').eachRow((row, r) => row.eachCell((cell, c) => { ws.getCell(r, c).value = cell.value }))
+    return Buffer.from(await wb.xlsx.writeBuffer())
+  }
 
-  test('the sample size: the sheet\'s own review column is filled as the team fills it, the measured value goes in a free column', async () => {
-    const src = await realShape(); const tab = (await readMeasurementWorkbook(src)).tabs[0]
-    const { buffer, wroteTab, newTab } = await writeMeasuredWorkbook(src, { tab: 'PP', size: 'M', stage: 'pp', points: pointsFor(tab, 'M', [0, -1, null, 0.25]) })
-    assert.deepEqual([wroteTab, newTab], ['PP', false])
-    const ws = (await open(buffer)).getWorksheet('PP')
-    assert.equal(ws.getCell(5, 10).value, 'PP REVIEW', 'its heading is left alone')
-    assert.deepEqual([6, 7, 8, 9].map(r => ws.getCell(r, 10).value), ['ok', -1, null, 0.25])
+  test('one tab only, in the sheet\'s own format: the review column as the team fills it, the measured value in a free column', async () => {
+    const src = await twoTabs(); const tab = (await readMeasurementWorkbook(src)).tabs.find(t => t.name === 'PP')
+    const { buffer, wroteTab, plain } = await writeMeasuredWorkbook(src, { tab: 'PP', size: 'M', stage: 'pp', points: pointsFor(tab, 'M', [0, -1, null, 0.25]) })
+    assert.deepEqual([wroteTab, plain], ['PP', false])
+    const wb = await open(buffer); const ws = wb.getWorksheet('PP')
+    assert.deepEqual(wb.worksheets.map(w => w.name), ['PP'], 'the other stage\'s tab is not in the file')
+    assert.deepEqual([ws.getCell('C2').value, ws.getCell('I3').value, ws.getCell(4, 3).value, ws.getCell(4, 6).value, ws.getCell(5, 9).value], ['CORDUROY SHIRT', 'PP SAMPLE', 'MEASUREMENT POINTS', 'Tolerance ( + / - )', 'M'], 'the headings are the sheet\'s own')
+    assert.equal(ws.getCell(5, 10).value, 'PP REVIEW')
+    assert.deepEqual([6, 7, 8, 9].map(r => ws.getCell(r, 10).value), ['ok', -1, null, 0.25], 'the earlier review (ok, -1) is replaced by this garment\'s')
     assert.equal(ws.getCell(5, 14).value, 'M MEASURED', 'the first column after the last size')
     assert.deepEqual([6, 7, 8, 9].map(r => ws.getCell(r, 14).value), [18, 42, null, 2.75])
     assert.equal(ws.getCell(7, 14).fill.fgColor.argb, 'FFFECACA', 'outside tolerance is coloured')
     assert.equal(ws.getCell(7, 10).fill.fgColor.argb, 'FFFECACA')
     assert.notEqual(ws.getCell(6, 14).fill?.fgColor?.argb, 'FFFECACA')
-    assert.deepEqual([ws.getCell(6, 9).value, ws.getCell(5, 9).value, ws.getCell('C12').value], [18, 'M', 'Increase belt length'], 'the rest of the sheet is untouched')
-    assert.equal(ws.getCell(6, 11).value.formula, 'I6+D6', 'graded sizes keep their formulas')
-    const again = (await readMeasurementWorkbook(buffer)).tabs[0]
-    assert.deepEqual([again.sizes, again.sampleSize, again.points.length], [tab.sizes, 'M', 4], 'the copy still reads as the same sheet')
+    assert.deepEqual([ws.getCell(6, 9).value, ws.getCell('C12').value, ws.getCell(6, 11).value.formula], [18, 'Increase belt length', 'I6+D6'], 'sizes, comments and formulas are untouched')
+    const again = (await readMeasurementWorkbook(buffer)).tabs
+    assert.deepEqual([again.length, again[0].sizes, again[0].sampleSize, again[0].points.length], [1, tab.sizes, 'M', 4], 'the copy still reads as the same sheet')
   })
 
-  test('another size gets its own two columns; measuring it again overwrites them', async () => {
+  test('a size that is not the sample size: the earlier review is cleared, the size gets its own two columns; more sizes are added to the same record', async () => {
     const src = await realShape(); const tab = (await readMeasurementWorkbook(src)).tabs[0]
-    const first = await writeMeasuredWorkbook(src, { tab: 'PP', size: 'M', stage: 'pp', points: pointsFor(tab, 'M', [0, 0, null, 0]) })
-    const second = await writeMeasuredWorkbook(first.buffer, { tab: 'PP', size: 'L', stage: 'pp', points: pointsFor(tab, 'L', [0.5, 0, null, 0]) })
-    const third = await writeMeasuredWorkbook(second.buffer, { tab: 'PP', size: 'L', stage: 'pp', points: pointsFor(tab, 'L', [0, 0, null, 0]) })
-    const ws = (await open(third.buffer)).getWorksheet('PP')
-    assert.deepEqual([14, 15, 16, 17].map(c => ws.getCell(5, c).value), ['M MEASURED', 'L MEASURED', 'L REVIEW', null])
-    assert.deepEqual([ws.getCell(6, 15).value, ws.getCell(6, 16).value], [18.5, 'ok'])
-    assert.equal((await open(second.buffer)).getWorksheet('PP').getCell(6, 16).value, 0.5)
+    const first = await writeMeasuredWorkbook(src, { tab: 'PP', size: 'L', stage: 'pp', points: pointsFor(tab, 'L', [0.5, 0, null, 0]) })
+    let ws = (await open(first.buffer)).getWorksheet('PP')
+    assert.deepEqual([6, 7].map(r => ws.getCell(r, 10).value), [null, null], 'the notes of an earlier review are not this garment\'s')
+    assert.deepEqual([14, 15, 16].map(c => ws.getCell(5, c).value), ['L MEASURED', 'L REVIEW', null])
+    assert.deepEqual([ws.getCell(6, 14).value, ws.getCell(6, 15).value], [19, 0.5])
+    const second = await writeMeasuredWorkbook(first.buffer, { tab: 'PP', size: 'M', stage: 'pp', fresh: false, points: pointsFor(tab, 'M', [0, 0, null, 0]) })
+    const third = await writeMeasuredWorkbook(second.buffer, { tab: 'PP', size: 'L', stage: 'pp', fresh: false, points: pointsFor(tab, 'L', [0, 0, null, 0]) })
+    ws = (await open(third.buffer)).getWorksheet('PP')
+    assert.deepEqual([14, 15, 16, 17].map(c => ws.getCell(5, c).value), ['L MEASURED', 'L REVIEW', 'M MEASURED', null])
+    assert.deepEqual([ws.getCell(6, 10).value, ws.getCell(6, 16).value, ws.getCell(6, 15).value], ['ok', 18, 'ok'], 'M in the sheet\'s own review column; L measured again overwrites its columns')
   })
 
-  test('a stage with no tab of its own (Final QC) is written on a new tab', async () => {
-    const src = await realShape(); const tab = (await readMeasurementWorkbook(src)).tabs[0]
-    const { buffer, wroteTab, newTab } = await writeMeasuredWorkbook(src, { tab: 'PP', size: 'M', stage: 'final', intoTab: false, points: pointsFor(tab, 'M', [0, -1, null, 0]), who: 'Ravi', when: '26 Nov 2026', styleName: 'Corduroy shirt' })
-    assert.deepEqual([wroteTab, newTab], ['FINAL QC M', true])
-    const wb = await open(buffer); const ws = wb.getWorksheet('FINAL QC M')
-    assert.deepEqual(wb.worksheets.map(w => w.name), ['PP', 'FINAL QC M'])
-    assert.deepEqual([1, 2, 3, 4, 5].map(c => ws.getCell(4, c).value), ['Measurement point', 'Tolerance (+/-)', 'Required (M)', 'Measured', 'Review'])
-    assert.deepEqual([1, 2, 3, 4, 5].map(c => ws.getCell(6, c).value), ['CHEST 1" BELOW ARMHOLE', 0.5, 43, 42, -1])
-    assert.match(ws.getCell(2, 1).value, /Final QC · size M · measured by Ravi/)
-    assert.equal(wb.getWorksheet('PP').getCell(5, 14).value, null, 'the stage tabs are left as they were')
-    const twice = await writeMeasuredWorkbook(buffer, { tab: 'PP', size: 'M', stage: 'final', intoTab: false, points: [] })
-    assert.equal(twice.wroteTab, 'FINAL QC M 2')
+  test('Inline QC and Final QC use the same format: the tab measured against, renamed, its stage heading changed', async () => {
+    const src = await twoTabs(); const tab = (await readMeasurementWorkbook(src)).tabs.find(t => t.name === 'PP')
+    for (const [stage, name] of [['inline', 'INLINE QC'], ['final', 'FINAL QC']]) {
+      const { buffer, wroteTab, plain } = await writeMeasuredWorkbook(src, { tab: 'PP', size: 'M', stage, points: pointsFor(tab, 'M', [0, -1, null, 0]) })
+      assert.deepEqual([wroteTab, plain], [name, false])
+      const wb = await open(buffer); const ws = wb.getWorksheet(name)
+      assert.deepEqual(wb.worksheets.map(w => w.name), [name])
+      assert.deepEqual([ws.getCell('I3').value, ws.getCell(5, 10).value, ws.getCell(4, 3).value, ws.getCell('C2').value], [name, `${name} REVIEW`, 'MEASUREMENT POINTS', 'CORDUROY SHIRT'])
+      assert.deepEqual([ws.getCell(6, 10).value, ws.getCell(7, 10).value, ws.getCell(7, 14).value], ['ok', -1, 42])
+      const more = await writeMeasuredWorkbook(buffer, { tab: name, size: 'L', stage, fresh: false, points: pointsFor(tab, 'L', [0, 0, null, 0]) })
+      assert.deepEqual([15, 16].map(c => (wb && null, more.wroteTab === name) && 1), [1, 1])
+    }
+    const fit = await writeMeasuredWorkbook(src, { tab: 'FIT', size: 'M', stage: 'fit', points: pointsFor(tab, 'M', [0, 0, null, 0]) })
+    const fw = await open(fit.buffer)
+    assert.deepEqual([fw.worksheets.map(w => w.name), fw.getWorksheet('FIT').getCell('I3').value, fw.getWorksheet('FIT').getCell(5, 10).value], [['FIT'], 'FIT SAMPLE', 'FIT REVIEW'])
+  })
+
+  test('a table with no room for the measured values gets them on a plain tab, still alone in the file', async () => {
+    const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('Measurements')
+    ws.addRow(['Measurement point', 'Tol', 'S', 'M', ...Array(12).fill('notes')]); ws.addRow(['Chest', 1, 53, 56, ...Array(12).fill('x')])
+    const src = Buffer.from(await wb.xlsx.writeBuffer()); const tab = (await readMeasurementWorkbook(src)).tabs[0]
+    const { buffer, wroteTab, plain } = await writeMeasuredWorkbook(src, { tab: 'Measurements', size: 'M', stage: 'final', points: pointsFor(tab, 'M', [1]), who: 'Ravi', when: '26 Nov 2026', styleName: 'Polo' })
+    assert.deepEqual([wroteTab, plain], ['FINAL QC', true])
+    const out = await open(buffer)
+    assert.deepEqual(out.worksheets.map(w => w.name), ['FINAL QC'])
+    assert.deepEqual([1, 2, 3, 4, 5].map(c => out.getWorksheet('FINAL QC').getCell(5, c).value), ['Chest', 1, 56, 57, 1])
   })
 })

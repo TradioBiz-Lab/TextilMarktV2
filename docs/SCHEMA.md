@@ -338,10 +338,12 @@ One garment measured against the style's measurement sheet (`routes/measurements
   device, it has no workbook, and sending no values deletes it. Finishing (`POST /api/measurements`) turns the same
   record `final`. A final session is never deleted. The customer never sees a draft.
 - The sheet is read from the workbook each time (tabs, sizes, points, tolerance); nothing about it is stored.
-- Saving makes a copy of the workbook: the sheet's own review column gets "ok" or the difference, a "<SIZE> MEASURED"
-  column holds the value (a free column of the table; a column cannot be inserted because the size cells are linked
-  formulas), cells outside tolerance are red. A stage with no tab of its own (Inline QC, Final QC) gets a new tab. Each copy builds
-  on the last one for the style.
+- Saving makes the workbook for that step only: ONE tab, the tab measured against, in the sheet's own format (headings,
+  every size, comments, pictures), named for the step (`FIT`, `PP`, `INLINE QC`, `FINAL QC`) with its "SAMPLE STAGE"
+  heading saying the step. The sheet's own review column gets "ok" or the difference, a "<SIZE> MEASURED" column holds
+  the value (a free column of the table; a column cannot be inserted because the size cells are linked formulas), cells
+  outside tolerance are red, and review notes from an earlier review are cleared. Another size measured at the same
+  step, factory and tab is added to that step's last workbook; a different step always starts from the sheet.
 - The copy is a `measurements` Document with `measurementSessionId`, label `fit_approval` / `pp_approval` / `inline_qc` / `final_qc`,
   `internal: true` until an admin releases the session (`POST /api/measurements/:id/release`). It is never the spec.
 - Who records: an admin, a factory on its own split, a coordinator at an allocated factory (no check-in needed).
