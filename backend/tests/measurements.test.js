@@ -60,6 +60,11 @@ describe('the style\'s sheet as data', () => {
     await Document.create({ type: 'measurements', measurementLabel: 'customer_submission', name: 'Spec', orderId: 'S-1', uploadedBy: admin._id, issueDate: new Date(), fileName: 'spec.pdf', mimeType: 'application/pdf', dataUrl: 'data:application/pdf;base64,JVBERi0xLjQK' })
     const pdf = await as(coord).get('/api/measurements/spec?orderId=S-1')
     assert.deepEqual([pdf.status, /not an Excel file/.test(pdf.body.error)], [422, true])
+    // A style whose Locked Measurement is a PDF but which also has the Excel: the Excel is what is measured against.
+    await Document.updateMany({ orderId: 'S-1' }, { $set: { locked: true } })
+    const xl = await Document.create({ type: 'measurements', measurementLabel: 'customer_submission', name: 'Spec', orderId: 'S-1', uploadedBy: admin._id, issueDate: new Date(), fileName: 'spec.xlsx', mimeType: XLSX, dataUrl: await sheet() })
+    const both = await as(coord).get('/api/measurements/spec?orderId=S-1')
+    assert.deepEqual([both.status, both.body.document.id, both.body.document.locked], [200, String(xl._id), false])
   })
 })
 

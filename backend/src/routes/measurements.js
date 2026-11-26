@@ -35,18 +35,20 @@ const recordableAt = (user, order) => (user.role === 'admin' ? splitIds(order)
   : user.role === COORDINATOR_ROLE ? splitIds(order).filter(id => user.factoryIds.includes(id)) : [])
 const maySee = (user, order) => (user.role === 'buyer' ? String(order.buyerId?._id ?? order.buyerId) === String(user.id) : recordableAt(user, order).length > 0)
 
-// The sheet the style is measured against: its Locked Measurement, else its newest sheet that the module did not make.
+const isXlsx = d => /\.xlsx$/i.test(d.fileName || '') || d.mimeType === XLSX
+// The sheet the style is measured against, among those the module did not make: its Locked Measurement when that is an
+// Excel file, else its newest Excel sheet (a locked PDF cannot be read here, and the style often has the Excel too).
+// With no Excel at all the locked or newest sheet is returned, so the page can say why it cannot be read.
 async function sheetOf(orderId) {
   const docs = await Document.find({ orderId, type: 'measurements', isActive: true, measurementSessionId: null }, '-dataUrl').sort({ createdAt: -1 }).lean()
-  return docs.find(d => d.locked) || docs[0] || null
+  const excel = docs.filter(isXlsx)
+  return excel.find(d => d.locked) || excel[0] || docs.find(d => d.locked) || docs[0] || null
 }
 async function bytesOf(docId, req) {
   const doc = await Document.findById(docId).lean()
   const f = doc ? fromDataUrl(await loadFile(doc, { req })) : null
   return f?.buffer || null
 }
-const isXlsx = d => /\.xlsx$/i.test(d.fileName || '') || d.mimeType === XLSX
-
 async function specFor(orderId, req) {
   const doc = await sheetOf(orderId)
   if (!doc) return { status: 404, error: 'This style has no measurement sheet yet. Upload one on the style first.' }
