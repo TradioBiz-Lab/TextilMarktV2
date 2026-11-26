@@ -7,12 +7,12 @@ import { makeAdmin, makeBuyer, makeMfr, makeCoordinator, orderPayload } from './
 import { Document } from '../src/models/Document.js'
 import { MeasurementSession } from '../src/models/MeasurementSession.js'
 import { AuditLog } from '../src/models/AuditLog.js'
-import { setMeasurementExtractor } from '../src/routes/measurements.js'
+import { setMeasurementExtractor, setMeasurementPhotoExtractor } from '../src/routes/measurements.js'
 import { coordinatorMay } from '../src/lib/coordinator.js'
 
 before(async () => { await startTestDb(); await startServer() })
 after(async () => { await stopServer(); await stopTestDb() })
-beforeEach(async () => { await clearDb(); setMeasurementExtractor(null) })
+beforeEach(async () => { await clearDb(); setMeasurementExtractor(null); setMeasurementPhotoExtractor(null) })
 
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 // A sheet in the real layout with one PP tab: three points, sizes S M L, the review column after M.
@@ -87,6 +87,33 @@ describe('reading what he said', () => {
     setMeasurementExtractor(null)
     const off = await as(coord).post('/api/measurements/read', { orderId: 'S-1', tab: 'PP', size: 'M', transcript: 'x' })
     assert.deepEqual([off.status, off.body.code], [503, 'READER_OFF'])
+  })
+})
+
+describe('reading a photo of his handwritten sheet', () => {
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mNk+M9Qz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC'
+  test('the reader is given the photos and the sheet\'s points; its answer is tidied like a spoken one; nothing is saved', async () => {
+    const { coord, a, buyer } = await arrange()
+    let seen = null
+    setMeasurementPhotoExtractor(async (photos, points, opts) => { seen = { photos, points, opts }; return { values: [{ index: 0, value: 18.5, heard: 'Sh 18 1/2' }, { index: 2, value: 25.5, heard: 'slv ok' }, { index: 8, value: 3, heard: '?' }], unmatched: [{ heard: 'smudged line', value: null }] } })
+    const res = await as(coord).post('/api/measurements/read-photo', { orderId: 'S-1', tab: 'PP', size: 'M', photos: [PNG, PNG] })
+    assert.equal(res.status, 200, JSON.stringify(res.body))
+    assert.deepEqual([seen.photos.length, seen.photos[0].mimeType, Buffer.isBuffer(seen.photos[0].buffer)], [2, 'image/png', true])
+    assert.deepEqual(seen.points.map(p => p.spec), [18, 43, 25.5])
+    assert.deepEqual(res.body, { values: [{ index: 0, value: 18.5, heard: 'Sh 18 1/2' }, { index: 2, value: 25.5, heard: 'slv ok' }], unmatched: [{ heard: 'smudged line', value: null }] })
+    assert.deepEqual([await MeasurementSession.countDocuments(), await Document.countDocuments({ type: { $ne: 'measurements' } })], [0, 0], 'neither a session nor the photo is kept')
+    assert.equal((await as(a).post('/api/measurements/read-photo', { orderId: 'S-1', tab: 'PP', size: 'M', photos: [PNG] })).status, 200, 'the factory\'s own QC person too')
+    assert.equal((await as(buyer).post('/api/measurements/read-photo', { orderId: 'S-1', tab: 'PP', size: 'M', photos: [PNG] })).status, 403)
+    for (const bad of [{ photos: [] }, { photos: [PNG, PNG, PNG, PNG] }, { photos: ['data:image/png;base64,AAAA'] }, { photos: ['data:application/pdf;base64,JVBERi0xLjQK'] }, { size: '5XL' }]) {
+      assert.equal((await as(coord).post('/api/measurements/read-photo', { orderId: 'S-1', tab: 'PP', size: 'M', photos: [PNG], ...bad })).status, 400, JSON.stringify(bad).slice(0, 60))
+    }
+    setMeasurementPhotoExtractor(async () => null)
+    assert.equal((await as(coord).post('/api/measurements/read-photo', { orderId: 'S-1', tab: 'PP', size: 'M', photos: [PNG] })).status, 502)
+    setMeasurementPhotoExtractor(null)
+    assert.deepEqual([(await as(coord).post('/api/measurements/read-photo', { orderId: 'S-1', tab: 'PP', size: 'M', photos: [PNG] })).body.code], ['READER_OFF'])
+    // A session whose values came from a photo says so.
+    const saved = await as(coord).post('/api/measurements', { orderId: 'S-1', mfrId: String(a._id), stage: 'pp', size: 'M', tab: 'PP', points: [{ index: 0, measured: 18.5 }], method: 'photo' })
+    assert.deepEqual([saved.status, saved.body.session.method], [201, 'photo'])
   })
 })
 
@@ -210,6 +237,6 @@ describe('who sees a record', () => {
     assert.ok((await as(buyer).get('/api/notifications')).body.some(n => /Tradio shared the PP sample measurements of Corduroy Shirt \(size M\)/.test(n.msg)))
   })
   test('the coordinator\'s list of allowed requests has the four he needs and no release', () => {
-    assert.deepEqual([['GET', '/api/measurements?orderId=S-1'], ['GET', '/api/measurements/spec?orderId=S-1'], ['POST', '/api/measurements'], ['POST', '/api/measurements/read'], ['POST', '/api/measurements/draft'], ['POST', '/api/measurements/abc/release']].map(([m, u]) => coordinatorMay(m, u)), [true, true, true, true, true, false])
+    assert.deepEqual([['GET', '/api/measurements?orderId=S-1'], ['GET', '/api/measurements/spec?orderId=S-1'], ['POST', '/api/measurements'], ['POST', '/api/measurements/read'], ['POST', '/api/measurements/read-photo'], ['POST', '/api/measurements/draft'], ['POST', '/api/measurements/abc/release']].map(([m, u]) => coordinatorMay(m, u)), [true, true, true, true, true, true, false])
   })
 })

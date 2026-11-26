@@ -326,7 +326,7 @@ One garment measured against the style's measurement sheet (`routes/measurements
   status: "draft" | "final"
   stage: "fit" | "pp" | "inline" | "final", size: String
   sourceDocumentId: ObjectId → documents (the style's sheet: its Locked Measurement, else the newest), sourceTab: String
-  method: "voice" | "typed", transcript: String
+  method: "voice" | "photo" | "typed", transcript: String
   points: [{ name, spec (number or text), tol, measured, diff, ok (null = not judged) }]
   measuredCount, outOfTolerance: Number
   resultDocumentId: ObjectId → documents, releasedAt, releasedBy, at
@@ -337,6 +337,9 @@ One garment measured against the style's measurement sheet (`routes/measurements
   one per style, factory, stage and size (a partial unique index), anyone who may record there resumes it on any
   device, it has no workbook, and sending no values deletes it. Finishing (`POST /api/measurements`) turns the same
   record `final`. A final session is never deleted. The customer never sees a draft.
+- Values get in three ways: spoken (`POST /api/measurements/read`, a transcript read by AI), a photo of his
+  handwritten paper (`POST /api/measurements/read-photo`, up to three photos read by AI; the photo is not kept), or
+  typed. Both readers only fill the page for him to check; nothing is saved until the page saves.
 - The sheet is read from the workbook each time (tabs, sizes, points, tolerance); nothing about it is stored.
 - Saving makes the workbook for that step only: ONE tab, the tab measured against, in the sheet's own format (headings,
   every size, comments, pictures), named for the step (`FIT`, `PP`, `INLINE QC`, `FINAL QC`) with its "SAMPLE STAGE"

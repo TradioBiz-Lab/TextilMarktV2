@@ -7,7 +7,8 @@ import { COORDINATOR_ROLE } from '../lib/coordinator.js'
 import { saveFile, loadFile, fromDataUrl, fileStoreProblem } from '../lib/fileStore.js'
 import { notify, adminIds } from '../lib/notify.js'
 import { dayIST } from '../lib/geo.js'
-import { extractMeasurements } from '../lib/ai/extract.js'
+import { extractMeasurements, extractMeasurementPhoto } from '../lib/ai/extract.js'
+import { readPhoto } from './fieldUpdates.js'
 import { readMeasurementWorkbook, writeMeasuredWorkbook, judge, MEASURE_STAGES, STAGE_NAMES, STAGE_TAB } from '../lib/measurementSheet.js'
 
 // The quality module: a garment measured against the style's own measurement sheet. The person picks the stage and the
@@ -26,7 +27,9 @@ const limiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 120, keyGenerator: re
 // Tests swap the reader in; a server with no AI key says so and the values are typed instead.
 let extractor = null
 export function setMeasurementExtractor(fn) { extractor = fn }
-const aiAvailable = () => !!extractor || (!!process.env.ANTHROPIC_API_KEY && process.env.NODE_ENV !== 'test')
+let photoExtractor = null
+export function setMeasurementPhotoExtractor(fn) { photoExtractor = fn }
+const aiAvailable = () => !!extractor || !!photoExtractor || (!!process.env.ANTHROPIC_API_KEY && process.env.NODE_ENV !== 'test')
 
 const splitIds = o => (o.assignments || []).map(a => String(a.mfrId?._id ?? a.mfrId))
 // The factories of this style a user may record at: Tradio any, a factory its own, a coordinator those allocated to him.
@@ -66,6 +69,14 @@ const sessionOut = s => ({
   points: s.points, documentId: s.resultDocumentId ? String(s.resultDocumentId) : null, released: !!s.releasedAt,
 })
 
+// What a reader returned, made safe for the page: one value per point (the last one given), an index that is not on
+// the sheet dropped, numbers rounded to three decimals.
+function tidy(out, t) {
+  const byIndex = new Map()
+  for (const v of out.values || []) if (Number.isInteger(v.index) && v.index >= 0 && v.index < t.points.length && Number.isFinite(v.value)) byIndex.set(v.index, { index: v.index, value: Math.round(v.value * 1000) / 1000, heard: v.heard || '' })
+  return { values: [...byIndex.values()].sort((a, b) => a.index - b.index), unmatched: (out.unmatched || []).map(u => ({ heard: u.heard, value: Number.isFinite(u.value) ? u.value : null })) }
+}
+
 // GET /api/measurements/spec?orderId= - the style's measurement sheet as data: its tabs, sizes and points.
 router.get('/spec', async (req, res) => {
   try {
@@ -101,10 +112,31 @@ router.post('/read', limiter, async (req, res) => {
     if (!t || !t.sizes.includes(S)) return res.status(400).json({ error: 'Choose a tab and a size from the sheet' })
     const out = await (extractor || extractMeasurements)(transcript, t.points.map(p => ({ name: p.name, spec: p.values[S] ?? null })), { unit: t.unit })
     if (!out) return res.status(502).json({ error: 'The recording could not be read. Record again or type the values.' })
-    // One value per point, the last one said; an index that is not on the sheet is dropped.
-    const byIndex = new Map()
-    for (const v of out.values || []) if (Number.isInteger(v.index) && v.index >= 0 && v.index < t.points.length && Number.isFinite(v.value)) byIndex.set(v.index, { index: v.index, value: Math.round(v.value * 1000) / 1000, heard: v.heard || '' })
-    res.json({ values: [...byIndex.values()].sort((a, b) => a.index - b.index), unmatched: (out.unmatched || []).map(u => ({ heard: u.heard, value: Number.isFinite(u.value) ? u.value : null })) })
+    res.json(tidy(out, t))
+  } catch (err) { serverError(res, err) }
+})
+
+// POST /api/measurements/read-photo { orderId, tab, size, photos: [dataUrl] } - a photo (up to three) of the paper he wrote
+// his measurements on, read against the sheet's points. Nothing is saved, the photo included: the page shows what was
+// read for him to check and correct.
+router.post('/read-photo', limiter, async (req, res) => {
+  try {
+    const { orderId, tab, size, photos } = req.body || {}
+    if (!Array.isArray(photos) || !photos.length) return res.status(400).json({ error: 'Take a photo of the sheet first' })
+    if (photos.length > 3) return res.status(400).json({ error: 'At most three photos at a time' })
+    const files = []
+    for (const p of photos) { const f = readPhoto(p); if (f.error) return res.status(400).json({ error: f.error }); files.push({ buffer: f.buffer, mimeType: f.mimeType }) }
+    const order = await Order.findById(String(orderId || ''), 'buyerId assignments.mfrId').lean()
+    if (!order) return res.status(404).json({ error: 'Order not found' })
+    if (!recordableAt(req.user, order).length) return res.status(403).json({ error: 'You cannot record measurements on this style' })
+    if (!aiAvailable()) return res.status(503).json({ error: 'Reading a photo is not set up on this server. Type the values instead.', code: 'READER_OFF' })
+    const spec = await specFor(order._id, req)
+    if (spec.error) return res.status(spec.status).json({ error: spec.error })
+    const t = spec.tabs.find(x => x.name === tab); const S = String(size || '').toUpperCase()
+    if (!t || !t.sizes.includes(S)) return res.status(400).json({ error: 'Choose a tab and a size from the sheet' })
+    const out = await (photoExtractor || extractMeasurementPhoto)(files, t.points.map(p => ({ name: p.name, spec: p.values[S] ?? null })), { unit: t.unit })
+    if (!out) return res.status(502).json({ error: 'The photo could not be read. Take it again in good light, or type the values.' })
+    res.json(tidy(out, t))
   } catch (err) { serverError(res, err) }
 })
 
@@ -135,7 +167,7 @@ async function measuredFrom(req) {
 }
 const sessionFields = (req, m) => ({
   by: req.user.id, byName: req.user.name, byRole: req.user.role, sourceDocumentId: m.spec.doc._id, sourceTab: m.t.name,
-  method: req.body.method === 'voice' ? 'voice' : 'typed', transcript: typeof req.body.transcript === 'string' ? req.body.transcript.slice(0, 8000) : '',
+  method: ['voice', 'photo'].includes(req.body.method) ? req.body.method : 'typed', transcript: typeof req.body.transcript === 'string' ? req.body.transcript.slice(0, 8000) : '',
   points: m.points.map(({ row, ...p }) => p), measuredCount: m.given.size, outOfTolerance: m.points.filter(p => p.ok === false).length,
 })
 

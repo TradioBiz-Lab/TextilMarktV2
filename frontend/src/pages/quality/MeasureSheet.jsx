@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Mic, Square, X, Check, AlertTriangle, Ruler, Download, Eye, CheckCircle2 } from '../../icons.jsx'
+import { Mic, Square, X, Check, AlertTriangle, Ruler, Download, Eye, CheckCircle2, Camera } from '../../icons.jsx'
 import { T, fmtDate } from '../../constants.js'
 import { useApp } from '../../context.jsx'
 import { capsFor } from '../../caps.js'
@@ -7,6 +7,7 @@ import { t, langOf } from '../../coordinatorText.js'
 import { measurementsApi, voiceApi } from '../../api.js'
 import { useVoiceRecorder } from '../../useVoiceRecorder.js'
 import { blobToDataUrl, Btn, FlexRow, useToast } from '../../components/ui.jsx'
+import { shrinkImage } from '../../capture.js'
 import { STAGES, tabForStage, defaultSize, keyTerms, parseTyped, judge, mergeRead, summary, pointsPayload, show, valuesOf, draftFor, lastDoneFor, latestDraft, localKey, readLocal, writeLocal, clearLocal, resumeFrom } from '../../measure.js'
 
 const MAX_RECORD_MS = 3 * 60 * 1000
@@ -38,6 +39,7 @@ export function MeasureSheet({ order, factoryId = null, start = null, onClose, o
   const [values, setValues] = useState({})          // point index -> what is in its box
   const [transcript, setTranscript] = useState('')
   const [spoke, setSpoke] = useState(false)
+  const [fromPhoto, setFromPhoto] = useState(false)
   const [unplaced, setUnplaced] = useState([])
   const [busy, setBusy] = useState('')              // '' | 'reading' | 'saving' | 'download'
   const [note, setNote] = useState('')
@@ -99,7 +101,7 @@ export function MeasureSheet({ order, factoryId = null, start = null, onClose, o
     const send = async () => {
       setSaveState('saving')
       try {
-        const r = await measurementsApi.saveDraft({ orderId: order.id, mfrId, stage, size, tab: tab.name, points, transcript, method: spoke ? 'voice' : 'typed' })
+        const r = await measurementsApi.saveDraft({ orderId: order.id, mfrId, stage, size, tab: tab.name, points, transcript, method: spoke ? 'voice' : fromPhoto ? 'photo' : 'typed' })
         lastSent.current = body; setSaveState(points.length ? 'saved' : '')
         setSessions(list => [...list.filter(s => !(s.status === 'draft' && s.mfrId === mfrId && s.stage === stage && s.size === size)), ...(r.draft ? [r.draft] : [])])
         if (r.draft) clearLocal(lk)
@@ -114,7 +116,7 @@ export function MeasureSheet({ order, factoryId = null, start = null, onClose, o
     window.addEventListener('online', again); const every = setInterval(again, 15000)
     return () => { window.removeEventListener('online', again); clearInterval(every) }
   }, [saveState])
-  const startAgain = () => { setValues({}); setTranscript(''); setSpoke(false); setUnplaced([]); setNote(''); setResumed(false) }
+  const startAgain = () => { setValues({}); setTranscript(''); setSpoke(false); setFromPhoto(false); setUnplaced([]); setNote(''); setResumed(false) }
   const continueLast = () => { setValues(valuesOf(lastDone)); setResumed(true) }
 
   const finishRecording = async () => {
@@ -133,6 +135,22 @@ export function MeasureSheet({ order, factoryId = null, start = null, onClose, o
     } catch (e) { setNote(e?.code === 'READER_OFF' ? t('measure_reader_off', lang) : (e?.message || t('failed', lang))) }
     finally { setBusy('') }
   }
+  // The other way in: he wrote the numbers on paper. A photo of the page (up to three) is read against the sheet and
+  // fills the same boxes, for him to check. Shrunk on the phone first, but kept large enough to read handwriting.
+  const readPhotos = async files => {
+    const list = [...(files || [])].slice(0, 3)
+    if (!list.length) return
+    setBusy('photo'); setNote('')
+    try {
+      const photos = []
+      for (const f of list) photos.push(await shrinkImage(f, { max: 1600, quality: 0.75 }))
+      const read = await measurementsApi.readPhoto(order.id, tab.name, size, photos)
+      if (!read.values.length && !read.unmatched.length) setNote(t('measure_none_read', lang))
+      if (read.values.length) setFromPhoto(true)
+      setValues(v => mergeRead(v, read.values)); setUnplaced(read.unmatched || [])
+    } catch (e) { setNote(e?.code === 'READER_OFF' ? t('measure_reader_off', lang) : e?.message === 'not an image' ? t('measure_photo_bad', lang) : (e?.message || t('failed', lang))) }
+    finally { setBusy('') }
+  }
   const startRecording = async () => {
     setNote(''); recorder.unlock?.()
     await recorder.start()
@@ -142,7 +160,7 @@ export function MeasureSheet({ order, factoryId = null, start = null, onClose, o
     if (sum.bad) { setNote(t('measure_bad_number', lang)); return }
     setBusy('saving'); setNote('')
     try {
-      const r = await measurementsApi.save({ orderId: order.id, mfrId, stage, size, tab: tab.name, points: pointsPayload(tab, values), transcript, method: spoke ? 'voice' : 'typed' })
+      const r = await measurementsApi.save({ orderId: order.id, mfrId, stage, size, tab: tab.name, points: pointsPayload(tab, values), transcript, method: spoke ? 'voice' : fromPhoto ? 'photo' : 'typed' })
       clearLocal(localKey(order.id, key)); lastSent.current = '[]'
       setSessions(list => [...list.filter(s => s.id !== r.session.id), r.session])
       setSaved(r); refreshDocs?.(); onSaved?.(r)
@@ -227,11 +245,20 @@ export function MeasureSheet({ order, factoryId = null, start = null, onClose, o
           </div>
         )}
         <div style={{ background: '#fff', border: `1.5px solid ${recording ? T.danger : T.infoBorder}`, borderRadius: 14, padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <button type="button" disabled={busy === 'reading'} onClick={recording ? finishRecording : startRecording}
+          <button type="button" disabled={busy === 'reading' || busy === 'photo'} onClick={recording ? finishRecording : startRecording}
             style={{ minHeight: 60, borderRadius: 14, border: 'none', background: recording ? T.danger : T.info, color: '#fff', fontSize: 18, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, cursor: 'pointer', fontFamily: 'inherit', opacity: busy === 'reading' ? 0.6 : 1 }}>
             {recording ? <Square size={20} /> : <Mic size={22} />} {busy === 'reading' ? t('measure_reading', lang) : recording ? t('measure_stop', lang) : t(sum.filled ? 'measure_record_more' : 'measure_record', lang)}
           </button>
           <div style={{ fontSize: 13.5, color: recording ? T.dangerDeep : T.textMuted, lineHeight: 1.45 }}>{recording ? t('measure_listening', lang) : t('measure_hint', lang)}</div>
+          {!recording && (
+            <>
+              <label aria-disabled={!!busy} style={{ minHeight: 52, borderRadius: 14, border: `2px solid ${T.info}`, background: '#fff', color: T.info, fontSize: 16, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}>
+                <Camera size={20} /> {busy === 'photo' ? t('measure_photo_reading', lang) : t('measure_photo', lang)}
+                <input type="file" accept="image/*" capture="environment" multiple disabled={!!busy} style={{ display: 'none' }} onChange={e => { readPhotos(e.target.files); e.target.value = '' }} />
+              </label>
+              <div style={{ fontSize: 13.5, color: T.textMuted, lineHeight: 1.45 }}>{t('measure_photo_hint', lang)}</div>
+            </>
+          )}
           {unplaced.length > 0 && <div style={{ fontSize: 13.5, color: T.warning, background: T.warningBg, border: `1px solid ${T.warningBorder}`, borderRadius: 10, padding: '8px 10px' }}>{t('measure_unplaced', lang, { what: unplaced.map(u => `"${u.heard}"`).join(', ') })}</div>}
         </div>
 
@@ -310,7 +337,7 @@ export function MeasuredSection({ order, factoryId = null }) {
             <div key={s.id} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '8px 10px', borderTop: i ? `1px solid ${T.border}` : 'none' }}>
               <div style={{ flex: '1 1 220px', minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{s.stageName} · size {s.size}</div>
-                <div style={{ fontSize: 11.5, color: T.textMuted, marginTop: 1 }}>{s.byName}, {fmtDate(s.at)} · {s.measuredCount} of {s.points.length} points{s.method === 'voice' ? ' · by voice' : ''}</div>
+                <div style={{ fontSize: 11.5, color: T.textMuted, marginTop: 1 }}>{s.byName}, {fmtDate(s.at)} · {s.measuredCount} of {s.points.length} points{s.method === 'voice' ? ' · by voice' : s.method === 'photo' ? ' · from a photo of the sheet' : ''}</div>
               </div>
               {s.status === 'draft' && <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: T.warningBg, color: T.warning, border: `1px solid ${T.warningBorder}` }}>in progress</span>}
               <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: s.outOfTolerance ? T.dangerBg : T.successBg, color: s.outOfTolerance ? T.dangerDeep : T.successDeep, border: `1px solid ${s.outOfTolerance ? T.dangerBorder : T.successBorder}` }}>{s.outOfTolerance ? `${s.outOfTolerance} outside tolerance` : s.status === 'draft' ? 'within tolerance so far' : 'all within tolerance'}</span>

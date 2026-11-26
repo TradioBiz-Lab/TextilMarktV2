@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
-import { PHOTO_PROMPT, DOCUMENT_PROMPT, textPrompt, fieldUpdatePrompt, measurementsPrompt } from './prompts.js'
+import { PHOTO_PROMPT, DOCUMENT_PROMPT, textPrompt, fieldUpdatePrompt, measurementsPrompt, measurementPhotoPrompt } from './prompts.js'
 
 const MODEL = () => process.env.ANTHROPIC_MODEL || 'claude-sonnet-5'
 
@@ -126,3 +126,11 @@ const measurementsSchema = z.object({
  */
 export const extractMeasurements = (transcript, points, { unit = null, ...opts } = {}) =>
   callJson({ content: [{ type: 'text', text: measurementsPrompt({ transcript, points, unit }) }], schema: measurementsSchema, maxTokens: 4000, ...opts })
+
+/**
+ * The same from photos of a handwritten sheet. `photos` is [{ buffer, mimeType }] (one to three); the answer has the
+ * shape of extractMeasurements, with `heard` holding what was written on the paper.
+ */
+export const extractMeasurementPhoto = (photos, points, { unit = null, ...opts } = {}) =>
+  callJson({ content: [...photos.map(p => mediaBlock(p.buffer, p.mimeType)), { type: 'text', text: measurementPhotoPrompt({ points, unit }) }], schema: measurementsSchema, maxTokens: 4000, ...opts })
+

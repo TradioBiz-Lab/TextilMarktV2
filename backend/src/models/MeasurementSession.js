@@ -26,7 +26,7 @@ const measurementSessionSchema = new mongoose.Schema({
   size: { type: String, required: true },
   sourceDocumentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Document', required: true },
   sourceTab: { type: String, required: true },
-  method: { type: String, enum: ['voice', 'typed'], default: 'typed' },
+  method: { type: String, enum: ['voice', 'photo', 'typed'], default: 'typed' },   // how the values first got in: spoken, a photo of his paper, or typed
   transcript: { type: String, default: '' },
   points: { type: [pointSchema], default: [] },
   measuredCount: { type: Number, default: 0 },
