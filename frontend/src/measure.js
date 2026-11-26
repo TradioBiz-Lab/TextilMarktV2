@@ -59,3 +59,26 @@ export const pointsPayload = (tab, values) => (tab?.points || []).map((_, i) => 
 
 /** A number as people read it: no trailing zeros, at most three decimals. */
 export const show = n => (typeof n === 'number' ? String(Math.round(n * 1000) / 1000) : n == null ? '' : String(n))
+
+/** What a saved session holds, as the boxes on the page: point index -> the number as text. */
+export const valuesOf = session => Object.fromEntries((session?.points || []).map((p, i) => [i, p.measured]).filter(([, m]) => m != null).map(([i, m]) => [i, String(m)]))
+
+/** The unfinished session for a garment (style is implied by the list), or null. */
+export const draftFor = (sessions, { mfrId, stage, size }) => (sessions || []).find(s => s.status === 'draft' && s.mfrId === String(mfrId) && s.stage === stage && s.size === size) || null
+/** The last finished session for the same garment, to continue from if he wants. */
+export const lastDoneFor = (sessions, { mfrId, stage, size }) => (sessions || []).filter(s => s.status !== 'draft' && s.mfrId === String(mfrId) && s.stage === stage && s.size === size).sort((a, b) => new Date(b.at) - new Date(a.at))[0] || null
+/** Where to open the page: the unfinished session touched last at this factory, when there is one. */
+export const latestDraft = (sessions, mfrId) => (sessions || []).filter(s => s.status === 'draft' && (!mfrId || s.mfrId === String(mfrId))).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))[0] || null
+
+// A copy on the device, written at once, for when the connection drops between two saves.
+export const localKey = (orderId, { mfrId, stage, size }) => `tradio_measure:${orderId}:${mfrId}:${stage}:${size}`
+export function readLocal(key) { try { const v = JSON.parse(localStorage.getItem(key) || 'null'); return v && typeof v.values === 'object' ? v : null } catch { return null } }
+export function writeLocal(key, values, transcript = '') { try { localStorage.setItem(key, JSON.stringify({ values, transcript, at: Date.now() })) } catch { /* the server copy is the one that counts */ } }
+export function clearLocal(key) { try { localStorage.removeItem(key) } catch { /* nothing to clear */ } }
+/** What to start from: the device's copy when it is newer than the server's, else the server's, else nothing. */
+export function resumeFrom(draft, local) {
+  const serverAt = draft ? new Date(draft.updatedAt).getTime() : 0
+  if (local && Object.keys(local.values).length && local.at > serverAt) return { values: local.values, transcript: local.transcript || '', from: 'device' }
+  return draft ? { values: valuesOf(draft), transcript: '', from: 'server' } : null
+}
+

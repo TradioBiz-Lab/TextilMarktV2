@@ -2,7 +2,10 @@ import mongoose from 'mongoose'
 
 // One garment measured against the style's measurement sheet: who measured it, at which stage and in which size, and for
 // every point of the sheet the required value, what was measured, the difference and whether it is inside tolerance.
-// The workbook made from it is a Document (resultDocumentId). Never deleted. The customer sees it once released.
+// The workbook made from it is a Document (resultDocumentId). The customer sees it once released.
+// A session is a 'draft' while he is still measuring: it is saved as he goes, there is one per style, factory, stage and
+// size, anyone who may record there can pick it up on any device, and it has no workbook yet. Finishing makes it 'final'.
+// A final session is never deleted; a draft he discards is.
 const pointSchema = new mongoose.Schema({
   name: { type: String, required: true },
   spec: { type: mongoose.Schema.Types.Mixed, default: null },   // a number, or text such as "6 X 1"
@@ -18,6 +21,7 @@ const measurementSessionSchema = new mongoose.Schema({
   by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   byName: { type: String, default: '' },
   byRole: { type: String, default: '' },
+  status: { type: String, enum: ['draft', 'final'], default: 'final' },
   stage: { type: String, enum: ['fit', 'pp', 'final'], required: true },
   size: { type: String, required: true },
   sourceDocumentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Document', required: true },
@@ -34,5 +38,6 @@ const measurementSessionSchema = new mongoose.Schema({
 }, { timestamps: true })
 measurementSessionSchema.index({ orderId: 1, at: -1 })
 measurementSessionSchema.index({ by: 1, at: -1 })
+measurementSessionSchema.index({ orderId: 1, mfrId: 1, stage: 1, size: 1 }, { unique: true, partialFilterExpression: { status: 'draft' } })
 
 export const MeasurementSession = mongoose.model('MeasurementSession', measurementSessionSchema)

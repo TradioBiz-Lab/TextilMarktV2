@@ -323,6 +323,7 @@ One garment measured against the style's measurement sheet (`routes/measurements
 ```
 {
   orderId: String → orders, mfrId: ObjectId → users (the factory), by: ObjectId → users, byName, byRole
+  status: "draft" | "final"
   stage: "fit" | "pp" | "final", size: String
   sourceDocumentId: ObjectId → documents (the style's sheet: its Locked Measurement, else the newest), sourceTab: String
   method: "voice" | "typed", transcript: String
@@ -332,6 +333,10 @@ One garment measured against the style's measurement sheet (`routes/measurements
 }
 ```
 
+- A `draft` is a garment still being measured: the page saves it as he goes (`POST /api/measurements/draft`), there is
+  one per style, factory, stage and size (a partial unique index), anyone who may record there resumes it on any
+  device, it has no workbook, and sending no values deletes it. Finishing (`POST /api/measurements`) turns the same
+  record `final`. A final session is never deleted. The customer never sees a draft.
 - The sheet is read from the workbook each time (tabs, sizes, points, tolerance); nothing about it is stored.
 - Saving makes a copy of the workbook: the sheet's own review column gets "ok" or the difference, a "<SIZE> MEASURED"
   column holds the value (a free column of the table; a column cannot be inserted because the size cells are linked

@@ -219,6 +219,8 @@ export const measurementsApi = {
   spec: orderId => api.get('/measurements/spec', { params: { orderId } }),
   read: (orderId, tab, size, transcript) => api.post('/measurements/read', { orderId, tab, size, transcript }, { timeout: 60000 }),
   save: body => api.post('/measurements', body, { timeout: 60000 }),
+  // Saved as he goes: one unfinished session per style, factory, stage and size. No points discards it.
+  saveDraft: body => api.post('/measurements/draft', body),
   list: orderId => api.get('/measurements', { params: { orderId } }),
   release: id => api.post(`/measurements/${id}/release`),
 }

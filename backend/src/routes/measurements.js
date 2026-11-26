@@ -61,7 +61,7 @@ async function specFor(orderId, req) {
 }
 
 const sessionOut = s => ({
-  id: String(s._id), orderId: s.orderId, mfrId: String(s.mfrId), stage: s.stage, stageName: STAGE_NAMES[s.stage], size: s.size,
+  id: String(s._id), status: s.status || 'final', tab: s.sourceTab, updatedAt: s.updatedAt || s.at, orderId: s.orderId, mfrId: String(s.mfrId), stage: s.stage, stageName: STAGE_NAMES[s.stage], size: s.size,
   byName: s.byName, byRole: s.byRole, method: s.method, at: s.at, measuredCount: s.measuredCount, outOfTolerance: s.outOfTolerance,
   points: s.points, documentId: s.resultDocumentId ? String(s.resultDocumentId) : null, released: !!s.releasedAt,
 })
@@ -108,34 +108,69 @@ router.post('/read', limiter, async (req, res) => {
   } catch (err) { serverError(res, err) }
 })
 
+// What a save or an auto-save sends, checked against the style's sheet. Returns { status, error } or everything the route
+// needs: the order, the sheet, the tab, the size and the measured values by point index.
+async function measuredFrom(req) {
+  const { orderId, mfrId, stage, tab } = req.body || {}
+  const S = String(req.body?.size || '').toUpperCase()
+  if (!MEASURE_STAGES.includes(stage)) return { status: 400, error: 'Choose the stage: fit sample, PP sample or final QC' }
+  if (!isId(mfrId)) return { status: 400, error: 'Choose the factory' }
+  if (!Array.isArray(req.body?.points)) return { status: 400, error: 'Send the measurements' }
+  const order = await Order.findById(String(orderId || ''), 'buyerId product styleNumber assignments.mfrId').lean()
+  if (!order) return { status: 404, error: 'Order not found' }
+  if (!recordableAt(req.user, order).includes(mfrId)) return { status: 403, error: 'You cannot record measurements for that factory on this style' }
+  const spec = await specFor(order._id, req)
+  if (spec.error) return { status: spec.status, error: spec.error }
+  const t = spec.tabs.find(x => x.name === tab)
+  if (!t || !t.sizes.includes(S)) return { status: 400, error: 'Choose a tab and a size from the sheet' }
+  const given = new Map()
+  for (const p of req.body.points) {
+    if (!Number.isInteger(p?.index) || p.index < 0 || p.index >= t.points.length) return { status: 400, error: 'A measurement does not belong to this sheet' }
+    if (p.measured === null || p.measured === undefined || p.measured === '') continue
+    if (typeof p.measured !== 'number' || !Number.isFinite(p.measured) || p.measured < 0 || p.measured > 1000) return { status: 400, error: `The value for "${t.points[p.index].name}" is not a measurement` }
+    given.set(p.index, Math.round(p.measured * 1000) / 1000)
+  }
+  const points = t.points.map((p, i) => { const spec0 = p.values[S] ?? null; const measured = given.has(i) ? given.get(i) : null; return { row: p.row, name: p.name, spec: spec0, tol: p.tol, measured, ...judge(spec0, p.tol, measured) } })
+  return { order, spec, t, S, mfrId, stage, given, points, key: { orderId: order._id, mfrId, stage, size: S } }
+}
+const sessionFields = (req, m) => ({
+  by: req.user.id, byName: req.user.name, byRole: req.user.role, sourceDocumentId: m.spec.doc._id, sourceTab: m.t.name,
+  method: req.body.method === 'voice' ? 'voice' : 'typed', transcript: typeof req.body.transcript === 'string' ? req.body.transcript.slice(0, 8000) : '',
+  points: m.points.map(({ row, ...p }) => p), measuredCount: m.given.size, outOfTolerance: m.points.filter(p => p.ok === false).length,
+})
+
+// POST /api/measurements/draft { orderId, mfrId, stage, size, tab, points: [{ index, measured }], transcript?, method? }
+// The page saves here as he goes. One unfinished session per style, factory, stage and size: sending it again replaces
+// it, sending no values discards it. No workbook is made and nobody is told; Tradio sees it as "in progress".
+router.post('/draft', async (req, res) => {
+  try {
+    const m = await measuredFrom(req)
+    if (m.error) return res.status(m.status).json({ error: m.error })
+    if (!m.given.size) { await MeasurementSession.deleteOne({ ...m.key, status: 'draft' }); return res.json({ draft: null }) }
+    const now = new Date()
+    let draft
+    try {
+      draft = await MeasurementSession.findOneAndUpdate({ ...m.key, status: 'draft' }, { $set: sessionFields(req, m), $setOnInsert: { ...m.key, status: 'draft', at: now } }, { new: true, upsert: true, setDefaultsOnInsert: true }).lean()
+    } catch (e) {
+      // Two devices saving the first values at the same moment: the second finds the first's draft.
+      if (e.code !== 11000) throw e
+      draft = await MeasurementSession.findOneAndUpdate({ ...m.key, status: 'draft' }, { $set: sessionFields(req, m) }, { new: true }).lean()
+    }
+    res.json({ draft: sessionOut(draft) })
+  } catch (err) { serverError(res, err) }
+})
+
 // POST /api/measurements { orderId, mfrId, stage, size, tab, points: [{ index, measured }], transcript?, method? }
 // Saves the session and makes the workbook. Every difference is worked out here, never taken from the page.
 router.post('/', limiter, async (req, res) => {
   try {
-    const { orderId, mfrId, stage, tab, transcript, method } = req.body || {}
-    const S = String(req.body?.size || '').toUpperCase()
-    if (!MEASURE_STAGES.includes(stage)) return res.status(400).json({ error: 'Choose the stage: fit sample, PP sample or final QC' })
-    if (!isId(mfrId)) return res.status(400).json({ error: 'Choose the factory' })
-    if (!Array.isArray(req.body?.points)) return res.status(400).json({ error: 'Send the measurements' })
-    const order = await Order.findById(String(orderId || ''), 'buyerId product styleNumber assignments.mfrId').lean()
-    if (!order) return res.status(404).json({ error: 'Order not found' })
-    if (!recordableAt(req.user, order).includes(mfrId)) return res.status(403).json({ error: 'You cannot record measurements for that factory on this style' })
-    const spec = await specFor(order._id, req)
-    if (spec.error) return res.status(spec.status).json({ error: spec.error })
-    const t = spec.tabs.find(x => x.name === tab)
-    if (!t || !t.sizes.includes(S)) return res.status(400).json({ error: 'Choose a tab and a size from the sheet' })
-    const given = new Map()
-    for (const p of req.body.points) {
-      if (!Number.isInteger(p?.index) || p.index < 0 || p.index >= t.points.length) return res.status(400).json({ error: 'A measurement does not belong to this sheet' })
-      if (p.measured === null || p.measured === undefined || p.measured === '') continue
-      if (typeof p.measured !== 'number' || !Number.isFinite(p.measured) || p.measured < 0 || p.measured > 1000) return res.status(400).json({ error: `The value for "${t.points[p.index].name}" is not a measurement` })
-      given.set(p.index, Math.round(p.measured * 1000) / 1000)
-    }
+    const m = await measuredFrom(req)
+    if (m.error) return res.status(m.status).json({ error: m.error })
+    const { order, spec, t, S, mfrId, stage, given, points } = m
     if (!given.size) return res.status(400).json({ error: 'Nothing was measured yet' })
     const problem = fileStoreProblem()
     if (problem) { console.error('[measurements]', problem); return res.status(503).json({ error: 'The sheet cannot be saved right now. Tell Tradio.' }) }
 
-    const points = t.points.map((p, i) => { const spec0 = p.values[S] ?? null; const measured = given.has(i) ? given.get(i) : null; return { row: p.row, name: p.name, spec: spec0, tol: p.tol, measured, ...judge(spec0, p.tol, measured) } })
     const now = new Date()
     // The copy builds on the last one made for this style, so one workbook gathers every size and stage measured so far.
     const last = await MeasurementSession.findOne({ orderId: order._id, sourceDocumentId: spec.doc._id, resultDocumentId: { $ne: null } }).sort({ at: -1 }).lean()
@@ -144,7 +179,9 @@ router.post('/', limiter, async (req, res) => {
       tab: t.name, size: S, stage, points, intoTab: t.stage === stage, who: req.user.name, styleName: order.product,
       when: now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }),
     })
-    const sessionId = new mongoose.Types.ObjectId(); const docId = new mongoose.Types.ObjectId()
+    // An unfinished session for this garment becomes the finished one: same record, so its start time is kept.
+    const draft = await MeasurementSession.findOne({ ...m.key, status: 'draft' }, '_id').lean()
+    const sessionId = draft?._id || new mongoose.Types.ObjectId(); const docId = new mongoose.Types.ObjectId()
     const safe = String(order.styleNumber || order.product || order._id).replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'style'
     const name = `${order.product} - ${STAGE_NAMES[stage]} measured (${S})`
     const kept = await saveFile(`measurements/${dayIST(now).slice(0, 4)}/${dayIST(now).slice(5, 7)}/${order._id}/${docId}.xlsx`, made.buffer, XLSX, { req })
@@ -153,14 +190,13 @@ router.post('/', limiter, async (req, res) => {
       issueDate: now, internal: true, isActive: true, measurementSessionId: sessionId, ...kept, fileName: `${safe}-${stage}-${S}-${dayIST(now)}.xlsx`, fileSize: made.buffer.length, mimeType: XLSX,
     })
     const out = points.filter(p => p.ok === false).length
-    const session = await MeasurementSession.create({
-      _id: sessionId, orderId: order._id, mfrId, by: req.user.id, byName: req.user.name, byRole: req.user.role, stage, size: S, sourceDocumentId: spec.doc._id, sourceTab: t.name,
-      method: method === 'voice' ? 'voice' : 'typed', transcript: typeof transcript === 'string' ? transcript.slice(0, 8000) : '',
-      points: points.map(({ row, ...p }) => p), measuredCount: given.size, outOfTolerance: out, resultDocumentId: docId, at: now,
-    })
+    const fields = { ...sessionFields(req, m), status: 'final', resultDocumentId: docId }
+    const session = draft
+      ? await MeasurementSession.findOneAndUpdate({ _id: draft._id }, { $set: fields }, { new: true }).lean()
+      : (await MeasurementSession.create({ _id: sessionId, ...m.key, ...fields, at: now })).toObject()
     await AuditLog.create({ byUser: req.user.id, action: 'Measurement Recorded', detail: `${order._id}: ${STAGE_NAMES[stage]}, size ${S}, ${given.size} of ${points.length} points, ${out} outside tolerance (by ${req.user.name})` })
     await notify(await adminIds(), { type: 'order', msg: `${req.user.name} measured ${order.product} (${STAGE_NAMES[stage]}, size ${S}): ${out ? `${out} point${out === 1 ? '' : 's'} outside tolerance` : 'all within tolerance'}`, orderId: order._id }, { exceptUserId: req.user.id })
-    res.status(201).json({ session: sessionOut(session.toObject()), documentId: String(docId), fileName: `${safe}-${stage}-${S}-${dayIST(now)}.xlsx`, wroteTab: made.wroteTab })
+    res.status(201).json({ session: sessionOut(session), documentId: String(docId), fileName: `${safe}-${stage}-${S}-${dayIST(now)}.xlsx`, wroteTab: made.wroteTab })
   } catch (err) { serverError(res, err) }
 })
 
@@ -183,6 +219,7 @@ router.post('/:id/release', requireAdmin, async (req, res) => {
     if (!isId(req.params.id)) return res.status(404).json({ error: 'Not found' })
     const s = await MeasurementSession.findById(req.params.id)
     if (!s) return res.status(404).json({ error: 'Not found' })
+    if (s.status === 'draft') return res.status(409).json({ error: 'This measurement is not finished yet' })
     const first = !s.releasedAt
     if (s.resultDocumentId) await Document.updateOne({ _id: s.resultDocumentId }, { $set: { internal: false } })
     s.releasedAt = s.releasedAt || new Date(); s.releasedBy = req.user.id; await s.save()

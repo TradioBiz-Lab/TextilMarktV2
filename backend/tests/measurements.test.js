@@ -138,6 +138,46 @@ describe('saving a measured garment', () => {
   })
 })
 
+describe('saving as he goes, and picking it up again', () => {
+  test('one unfinished session per style, factory, stage and size: saved again it is replaced, anyone who may record there resumes it', async () => {
+    const { admin, buyer, a, b, coord, body } = await arrange()
+    await MeasurementSession.init()
+    const first = await as(coord).post('/api/measurements/draft', body({ points: [{ index: 0, measured: 18 }] }))
+    assert.equal(first.status, 200, JSON.stringify(first.body))
+    assert.deepEqual([first.body.draft.status, first.body.draft.measuredCount, first.body.draft.documentId, first.body.draft.byName, first.body.draft.tab], ['draft', 1, null, 'Ravi', 'PP'])
+    const second = await as(a).post('/api/measurements/draft', body({ points: [{ index: 0, measured: 18 }, { index: 1, measured: 42 }], method: 'voice', transcript: 'chest 42' }))
+    assert.deepEqual([second.body.draft.id, second.body.draft.measuredCount, second.body.draft.outOfTolerance, second.body.draft.byName], [first.body.draft.id, 2, 1, 'Sandeep'], 'the same session, picked up from another login')
+    assert.equal(await MeasurementSession.countDocuments(), 1)
+    assert.equal(await Document.countDocuments({ measurementSessionId: { $ne: null } }), 0, 'no workbook until he finishes')
+    await as(coord).post('/api/measurements/draft', body({ size: 'L', points: [{ index: 0, measured: 18.5 }] }))
+    await as(admin).post('/api/measurements/draft', body({ mfrId: String(b._id), points: [{ index: 0, measured: 17 }] }))
+    const list = async who => (await as(who).get('/api/measurements?orderId=S-1')).body.map(s => `${s.status} ${s.size} ${s.measuredCount}`).sort()
+    assert.deepEqual(await list(coord), ['draft L 1', 'draft M 2'], 'another size is its own session; another factory\'s is not his')
+    assert.equal((await list(admin)).length, 3)
+    assert.deepEqual(await list(buyer), [], 'the customer never sees unfinished work')
+    assert.equal((await as(admin).get('/api/notifications')).body.filter(n => /measured/.test(n.msg)).length, 0, 'nobody is told about an auto-save')
+    assert.equal((await as(admin).post(`/api/measurements/${first.body.draft.id}/release`)).status, 409)
+    assert.equal((await as(coord).post('/api/measurements/draft', body({ mfrId: String(b._id), points: [{ index: 0, measured: 1 }] }))).status, 403)
+    assert.equal((await as(buyer).post('/api/measurements/draft', body())).status, 403)
+    assert.equal((await as(coord).post('/api/measurements/draft', body({ points: [{ index: 0, measured: 'x' }] }))).status, 400)
+  })
+  test('finishing turns the unfinished session into the record, with its workbook; sending no values discards it', async () => {
+    const { a, coord, body } = await arrange()
+    const draft = (await as(coord).post('/api/measurements/draft', body({ points: [{ index: 0, measured: 18 }] }))).body.draft
+    const done = await as(a).post('/api/measurements', body({ points: [{ index: 0, measured: 18 }, { index: 1, measured: 43 }, { index: 2, measured: 25.5 }] }))
+    assert.equal(done.status, 201, JSON.stringify(done.body))
+    assert.deepEqual([done.body.session.id, done.body.session.status, done.body.session.measuredCount, !!done.body.session.documentId], [draft.id, 'final', 3, true])
+    assert.equal(await MeasurementSession.countDocuments(), 1)
+    // The next garment of the same size starts a new unfinished session; the finished one is left as it is.
+    const next = (await as(coord).post('/api/measurements/draft', body({ points: [{ index: 1, measured: 44 }] }))).body.draft
+    assert.notEqual(next.id, draft.id)
+    assert.deepEqual((await as(coord).get('/api/measurements?orderId=S-1')).body.map(s => s.status).sort(), ['draft', 'final'])
+    const gone = await as(coord).post('/api/measurements/draft', body({ points: [] }))
+    assert.deepEqual([gone.status, gone.body.draft], [200, null])
+    assert.deepEqual((await as(coord).get('/api/measurements?orderId=S-1')).body.map(s => s.status), ['final'])
+  })
+})
+
 describe('who sees a record', () => {
   test('Tradio and the factory at once, a coordinator at his factories, the customer only once Tradio shares it', async () => {
     const { admin, buyer, a, b, coord, body } = await arrange()
@@ -162,6 +202,6 @@ describe('who sees a record', () => {
     assert.ok((await as(buyer).get('/api/notifications')).body.some(n => /Tradio shared the PP sample measurements of Corduroy Shirt \(size M\)/.test(n.msg)))
   })
   test('the coordinator\'s list of allowed requests has the four he needs and no release', () => {
-    assert.deepEqual([['GET', '/api/measurements?orderId=S-1'], ['GET', '/api/measurements/spec?orderId=S-1'], ['POST', '/api/measurements'], ['POST', '/api/measurements/read'], ['POST', '/api/measurements/abc/release']].map(([m, u]) => coordinatorMay(m, u)), [true, true, true, true, false])
+    assert.deepEqual([['GET', '/api/measurements?orderId=S-1'], ['GET', '/api/measurements/spec?orderId=S-1'], ['POST', '/api/measurements'], ['POST', '/api/measurements/read'], ['POST', '/api/measurements/draft'], ['POST', '/api/measurements/abc/release']].map(([m, u]) => coordinatorMay(m, u)), [true, true, true, true, true, false])
   })
 })

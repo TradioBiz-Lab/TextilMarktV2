@@ -7,7 +7,7 @@ import { t, langOf } from '../../coordinatorText.js'
 import { measurementsApi, voiceApi } from '../../api.js'
 import { useVoiceRecorder } from '../../useVoiceRecorder.js'
 import { blobToDataUrl, Btn, FlexRow, useToast } from '../../components/ui.jsx'
-import { STAGES, tabForStage, defaultSize, keyTerms, parseTyped, judge, mergeRead, summary, pointsPayload, show } from '../../measure.js'
+import { STAGES, tabForStage, defaultSize, keyTerms, parseTyped, judge, mergeRead, summary, pointsPayload, show, valuesOf, draftFor, lastDoneFor, latestDraft, localKey, readLocal, writeLocal, clearLocal, resumeFrom } from '../../measure.js'
 
 const MAX_RECORD_MS = 3 * 60 * 1000
 const chipBtn = on => ({ minHeight: 44, padding: '8px 14px', borderRadius: 12, border: `2px solid ${on ? T.info : T.border}`, background: on ? T.infoBg : '#fff', color: on ? T.info : T.text, fontSize: 15, fontWeight: on ? 600 : 500, cursor: 'pointer', fontFamily: 'inherit' })
@@ -26,7 +26,7 @@ async function saveDataUrl(dataUrl, filename) {
  * a copy of the sheet with the values filled in, kept on the style and offered as a download. Tradio's coordinator sees
  * it in his language; a factory and Tradio in English.
  */
-export function MeasureSheet({ order, factoryId = null, onClose, onSaved }) {
+export function MeasureSheet({ order, factoryId = null, start = null, onClose, onSaved }) {
   const { currentUser, getDocData, refreshDocs } = useApp()
   const lang = capsFor(currentUser).isCoord ? langOf(currentUser) : 'en'
   const [spec, setSpec] = useState(null)
@@ -42,19 +42,26 @@ export function MeasureSheet({ order, factoryId = null, onClose, onSaved }) {
   const [busy, setBusy] = useState('')              // '' | 'reading' | 'saving' | 'download'
   const [note, setNote] = useState('')
   const [saved, setSaved] = useState(null)
+  const [sessions, setSessions] = useState([])      // what is already recorded on the style, unfinished ones included
+  const [resumed, setResumed] = useState(false)     // the boxes were filled from an unfinished session
+  const [saveState, setSaveState] = useState('')    // '' | 'saving' | 'saved' | 'offline'
+  const lastSent = useRef('')                       // what the server holds for this garment, to save only real changes
+  const loadedKey = useRef('')
   const recorder = useVoiceRecorder()
   const stopTimer = useRef(null)
   const recording = recorder.state === 'recording'
 
   useEffect(() => {
     let dead = false
-    measurementsApi.spec(order.id).then(s => {
+    Promise.all([measurementsApi.spec(order.id), measurementsApi.list(order.id).catch(() => [])]).then(([s, list]) => {
       if (dead) return
-      setSpec(s)
-      const first = s.tabs.find(x => x.stage === 'fit') ? 'fit' : (s.tabs[0]?.stage || 'fit')
-      const tab = tabForStage(s.tabs, first)
-      setStage(first); setTabName(tab?.name || ''); setSize(defaultSize(tab))
-      setMfrId(m => (m && s.factories.some(f => f.id === m) ? m : (s.factories[0]?.id || '')))
+      const factory = factoryId && s.factories.some(f => f.id === String(factoryId)) ? String(factoryId) : (s.factories[0]?.id || '')
+      // Open on the garment he was in the middle of (or the one asked for), else on the fit sample in the sample size.
+      const go = start || latestDraft(list, factory)
+      const first = go?.stage || (s.tabs.find(x => x.stage === 'fit') ? 'fit' : (s.tabs[0]?.stage || 'fit'))
+      const tab = (go?.tab && s.tabs.find(x => x.name === go.tab)) || tabForStage(s.tabs, first)
+      setSessions(list); setSpec(s); setMfrId(go?.mfrId && s.factories.some(f => f.id === go.mfrId) ? go.mfrId : factory)
+      setStage(first); setTabName(tab?.name || ''); setSize(go?.size && tab?.sizes.includes(go.size) ? go.size : defaultSize(tab))
     }).catch(e => { if (!dead) setLoadError(e?.message || t('failed', lang)) })
     return () => { dead = true; clearTimeout(stopTimer.current); recorder.cancel() }
   }, [order.id])   // eslint-disable-line react-hooks/exhaustive-deps
@@ -62,9 +69,53 @@ export function MeasureSheet({ order, factoryId = null, onClose, onSaved }) {
 
   const tab = spec?.tabs.find(x => x.name === tabName) || null
   const sum = summary(tab, size, values)
-  // A new stage, tab or size is a new garment: what was filled in belongs to the old one.
-  const fresh = () => { setValues({}); setTranscript(''); setSpoke(false); setUnplaced([]); setNote('') }
-  const pickStage = s => { const next = tabForStage(spec.tabs, s); setStage(s); setTabName(next?.name || ''); if (next && !next.sizes.includes(size)) setSize(defaultSize(next)); fresh() }
+  const key = { mfrId, stage, size }
+  const draft = draftFor(sessions, key)
+  const lastDone = !draft && !sum.filled ? lastDoneFor(sessions, key) : null
+  const pickStage = s => { const next = tabForStage(spec.tabs, s); setStage(s); setTabName(next?.name || ''); if (next && !next.sizes.includes(size)) setSize(defaultSize(next)) }
+
+  // Each stage, size and factory is its own garment. Choosing one brings back what was already filled in for it: the
+  // unfinished session on the server, or this device's copy when that is newer (a save that did not get through).
+  useEffect(() => {
+    if (!spec || !tab || !mfrId || !size) return
+    const id = `${mfrId}:${stage}:${size}:${tab.name}`
+    if (loadedKey.current === id) return
+    loadedKey.current = id
+    const mine = draftFor(sessions, key)
+    const from = resumeFrom(mine && mine.tab === tab.name ? mine : null, readLocal(localKey(order.id, key)))
+    setValues(from?.values || {}); setTranscript(from?.transcript || ''); setSpoke(false); setUnplaced([]); setNote('')
+    setResumed(!!from); setSaveState(from?.from === 'server' ? 'saved' : '')
+    // Nothing filled in and nothing on the server are the same thing: no save is needed until he enters a value.
+    lastSent.current = from?.from === 'server' ? JSON.stringify(pointsPayload(tab, from.values)) : from ? '' : '[]'
+  }, [spec, tab, mfrId, stage, size])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Saved as he goes: at once on this device, and a moment after he stops typing or speaking on the server.
+  useEffect(() => {
+    if (!tab || !mfrId || saved || !loadedKey.current) return undefined
+    const points = pointsPayload(tab, values); const body = JSON.stringify(points)
+    if (body === lastSent.current) return undefined
+    const lk = localKey(order.id, key)
+    if (points.length) writeLocal(lk, values, transcript); else clearLocal(lk)
+    const send = async () => {
+      setSaveState('saving')
+      try {
+        const r = await measurementsApi.saveDraft({ orderId: order.id, mfrId, stage, size, tab: tab.name, points, transcript, method: spoke ? 'voice' : 'typed' })
+        lastSent.current = body; setSaveState(points.length ? 'saved' : '')
+        setSessions(list => [...list.filter(s => !(s.status === 'draft' && s.mfrId === mfrId && s.stage === stage && s.size === size)), ...(r.draft ? [r.draft] : [])])
+        if (r.draft) clearLocal(lk)
+      } catch { setSaveState('offline') }
+    }
+    const timer = setTimeout(send, 1200)
+    return () => clearTimeout(timer)
+  }, [values, tab, mfrId, stage, size, saved])   // eslint-disable-line react-hooks/exhaustive-deps
+  // A save that did not get through is tried again when the connection comes back.
+  useEffect(() => {
+    const again = () => { if (saveState === 'offline') setValues(v => ({ ...v })) }
+    window.addEventListener('online', again); const every = setInterval(again, 15000)
+    return () => { window.removeEventListener('online', again); clearInterval(every) }
+  }, [saveState])
+  const startAgain = () => { setValues({}); setTranscript(''); setSpoke(false); setUnplaced([]); setNote(''); setResumed(false) }
+  const continueLast = () => { setValues(valuesOf(lastDone)); setResumed(true) }
 
   const finishRecording = async () => {
     clearTimeout(stopTimer.current)
@@ -92,6 +143,8 @@ export function MeasureSheet({ order, factoryId = null, onClose, onSaved }) {
     setBusy('saving'); setNote('')
     try {
       const r = await measurementsApi.save({ orderId: order.id, mfrId, stage, size, tab: tab.name, points: pointsPayload(tab, values), transcript, method: spoke ? 'voice' : 'typed' })
+      clearLocal(localKey(order.id, key)); lastSent.current = '[]'
+      setSessions(list => [...list.filter(s => s.id !== r.session.id), r.session])
       setSaved(r); refreshDocs?.(); onSaved?.(r)
     } catch (e) { setNote(e?.message || t('failed', lang)) } finally { setBusy('') }
   }
@@ -127,7 +180,7 @@ export function MeasureSheet({ order, factoryId = null, onClose, onSaved }) {
         <button type="button" onClick={download} disabled={busy === 'download'} style={{ minHeight: 56, borderRadius: 14, border: 'none', background: T.info, color: '#fff', fontSize: 17, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, cursor: 'pointer', fontFamily: 'inherit', opacity: busy === 'download' ? 0.6 : 1 }}><Download size={20} /> {t('measure_download', lang)}</button>
         {note && <div role="alert" style={{ fontSize: 14, color: T.dangerDeep }}>{note}</div>}
         <FlexRow gap={10}>
-          <button type="button" onClick={() => { setSaved(null); fresh() }} style={{ ...chipBtn(false), flex: 1 }}>{t('measure_another', lang)}</button>
+          <button type="button" onClick={() => { setSaved(null); startAgain() }} style={{ ...chipBtn(false), flex: 1 }}>{t('measure_another', lang)}</button>
           <button type="button" onClick={onClose} style={{ ...chipBtn(true), flex: 1 }}>{t('measure_done', lang)}</button>
         </FlexRow>
       </div>,
@@ -147,12 +200,12 @@ export function MeasureSheet({ order, factoryId = null, onClose, onSaved }) {
         {spec.tabs.length > 1 && (
           <div>
             <div style={label}>{t('measure_sheet', lang)}</div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{spec.tabs.map(x => <button key={x.name} type="button" onClick={() => { setTabName(x.name); if (!x.sizes.includes(size)) setSize(defaultSize(x)); fresh() }} style={chipBtn(tabName === x.name)}>{x.name}</button>)}</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{spec.tabs.map(x => <button key={x.name} type="button" onClick={() => { setTabName(x.name); if (!x.sizes.includes(size)) setSize(defaultSize(x)) }} style={chipBtn(tabName === x.name)}>{x.name}</button>)}</div>
           </div>
         )}
         <div>
           <div style={label}>{t('measure_size', lang)}</div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{tab.sizes.map(s => <button key={s} type="button" onClick={() => { setSize(s); fresh() }} style={{ ...chipBtn(size === s), minWidth: 52 }}>{s}</button>)}</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{tab.sizes.map(s => <button key={s} type="button" onClick={() => setSize(s)} style={{ ...chipBtn(size === s), minWidth: 52 }}>{s}</button>)}</div>
         </div>
         {spec.factories.length > 1 && (
           <div>
@@ -161,6 +214,18 @@ export function MeasureSheet({ order, factoryId = null, onClose, onSaved }) {
           </div>
         )}
 
+        {resumed && sum.filled > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 14, color: '#166534', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 12, padding: '8px 12px' }}>
+            <span style={{ flex: 1, minWidth: 0 }}>{t('measure_resumed', lang)} {t('measure_filled', lang, { filled: sum.filled, total: sum.total })}</span>
+            <button type="button" onClick={startAgain} style={{ background: 'none', border: 'none', color: T.info, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', minHeight: 36 }}>{t('measure_start_again', lang)}</button>
+          </div>
+        )}
+        {lastDone && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 14, color: T.text, background: '#fff', border: `1px solid ${T.border}`, borderRadius: 12, padding: '8px 12px' }}>
+            <span style={{ flex: 1, minWidth: 0 }}>{t('measure_last_done', lang, { date: fmtDate(lastDone.at), name: lastDone.byName, filled: lastDone.measuredCount, total: lastDone.points.length })}</span>
+            <button type="button" onClick={continueLast} style={{ background: 'none', border: 'none', color: T.info, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', minHeight: 36 }}>{t('measure_continue_last', lang)}</button>
+          </div>
+        )}
         <div style={{ background: '#fff', border: `1.5px solid ${recording ? T.danger : T.infoBorder}`, borderRadius: 14, padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <button type="button" disabled={busy === 'reading'} onClick={recording ? finishRecording : startRecording}
             style={{ minHeight: 60, borderRadius: 14, border: 'none', background: recording ? T.danger : T.info, color: '#fff', fontSize: 18, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, cursor: 'pointer', fontFamily: 'inherit', opacity: busy === 'reading' ? 0.6 : 1 }}>
@@ -200,11 +265,13 @@ export function MeasureSheet({ order, factoryId = null, onClose, onSaved }) {
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 14, fontWeight: 500, color: T.text }}>
           <span>{t('measure_filled', lang, { filled: sum.filled, total: sum.total })}</span>
           {sum.filled > 0 && <span style={{ color: sum.out ? T.dangerDeep : '#166534', fontWeight: 600 }}>{sum.out ? t('measure_out', lang, { n: sum.out }) : t('measure_all_ok', lang)}</span>}
+          {saveState && saveState !== 'offline' && <span style={{ marginLeft: 'auto', fontSize: 12.5, color: T.textMuted, display: 'inline-flex', alignItems: 'center', gap: 4 }}>{saveState === 'saved' && <Check size={12} strokeWidth={3} />}{t(saveState === 'saved' ? 'measure_autosaved' : 'measure_autosaving', lang)}</span>}
         </div>
+        {saveState === 'offline' && <div style={{ fontSize: 13, color: T.warning }}>{t('measure_offline', lang)}</div>}
         {note && <div role="alert" style={{ fontSize: 14, color: T.dangerDeep, display: 'flex', gap: 6, alignItems: 'flex-start' }}><AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 2 }} /> {note}</div>}
         <button type="button" onClick={save} disabled={!sum.filled || !mfrId || !!busy || recording}
           style={{ minHeight: 56, borderRadius: 14, border: 'none', background: '#16a34a', color: '#fff', fontSize: 17, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', opacity: (!sum.filled || !mfrId || busy || recording) ? 0.5 : 1 }}>
-          {busy === 'saving' ? t('measure_saving', lang) : t('measure_save', lang)}
+          {busy === 'saving' ? t('measure_saving', lang) : t('measure_finish', lang)}
         </button>
       </div>
     </>,
@@ -221,7 +288,7 @@ export function MeasuredSection({ order, factoryId = null }) {
   const caps = capsFor(currentUser)
   const toast = useToast()
   const [sessions, setSessions] = useState(null)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(null)   // null, or { start } with the garment to open on
   const [busy, setBusy] = useState('')
   const load = () => measurementsApi.list(order.id).then(setSessions).catch(() => setSessions([]))
   useEffect(() => { load() }, [order.id])   // eslint-disable-line react-hooks/exhaustive-deps
@@ -234,7 +301,7 @@ export function MeasuredSection({ order, factoryId = null }) {
     <div style={{ marginTop: 16 }}>
       <FlexRow gap={8} style={{ marginBottom: 7 }}>
         <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, fontWeight: 700, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Measured garments{sessions?.length ? ` · ${sessions.length}` : ''}</div>
-        {mayRecord && <Btn size="sm" variant="ghost" onClick={() => setOpen(true)} icon={<Ruler size={11} />}>Measure a garment</Btn>}
+        {mayRecord && <Btn size="sm" variant="ghost" onClick={() => setOpen({ start: null })} icon={<Ruler size={11} />}>Measure a garment</Btn>}
       </FlexRow>
       {sessions && sessions.length === 0 && <div style={{ fontSize: 12, color: T.textMuted }}>None yet. Measure a fit, PP or final QC garment against the measurement sheet: speak or type the values and the Excel is made for you.</div>}
       {(sessions || []).length > 0 && (
@@ -245,15 +312,17 @@ export function MeasuredSection({ order, factoryId = null }) {
                 <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{s.stageName} · size {s.size}</div>
                 <div style={{ fontSize: 11.5, color: T.textMuted, marginTop: 1 }}>{s.byName}, {fmtDate(s.at)} · {s.measuredCount} of {s.points.length} points{s.method === 'voice' ? ' · by voice' : ''}</div>
               </div>
-              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: s.outOfTolerance ? T.dangerBg : T.successBg, color: s.outOfTolerance ? T.dangerDeep : T.successDeep, border: `1px solid ${s.outOfTolerance ? T.dangerBorder : T.successBorder}` }}>{s.outOfTolerance ? `${s.outOfTolerance} outside tolerance` : 'all within tolerance'}</span>
-              {!caps.isBuyer && (s.released ? <span style={{ fontSize: 11, color: T.successDeep, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}><Eye size={11} /> shown to the customer</span> : <span style={{ fontSize: 11, color: T.textLight }}>not shown to the customer yet</span>)}
+              {s.status === 'draft' && <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: T.warningBg, color: T.warning, border: `1px solid ${T.warningBorder}` }}>in progress</span>}
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: s.outOfTolerance ? T.dangerBg : T.successBg, color: s.outOfTolerance ? T.dangerDeep : T.successDeep, border: `1px solid ${s.outOfTolerance ? T.dangerBorder : T.successBorder}` }}>{s.outOfTolerance ? `${s.outOfTolerance} outside tolerance` : s.status === 'draft' ? 'within tolerance so far' : 'all within tolerance'}</span>
+              {s.status === 'draft' && mayRecord && <Btn size="sm" variant="secondary" onClick={() => setOpen({ start: s })} icon={<Ruler size={12} />}>Continue</Btn>}
+              {!caps.isBuyer && s.status !== 'draft' && (s.released ? <span style={{ fontSize: 11, color: T.successDeep, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}><Eye size={11} /> shown to the customer</span> : <span style={{ fontSize: 11, color: T.textLight }}>not shown to the customer yet</span>)}
               {s.documentId && <Btn size="sm" variant="secondary" disabled={busy === s.id} onClick={() => get(s)} icon={<Download size={12} />}>Excel</Btn>}
               {caps.shareMeasurements && !s.released && <Btn size="sm" variant="secondary" disabled={busy === s.id} onClick={() => share(s)} icon={<Eye size={12} />}>Show to customer</Btn>}
             </div>
           ))}
         </div>
       )}
-      {open && <MeasureSheet order={order} factoryId={factoryId} onClose={() => setOpen(false)} onSaved={load} />}
+      {open && <MeasureSheet order={order} factoryId={open.start?.mfrId || factoryId} start={open.start} onClose={() => { setOpen(null); load() }} onSaved={load} />}
     </div>
   )
 }
