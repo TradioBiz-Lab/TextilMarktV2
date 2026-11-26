@@ -75,8 +75,9 @@ Matching the point:
 Reading the number:
 - Give a decimal number. Halves, quarters and eighths in any form: "sixteen and a half" 16.5, "16 1/2" 16.5, "sixteen point five" 16.5, "three quarter" 0.75, "five eighths" 0.625, "three by eight" 0.375, "seventeen one by four" 17.25.
 - Hindi: "saadhe solah" 16.5, "sava solah" 16.25, "paune satrah" 16.75, "dedh" 1.5, "dhai" 2.5, "aadha" 0.5, "paav" 0.25, "pauna" 0.75.
-- He gives the MEASURED value, not the difference. If he says a point is "ok", "correct", "theek hai" or "same" with no number, the measured value is the required value of that point.
-- If he says only the difference ("chest minus half", "half inch kam", "quarter zyada"), the measured value is the required value minus or plus that amount.
+- He normally gives the MEASURED value: return it with "kind": "value".
+- If he says a point is "ok", "correct", "theek hai", "sahi hai" or "same" with no number, return "kind": "ok" and "value": null. Do not work out the number yourself.
+- If he says only the difference from the sheet ("chest minus half", "half inch kam", "quarter zyada", "plus quarter"), return "kind": "diff" and the difference as a signed decimal: -0.5 for half less, 0.25 for a quarter more. Do not add it to the required value yourself.
 - The required value is there to help you hear the number right (to tell 16 from 60, 13 from 30). A value more than a third away from the required value is probably misheard: still return what he most plausibly said, and say what you heard in "heard".
 - People correct themselves while speaking. The corrected number is the one that counts, and the number before it is thrown away, never added to it and never given to the next point. Words that mean "that was wrong": "no", "no no", "sorry", "wait", "I mean", "correction", "cancel", "not that", and in Hindi "nahin", "nahi", "nahin nahin", "na na", "galat", "ruko", "matlab", "arre". Examples: "chest 15, nahin nahin, 14.5" is chest 14.5. "shoulder 18, sorry, 18 and a half" is shoulder 18.5. "waist 42, galat, saadhe ikyalis" is waist 41.5. "sleeve 25, no wait 26" is sleeve 26.
 - A correction can also change the point: "chest 43, nahin, woh waist tha" means 43 is the waist and nothing was said for the chest.
@@ -84,7 +85,7 @@ Reading the number:
 - Never invent a value for a point he did not mention. Leave unmentioned points out of "values".
 
 Return ONLY a JSON object, no other text:
-{"values": [{"index": the number of the point in the list above, "value": the measured number as a decimal, "heard": the few words of the transcript this came from}], "unmatched": [{"heard": the words of a measurement you could not place, "value": the number if you could read one, else null}]}`
+{"values": [{"index": the number of the point in the list above, "kind": "value" or "ok" or "diff", "value": the number as a decimal (the measurement for "value", the signed difference for "diff", null for "ok"), "heard": the few words of the transcript this came from}], "unmatched": [{"heard": the words of a measurement you could not place, "value": the number if you could read one, else null}]}`
 
 /**
  * The same job from a photo: a quality person measured one garment and wrote the numbers on paper. The paper may be a
@@ -107,13 +108,14 @@ What the paper may look like:
 Reading the number:
 - Give a decimal number. Fractions are written many ways: "16 1/2", "16½", "16-1/2", "16.5", "3/8", "16 3/4". 16 1/2 is 16.5, 3/8 is 0.375, 16 3/4 is 16.75.
 - A number that is struck through is cancelled: use the number written beside or above it. If the same point has two numbers and one is clearly the correction, use the correction.
-- "ok", "OK", a tick mark or "same" with no number means the measured value equals the required value of that point.
-- A number written with a plus or minus sign ("-1/4", "+0.5"), or one far smaller than the required value where a full measurement is expected (required 43, written 0.5), is a difference: the measured value is the required value plus or minus it.
+- A plain measurement is returned with "kind": "value".
+- "ok", "OK", a tick mark or "same" with no number: return "kind": "ok" and "value": null. Do not work out the number yourself.
+- A number written with a plus or minus sign ("-1/4", "+0.5"), or one far smaller than the required value where a full measurement is expected (required 43, written 0.5), is a difference from the sheet: return "kind": "diff" and the difference as a signed decimal (-0.25, 0.5). Do not add it to the required value yourself.
 - The required value is there to help you read unclear handwriting (to tell 1 from 7, 4 from 9, 16 from 18). If a digit is unclear, choose the reading closest to the required value and say what you saw in "heard".
 - If you cannot read a number with reasonable confidence, do not guess: put it under "unmatched" with what you could see.
 - Never invent a value for a point that is not on the paper. Leave those points out of "values".
 - Ignore everything that is not a measurement: the style name, the date, a signature, the size, page numbers, tolerance columns, printed required values.
 
 Return ONLY a JSON object, no other text:
-{"values": [{"index": the number of the point in the list above, "value": the measured number as a decimal, "heard": what was written on the paper for it}], "unmatched": [{"heard": what was written that you could not place or read, "value": the number if you could read one, else null}]}`
+{"values": [{"index": the number of the point in the list above, "kind": "value" or "ok" or "diff", "value": the number as a decimal (the measurement for "value", the signed difference for "diff", null for "ok"), "heard": what was written on the paper for it}], "unmatched": [{"heard": what was written that you could not place or read, "value": the number if you could read one, else null}]}`
 

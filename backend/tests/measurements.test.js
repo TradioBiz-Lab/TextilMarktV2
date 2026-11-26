@@ -79,6 +79,12 @@ describe('reading what he said', () => {
     assert.deepEqual(res.body.values.map(v => [v.index, v.value]), [[0, 18], [1, 42]], 'the last value said for a point; a point not on the sheet dropped')
     assert.deepEqual(res.body.unmatched, [{ heard: 'cuff 9', value: 9 }])
     assert.equal(await MeasurementSession.countDocuments(), 0)
+    // "ok" and a difference are turned into measurements here, with the sheet's own required value.
+    setMeasurementExtractor(async () => ({ values: [{ index: 0, kind: 'ok', value: null, heard: 'shoulder theek hai' }, { index: 1, kind: 'diff', value: -0.5, heard: 'chest half inch kam' }, { index: 2, kind: 'value', value: 0, heard: 'ok' }], unmatched: [] }))
+    assert.deepEqual((await as(coord).post('/api/measurements/read', { orderId: 'S-1', tab: 'PP', size: 'M', transcript: 'x' })).body.values.map(v => [v.index, v.value]), [[0, 18], [1, 42.5], [2, 25.5]])
+    setMeasurementExtractor(async () => ({ values: [{ index: 1, value: -0.25, heard: '-1/4' }, { index: 0, kind: 'diff', value: -500, heard: 'nonsense' }], unmatched: [] }))
+    const odd = (await as(coord).post('/api/measurements/read', { orderId: 'S-1', tab: 'PP', size: 'M', transcript: 'x' })).body
+    assert.deepEqual([odd.values.map(v => [v.index, v.value]), odd.unmatched], [[[1, 42.75]], [{ heard: 'nonsense', value: -500 }]], 'a negative number is a difference; one that makes no measurement is handed back')
     assert.equal((await as(buyer).post('/api/measurements/read', { orderId: 'S-1', tab: 'PP', size: 'M', transcript: 'x' })).status, 403)
     assert.equal((await as(coord).post('/api/measurements/read', { orderId: 'S-1', tab: 'PP', size: 'XXL', transcript: 'x' })).status, 400)
     assert.equal((await as(coord).post('/api/measurements/read', { orderId: 'S-1', tab: 'PP', size: 'M', transcript: ' ' })).status, 400)

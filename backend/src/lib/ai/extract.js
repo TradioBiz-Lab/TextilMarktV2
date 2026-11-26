@@ -57,11 +57,11 @@ export function parseJsonReply(text) {
  * parse/validation failure; returns null after that so the caller routes the
  * message to human review instead of writing a guess.
  */
-async function callJson({ content, schema, sdk = getClient(), maxTokens = 1024 }) {
+async function callJson({ content, schema, sdk = getClient(), maxTokens = 1024, model = MODEL() }) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await sdk.messages.create({
-        model: MODEL(), max_tokens: maxTokens,
+        model, max_tokens: maxTokens,
         messages: [{ role: 'user', content }],
       })
       const text = (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('')
@@ -113,10 +113,16 @@ export const extractFieldUpdate = (text, photos, ctx, opts) =>
   })
 
 // ── Measurements spoken by a quality person, placed against the points of the style's measurement sheet ──
-const spokenNumber = z.union([z.number(), z.string()]).transform(v => (typeof v === 'number' ? v : Number(String(v).trim()))).refine(n => Number.isFinite(n) && n >= 0 && n <= 1000)
+// A number as the model gives it. It may be negative (a difference) or absent ("ok"): the route turns "ok" and a
+// difference into a measurement with the sheet's own required value, so the model never does that sum.
+const spokenNumber = z.union([z.number(), z.string(), z.null()]).nullish().transform(v => (v == null || v === '' ? null : typeof v === 'number' ? v : Number(String(v).trim()))).refine(n => n === null || (Number.isFinite(n) && Math.abs(n) <= 1000))
 const measurementsSchema = z.object({
-  values: z.array(z.object({ index: z.number().int().min(0), value: spokenNumber, heard: z.string().nullish().transform(v => (v ?? '').slice(0, 120)) })).max(200).default([]),
-  unmatched: z.array(z.object({ heard: z.string().transform(v => v.slice(0, 120)), value: spokenNumber.nullish() })).max(50).nullish().transform(v => v ?? []),
+  values: z.array(z.object({
+    index: z.number().int().min(0), value: spokenNumber,
+    kind: z.string().nullish().transform(v => (['ok', 'diff'].includes(String(v || '').toLowerCase()) ? String(v).toLowerCase() : 'value')),
+    heard: z.string().nullish().transform(v => (v ?? '').slice(0, 120)),
+  })).max(200).default([]),
+  unmatched: z.array(z.object({ heard: z.string().nullish().transform(v => (v ?? '').slice(0, 120)), value: spokenNumber })).max(50).nullish().transform(v => v ?? []),
 })
 
 /**
@@ -131,6 +137,12 @@ export const extractMeasurements = (transcript, points, { unit = null, ...opts }
  * The same from photos of a handwritten sheet. `photos` is [{ buffer, mimeType }] (one to three); the answer has the
  * shape of extractMeasurements, with `heard` holding what was written on the paper.
  */
-export const extractMeasurementPhoto = (photos, points, { unit = null, ...opts } = {}) =>
-  callJson({ content: [...photos.map(p => mediaBlock(p.buffer, p.mimeType)), { type: 'text', text: measurementPhotoPrompt({ points, unit }) }], schema: measurementsSchema, maxTokens: 4000, ...opts })
+// Handwriting is read by a stronger model than the everyday one (ANTHROPIC_VISION_MODEL to change it): a misread digit
+// here is a wrong measurement. If that model is not available to the key, the everyday model is tried.
+const VISION_MODEL = () => process.env.ANTHROPIC_VISION_MODEL || 'claude-sonnet-5-5'
+export async function extractMeasurementPhoto(photos, points, { unit = null, ...opts } = {}) {
+  const content = [...photos.map(p => mediaBlock(p.buffer, p.mimeType)), { type: 'text', text: measurementPhotoPrompt({ points, unit }) }]
+  return (await callJson({ content, schema: measurementsSchema, maxTokens: 4000, model: VISION_MODEL(), ...opts }))
+    ?? (VISION_MODEL() === MODEL() ? null : callJson({ content, schema: measurementsSchema, maxTokens: 4000, ...opts }))
+}
 

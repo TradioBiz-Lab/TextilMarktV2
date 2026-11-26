@@ -71,10 +71,23 @@ const sessionOut = s => ({
 
 // What a reader returned, made safe for the page: one value per point (the last one given), an index that is not on
 // the sheet dropped, numbers rounded to three decimals.
-function tidy(out, t) {
-  const byIndex = new Map()
-  for (const v of out.values || []) if (Number.isInteger(v.index) && v.index >= 0 && v.index < t.points.length && Number.isFinite(v.value)) byIndex.set(v.index, { index: v.index, value: Math.round(v.value * 1000) / 1000, heard: v.heard || '' })
-  return { values: [...byIndex.values()].sort((a, b) => a.index - b.index), unmatched: (out.unmatched || []).map(u => ({ heard: u.heard, value: Number.isFinite(u.value) ? u.value : null })) }
+// "ok" becomes the sheet's required value and a difference is added to it here, with the sheet's own number, so that
+// sum is never left to the reader. What cannot be turned into a measurement goes back as not placed.
+const OK_WORDS = /^\s*(ok|okay|same|correct|theek|thik|sahi|ठीक|सही|✓|✔)/i
+function tidy(out, t, S) {
+  const byIndex = new Map(); const unmatched = (out.unmatched || []).map(u => ({ heard: u.heard || '', value: Number.isFinite(u.value) ? u.value : null }))
+  for (const v of out.values || []) {
+    if (!Number.isInteger(v.index) || v.index < 0 || v.index >= t.points.length) continue
+    const spec = t.points[v.index].values[S]
+    // A reader that ignores the instruction still says "ok" with 0, or gives a difference as a negative measurement.
+    const kind = v.kind === 'ok' || (v.kind !== 'diff' && (v.value == null || v.value === 0) && OK_WORDS.test(v.heard || '')) ? 'ok' : v.kind === 'diff' || (Number.isFinite(v.value) && v.value < 0) ? 'diff' : 'value'
+    const value = kind === 'ok' ? (typeof spec === 'number' ? spec : null)
+      : kind === 'diff' ? (typeof spec === 'number' && Number.isFinite(v.value) ? spec + v.value : null)
+      : (Number.isFinite(v.value) ? v.value : null)
+    if (value == null || value < 0 || value > 1000) { unmatched.push({ heard: v.heard || t.points[v.index].name, value: Number.isFinite(v.value) ? v.value : null }); continue }
+    byIndex.set(v.index, { index: v.index, value: Math.round(value * 1000) / 1000, heard: v.heard || '' })
+  }
+  return { values: [...byIndex.values()].sort((a, b) => a.index - b.index), unmatched }
 }
 
 // GET /api/measurements/spec?orderId= - the style's measurement sheet as data: its tabs, sizes and points.
@@ -112,7 +125,7 @@ router.post('/read', limiter, async (req, res) => {
     if (!t || !t.sizes.includes(S)) return res.status(400).json({ error: 'Choose a tab and a size from the sheet' })
     const out = await (extractor || extractMeasurements)(transcript, t.points.map(p => ({ name: p.name, spec: p.values[S] ?? null })), { unit: t.unit })
     if (!out) return res.status(502).json({ error: 'The recording could not be read. Record again or type the values.' })
-    res.json(tidy(out, t))
+    res.json(tidy(out, t, S))
   } catch (err) { serverError(res, err) }
 })
 
@@ -136,7 +149,7 @@ router.post('/read-photo', limiter, async (req, res) => {
     if (!t || !t.sizes.includes(S)) return res.status(400).json({ error: 'Choose a tab and a size from the sheet' })
     const out = await (photoExtractor || extractMeasurementPhoto)(files, t.points.map(p => ({ name: p.name, spec: p.values[S] ?? null })), { unit: t.unit })
     if (!out) return res.status(502).json({ error: 'The photo could not be read. Take it again in good light, or type the values.' })
-    res.json(tidy(out, t))
+    res.json(tidy(out, t, S))
   } catch (err) { serverError(res, err) }
 })
 
