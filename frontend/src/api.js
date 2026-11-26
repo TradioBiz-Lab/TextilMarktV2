@@ -215,6 +215,14 @@ export const assistantApi = {
 }
 
 // The quality module: a garment measured against the style's measurement sheet.
+// A customer's SOP: one PDF per customer that says how its orders are made. Asked for by style (the server finds the
+// customer) or by customer; Tradio admins save it.
+export const sopsApi = {
+  get: orderId => api.get('/sops', { params: { orderId } }),
+  file: orderId => api.get('/sops/file', { params: { orderId }, timeout: 60000 }),
+  save: (buyerId, body) => api.post(`/sops/${buyerId}`, body, { timeout: 120000 }),
+}
+
 export const measurementsApi = {
   spec: orderId => api.get('/measurements/spec', { params: { orderId } }),
   read: (orderId, tab, size, transcript) => api.post('/measurements/read', { orderId, tab, size, transcript }, { timeout: 60000 }),

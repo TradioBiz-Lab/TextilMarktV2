@@ -10,6 +10,7 @@ import {
   fmtDate, styleStatus, dueDates, dueText, pastDateNote, siblingStepNames, stepNameWarning, isPreProduction, PHASE_LABEL, replenEligible } from '../../constants.js'
 import { PlanStarter } from '../../components/PlanStarter.jsx'
 import { PriorPlan } from '../../components/PriorPlan.jsx'
+import { SopLink } from '../../components/SopLink.jsx'
 import { planTemplatesApi } from '../../api.js'
 import { PromoteModal } from '../../components/PromoteModal.jsx'
 import { StyleGallery } from '../../components/StyleGallery.jsx'
@@ -869,6 +870,8 @@ export function AdminOrderDetail({ orderId, initialMid, initialStage = null, onI
           {!unassigned && order.assignments?.length > 1 && (
             <Btn variant="secondary" size="sm" onClick={() => setSelectedMid(null)} icon={<ArrowLeftRight size={13} />}>All splits</Btn>
           )}
+          {/* The customer's SOP opens in a window: Tradio and the factory making the style, never the customer. */}
+          <SopLink order={order} />
           {/* Only a delivered style can be reordered. A customer orders it for review; Tradio adds it straight away. */}
           {caps.orderReplen && replenEligible(order) && <Btn variant="secondary" size="sm" onClick={() => setReplenOpen(true)} icon={<RefreshCw size={13} />}>{caps.isBuyer ? 'Order replen' : 'Add replen'}</Btn>}
           {replenOpen && <ReplenRequestModal preselect={[order.id]} admin={!caps.isBuyer} buyerId={order.buyerId} onClose={() => setReplenOpen(false)}

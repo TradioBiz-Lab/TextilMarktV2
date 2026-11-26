@@ -147,3 +147,13 @@ export async function extractMeasurementPhoto(photos, points, { unit = null, ...
     ?? (VISION_MODEL() === MODEL() ? null : callJson({ content, schema: measurementsSchema, maxTokens: 8000, ...opts }))
 }
 
+
+// A customer's SOP (a PDF) as plain words, for Kriyaa to answer from: every heading, checklist line and table row, in
+// order, nothing summarised. Returns '' when the reply is empty; throws when the call fails.
+export async function readSopText(buffer, { sdk = getClient(), model = MODEL() } = {}) {
+  const res = await sdk.messages.create({
+    model, max_tokens: 16000,
+    messages: [{ role: 'user', content: [mediaBlock(buffer, 'application/pdf'), { type: 'text', text: 'Write out this document as plain text, complete and in order: every heading, every checklist line, every table row (cells separated by " | "), every note. Do not summarise, shorten, reword or comment. Describe a photo in one short bracketed line. Reply with the text only.' }] }],
+  })
+  return (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim()
+}

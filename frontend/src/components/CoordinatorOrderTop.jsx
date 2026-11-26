@@ -8,6 +8,7 @@ import { DocViewer } from './ui.jsx'
 import { SizeBreakupTable } from './SizeBreakup.jsx'
 import { BomChecklist } from './BomChecklist.jsx'
 import { MeasureSheet } from '../pages/quality/MeasureSheet.jsx'
+import { SopLink } from './SopLink.jsx'
 import { nextSteps, stepState } from '../nextSteps.js'
 import { AddUpdateSheet } from '../pages/coordinator/AddUpdateSheet.jsx'
 
@@ -130,6 +131,8 @@ export function CoordinatorOrderTop({ order, factoryId, onNextProduct, detailsOp
       )}
       <Paper label={t('tech_pack', lang)} icon={<FileText size={24} color={T.info} />} doc={techPackOf(docs, order.id)} lang={lang} getDocData={getDocData} />
       <Paper label={measurement?.locked ? t('locked_measurement', lang) : t('measurements', lang)} icon={<Ruler size={24} color={T.info} />} doc={measurement} lang={lang} getDocData={getDocData} />
+      {/* How this customer's orders are made: the SOP opens on screen, like the other papers. */}
+      <SopLink order={order} big label={t('sop', lang)} />
       {/* Measure a fit, PP or final QC garment against that sheet, by voice or by typing: the Excel is made for him. */}
       {measurement && split && (
         <button type="button" onClick={() => setMeasuring(true)}
