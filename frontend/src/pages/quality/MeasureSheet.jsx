@@ -310,7 +310,7 @@ export function MeasureSheet({ order, factoryId = null, start = null, onClose, o
  * the workbook. Tradio, the factory and the customer (once shared) see it; whoever may record gets the button; a Tradio
  * admin shares a record with the customer. A coordinator has the button on his simple top instead.
  */
-export function MeasuredSection({ order, factoryId = null }) {
+export function MeasuredSection({ order, factoryId = null, inFolder = false }) {
   const { currentUser, getDocData } = useApp()
   const caps = capsFor(currentUser)
   const toast = useToast()
@@ -325,7 +325,7 @@ export function MeasuredSection({ order, factoryId = null }) {
   const get = async s => { setBusy(s.id); try { const d = await getDocData(s.documentId); await saveDataUrl(d.dataUrl, `${order.styleNumber || order.id}-${s.stage}-${s.size}.xlsx`) } catch (e) { toast(e?.message || 'Could not download it', 'error') } finally { setBusy('') } }
   const share = async s => { setBusy(s.id); try { await measurementsApi.release(s.id); toast('Shown to the customer', 'success'); load() } catch (e) { toast(e?.message || 'Could not share it', 'error') } finally { setBusy('') } }
   return (
-    <div style={{ marginTop: 16 }}>
+    <div style={{ marginTop: inFolder ? 0 : 16 }}>
       <FlexRow gap={8} style={{ marginBottom: 7 }}>
         <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, fontWeight: 700, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Measured garments{sessions?.length ? ` · ${sessions.length}` : ''}</div>
         {mayRecord && <Btn size="sm" variant="ghost" onClick={() => setOpen({ start: null })} icon={<Ruler size={11} />}>Measure a garment</Btn>}

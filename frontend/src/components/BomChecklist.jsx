@@ -204,18 +204,19 @@ function BomEditor({ order, images, onClose }) {
  * The bill of materials on a style's page: each item with its picture and, per factory, who ticked it and when. Tradio
  * edits the list; everyone else reads it. (A coordinator has his own large version at the top of the page.)
  */
-export function BomSection({ order }) {
+// `inFolder`: drawn inside the BOM folder of Documents & Assets, which is itself the fold, so the list starts open.
+export function BomSection({ order, inFolder = false }) {
   const { currentUser } = useApp()
   const caps = capsFor(currentUser)
   const images = useBomImages(order)
   const [editing, setEditing] = useState(false)
   const [zoom, setZoom] = useState(null)
-  const [open, setOpen] = useState(false)   // folded shut until asked for: the heading says how many items are ticked
+  const [open, setOpen] = useState(inFolder)   // on its own it is folded shut until asked for: the heading says how many items are ticked
   const bom = order.bom
   if (caps.isCoord || (!bom && !caps.editBom)) return null
   const factoryName = id => (order.assignments || []).find(a => String(a.mid) === String(id))?.mfrCompany || 'the factory'
   return (
-    <div style={{ marginTop: 16 }}>
+    <div style={{ marginTop: inFolder ? 0 : 16, marginBottom: inFolder ? 14 : 0 }}>
       <FlexRow gap={8} style={{ marginBottom: 7 }}>
         <button type="button" onClick={() => bom && setOpen(v => !v)} aria-expanded={open} disabled={!bom}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', padding: 0, cursor: bom ? 'pointer' : 'default', fontFamily: "'JetBrains Mono',monospace", fontSize: 9, fontWeight: 500, color: T.textLight, textTransform: 'uppercase', letterSpacing: '0.08em' }}>

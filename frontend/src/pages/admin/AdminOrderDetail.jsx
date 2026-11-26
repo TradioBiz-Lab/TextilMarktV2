@@ -754,12 +754,13 @@ export function AdminOrderDetail({ orderId, initialMid, initialStage = null, onI
         preview: heroImgUrl ? <img src={heroImgUrl} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover' }} /> : null,
       },
       ...Object.keys(refDocLabels).filter(refDocNeeded).map(type => {
-        // The style's own sheets first; a workbook recorded with the quality module (a measured garment) after them.
-        const typeDocs = orderDocs.filter(d => d.type === type).sort((a, b) => Number(!!a.measurementSessionId) - Number(!!b.measurementSessionId))
+        // The style's own files. A workbook recorded with the quality module is not listed as a file: it shows under
+        // "Measured garments" in the same folder, with its stage, size and result.
+        const typeDocs = orderDocs.filter(d => d.type === type && !d.measurementSessionId)
         const doc = typeDocs[0]
         const uploadProps = type === 'pattern' ? PATTERN_FILE_PROPS : type === 'measurements' ? MEASUREMENTS_FILE_PROPS : {}
         return {
-          key: type, label: refDocLabels[type], uploaded: !!doc, doc, docs: typeDocs, uploadProps, canUpload: caps.uploadReferenceDocs,
+          key: type, label: refDocLabels[type], uploaded: !!doc || (type === 'bom' && !!order.bom), doc, docs: typeDocs, uploadProps, canUpload: caps.uploadReferenceDocs,
           file: refDocFiles[type], err: refDocErrs[type], uploading: refDocUploading === type,
           onFile: f => setRefDocFiles(p => ({ ...p, [type]: f })),
           onErr: e => setRefDocErrs(p => ({ ...p, [type]: e })),
@@ -976,8 +977,6 @@ export function AdminOrderDetail({ orderId, initialMid, initialStage = null, onI
 
               {/* Pieces of each colour in each size, as the customer's order gives it. */}
               <SizeBreakupSection order={order} />
-              <BomSection order={order} />
-              <MeasuredSection order={order} factoryId={effectiveMid} />
 
               {(order.fabricDetails || []).length > 0 && (
                 <div style={{ marginTop: 16 }}>
@@ -1022,11 +1021,13 @@ export function AdminOrderDetail({ orderId, initialMid, initialStage = null, onI
                     style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 14px', minHeight: 56, cursor: 'pointer' }}>
                     {item.preview}
                     <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{item.label}</span>
-                    {docChip(item.uploaded, item.uploaded ? 'Uploaded' : 'Pending')}
+                    {docChip(item.uploaded, !item.uploaded ? 'Pending' : item.key === 'bom' && !item.doc ? 'Checklist added' : 'Uploaded')}
                     <ChevronRight size={14} color="#475569" style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }} />
                   </div>
                   {isOpen && (
                     <div style={{ padding: 12, borderTop: `1px solid ${T.border}` }}>
+                      {/* The checklist the coordinator ticks at the factory lives in this folder, above any BOM file. */}
+                      {item.key === 'bom' && <BomSection order={order} inFolder />}
                       {item.key === 'image' ? (
                         // Every product photo, its colourway, and the upload (the gallery shows exactly these).
                         <ProductPhotos order={order} canEdit={item.canUpload} />
@@ -1054,6 +1055,8 @@ export function AdminOrderDetail({ orderId, initialMid, initialStage = null, onI
                                   {g.docs.map(d => <DocCard key={d.id} doc={d} users={users} onGetData={getDocData} stageName={g.label} compact />)}
                                 </div>
                               ))}
+                              {/* Garments measured with the quality module, under the sheets they were measured against. */}
+                              {item.key === 'measurements' && <MeasuredSection order={order} factoryId={effectiveMid} inFolder />}
                               {item.canUpload && item.onFile && (
                                 <div style={{ borderTop: `1px dashed ${T.border}`, paddingTop: 10 }}>
                                   <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, marginBottom: 6 }}>Add a newer version (the earlier ones stay listed)</div>
@@ -1078,6 +1081,7 @@ export function AdminOrderDetail({ orderId, initialMid, initialStage = null, onI
                           )}
                         </>
                       )}
+                      {item.key === 'measurements' && !(item.uploaded && item.doc) && <MeasuredSection order={order} factoryId={effectiveMid} />}
                     </div>
                   )}
                 </div>
