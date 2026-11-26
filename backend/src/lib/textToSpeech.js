@@ -11,6 +11,8 @@
 //
 // ElevenLabs is called directly (one JSON request, audio back), not through its SDK, for the same reason as
 // speech-to-text: the SDK is 122 MB and every deploy uploads the backend's packages.
+import { noteVoiceProblem, clearVoiceProblem } from './voiceStatus.js'
+
 const ELEVENLABS_TTS_URL = 'https://api.elevenlabs.io/v1/text-to-speech'
 const SARVAM_TTS_URL = 'https://api.sarvam.ai/text-to-speech'
 
@@ -32,13 +34,13 @@ export function ttsProvider(env = process.env) {
 const ELEVENLABS_SPEED = 1.1
 
 /** ElevenLabs: text in, an MP3 back as a data URL. Throws with `.detail` when the service refuses. */
-export async function elevenLabsSpeak(text, languageCode, { fetchImpl = fetch, env = process.env } = {}) {
+export async function elevenLabsSpeak(text, languageCode, { fetchImpl = fetch, env = process.env, model = null } = {}) {
   const voice = encodeURIComponent(String(env.ELEVENLABS_VOICE_ID).trim())
   const res = await fetchImpl(`${ELEVENLABS_TTS_URL}/${voice}?output_format=mp3_44100_64`, {
     method: 'POST',
     headers: { 'xi-api-key': env.ELEVENLABS_API_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      text, model_id: env.ELEVENLABS_TTS_MODEL || 'eleven_v4_turbo',
+      text, model_id: model || env.ELEVENLABS_TTS_MODEL || 'eleven_v4_turbo',
       // The language the reply is in ('hi' from 'hi-IN'): numbers and mixed words are read right. A model that does not
       // take the hint ignores it.
       language_code: String(languageCode || DEFAULT_LANGUAGE).slice(0, 2).toLowerCase(),
@@ -74,7 +76,32 @@ export async function sarvamSpeak(text, languageCode, { fetchImpl = fetch, env =
 }
 
 /** Reads `text` aloud with whichever service this server uses. Returns { audioDataUrl }. */
+// If the account cannot use the chosen ElevenLabs model, these are tried next. The older ones speak Hindi and English
+// only, so they are not tried for Kannada or Bengali. A refusal that is about the key or the voice (401, 403) is the
+// same for every model, so nothing more is tried on ElevenLabs.
+const OTHER_MODELS = ['eleven_flash_v2_5', 'eleven_multilingual_v2']
+
+/**
+ * Reads `text` aloud with whichever service this server uses. Returns { audioDataUrl }. When ElevenLabs refuses, the
+ * other models are tried, then Sarvam if it has a key, before the caller is told it failed.
+ */
 export async function speak(text, languageCode, opts = {}) {
+  const env = opts.env || process.env
   const lang = SUPPORTED_LANGUAGES.includes(languageCode) ? languageCode : DEFAULT_LANGUAGE
-  return ttsProvider(opts.env || process.env) === 'elevenlabs' ? elevenLabsSpeak(text, lang, opts) : sarvamSpeak(text, lang, opts)
+  if (ttsProvider(env) !== 'elevenlabs') {
+    try { const out = await sarvamSpeak(text, lang, opts); clearVoiceProblem('speak'); return out } catch (err) { noteVoiceProblem('speak', 'sarvam', err); throw err }
+  }
+  const first = env.ELEVENLABS_TTS_MODEL || 'eleven_v4_turbo'
+  const models = [first, ...(['hi-IN', 'en-IN'].includes(lang) ? OTHER_MODELS.filter(m => m !== first) : [])]
+  let lastErr = null
+  for (const model of models) {
+    try { const out = await elevenLabsSpeak(text, lang, { ...opts, model }); clearVoiceProblem('speak'); return out } catch (err) {
+      lastErr = err
+      if (/\((401|403)\)/.test(err.message)) break
+    }
+  }
+  noteVoiceProblem('speak', 'elevenlabs', lastErr)
+  console.error('[voice] ElevenLabs could not speak:', lastErr.message, lastErr.detail || '')
+  if (env.SARVAM_API_KEY) return sarvamSpeak(text, lang, opts)
+  throw lastErr
 }

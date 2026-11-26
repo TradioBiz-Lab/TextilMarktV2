@@ -5,6 +5,9 @@ import cors from 'cors'
 import helmet from 'helmet'
 import cookieParser from 'cookie-parser'
 import rateLimit from 'express-rate-limit'
+import { sttProvider } from './lib/speechToText.js'
+import { ttsProvider } from './lib/textToSpeech.js'
+import { voiceProblems } from './lib/voiceStatus.js'
 import mongoose from 'mongoose'
 import './middleware/asyncErrors.js'
 import { connectDB } from './db/index.js'
@@ -203,6 +206,9 @@ app.get('/api/health', (_req, res) => {
     db:     dbOk ? 'connected' : 'unavailable',
     uptime: Math.floor(process.uptime()),
     node:   process.versions.node.split('.')[0],   // major only: how a deploy is checked against .nvmrc (docs/RUNBOOK.md)
+    // Which service Kriyaa listens and speaks through on this server, and what it last refused (lib/voiceStatus.js).
+    // Names and a short code only: enough to see from outside whether a key and a voice reached the server.
+    voice:  { listen: sttProvider(), speak: ttsProvider(), lastProblem: voiceProblems() },
   })
 })
 
