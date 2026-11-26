@@ -61,7 +61,7 @@ async function callJson({ content, schema, sdk = getClient() }) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await sdk.messages.create({
-        model: MODEL(), max_tokens: 1024,
+        model: MODEL(), max_tokens: 4096   /* room for a model that thinks before it answers: the thinking counts */,
         messages: [{ role: 'user', content }],
       })
       const text = (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('')

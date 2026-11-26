@@ -15,6 +15,9 @@ const skipInTest = () => process.env.NODE_ENV === 'test'
 
 import { noteAssistantProblem } from '../lib/voiceStatus.js'
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5'
+// Room for one answer. The current models think before they answer and that thinking counts against this limit, so it
+// is set well above what a reply needs: at 4096 a newer model could run out mid-answer.
+const MAX_ANSWER_TOKENS = 16000
 const MAX_TOOL_LOOP_ITERATIONS = 8
 const MAX_MESSAGES = 100
 const MAX_MESSAGE_LENGTH = 8000
@@ -829,12 +832,16 @@ router.post('/chat', requireAuth, assistantLimiter, async (req, res) => {
   let finalText = ''
   let mutated = false
   let hitCap = false
+  const usage = { calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
 
   try {
     for (let i = 0; i < MAX_TOOL_LOOP_ITERATIONS; i++) {
       const response = await getClient().messages.create({
-        model: ANTHROPIC_MODEL, max_tokens: 4096, system, messages, tools: toolsFor(req.user),
+        model: ANTHROPIC_MODEL, max_tokens: MAX_ANSWER_TOKENS, system, messages, tools: toolsFor(req.user),
       })
+      // What this turn cost, added up over its calls, for comparing models (never shown to the user).
+      usage.calls++; usage.input += response.usage?.input_tokens || 0; usage.output += response.usage?.output_tokens || 0
+      usage.cacheRead += response.usage?.cache_read_input_tokens || 0; usage.cacheWrite += response.usage?.cache_creation_input_tokens || 0
       const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('\n\n')
       if (text) finalText = text
 
@@ -885,7 +892,8 @@ router.post('/chat', requireAuth, assistantLimiter, async (req, res) => {
       : "I'm having trouble completing this within the tool budget for this turn. Please try a narrower question."
   }
 
-  res.json({ reply: finalText, mutated })
+  // `usage` is the token count of this turn, for comparing what models cost; the page ignores it.
+  res.json({ reply: finalText, mutated, usage })
 })
 
 export default router
