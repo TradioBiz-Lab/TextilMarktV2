@@ -36,7 +36,11 @@ describe('reading a measurement sheet', () => {
     assert.deepEqual(t.points.map(p => [p.name, p.tol, p.values.M, p.values.L]), [['SHOULDER SEAM TO SEAM', 0.38, 18, 18.5], ['CHEST 1" BELOW ARMHOLE', 0.5, 43, 45], ['SLEEVE PLACKET LENGTH X WIDTH', 0.13, '6 X 1', null], ['CUFF HEIGHT', null, 2.5, 2.5]])
     assert.equal(t.points[0].row, 6, 'the comments under the table are not points')
   })
-  test('the stage is what the sheet says, else the tab name', async () => {
+  test('the stage is the tab name when it names one, else what the sheet says', async () => {
+    // A PP tab copied from the fit tab, its stage cell never changed: the tab's name is right.
+    assert.equal((await readMeasurementWorkbook(await realShape({ stage: 'FIT SAMPLE', tab: 'PP' }))).tabs[0].stage, 'pp')
+    assert.equal((await readMeasurementWorkbook(await realShape({ stage: 'FIT SAMPLE', tab: 'RPP' }))).tabs[0].stage, 'pp')
+    assert.equal((await readMeasurementWorkbook(await realShape({ stage: 'PP SAMPLE', tab: 'FIT' }))).tabs[0].stage, 'fit')
     assert.equal((await readMeasurementWorkbook(await realShape({ stage: 'FIT SAMPLE', tab: 'Sheet1' }))).tabs[0].stage, 'fit')
     assert.equal((await readMeasurementWorkbook(await realShape({ stage: '', tab: 'RPP' }))).tabs[0].stage, 'pp')
     assert.equal((await readMeasurementWorkbook(await realShape({ stage: '', tab: 'Sheet1' }))).tabs[0].stage, null)

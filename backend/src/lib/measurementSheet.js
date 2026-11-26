@@ -89,7 +89,11 @@ function layoutOf(ws) {
   return { headerRow, sizeRow, pointCol, tolCol, reviewCol, sizes, points, added, lastSizeCol: Math.max(...sizes.map(s => s.col)) }
 }
 
+// The tab's name decides when it names a stage ("FIT", "PP", "RPP"): a tab is often copied from the fit tab and its
+// "sample stage" cell left saying Fit. Only a tab with another name ("1", "Sheet1") is read from that cell.
 function stageOf(ws, layout) {
+  if (/\bfit\b/i.test(ws.name)) return 'fit'
+  if (/\br?pp\b/i.test(ws.name)) return 'pp'
   for (let r = 1; r <= layout.headerRow; r++) {
     const cells = []; ws.getRow(r).eachCell({ includeEmpty: false }, cell => cells.push(text(cell)))
     const i = cells.findIndex(t => /sample\s*stage/i.test(t))
