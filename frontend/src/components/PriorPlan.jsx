@@ -17,9 +17,9 @@ export function PriorPlan({ asgn, docs = [], users, onGetData }) {
       <button type="button" onClick={() => setOpen(v => !v)} aria-expanded={open}
         style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
         <HistoryIcon size={14} color={T.textMuted} />
-        <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>Before production</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>Earlier plan</span>
         <span style={{ fontSize: 12, color: T.textMuted, flex: 1 }}>
-          {steps.length} steps, {done} done{asgn.priorStagesAt ? ` · replaced by the standard plan on ${fmtDate(asgn.priorStagesAt)}${asgn.priorStagesByName ? ` by ${asgn.priorStagesByName}` : ''}` : ''}
+          {steps.length} steps, {done} done{asgn.priorStagesAt ? ` · replaced on ${fmtDate(asgn.priorStagesAt)}${asgn.priorStagesByName ? ` by ${asgn.priorStagesByName}` : ''}` : ''}
         </span>
         <ChevronDown size={14} color={T.textMuted} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
       </button>

@@ -98,3 +98,41 @@ describe('moving to production with no standard plan saved', () => {
     assert.equal(a.priorStages, undefined)
   })
 })
+
+describe('replacing a plan that has steps with the template', () => {
+  test('a production style on the wrong steps is put on the template, and its steps are kept', async () => {
+    const { master, mfr, before } = await arrange({ standard: false })
+    // Moved before the customer had a standard plan: it kept its development steps and gained Delivery.
+    assert.equal((await as(master).post('/api/orders/DV-001', { phase: 'production', delivery: '2027-03-01' })).status, 200)
+    const base = `/api/orders/DV-001/assignments/${mfr._id}/stages/start-plan`
+    assert.equal((await as(master).post(base, { from: 'template', startDate: '2027-01-10', replace: true })).status, 404, 'no template yet')
+    const buyerId = (await Order.findById('DV-001').lean()).buyerId
+    assert.equal((await as(master).post(`/api/plan-templates/${buyerId}`, { fromOrderId: 'STD-001', fromMfrId: String(mfr._id) })).status, 200)
+    assert.equal((await as(master).post(base, { from: 'template', startDate: '2027-01-10' })).status, 400, 'without replace a plan with steps is left alone')
+    assert.equal((await as(master).post(base, { from: 'template', startDate: 'soon', replace: true })).status, 400)
+
+    const res = await as(master).post(base, { from: 'template', startDate: '2027-01-10', replace: true })
+    assert.equal(res.status, 200, JSON.stringify(res.body))
+    const a = (await Order.findById('DV-001').lean()).assignments[0]
+    assert.deepEqual(a.stages.map(s => s.name), ['Fabric in house', 'Cutting', 'Stitching', 'Delivery'])
+    assert.equal(a.stages[0].startDate, '2027-01-10')
+    assert.equal(String(a.stages[3].baselineEta).slice(0, 10), '2027-03-01', 'the Delivery step it had is kept')
+    assert.deepEqual(a.priorStages.map(s => s.name), before.map(s => s.name))
+    assert.equal(res.body.assignments[0].priorStages.length, before.length)
+
+    // Done again, the steps replaced the second time join the history after the first ones.
+    assert.equal((await as(master).post(base, { from: 'template', startDate: '2027-02-01', replace: true })).status, 200)
+    const again = (await Order.findById('DV-001').lean()).assignments[0]
+    assert.equal(again.priorStages.length, before.length + 3)
+    assert.equal(again.stages.length, 4)
+  })
+
+  test('a style still being developed gets the template steps and no Delivery step; a factory cannot do it', async () => {
+    const { master, mfr } = await arrange()
+    const base = `/api/orders/DV-001/assignments/${mfr._id}/stages/start-plan`
+    assert.equal((await as(mfr).post(base, { from: 'template', startDate: '2027-01-10', replace: true })).status, 403)
+    assert.equal((await as(master).post(base, { from: 'template', startDate: '2027-01-10', replace: true })).status, 200)
+    const a = (await Order.findById('DV-001').lean()).assignments[0]
+    assert.deepEqual(a.stages.map(s => s.name), ['Fabric in house', 'Cutting', 'Stitching'])
+  })
+})

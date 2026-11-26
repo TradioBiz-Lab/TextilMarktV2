@@ -39,7 +39,7 @@ import { MeasuredSection } from '../quality/MeasureSheet.jsx'
 const BULK_EDIT_COLS = '170px 168px 168px 150px 78px minmax(120px, 1fr) 30px 64px'
 
 export function AdminOrderDetail({ orderId, initialMid, initialStage = null, onInitialStageUsed, onOpenMo, onOpenOrder, onBack }) {
-  const { currentUser, orders, masterOrders, docs, users, loading, updateAssignment, updateStage, uploadDoc, getDocData, refreshOrders, editOrder, deleteOrder,
+  const { currentUser, orders, masterOrders, docs, users, loading, updateAssignment, updateStage, uploadDoc, getDocData, refreshOrders, editOrder, deleteOrder, startPlan,
     addStageUpdate, addStageMaterial, updateStageMaterial, removeStageMaterial,
     addStageItem, updateStageItem, removeStageItem, addAssignment, reassignAssignment, insertStage, moveStage, bulkUpdateStages, escalateOrder } = useApp()
   const toast = useToast()
@@ -68,6 +68,20 @@ export function AdminOrderDetail({ orderId, initialMid, initialStage = null, onI
   // The customer's standard plan, looked up when the Move to production window opens: the move swaps the plan for it.
   const [stdPlan, setStdPlan] = useState(null)
   const promoteBuyerId = (orders || []).find(o => o.id === orderId)?.buyerId || null
+  // Use the customer's template on one split's plan, in one go: fills an empty plan, or replaces one that has steps.
+  const [tplUse, setTplUse] = useState(null)   // { mid, steps } while the window is open
+  const [tplUseInfo, setTplUseInfo] = useState(null)
+  const [tplUseStart, setTplUseStart] = useState('')
+  const [tplUseBusy, setTplUseBusy] = useState(false)
+  useEffect(() => {
+    if (!tplUse || !promoteBuyerId) return
+    let live = true
+    setTplUseInfo(null)
+    const d = new Date()
+    setTplUseStart(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)
+    planTemplatesApi.get(promoteBuyerId).then(t => { if (live) setTplUseInfo(t) }).catch(() => { if (live) setTplUseInfo({ exists: false }) })
+    return () => { live = false }
+  }, [tplUse, promoteBuyerId])
   useEffect(() => {
     if (!promoteOpen || !promoteBuyerId) return
     let live = true
@@ -1228,13 +1242,39 @@ export function AdminOrderDetail({ orderId, initialMid, initialStage = null, onI
     </Modal>
   )
 
+  const tplUseModal = tplUse && (
+    <Modal title={`Use ${order.buyerCompany || 'the customer'}'s template`} subtitle={order.product} onClose={() => { if (!tplUseBusy) setTplUse(null) }} size="sm">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {!tplUseInfo ? <div style={{ fontSize: 13, color: T.textMuted }}>Looking up the template...</div>
+          : !tplUseInfo.exists ? <div style={{ fontSize: 13, color: T.textMuted }}>{order.buyerCompany || 'This customer'} has no template saved yet. Open a production style with the right plan and use Save as template on it.</div>
+          : <>
+            <div style={{ fontSize: 13, color: T.textMuted }}>
+              {tplUse.steps > 0
+                ? `This plan's ${tplUse.steps} ${tplUse.steps === 1 ? 'step is' : 'steps are'} replaced with the template's ${tplUseInfo.stepCount} steps, all not started. The steps it has now are kept on the style under "Earlier plan", with their notes and documents.`
+                : `The plan is filled with the template's ${tplUseInfo.stepCount} steps, all not started.`}
+            </div>
+            <Input label="Plan start date" type="date" value={tplUseStart} onChange={e => setTplUseStart(e.target.value)} hint="The template's steps are dated from this day." />
+          </>}
+        <FlexRow justify="flex-end" gap={8}>
+          <Btn variant="secondary" disabled={tplUseBusy} onClick={() => setTplUse(null)}>Cancel</Btn>
+          {tplUseInfo?.exists && <Btn disabled={tplUseBusy || !tplUseStart} onClick={async () => {
+            setTplUseBusy(true)
+            try { await startPlan(order.id, tplUse.mid, { from: 'template', startDate: tplUseStart, ...(tplUse.steps > 0 ? { replace: true } : {}) }); toast(tplUse.steps > 0 ? 'Plan replaced with the template' : 'Template applied', 'success'); setTplUse(null) }
+            catch (e) { toast(typeof e === 'string' ? e : (e?.message || 'Could not use the template'), 'error') }
+            finally { setTplUseBusy(false) }
+          }}>{tplUseBusy ? 'Working...' : tplUse.steps > 0 ? 'Replace the plan' : 'Use template'}</Btn>}
+        </FlexRow>
+      </div>
+    </Modal>
+  )
+
   const hasSplits = (order.assignments || []).length > 0
   const customerName = order.buyerCompany || 'the customer'
   const promoteModal = promoteOpen && (
     <PromoteModal count={1} needsDate={!order.delivery && (order.assignments || []).length > 0} needsQty={!order.totalQty} busy={promoting || (hasSplits && !stdPlan)} onClose={() => setPromoteOpen(false)}
       askStart={hasSplits && !!stdPlan?.exists}
       planNote={!hasSplits || !stdPlan ? '' : stdPlan.exists
-        ? `The plan is replaced with ${customerName}'s standard plan (${stdPlan.stepCount} steps), dated from the production start. The steps it has now are kept on the style under "Before production".`
+        ? `The plan is replaced with ${customerName}'s standard plan (${stdPlan.stepCount} steps), dated from the production start. The steps it has now are kept on the style under "Earlier plan".`
         : `${customerName} has no standard plan saved, so the style keeps the steps it has now. To set one, open a production style with the right plan and save it as the customer's template.`}
       onConfirm={async (date, qty, start) => {
         setPromoting(true)
@@ -1262,6 +1302,7 @@ export function AdminOrderDetail({ orderId, initialMid, initialStage = null, onI
       <div>
         {promoteModal}
         {tplModal}
+        {tplUseModal}
         {uploadModals}
         {showEdit && (
           <EditOrderModal order={order} onClose={() => setShowEdit(false)}
@@ -1380,6 +1421,7 @@ export function AdminOrderDetail({ orderId, initialMid, initialStage = null, onI
     <div>
       {promoteModal}
       {tplModal}
+      {tplUseModal}
       {/* ── Edit Order Modal ── */}
       {showEdit && (
         <EditOrderModal
@@ -1744,6 +1786,7 @@ export function AdminOrderDetail({ orderId, initialMid, initialStage = null, onI
                         )}
                         {caps.editPlan && <Btn size="sm" variant="secondary" onClick={() => setTnaCsvOpen(p => ({ ...p, [a.mid]: !p[a.mid] }))} icon={<FileSpreadsheet size={12} />}>Upload CSV</Btn>}
                         {caps.editPlan && stages.some(st => !st.isDelivery) && <Btn size="sm" variant="secondary" onClick={() => setTplSave({ mid: a.mid, steps: stages.filter(st => !st.isDelivery).length })} icon={<LayoutGrid size={12} />}>Save as template</Btn>}
+                        {caps.editPlan && a.status !== 'Delivered' && <Btn size="sm" variant="secondary" onClick={() => setTplUse({ mid: a.mid, steps: stages.filter(st => !st.isDelivery).length })} icon={<LayoutGrid size={12} />}>Use template</Btn>}
                       </FlexRow>
                     </div>
 

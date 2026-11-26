@@ -347,6 +347,52 @@ const cleanBrand = v => {
   return brand.length > BRAND_MAX ? { error: `Brand too long (max ${BRAND_MAX} characters)` } : { brand }
 }
 
+// Swap the plan of some of a style's splits for template steps dated from `startISO`. The steps a split had are kept
+// as they stood (assignment.priorStages, added to any kept before), its Delivery step stays (or is made, on
+// `deliveryISO`), and what was filed on an old step follows it into the history. Returns how many splits changed.
+async function swapPlansForTemplate(orderId, steps, { startISO, deliveryISO = 'NA', byName = '', onlyMfrId = null }) {
+  // Read plain (ids, not populated people) so the steps kept as history are written back exactly as they stood.
+  const plain = await Order.findById(orderId, 'buyerId assignments').lean()
+  const set = {}
+  const docMoves = []
+  for (const [ai, a] of (plain?.assignments || []).entries()) {
+    if (onlyMfrId && String(a.mfrId) !== String(onlyMfrId)) continue
+    const old = a.stages || []
+    const fresh = await stagesFromTemplate(steps, { order: { ...plain, _id: orderId }, asgn: a, startISO })
+    const delivery = old.find(st => st.isDelivery) || makeDeliveryStage(deliveryISO)
+    const kept = planSteps(old)
+    const before = (a.priorStages || []).length
+    set[`assignments.${ai}.stages`] = [...fresh, delivery]
+    if (kept.length) {
+      set[`assignments.${ai}.priorStages`] = [...(a.priorStages || []), ...kept]
+      set[`assignments.${ai}.priorStagesAt`] = new Date()
+      set[`assignments.${ai}.priorStagesByName`] = byName
+    }
+    set[`assignments.${ai}.updatedAt`] = new Date()
+    docMoves.push({ mfrId: a.mfrId, old, freshCount: fresh.length, before })
+  }
+  if (!docMoves.length) return 0
+  await Order.updateOne({ _id: orderId }, { $set: set })
+  for (const m of docMoves) {
+    const rows = await Document.find({ orderId, mfrId: m.mfrId, stageIndex: { $ne: null } }, { _id: 1, stageIndex: 1 }).lean()
+    const ops = rows.map(d => {
+      const st = m.old[d.stageIndex]
+      const update = !st ? { $set: { stageIndex: null } }
+        : st.isDelivery ? { $set: { stageIndex: m.freshCount } }
+        : { $set: { stageIndex: null, priorStageIndex: m.before + planSteps(m.old).indexOf(st), priorStageName: st.name } }
+      return { updateOne: { filter: { _id: d._id, stageIndex: d.stageIndex }, update } }
+    })
+    if (ops.length) await withRetry('documents to the plan kept as history', () => Document.bulkWrite(ops, { ordered: false }))
+  }
+  return docMoves.length
+}
+
+/** The message that stops a plan swap while updates from the floor still point at the steps about to go, or null. */
+async function waitingFloorUpdates(orderId) {
+  const waiting = await FieldUpdate.countDocuments({ orderId, state: 'new' })
+  return waiting ? `${waiting} update${waiting === 1 ? '' : 's'} from the floor ${waiting === 1 ? 'is' : 'are'} waiting on this style. Confirm or dismiss ${waiting === 1 ? 'it' : 'them'} in Field Updates first: the steps they point at are about to be replaced.` : null
+}
+
 const STAGES_CHANGED = { error: 'The stages changed while you were editing. Reload the order and try again.' }
 
 // GET /api/orders
@@ -1373,6 +1419,26 @@ router.post('/:orderId/assignments/:mfrId/stages/start-plan', requireAuth, requi
     const asgn = (order.assignments || []).find(a => a.mfrId?.toString() === mfrId)
     if (!asgn) return res.status(404).json({ error: 'Assignment not found' })
     const stages = asgn.stages || []
+    const { replace } = req.body || {}
+    // { from: 'template', startDate, replace: true } swaps a plan that has steps for the template: the steps it had
+    // are kept as they stood (shown under "Before production" / earlier plan), with what was filed on them.
+    if (planSteps(stages).length && replace === true && from === 'template') {
+      const tpl = await PlanTemplate.findOne({ buyerId: order.buyerId }).lean()
+      if (!tpl || !tpl.steps.length) return res.status(404).json({ error: 'This customer has no saved plan template yet' })
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(startDate || ''))) return res.status(400).json({ error: 'Give the date the plan starts (YYYY-MM-DD)' })
+      const blocked = await waitingFloorUpdates(orderId)
+      if (blocked) return res.status(400).json({ error: blocked })
+      const when = order.delivery ? new Date(order.delivery).toISOString().slice(0, 10) : 'NA'
+      await swapPlansForTemplate(orderId, tpl.steps, { startISO: startDate, deliveryISO: isPreProduction(order.phase) ? 'NA' : when, byName: req.user.name || '', onlyMfrId: mfrObjectId })
+      // A style still being developed has no Delivery step: the swap does not give it one.
+      if (isPreProduction(order.phase)) await Order.updateOne({ _id: orderId }, { $pull: { 'assignments.$[asgn].stages': { isDelivery: true } } }, { arrayFilters: [{ 'asgn.mfrId': mfrObjectId }] })
+      await AuditLog.create({ byUser: req.user.id, action: 'Plan Replaced', detail: `${orderId}: ${planSteps(stages).length} steps replaced with the customer's plan template (${tpl.steps.length} steps from ${startDate}) by ${req.user.name}; the earlier steps are kept as history` })
+      const swappedOrder = await Order.findById(orderId)
+        .populate('buyerId', BUYER_FIELDS).populate('assignments.mfrId', MFR_FIELDS)
+        .populate('assignments.stages.responsibleId', 'name company code role')
+        .populate('assignments.stages.updates.byUser', 'name role').lean()
+      return res.json(enrichFor(swappedOrder, req))
+    }
     if (planSteps(stages).length) return res.status(400).json({ error: 'This plan already has steps. Starting from a copy fills an empty plan only.' })
 
     let fresh
@@ -2997,8 +3063,8 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
           if (given !== undefined && given !== null && given !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(String(given)))
             return res.status(400).json({ error: 'Production start must be a date (YYYY-MM-DD)' })
           productionStartISO = given ? String(given) : new Date().toISOString().slice(0, 10)
-          const waiting = await FieldUpdate.countDocuments({ orderId, state: 'new' })
-          if (waiting) return res.status(400).json({ error: `${waiting} update${waiting === 1 ? '' : 's'} from the floor ${waiting === 1 ? 'is' : 'are'} waiting on this style. Confirm or dismiss ${waiting === 1 ? 'it' : 'them'} in Field Updates first: the steps they point at are about to be replaced.` })
+          const blocked = await waitingFloorUpdates(orderId)
+          if (blocked) return res.status(400).json({ error: blocked })
           standardSteps = tpl.steps
         }
       }
@@ -3116,38 +3182,8 @@ router.post('/:id', requireAuth, requireAdmin, updateLimiter, async (req, res) =
     }
     let planNote = null
     if (promoting && standardSteps) {
-      // Read plain (ids, not populated people) so the steps kept as history are written back exactly as they stood.
-      const plain = await Order.findById(orderId, 'buyerId assignments').lean()
-      const set = {}
-      const docMoves = []
-      for (const [ai, a] of (plain.assignments || []).entries()) {
-        const old = a.stages || []
-        const fresh = await stagesFromTemplate(standardSteps, { order: { ...plain, _id: orderId }, asgn: a, startISO: productionStartISO })
-        const delivery = old.find(st => st.isDelivery) || makeDeliveryStage(promoteDeliveryISO)
-        const kept = planSteps(old)
-        set[`assignments.${ai}.stages`] = [...fresh, delivery]
-        if (kept.length) {
-          set[`assignments.${ai}.priorStages`] = kept
-          set[`assignments.${ai}.priorStagesAt`] = new Date()
-          set[`assignments.${ai}.priorStagesByName`] = req.user.name || ''
-        }
-        set[`assignments.${ai}.updatedAt`] = new Date()
-        docMoves.push({ mfrId: a.mfrId, old, freshCount: fresh.length })
-      }
-      if (Object.keys(set).length) {
-        await Order.updateOne({ _id: orderId }, { $set: set })
-        // What was filed on an old step follows it into the history; what was on Delivery stays on Delivery.
-        for (const m of docMoves) {
-          const rows = await Document.find({ orderId, mfrId: m.mfrId, stageIndex: { $ne: null } }, { _id: 1, stageIndex: 1 }).lean()
-          const ops = rows.map(d => {
-            const st = m.old[d.stageIndex]
-            const update = !st ? { $set: { stageIndex: null } }
-              : st.isDelivery ? { $set: { stageIndex: m.freshCount } }
-              : { $set: { stageIndex: null, priorStageIndex: planSteps(m.old).indexOf(st), priorStageName: st.name } }
-            return { updateOne: { filter: { _id: d._id, stageIndex: d.stageIndex }, update } }
-          })
-          if (ops.length) await withRetry('documents to the plan before production', () => Document.bulkWrite(ops, { ordered: false }))
-        }
+      const swapped = await swapPlansForTemplate(orderId, standardSteps, { startISO: productionStartISO, deliveryISO: promoteDeliveryISO, byName: req.user.name || '' })
+      if (swapped) {
         reshaped = true
         planNote = `plan replaced with the customer's standard plan (${standardSteps.length} steps from ${productionStartISO}); the earlier steps are kept as history`
       }

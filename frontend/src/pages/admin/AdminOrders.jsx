@@ -322,7 +322,7 @@ export function AdminOrders({ onOpen, onOpenMo, initialStatus, initialMo, initia
           <div style={{ marginBottom: 14 }}>
             {askDate && <PromoteModal count={chosen.length} needsDate={chosen.some(o => !o.delivery && (o.assignments || []).length > 0)} busy={moving} onClose={() => setAskDate(false)} onConfirm={move}
               askStart={chosen.some(o => (o.assignments || []).length > 0)}
-              planNote={chosen.some(o => (o.assignments || []).length > 0) ? 'A style whose customer has a standard plan saved gets that plan, dated from the production start; the steps it has now are kept on the style under "Before production". A style whose customer has none keeps its steps.' : ''} />}
+              planNote={chosen.some(o => (o.assignments || []).length > 0) ? 'A style whose customer has a standard plan saved gets that plan, dated from the production start; the steps it has now are kept on the style under "Earlier plan". A style whose customer has none keeps its steps.' : ''} />}
             <Btn variant="secondary" size="sm" onClick={() => setPromoteOpen(v => !v)} icon={<ArrowRight size={13} />}>
               {promoteOpen ? 'Close' : 'Move styles to production'}
             </Btn>
