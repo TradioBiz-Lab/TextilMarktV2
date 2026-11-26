@@ -57,7 +57,8 @@ export function parseJsonReply(text) {
  * parse/validation failure; returns null after that so the caller routes the
  * message to human review instead of writing a guess.
  */
-async function callJson({ content, schema, sdk = getClient(), maxTokens = 1024, model = MODEL() }) {
+// `maxTokens` leaves room for a model that thinks before it answers (the current ones do, and the thinking counts).
+async function callJson({ content, schema, sdk = getClient(), maxTokens = 4096, model = MODEL() }) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await sdk.messages.create({
@@ -131,7 +132,7 @@ const measurementsSchema = z.object({
  * heard }], unmatched: [{ heard, value }] } or null when the reply could not be trusted.
  */
 export const extractMeasurements = (transcript, points, { unit = null, ...opts } = {}) =>
-  callJson({ content: [{ type: 'text', text: measurementsPrompt({ transcript, points, unit }) }], schema: measurementsSchema, maxTokens: 4000, ...opts })
+  callJson({ content: [{ type: 'text', text: measurementsPrompt({ transcript, points, unit }) }], schema: measurementsSchema, maxTokens: 8000, ...opts })
 
 /**
  * The same from photos of a handwritten sheet. `photos` is [{ buffer, mimeType }] (one to three); the answer has the
@@ -142,7 +143,7 @@ export const extractMeasurements = (transcript, points, { unit = null, ...opts }
 const VISION_MODEL = () => process.env.ANTHROPIC_VISION_MODEL || 'claude-sonnet-5-5'
 export async function extractMeasurementPhoto(photos, points, { unit = null, ...opts } = {}) {
   const content = [...photos.map(p => mediaBlock(p.buffer, p.mimeType)), { type: 'text', text: measurementPhotoPrompt({ points, unit }) }]
-  return (await callJson({ content, schema: measurementsSchema, maxTokens: 4000, model: VISION_MODEL(), ...opts }))
-    ?? (VISION_MODEL() === MODEL() ? null : callJson({ content, schema: measurementsSchema, maxTokens: 4000, ...opts }))
+  return (await callJson({ content, schema: measurementsSchema, maxTokens: 8000, model: VISION_MODEL(), ...opts }))
+    ?? (VISION_MODEL() === MODEL() ? null : callJson({ content, schema: measurementsSchema, maxTokens: 8000, ...opts }))
 }
 
