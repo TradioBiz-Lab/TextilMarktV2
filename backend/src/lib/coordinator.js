@@ -27,6 +27,9 @@ export const COORDINATOR_ALLOWED = [
   ['POST', /^\/api\/field-updates$/],
   ['GET', /^\/api\/field-updates\/mine$/],
   ['POST', /^\/api\/voice\/transcribe$/],
+  // The quality module: the style's measurement sheet as data, his spoken values read against it, and a saved session.
+  ['GET', /^\/api\/measurements(\/spec)?$/],
+  ['POST', /^\/api\/measurements(\/read)?$/],
   // The bill of materials checklist: its pictures, and a tick on an item while he is checked in at that factory.
   ['GET', new RegExp(`^/api/orders/${ID}/bom/images$`)],
   ['POST', new RegExp(`^/api/orders/${ID}/bom/${ID}/(check|evidence)$`)],

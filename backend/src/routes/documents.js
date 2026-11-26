@@ -162,6 +162,8 @@ const mapDoc = (d, includeData = false) => {
     styleRequestId: d.styleRequestId ? d.styleRequestId.toString() : null,
     // A coordinator's update from the floor: its files, and whether the customer has been shown them yet.
     ...(d.fieldUpdateId ? { fieldUpdateId: d.fieldUpdateId.toString(), internal: !!d.internal } : {}),
+    // A workbook the quality module made from a measured garment: its session, and whether the customer has been shown it.
+    ...(d.measurementSessionId ? { measurementSessionId: d.measurementSessionId.toString(), internal: !!d.internal } : {}),
     ...(includeData ? { dataUrl: d.dataUrl } : {}),
   }
 }

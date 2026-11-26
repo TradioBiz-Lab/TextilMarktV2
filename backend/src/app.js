@@ -32,6 +32,7 @@ import styleImportsRouter from './routes/styleImports.js'
 import styleRequestsRouter from './routes/styleRequests.js'
 import visitsRouter from './routes/visits.js'
 import fieldUpdatesRouter from './routes/fieldUpdates.js'
+import measurementsRouter from './routes/measurements.js'
 
 // ── Validate required env vars at startup ──────────────────────────────────
 const isProd = process.env.NODE_ENV === 'production'
@@ -190,6 +191,7 @@ app.use('/api/style-imports', styleImportsRouter)
 app.use('/api/style-requests', styleRequestsRouter)
 app.use('/api/visits',        visitsRouter)
 app.use('/api/field-updates', fieldUpdatesRouter)
+app.use('/api/measurements', measurementsRouter)
 
 // ── Health check ────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

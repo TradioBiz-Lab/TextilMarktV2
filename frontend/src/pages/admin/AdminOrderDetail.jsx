@@ -31,6 +31,7 @@ import { ownerForSplit, ownerCopyLabel } from '../../ownerCopy.js'
 import { ProductLinkEditor } from '../../components/ProductLinkEditor.jsx'
 import { SizeBreakupSection } from '../../components/SizeBreakup.jsx'
 import { BomSection } from '../../components/BomChecklist.jsx'
+import { MeasuredSection } from '../quality/MeasureSheet.jsx'
 
 
 // Bulk Edit row: step, start, end, responsible, target qty, description, evidence, NA / Undo.
@@ -975,6 +976,7 @@ export function AdminOrderDetail({ orderId, initialMid, initialStage = null, onI
               {/* Pieces of each colour in each size, as the customer's order gives it. */}
               <SizeBreakupSection order={order} />
               <BomSection order={order} />
+              <MeasuredSection order={order} factoryId={effectiveMid} />
 
               {(order.fabricDetails || []).length > 0 && (
                 <div style={{ marginTop: 16 }}>

@@ -48,3 +48,38 @@ Extract every production update mentioned. "stage" must be one of: ${CANONICAL_S
 Return JSON only:
 {"updates": [{"style_hint": "... or null", "stage": "...", "status": "done | in_progress | issue", "expected_date": "YYYY-MM-DD or null", "note": "..."}], "confidence": 0.0-1.0}
 Example: "cutting ho gaya, kal se stitching" becomes cutting done, stitching starting tomorrow (in_progress).`
+
+/**
+ * A quality person has measured one garment and read the measurements aloud, naming each point and then its number.
+ * The transcript comes from speech recognition, in English, Hindi or a mix, so names are shortened or garbled and
+ * numbers are spoken many ways. The model places each number against the right point of the sheet and returns nothing
+ * it was not told.
+ */
+export const measurementsPrompt = ({ transcript, points, unit }) => `You help a garment quality checker in India. He has measured ONE garment with a tape and read his measurements aloud, one point of measure at a time: first the name of the point, then the number he measured. Below is the transcript of his speech (from speech recognition, so it has mistakes) and the list of points on the style's measurement sheet.
+
+Points on the sheet, in order. "required" is the value the sheet asks for in the size he is measuring${unit === 'cm' ? ' (centimetres)' : ' (usually inches; eighths are written as decimals, 3.625 is 3 and 5/8)'}:
+${points.map((p, i) => `${i}. ${p.name}${p.spec != null ? `  [required ${p.spec}]` : ''}`).join('\n')}
+
+Transcript:
+<<<
+${String(transcript || '').slice(0, 6000)}
+>>>
+
+Your job: for each measurement he spoke, find the point he meant and give the number he said.
+
+Matching the point:
+- He says short forms, not the sheet's full wording: "chest" for "CHEST 1 INCH BELOW ARMHOLE ALL AROUND", "shoulder" for "SHOULDER SEAM TO SEAM", "CB length" or "length" for a centre back length, "bicep", "cuff", "neck drop front". Hindi words are common: "chhaati" or "seena" chest, "kandha" shoulder, "lambai" length, "aasteen" or "baaju" sleeve, "kamar" waist, "gala" neck, "mohri" bottom or leg opening, "jeb" pocket.
+- He usually goes down the sheet in order. Use the order to choose between two points with similar names, but never shift everything by one because he skipped a point.
+- If two points fit equally well and the order does not settle it, do not guess: put it under "unmatched".
+
+Reading the number:
+- Give a decimal number. Halves, quarters and eighths in any form: "sixteen and a half" 16.5, "16 1/2" 16.5, "sixteen point five" 16.5, "three quarter" 0.75, "five eighths" 0.625, "three by eight" 0.375, "seventeen one by four" 17.25.
+- Hindi: "saadhe solah" 16.5, "sava solah" 16.25, "paune satrah" 16.75, "dedh" 1.5, "dhai" 2.5, "aadha" 0.5, "paav" 0.25, "pauna" 0.75.
+- He gives the MEASURED value, not the difference. If he says a point is "ok", "correct", "theek hai" or "same" with no number, the measured value is the required value of that point.
+- If he says only the difference ("chest minus half", "half inch kam", "quarter zyada"), the measured value is the required value minus or plus that amount.
+- The required value is there to help you hear the number right (to tell 16 from 60, 13 from 30). A value more than a third away from the required value is probably misheard: still return what he most plausibly said, and say what you heard in "heard".
+- If he corrects himself ("chest 43, sorry 42 and a half"), keep the last one. If he gives the same point twice, keep the last one.
+- Never invent a value for a point he did not mention. Leave unmentioned points out of "values".
+
+Return ONLY a JSON object, no other text:
+{"values": [{"index": the number of the point in the list above, "value": the measured number as a decimal, "heard": the few words of the transcript this came from}], "unmatched": [{"heard": the words of a measurement you could not place, "value": the number if you could read one, else null}]}`

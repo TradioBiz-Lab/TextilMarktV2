@@ -214,6 +214,15 @@ export const assistantApi = {
   chat: (messages) => api.post('/assistant/chat', { messages }, { timeout: 120000 }),
 }
 
+// The quality module: a garment measured against the style's measurement sheet.
+export const measurementsApi = {
+  spec: orderId => api.get('/measurements/spec', { params: { orderId } }),
+  read: (orderId, tab, size, transcript) => api.post('/measurements/read', { orderId, tab, size, transcript }, { timeout: 60000 }),
+  save: body => api.post('/measurements', body, { timeout: 60000 }),
+  list: orderId => api.get('/measurements', { params: { orderId } }),
+  release: id => api.post(`/measurements/${id}/release`),
+}
+
 export const voiceApi = {
   // `terms`: names the speaker is likely to say (a client, a product, its colours, its steps), so they are heard right.
   transcribe: (audioDataUrl, terms) => api.post('/voice/transcribe', { audioDataUrl, ...(terms?.length ? { terms } : {}) }, { timeout: 30000 }),

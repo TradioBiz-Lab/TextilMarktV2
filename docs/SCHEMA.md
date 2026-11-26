@@ -316,6 +316,31 @@ back `undefined`. `enrichOrder()` is the single serialization point and resolves
 Consequence: **a new stage field that isn't added to `enrichOrder` is invisible to the
 frontend.**
 
+### Collection: `measurementsessions` (the quality module)
+
+One garment measured against the style's measurement sheet (`routes/measurements.js`, `lib/measurementSheet.js`).
+
+```
+{
+  orderId: String → orders, mfrId: ObjectId → users (the factory), by: ObjectId → users, byName, byRole
+  stage: "fit" | "pp" | "final", size: String
+  sourceDocumentId: ObjectId → documents (the style's sheet: its Locked Measurement, else the newest), sourceTab: String
+  method: "voice" | "typed", transcript: String
+  points: [{ name, spec (number or text), tol, measured, diff, ok (null = not judged) }]
+  measuredCount, outOfTolerance: Number
+  resultDocumentId: ObjectId → documents, releasedAt, releasedBy, at
+}
+```
+
+- The sheet is read from the workbook each time (tabs, sizes, points, tolerance); nothing about it is stored.
+- Saving makes a copy of the workbook: the sheet's own review column gets "ok" or the difference, a "<SIZE> MEASURED"
+  column holds the value (a free column of the table; a column cannot be inserted because the size cells are linked
+  formulas), cells outside tolerance are red. A stage with no tab of its own (Final QC) gets a new tab. Each copy builds
+  on the last one for the style.
+- The copy is a `measurements` Document with `measurementSessionId`, label `fit_approval` / `pp_approval` / `final_qc`,
+  `internal: true` until an admin releases the session (`POST /api/measurements/:id/release`). It is never the spec.
+- Who records: an admin, a factory on its own split, a coordinator at an allocated factory (no check-in needed).
+
 ### Embedded: `bom` (the bill of materials checklist)
 
 ```

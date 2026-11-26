@@ -24,8 +24,9 @@ const DOC_TYPES = [
 
 // Where a measurement sheet stands in the fit process. Every measurement upload carries one; the one a master admin locks
 // is the style's Locked Measurement.
-export const MEASUREMENT_LABELS = ['customer_submission', 'fit_approval', 'pp_approval']
-export const MEASUREMENT_LABEL_NAMES = { customer_submission: 'Customer Submission', fit_approval: 'Fit Approval', pp_approval: 'PP Approval' }
+// 'final_qc' is a garment measured at final inspection (routes/measurements.js).
+export const MEASUREMENT_LABELS = ['customer_submission', 'fit_approval', 'pp_approval', 'final_qc']
+export const MEASUREMENT_LABEL_NAMES = { customer_submission: 'Customer Submission', fit_approval: 'Fit Approval', pp_approval: 'PP Approval', final_qc: 'Final QC' }
 
 const documentSchema = new mongoose.Schema({
   type:       { type: String, required: true, enum: DOC_TYPES },
@@ -80,6 +81,8 @@ const documentSchema = new mongoose.Schema({
   // keeps it from the factory as well, for good.
   fieldUpdateId: { type: mongoose.Schema.Types.ObjectId, ref: 'FieldUpdate', default: null },
   internal:      { type: Boolean, default: false },
+  // Set on a measurement workbook the quality module made (models/MeasurementSession.js): the session it records.
+  measurementSessionId: { type: mongoose.Schema.Types.ObjectId, ref: 'MeasurementSession', default: null },
   // The bill of materials item a 'bom_evidence' photo shows (Order.bom.items[].id).
   bomItemId:     { type: String, default: null },
   tradioOnly:    { type: Boolean, default: false },

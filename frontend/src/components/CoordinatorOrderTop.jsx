@@ -7,6 +7,7 @@ import { techPackOf, measurementOf, bomOf, productState } from '../coordinatorSt
 import { DocViewer } from './ui.jsx'
 import { SizeBreakupTable } from './SizeBreakup.jsx'
 import { BomChecklist } from './BomChecklist.jsx'
+import { MeasureSheet } from '../pages/quality/MeasureSheet.jsx'
 import { nextSteps, stepState } from '../nextSteps.js'
 import { AddUpdateSheet } from '../pages/coordinator/AddUpdateSheet.jsx'
 
@@ -105,6 +106,7 @@ export function CoordinatorOrderTop({ order, factoryId, onNextProduct, detailsOp
   const split = (order.assignments || []).find(a => String(a.mid) === String(factoryId)) || order.assignments?.[0]
   const state = productState(order, split?.mid)
   const measurement = measurementOf(docs, order.id)
+  const [measuring, setMeasuring] = useState(false)
   return (
     <div style={{ background: T.infoBg, border: `1px solid ${T.infoBorder}`, borderRadius: 18, padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
@@ -128,6 +130,14 @@ export function CoordinatorOrderTop({ order, factoryId, onNextProduct, detailsOp
       )}
       <Paper label={t('tech_pack', lang)} icon={<FileText size={24} color={T.info} />} doc={techPackOf(docs, order.id)} lang={lang} getDocData={getDocData} />
       <Paper label={measurement?.locked ? t('locked_measurement', lang) : t('measurements', lang)} icon={<Ruler size={24} color={T.info} />} doc={measurement} lang={lang} getDocData={getDocData} />
+      {/* Measure a fit, PP or final QC garment against that sheet, by voice or by typing: the Excel is made for him. */}
+      {measurement && split && (
+        <button type="button" onClick={() => setMeasuring(true)}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 52, borderRadius: 14, border: `2px solid ${T.info}`, background: '#fff', color: T.info, fontSize: 16, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+          <Ruler size={20} /> {t('measure', lang)}
+        </button>
+      )}
+      {measuring && <MeasureSheet order={order} factoryId={split?.mid} onClose={() => setMeasuring(false)} />}
       {/* The bill of materials, straight below the measurements: a checklist he ticks item by item when the style has one, else the paper. */}
       {order.bom && split
         ? <BomChecklist order={order} factoryId={split.mid} factoryName={split.mfrCompany || ''} lang={lang} canTick={!!visits?.open && String(visits.open.factoryId) === String(split.mid)} />

@@ -64,7 +64,8 @@ export const bomOf = (docs, orderId) => newest((docs || []).filter(d => d.type =
 
 /** The measurement sheet to open for a style: the Locked Measurement when there is one, else the newest sheet. */
 export function measurementOf(docs, orderId) {
-  const sheets = (docs || []).filter(d => d.type === 'measurements' && String(d.orderId) === String(orderId) && d.isActive !== false)
+  // A workbook the quality module made from a measured garment is a record, not the sheet to work to.
+  const sheets = (docs || []).filter(d => d.type === 'measurements' && String(d.orderId) === String(orderId) && d.isActive !== false && !d.measurementSessionId)
   return sheets.find(d => d.locked) || newest(sheets)
 }
 

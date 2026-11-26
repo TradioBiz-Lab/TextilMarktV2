@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
-import { PHOTO_PROMPT, DOCUMENT_PROMPT, textPrompt, fieldUpdatePrompt } from './prompts.js'
+import { PHOTO_PROMPT, DOCUMENT_PROMPT, textPrompt, fieldUpdatePrompt, measurementsPrompt } from './prompts.js'
 
 const MODEL = () => process.env.ANTHROPIC_MODEL || 'claude-sonnet-5'
 
@@ -57,11 +57,11 @@ export function parseJsonReply(text) {
  * parse/validation failure; returns null after that so the caller routes the
  * message to human review instead of writing a guess.
  */
-async function callJson({ content, schema, sdk = getClient() }) {
+async function callJson({ content, schema, sdk = getClient(), maxTokens = 1024 }) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await sdk.messages.create({
-        model: MODEL(), max_tokens: 1024,
+        model: MODEL(), max_tokens: maxTokens,
         messages: [{ role: 'user', content }],
       })
       const text = (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('')
@@ -111,3 +111,18 @@ export const extractFieldUpdate = (text, photos, ctx, opts) =>
     ],
     schema: fieldUpdateSchema, ...opts,
   })
+
+// ── Measurements spoken by a quality person, placed against the points of the style's measurement sheet ──
+const spokenNumber = z.union([z.number(), z.string()]).transform(v => (typeof v === 'number' ? v : Number(String(v).trim()))).refine(n => Number.isFinite(n) && n >= 0 && n <= 1000)
+const measurementsSchema = z.object({
+  values: z.array(z.object({ index: z.number().int().min(0), value: spokenNumber, heard: z.string().nullish().transform(v => (v ?? '').slice(0, 120)) })).max(200).default([]),
+  unmatched: z.array(z.object({ heard: z.string().transform(v => v.slice(0, 120)), value: spokenNumber.nullish() })).max(50).nullish().transform(v => v ?? []),
+})
+
+/**
+ * What he said, as numbers against the sheet's points. `points` is [{ name, spec }] in sheet order (spec is the required
+ * value in the size he is measuring, there to tell 16 from 60, never to be copied). Returns { values: [{ index, value,
+ * heard }], unmatched: [{ heard, value }] } or null when the reply could not be trusted.
+ */
+export const extractMeasurements = (transcript, points, { unit = null, ...opts } = {}) =>
+  callJson({ content: [{ type: 'text', text: measurementsPrompt({ transcript, points, unit }) }], schema: measurementsSchema, maxTokens: 4000, ...opts })
