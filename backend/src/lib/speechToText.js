@@ -10,6 +10,7 @@
 // ElevenLabs is called directly (one form upload), not through its SDK: the SDK is 122 MB and every deploy uploads
 // the backend's packages. The request is the one ElevenLabs' own speech-to-text guide shows.
 import { transcribeAudio as sarvamTranscribe } from './sarvam.js'
+import { noteVoiceProblem, clearVoiceProblem } from './voiceStatus.js'
 
 const ELEVENLABS_STT_URL = 'https://api.elevenlabs.io/v1/speech-to-text'
 
@@ -70,7 +71,15 @@ export async function elevenLabsTranscribe(buffer, mimeType, { terms = [], fetch
 /** Speech to text with whichever service this server has. Throws when there is none, or when the service fails. */
 export async function transcribeAudio(buffer, mimeType, { terms = [] } = {}) {
   const provider = sttProvider()
-  if (provider === 'elevenlabs') return elevenLabsTranscribe(buffer, mimeType, { terms })
-  if (provider === 'sarvam') return sarvamTranscribe(buffer, mimeType)
-  throw new Error('No speech-to-text service is set up on this server')
+  if (!provider) throw new Error('No speech-to-text service is set up on this server')
+  const other = provider === 'elevenlabs' ? 'sarvam' : 'elevenlabs'
+  const call = which => (which === 'elevenlabs' ? elevenLabsTranscribe(buffer, mimeType, { terms }) : sarvamTranscribe(buffer, mimeType))
+  try { const out = await call(provider); clearVoiceProblem('listen'); return out } catch (err) {
+    noteVoiceProblem('listen', provider, err)
+    console.error('[voice] speech to text failed on', provider, err.message, err.detail || '')
+    // The other service, when it has a key, is tried before the user is told it failed.
+    const hasOther = other === 'sarvam' ? !!process.env.SARVAM_API_KEY : !!process.env.ELEVENLABS_API_KEY
+    if (!hasOther) throw err
+    return call(other)
+  }
 }
