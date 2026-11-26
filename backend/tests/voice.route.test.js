@@ -32,6 +32,7 @@ describe('POST /api/voice/transcribe', () => {
   test('a buyer is allowed in (503 not-configured, not 403)', async () => {
     const original = process.env.SARVAM_API_KEY
     delete process.env.SARVAM_API_KEY
+    delete process.env.ELEVENLABS_API_KEY
     try {
       const u = await makeBuyer()
       const { status } = await as(u).post('/api/voice/transcribe', { audioDataUrl: SAMPLE_AUDIO_DATA_URL })
@@ -42,6 +43,7 @@ describe('POST /api/voice/transcribe', () => {
   test('a manufacturer is allowed in (503 not-configured, not 403)', async () => {
     const original = process.env.SARVAM_API_KEY
     delete process.env.SARVAM_API_KEY
+    delete process.env.ELEVENLABS_API_KEY
     try {
       const u = await makeMfr()
       const { status } = await as(u).post('/api/voice/transcribe', { audioDataUrl: SAMPLE_AUDIO_DATA_URL })
@@ -55,6 +57,7 @@ describe('POST /api/voice/transcribe', () => {
     // developer's local .env happens to contain.
     const original = process.env.SARVAM_API_KEY
     delete process.env.SARVAM_API_KEY
+    delete process.env.ELEVENLABS_API_KEY
     try {
       const admin = await makeAdmin()
       const { status, body } = await as(admin).post('/api/voice/transcribe', { audioDataUrl: SAMPLE_AUDIO_DATA_URL })
@@ -133,6 +136,7 @@ describe('POST /api/voice/speak', () => {
   test('a buyer is allowed in (503 not-configured, not 403)', async () => {
     const original = process.env.SARVAM_API_KEY
     delete process.env.SARVAM_API_KEY
+    delete process.env.ELEVENLABS_API_KEY
     try {
       const u = await makeBuyer()
       const { status } = await as(u).post('/api/voice/speak', { text: 'hi', languageCode: 'en-IN' })
@@ -143,6 +147,7 @@ describe('POST /api/voice/speak', () => {
   test('a manufacturer is allowed in (503 not-configured, not 403)', async () => {
     const original = process.env.SARVAM_API_KEY
     delete process.env.SARVAM_API_KEY
+    delete process.env.ELEVENLABS_API_KEY
     try {
       const u = await makeMfr()
       const { status } = await as(u).post('/api/voice/speak', { text: 'hi', languageCode: 'en-IN' })
@@ -153,6 +158,7 @@ describe('POST /api/voice/speak', () => {
   test('503 when SARVAM_API_KEY is unset', async () => {
     const original = process.env.SARVAM_API_KEY
     delete process.env.SARVAM_API_KEY
+    delete process.env.ELEVENLABS_API_KEY
     try {
       const admin = await makeAdmin()
       const { status, body } = await as(admin).post('/api/voice/speak', { text: 'hi', languageCode: 'en-IN' })
