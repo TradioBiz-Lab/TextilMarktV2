@@ -46,7 +46,8 @@ export function SopLink({ order, big = false, label = '' }) {
     } catch (err) { toast(typeof err === 'string' ? err : (err?.message || 'Could not save the SOP'), 'error') }
     finally { setBusy(false) }
   }
-  const doc = { id: `sop-${order.buyerId}`, name: sop.name || 'SOP', fileName: sop.fileName || 'sop.pdf' }
+  // `scroll`: a long document, read by scrolling down through every page rather than page by page.
+  const doc = { id: `sop-${order.buyerId}`, name: sop.name || 'SOP', fileName: sop.fileName || 'sop.pdf', scroll: true }
 
   return (
     <>

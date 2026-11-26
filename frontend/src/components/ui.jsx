@@ -111,7 +111,7 @@ function DocBody({ blob, doc, onReady }) {
     )
   }
   if (mime.startsWith('audio/')) return <AudioPlayer url={blob.url} onReady={ready} />
-  if (mime === 'application/pdf') return <div style={{ flex: 1, overflow: 'hidden', display: 'flex', minHeight: 0 }}><PdfPageViewer bytes={blob.bytes} onReady={ready} /></div>
+  if (mime === 'application/pdf') return <div style={{ flex: 1, overflow: 'hidden', display: 'flex', minHeight: 0 }}><PdfPageViewer bytes={blob.bytes} onReady={ready} allPages={!!doc.scroll} /></div>
   if (mime === 'text/csv' || ext === 'csv') return <CsvTable bytes={blob.bytes} onReady={ready} />
   if (ext === 'xlsx') return <XlsxTable bytes={blob.bytes} onReady={ready} />
   if (isDxf) return <DxfPreview bytes={blob.bytes} onReady={ready} />
@@ -126,8 +126,11 @@ function ReadyMsg({ onReady, children }) {
 // Resolves when the most recently closed PDF has finished tearing down (see PdfPageViewer).
 let pdfTeardown = Promise.resolve()
 
-function PdfPageViewer({ bytes, onReady }) {
+// `allPages`: every page drawn one under the other, to be read by scrolling (a long document such as an SOP). Otherwise
+// one page at a time with Prev and Next.
+function PdfPageViewer({ bytes, onReady, allPages = false }) {
   const canvasRef = useRef(null)
+  const pagesRef = useRef([])
   const [pdf, setPdf] = useState(null)
   const [pageNum, setPageNum] = useState(1)
   const [numPages, setNumPages] = useState(0)
@@ -161,7 +164,7 @@ function PdfPageViewer({ bytes, onReady }) {
   // for it to finish before starting.
   const renderRef = useRef(null)
   useEffect(() => {
-    if (!pdf) return
+    if (!pdf || allPages) return
     let cancelled = false
     const run = async () => {
       const prev = renderRef.current
@@ -184,9 +187,45 @@ function PdfPageViewer({ bytes, onReady }) {
       onReady?.()
     })
     return () => { cancelled = true; renderRef.current?.cancel() }
-  }, [pdf, pageNum])
+  }, [pdf, pageNum, allPages])
+
+  // Scrolling mode: the pages are drawn in order, each on its own canvas, the first one first so reading can start
+  // while the rest arrive. One render runs at a time, as pdf.js needs.
+  useEffect(() => {
+    if (!pdf || !allPages) return
+    let cancelled = false
+    let current = null
+    const run = async () => {
+      for (let n = 1; n <= pdf.numPages; n++) {
+        if (cancelled) return
+        const page = await pdf.getPage(n)
+        const canvas = pagesRef.current[n - 1]
+        if (cancelled || !canvas) return
+        const viewport = page.getViewport({ scale: 1.4 })
+        canvas.width = viewport.width
+        canvas.height = viewport.height
+        current = page.render({ canvasContext: canvas.getContext('2d'), viewport })
+        await current.promise
+        if (n === 1 && !cancelled) onReady?.()
+      }
+    }
+    run().catch(err => {
+      if (cancelled || err?.name === 'RenderingCancelledException') return
+      setError(err?.message || 'Failed to render the page')
+      onReady?.()
+    })
+    return () => { cancelled = true; current?.cancel() }
+  }, [pdf, allPages])
 
   if (error) return <div style={{ color: '#fca5a5', padding: 24, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}><AlertTriangle size={14} /> {error}</div>
+
+  if (allPages) return (
+    <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 16, gap: 14 }}>
+      {Array.from({ length: numPages }, (_, i) => (
+        <canvas key={i} ref={el => { pagesRef.current[i] = el }} aria-label={`Page ${i + 1} of ${numPages}`} style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.4)', maxWidth: '100%', background: '#fff', flexShrink: 0 }} />
+      ))}
+    </div>
+  )
 
   return (
     <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 16, gap: 12 }}>
