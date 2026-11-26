@@ -3,7 +3,7 @@
 // VOICE_STT names the other. With neither, voice is off and the route says so.
 //
 //   ELEVENLABS_API_KEY   use ElevenLabs
-//   SARVAM_API_KEY       use Sarvam (also what reads replies aloud; that part is Sarvam only)
+//   SARVAM_API_KEY       use Sarvam (reading replies aloud is lib/textToSpeech.js)
 //   VOICE_STT            'elevenlabs' or 'sarvam', to choose when both keys are set
 //   ELEVENLABS_STT_MODEL the Scribe model, default scribe_v3
 //
