@@ -210,7 +210,7 @@ export function PartnersPage({ onNavigate }) {
       <div style={{ position: 'sticky', top: 8, zIndex: 30, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius.md, boxShadow: T.shadow.md, padding: 10, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
         <div style={{ position: 'relative', flex: '1 1 260px', minWidth: 0 }}>
           <Search size={16} color={T.textLight} style={{ position: 'absolute', left: 12, top: 11 }} />
-          <input value={searchText} onChange={e => setSearchText(e.target.value)} placeholder="Search name, city, products, fabrics, keywords" aria-label="Search partners"
+          <input value={searchText} onChange={e => setSearchText(e.target.value)} placeholder="Search anything: name, place, product, fabric, certificate, brand, contact, GSTIN" aria-label="Search partners"
             style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 9, padding: '9px 34px 9px 36px', fontSize: 14, fontFamily: 'inherit', color: T.text, background: '#fff' }} />
           {searchText && <button type="button" onClick={() => setSearchText('')} aria-label="Clear search" style={{ position: 'absolute', right: 8, top: 8, background: '#f1f5f9', border: 'none', borderRadius: 6, width: 22, height: 22, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={12} color={T.textMuted} /></button>}
         </div>
@@ -247,7 +247,7 @@ export function PartnersPage({ onNavigate }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12, minHeight: 28 }}>
             <div style={{ fontSize: T.fontSize.body, fontWeight: 700, color: T.text }} aria-live="polite">
               {partners ? `${total} partner${total === 1 ? '' : 's'}` : 'Loading'}
-              {searching && partners?.mode === 'regex' && <span style={{ fontWeight: 500, color: T.textLight }}> (matching part of a word)</span>}
+              {searching && partners?.mode === 'any' && <span style={{ fontWeight: 500, color: T.textLight }}> (none has every word; these are the nearest)</span>}
             </div>
             {chips.map(([k, label, off]) => (
               <button key={k} type="button" onClick={off} title="Remove this filter"

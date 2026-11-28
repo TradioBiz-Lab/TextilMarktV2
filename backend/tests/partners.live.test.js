@@ -103,7 +103,9 @@ describe('rejected partners come last', () => {
     const api = await setup()
     assert.deepEqual(await names(api, 'sort=score'), ['Delta', 'Charlie', 'Bravo', 'Echo', 'Alpha'])
     assert.deepEqual(await names(api, 'sort=name'), ['Bravo', 'Charlie', 'Delta', 'Alpha', 'Echo'])
-    assert.deepEqual(await names(api, 'search=a&sort=score'), ['Delta', 'Charlie', 'Bravo', 'Alpha'])
+    // "a" is in every record (the type, "garment manufacturer", is searched too), so all five come back, rejected last
+    assert.deepEqual(await names(api, 'search=a&sort=score'), ['Delta', 'Charlie', 'Bravo', 'Echo', 'Alpha'])
+    assert.deepEqual(await names(api, 'search=lta&sort=score'), ['Delta'])
     assert.deepEqual(await names(api, 'search=ech&sort=name'), ['Echo'])
   })
 

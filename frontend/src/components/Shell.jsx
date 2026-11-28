@@ -204,7 +204,7 @@ export function Shell({ view, setView, children, onOpenOrder }) {
             </button>
             <div className="header-logo"><Logo size={28} /></div>
           </div>
-          <GlobalSearch onOpenOrder={onOpenOrder} onOpenMo={id => setView('master_order', { mo: id })} />
+          <GlobalSearch onOpenOrder={onOpenOrder} onOpenMo={id => setView('master_order', { mo: id })} onOpenPartner={id => setView('partner_detail', { id })} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {/* The coordinator's screens come in Hindi and English; the button names the other language. */}
             {isCoord && (

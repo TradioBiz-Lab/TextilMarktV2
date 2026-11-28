@@ -187,3 +187,51 @@ export function kriyaaPromptFor(q, searchText) {
   if (filters) return `From the partner directory, list the partners that are ${filters}. Say which MOQs are only claims.`
   return 'From the partner directory, which low-MOQ garment manufacturers look strongest, and what is still unverified about them?'
 }
+
+// ── Reading a partner's notes ──────────────────────────────────────────────────────────────────────────────────
+// Notes are free text, but the profiles loaded from brochures, purchase orders and web research arrive as dated blocks:
+// a heading line ending in a colon, a summary, then "Label: value" lines. The detail page shows those as a profile
+// instead of one wall of text. Anything that is not such a block stays as Tradio's own notes, untouched.
+
+const BLOCK_HEAD = /^(From the profile on file|Web research|From Tradio's purchase orders)\b.*:$/
+const NOTE_LABELS = ['Country', 'Established', 'Capacity', 'Workforce', 'Certifications', 'Certificate details', 'Came through', 'Note', 'Files', 'Sources']
+const LABEL_LINE = new RegExp(`^(${NOTE_LABELS.join('|')}): (.+)$`)
+// The certification tags the profile loader adds to keywords; the page shows them under Certifications, not twice.
+export const CERT_KEYWORDS = ['gots', 'oeko-tex', 'sedex', 'bsci', 'wrap', 'grs', 'ocs', 'iso 9001', 'iso 14001', 'sa8000', 'fairtrade', 'bci', 'higg', 'c-tpat', 'rcs', 'accord', 'leed']
+
+/**
+ * A partner's notes, read: { own: free text, blocks: [{ heading, kind, summary, toConfirm, files, sources }],
+ * facts: { established, capacity, workforce, country, cameThrough }, certifications: [], certDetails: [] }.
+ * The first block to state a fact wins (the brochure is loaded before the web research).
+ */
+export function readNotes(notes) {
+  const out = { own: '', blocks: [], facts: {}, certifications: [], certDetails: [] }
+  const own = []
+  const key = { Country: 'country', Established: 'established', Capacity: 'capacity', Workforce: 'workforce', 'Came through': 'cameThrough' }
+  for (const chunk of String(notes ?? '').split(/\n\s*\n/)) {
+    const lines = chunk.split('\n').map(l => l.trim()).filter(Boolean)
+    if (!lines.length) continue
+    if (!BLOCK_HEAD.test(lines[0])) { own.push(lines.join('\n')); continue }
+    const block = { heading: lines[0].replace(/:$/, ''), kind: lines[0].startsWith('Web') ? 'web' : lines[0].includes('purchase orders') ? 'po' : 'profile', summary: [], toConfirm: '', files: '', sources: [] }
+    for (const line of lines.slice(1)) {
+      const m = LABEL_LINE.exec(line)
+      if (!m) { block.summary.push(line); continue }
+      const [, label, value] = m
+      if (key[label]) { if (!out.facts[key[label]]) out.facts[key[label]] = value }
+      else if (label === 'Certifications') { for (const c of value.split(/,\s*/)) if (c && !out.certifications.some(x => x.toLowerCase() === c.toLowerCase())) out.certifications.push(c) }
+      else if (label === 'Certificate details') out.certDetails.push(value)
+      else if (label === 'Note') block.toConfirm = value.replace(/^To confirm:\s*/, '')
+      else if (label === 'Files') block.files = value
+      else if (label === 'Sources') block.sources = value.split(/\s+/).filter(u => /^https?:\/\//.test(u))
+    }
+    block.summary = block.summary.join(' ')
+    out.blocks.push(block)
+  }
+  out.own = own.join('\n\n')
+  return out
+}
+
+/** Keywords without the certification tags and "via <agent>" markers (those have their own place on the page). */
+export const plainKeywords = keywords => (keywords || []).filter(k => !CERT_KEYWORDS.includes(k) && !/^via /.test(k))
+/** Certifications to show: the names from the notes, else the certification tags among the keywords. */
+export const certificationsOf = (p, read) => (read.certifications.length ? read.certifications : (p.keywords || []).filter(k => CERT_KEYWORDS.includes(k)).map(k => k.toUpperCase()))

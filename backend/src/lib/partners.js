@@ -468,11 +468,47 @@ export function partnerMongoFilter(f) {
   return and.length ? { $and: and } : {}
 }
 
-const SEARCH_FIELDS = ['name', 'legalName', 'city', 'products', 'fabrics', 'fabricTypes', 'trimCategories', 'keywords', 'brands']
+// ── Search ─────────────────────────────────────────────────────────────────────────────────────────────────────
+// The directory is a few hundred records, so a search reads the partners the filters leave and ranks them here. That
+// buys what an index could not: every word must be found (in any field), part of a word is enough, "tirupur" finds
+// "Tiruppur", "oekotex" finds "oeko-tex", "sports bra" finds sports_bra, and the address, notes, contacts and
+// registration numbers are searched too. A name match outranks a keyword, which outranks a word buried in the notes.
 
-/** The regex fallback for partial words: every word must appear in some searchable field. */
-export function partnerRegexFilter(tokens) {
-  return { $and: tokens.map(t => ({ $or: SEARCH_FIELDS.map(k => ({ [k]: { $regex: escapeRe(t), $options: 'i' } })) })) }
+// Words people (and Kriyaa) put around what they are looking for. Dropped unless they are all there is.
+const FILLER = new Set(['a', 'an', 'the', 'in', 'of', 'for', 'and', 'or', 'with', 'who', 'which', 'that', 'do', 'does', 'make', 'makes', 'making',
+  'factory', 'factories', 'manufacturer', 'manufacturers', 'maker', 'makers', 'supplier', 'suppliers', 'vendor', 'vendors', 'partner', 'partners', 'near', 'from', 'at', 'certified'])
+
+/** One search word as a pattern: letters may be doubled, a space, hyphen or underscore may sit between them, and a plural s is optional. */
+export function tokenPattern(token) {
+  let t = String(token).toLowerCase().replace(/[\s_-]+/g, '')
+  if (t.length > 3 && /[^s]s$/.test(t)) t = t.slice(0, -1) // leggings -> legging
+  const letters = [...t.replace(/(.)\1+/g, '$1')].map(c => `${escapeRe(c)}+`)
+  return new RegExp(letters.join('[\\s_-]?'), 'i')
+}
+
+// [weight, what to read]. The best field a word is found in is what it scores.
+const SEARCH_FIELDS = [
+  [10, p => [p.name]], [8, p => [p.legalName]],
+  [7, p => [...(p.keywords || []), ...(p.products || [])]],
+  [6, p => [...(p.brands || []), ...(p.categories || []), p.city, p.cluster]],
+  [5, p => [...(p.fabrics || []), ...(p.fabricTypes || []), ...(p.trimCategories || []), String(p.type || '').replace(/_/g, ' ')]],
+  [4, p => [p.gstin, p.udyam, p.mcaCin, p.pincode, ...(p.contacts || []).flatMap(c => [c.name, c.phone, c.email])]],
+  [3, p => [p.address, p.website]],
+  [1, p => [p.notes, p.source, p.moqNote, p.priceIndication]],
+]
+
+/** How well a partner answers the words: { hits: words found, score }. A word at the start of the name counts most. */
+export function scorePartner(p, patterns) {
+  let hits = 0; let score = 0
+  for (const re of patterns) {
+    let best = 0
+    for (const [w, read] of SEARCH_FIELDS) {
+      if (read(p).some(v => v && re.test(String(v)))) { best = w; break }
+    }
+    if (best === 10 && new RegExp(`(^|[\\s(])${re.source}`, 'i').test(p.name)) best = 12
+    if (best) { hits++; score += best }
+  }
+  return { hits, score }
 }
 
 // Live manufacturers (the ones with orders at Tradio now) always come first; the chosen sort orders each group.
@@ -482,6 +518,25 @@ const SORTS = {
   updated:  { isLive: -1, updatedAt: -1 },
   name:     { isLive: -1, name: 1 },
   machines: { isLive: -1, machineCount: -1, 'verification.score': -1, name: 1 }, // not recorded sorts after any number
+}
+
+const at = (o, path) => path.split('.').reduce((v, k) => (v === undefined || v === null ? v : v[k]), o)
+/** The same order a Mongo sort would give, for rows already in hand (a missing value sorts as the lowest). */
+function compareBy(spec) {
+  const keys = Object.entries(spec)
+  return (a, b) => {
+    for (const [k, dir] of keys) {
+      let x = at(a, k); let y = at(b, k)
+      if (typeof x === 'string' && typeof y === 'string') { const c = x.localeCompare(y, 'en', { sensitivity: 'base' }); if (c) return c * dir; continue }
+      if (x instanceof Date) x = x.getTime(); if (y instanceof Date) y = y.getTime()
+      if (typeof x === 'boolean') x = x ? 1 : 0; if (typeof y === 'boolean') y = y ? 1 : 0
+      const nx = x === undefined || x === null; const ny = y === undefined || y === null
+      if (nx && ny) continue
+      if (nx) return dir; if (ny) return -dir
+      if (x !== y) return (x < y ? -1 : 1) * dir
+    }
+    return 0
+  }
 }
 
 /**
@@ -500,25 +555,34 @@ async function pageSunkLast(Manufacturer, filter, f, find) {
   return { items, total: nOpen + nRejected }
 }
 
+const SEARCH_POOL = 5000 // far above the directory's size; a guard, not a page size
+
 /**
- * Runs a list query. A search goes to the text index first (ranked, stemmed: "legging" finds "leggings"); when that
- * finds nothing, to a regex over the same fields so partial words ("ludh", "sports br") still work. Rejected partners
- * come last in every case.
- * @returns {{ items: object[], total: number, mode: 'text'|'regex'|'filter' }}
+ * Runs a list query. With search words, the partners the filters leave are ranked here (see the note above): those with
+ * every word, best match first (mode 'all'); when none has every word, those with some of them, most words first (mode
+ * 'any'), so a long question still gets its nearest answers. Rejected partners come last in every case.
+ * @returns {{ items: object[], total: number, mode: 'all'|'any'|'filter' }}
  */
 export async function findPartners(Manufacturer, f) {
   const base = partnerMongoFilter(f)
-  const tokens = searchTokens(f.search)
-  const byRelevance = !f.sort || f.sort === 'relevance'
+  let tokens = searchTokens(f.search)
+  const meaningful = tokens.filter(t => !FILLER.has(t))
+  if (meaningful.length) tokens = meaningful
 
   if (tokens.length) {
-    const textFilter = { $and: [base, { $text: { $search: tokens.join(' ') } }] }
-    const sort = byRelevance ? { _ts: { $meta: 'textScore' }, name: 1 } : SORTS[f.sort]
-    const text = await pageSunkLast(Manufacturer, textFilter, f, extra => Manufacturer.find(extra, { _ts: { $meta: 'textScore' } }).sort(sort))
-    if (text.total > 0) return { items: text.items.map(({ _ts, ...rest }) => rest), total: text.total, mode: 'text' }
-    const regexFilter = { $and: [base, partnerRegexFilter(tokens)] }
-    const hit = await pageSunkLast(Manufacturer, regexFilter, f, extra => Manufacturer.find(extra).sort(byRelevance ? SORTS.score : SORTS[f.sort]))
-    return { ...hit, mode: 'regex' }
+    const patterns = tokens.map(tokenPattern)
+    const rows = await Manufacturer.find(base).limit(SEARCH_POOL).lean()
+    const scored = rows.map(p => ({ p, ...scorePartner(p, patterns) })).filter(r => r.hits > 0)
+    const all = scored.filter(r => r.hits === patterns.length)
+    const pool = all.length ? all : scored
+    const byRelevance = !f.sort || f.sort === 'relevance'
+    const tie = compareBy(byRelevance ? SORTS.score : SORTS[f.sort])
+    const sunk = r => (r.p.status === 'rejected' ? 1 : 0)
+    pool.sort((a, b) => sunk(a) - sunk(b)
+      || (all.length ? 0 : b.hits - a.hits)
+      || (byRelevance ? b.score - a.score : 0)
+      || tie(a.p, b.p))
+    return { items: pool.slice(f.skip, f.skip + f.limit).map(r => r.p), total: pool.length, mode: all.length || !pool.length ? 'all' : 'any' }
   }
   const hit = await pageSunkLast(Manufacturer, base, f, extra => Manufacturer.find(extra).sort(SORTS[f.sort] || SORTS.score).collation({ locale: 'en', strength: 2 }))
   return { ...hit, mode: 'filter' }

@@ -3,6 +3,7 @@ import { capsFor } from '../caps.js'
 import {
   scoreTone, moqVerified, initialsOf, snakeOf, labelOf, fieldsFor, emptyQuery, queryToParams, activeFilterCount, machineTotal,
   describeQuery, kriyaaPromptFor, sortsFor, TYPE_TABS, CATEGORIES, CLUSTERS, SORTS, STATUSES, canBeLive, cityName,
+  readNotes, plainKeywords, certificationsOf,
 } from '../partners.js'
 
 describe('who sees the Partner Directory', () => {
@@ -189,5 +190,38 @@ describe('machines', () => {
     expect(activeFilterCount(q)).toBe(1)
     expect(describeQuery(q)).toContain('at least 50 machines')
     expect(queryToParams({ ...emptyQuery(), sort: 'machines' }).sort).toBe('machines')
+  })
+})
+
+describe('reading a partner\'s notes into a profile', () => {
+  const notes = [
+    'Lead: met at the Tiruppur fair.',
+    'From the profile on file (WorkDrive, Sourcing Team/Vendors), read 28 Nov 2026:\nSmall knit unit near Tirupur.\nEstablished: 2012\nCapacity: 60,000 pcs/month\nWorkforce: 42 workers\nCertifications: GOTS, OEKO-TEX Standard 100\nCertificate details: GOTS licence 123, valid to 2026-11-12\nCame through: Alliance Apparel\nNote: To confirm: no GSTIN in the files.\nFiles: Guru Tex - GOTS Certificate.pdf',
+    'Web research, 28 Nov 2026 (public pages, not verified by Tradio):\nListed on IndiaMART as a knitwear exporter.\nEstablished: 2010\nCertifications: gots, SEDEX\nSources: https://example.com/a https://example.com/b',
+  ].join('\n\n')
+
+  test('dated blocks become a summary, facts, certifications and things to confirm; the rest stays as own notes', () => {
+    const r = readNotes(notes)
+    expect(r.own).toBe('Lead: met at the Tiruppur fair.')
+    expect(r.blocks.map(b => b.kind)).toEqual(['profile', 'web'])
+    expect(r.blocks[0].summary).toBe('Small knit unit near Tirupur.')
+    expect(r.blocks[0].toConfirm).toBe('no GSTIN in the files.')
+    expect(r.blocks[0].files).toBe('Guru Tex - GOTS Certificate.pdf')
+    expect(r.blocks[1].sources).toEqual(['https://example.com/a', 'https://example.com/b'])
+    expect(r.facts).toEqual({ established: '2012', capacity: '60,000 pcs/month', workforce: '42 workers', cameThrough: 'Alliance Apparel' }) // the first block to say it wins
+    expect(r.certifications).toEqual(['GOTS', 'OEKO-TEX Standard 100', 'SEDEX'])
+    expect(r.certDetails).toEqual(['GOTS licence 123, valid to 2026-11-12'])
+  })
+
+  test('plain notes and no notes are left alone', () => {
+    expect(readNotes('Just a note.\nSecond line: with a colon.')).toMatchObject({ own: 'Just a note.\nSecond line: with a colon.', blocks: [], certifications: [] })
+    expect(readNotes(undefined)).toMatchObject({ own: '', blocks: [] })
+  })
+
+  test('certification tags are shown once: under certifications, not among the keywords', () => {
+    const p = { keywords: ['knits', 'gots', 'sedex', 'via alliance apparel'] }
+    expect(plainKeywords(p.keywords)).toEqual(['knits'])
+    expect(certificationsOf(p, readNotes(''))).toEqual(['GOTS', 'SEDEX'])
+    expect(certificationsOf(p, readNotes(notes))).toEqual(['GOTS', 'OEKO-TEX Standard 100', 'SEDEX'])
   })
 })

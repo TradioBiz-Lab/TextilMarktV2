@@ -140,6 +140,13 @@ docs/MIGRATION_PLAN.md # Zoho Catalyst migration plan and status
   `ADMIN_ONLY_TOOLS` and re-validates its filters with `parsePartnerQuery` before building the loopback URL. Nothing
   partner-shaped may be added to an order, document, notification or audit response a buyer or manufacturer can read.
   A MOQ is a claim until `verification.gstVerified` or `sampleApproved` (`moqVerified` in `frontend/src/partners.js`).
+  Search (`findPartners` in `lib/partners.js`) ranks in memory, not by a text index: every word must be found somewhere in
+  the record (name, place, products, fabrics, keywords, brands, contacts, GSTIN, address, notes), part of a word is enough,
+  and spelling variants match (tirupur/Tiruppur, oekotex/oeko-tex); when nothing has every word the nearest are returned
+  with `mode: 'any'`. The top bar's search asks it too, for admins. Kriyaa has `listManufacturers` (search) and
+  `getManufacturer` (one partner's whole profile, by name; no ids). There is no certifications field: they are keywords
+  (gots, sedex ...) plus dated blocks in the notes, which the detail page reads into a profile (`readNotes` in
+  `frontend/src/partners.js`; `backend/scripts/enrichPartners.mjs` writes those blocks).
   Partner tiles are generated images, never scraped photos. **Live gate:** a manufacturer can be given a style (created,
   added or reassigned) only when its directory record has the status Live (`status: 'live'`, `lib/liveManufacturers.js`); a new
   manufacturer account gets a Pilot record automatically, and Tradio sets it to Live on the partner's page. See docs/SCHEMA.md `manufacturers`.

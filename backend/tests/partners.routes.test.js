@@ -269,25 +269,54 @@ describe('search and filters', () => {
     assert.equal((await q(api, 'sort=name')).items[0].name, 'ARNIT Creations')
   })
 
-  test('text search finds whole words, with stemming, across name, city, products and keywords', async () => {
+  test('search finds whole words and plurals across name, city, products and keywords', async () => {
     const api = await setup()
     const byCity = await q(api, 'search=Ludhiana')
-    assert.equal(byCity.mode, 'text')
+    assert.equal(byCity.mode, 'all')
     assert.deepEqual(byCity.items.map(p => p.name).sort(), ['Dossil Fashions', 'Sukartik Clothing'])
     assert.deepEqual(names(await q(api, 'search=legging&sort=name')), ['ARNIT Creations', 'Sukartik Clothing'])
     assert.deepEqual(names(await q(api, 'search=knitwear')), ['Dossil Fashions'])
     assert.deepEqual(names(await q(api, 'search=zips')), ['Button Bazaar'])
   })
 
-  test('partial words fall back to a regex over the same fields', async () => {
+  test('part of a word is enough, and nothing matching gives nothing', async () => {
     const api = await setup()
     const partial = await q(api, 'search=ludh')
-    assert.equal(partial.mode, 'regex')
+    assert.equal(partial.mode, 'all')
     assert.deepEqual(partial.items.map(p => p.name).sort(), ['Dossil Fashions', 'Sukartik Clothing'])
     assert.deepEqual(names(await q(api, 'search=sports br')), ['Sukartik Clothing'])
     assert.deepEqual(names(await q(api, 'search=sukar')), ['Sukartik Clothing'])
     assert.deepEqual(names(await q(api, 'search=butt')), ['Button Bazaar'])
     assert.deepEqual(names(await q(api, 'search=nothingmatchesthis')), [])
+  })
+
+  test('every word must be found, anywhere in the record: address, notes, contacts, GSTIN, certifications', async () => {
+    const admin = await makeAdmin()
+    const api = as(admin)
+    await seed(admin, [
+      { name: 'Guru Tex', city: 'Tirupur (Avinashi)', cluster: 'tiruppur', keywords: ['gots', 'oeko-tex', 'kids'], products: ['t_shirt'], address: '3/170 Vanjipalayam, Kaniampoondi', gstin: '33ABCDE1234F1Z5', notes: 'SMETA audit by LRQA', contacts: [{ name: 'Ramkumar', phone: '9790090147' }] },
+      { name: 'SV Knits', city: 'Tiruppur (Veerapandi)', cluster: 'tiruppur', keywords: ['sedex'], products: ['polo'] },
+      { name: 'Gramtech', city: 'Narayanganj, Bangladesh', cluster: 'other', keywords: ['gots', 'bangladesh'], products: ['t_shirt'] },
+      { name: 'Tex Traders', type: 'trader', city: 'Delhi', notes: 'Buys from Guru in Tirupur' },
+    ])
+    const find = async words => (await q(api, `search=${encodeURIComponent(words)}`)).items.map(p => p.name)
+    assert.deepEqual(await find('tiruppur gots'), ['Guru Tex'])            // both words, and tirupur = tiruppur
+    assert.deepEqual((await find('gots')).sort(), ['Gramtech', 'Guru Tex'])
+    assert.deepEqual(await find('oekotex'), ['Guru Tex'])                  // hyphen or not
+    assert.deepEqual(await find('kaniampoondi'), ['Guru Tex'])             // address
+    assert.deepEqual(await find('ramkumar'), ['Guru Tex'])                 // contact
+    assert.deepEqual(await find('33ABCDE1234F1Z5'), ['Guru Tex'])          // GSTIN
+    assert.deepEqual(await find('lrqa'), ['Guru Tex'])                     // notes
+    assert.deepEqual(await find('bangladesh'), ['Gramtech'])
+    assert.deepEqual(await find('which factories in tiruppur make polos'), ['SV Knits']) // filler words are ignored
+    assert.deepEqual(await find('guru'), ['Guru Tex', 'Tex Traders'])      // a name match outranks a word in the notes
+  })
+
+  test('when nothing has every word, the nearest partners are returned and marked as such', async () => {
+    const api = await setup()
+    const r = await q(api, 'search=ludhiana zzzunknownword')
+    assert.equal(r.mode, 'any')
+    assert.deepEqual(r.items.map(p => p.name).sort(), ['Dossil Fashions', 'Sukartik Clothing'])
   })
 
   test('a search combines with filters, and cannot be used to inject regex or text operators', async () => {
